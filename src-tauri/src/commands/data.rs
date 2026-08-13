@@ -279,18 +279,16 @@ pub(crate) fn import_shared_data_into_per_user(
         return false;
     }
 
-    if let Some(parent) = dest.parent() {
-        if let Err(e) = fs::create_dir_all(parent) {
-            log::warn!(
-                "shared data import: failed to create {}: {e}",
-                parent.display()
-            );
+    let contents = match fs::read(&src) {
+        Ok(contents) => contents,
+        Err(e) => {
+            log::warn!("shared data import: failed to read {}: {e}", src.display());
             return false;
         }
-    }
+    };
 
-    match fs::copy(&src, dest) {
-        Ok(_) => {
+    match write_data_file_atomic(dest, &contents) {
+        Ok(()) => {
             log::info!(
                 "shared data import: copied {} -> {} (this account now has its own blocklist)",
                 src.display(),
@@ -300,7 +298,7 @@ pub(crate) fn import_shared_data_into_per_user(
         }
         Err(e) => {
             log::warn!(
-                "shared data import: failed to copy {} -> {}: {e}",
+                "shared data import: failed to copy {} -> {} atomically: {e}",
                 src.display(),
                 dest.display()
             );
@@ -791,160 +789,7 @@ fn wipe_path(path: &PathBuf) {
 }
 
 #[cfg(test)]
-mod shared_storage_import_tests {
-    use super::{
-        canonical_data_path_static, import_shared_data_into_per_user, per_user_data_path_from,
-        per_user_data_path_static, DATA_FILE_NAME,
-    };
-    use std::fs;
-    use std::path::{Path, PathBuf};
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-    fn temp_root(label: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("redd-block-import-{label}-{nanos}"));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
-    /// Set an explicit mtime so the newer/older rule is exercised
-    /// deterministically instead of by sleeping past a filesystem's
-    /// timestamp granularity.
-    fn age(path: &Path, secs: u64) {
-        let file = fs::OpenOptions::new().write(true).open(path).unwrap();
-        let when = SystemTime::now() - Duration::from_secs(secs);
-        file.set_times(fs::FileTimes::new().set_modified(when))
-            .unwrap();
-    }
-
-    fn write_shared(dir: &Path, contents: &[u8]) -> PathBuf {
-        fs::create_dir_all(dir).unwrap();
-        let path = dir.join(DATA_FILE_NAME);
-        fs::write(&path, contents).unwrap();
-        path
-    }
-
-    #[test]
-    fn imports_shared_data_when_per_user_is_missing() {
-        let root = temp_root("missing");
-        let shared = root.join("ProgramData");
-        let src = write_shared(&shared, b"{\"from\":\"shared\"}");
-        let dest = root.join("per-user").join(DATA_FILE_NAME);
-
-        assert!(import_shared_data_into_per_user(
-            &dest,
-            std::slice::from_ref(&shared)
-        ));
-
-        assert_eq!(fs::read_to_string(&dest).unwrap(), "{\"from\":\"shared\"}");
-        // Copy, never move: the other accounts on this machine still need it.
-        assert!(src.exists());
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn does_not_clobber_newer_per_user_data() {
-        let root = temp_root("newer");
-        let shared = root.join("ProgramData");
-        let src = write_shared(&shared, b"stale-shared");
-        let dest_dir = root.join("per-user");
-        fs::create_dir_all(&dest_dir).unwrap();
-        let dest = dest_dir.join(DATA_FILE_NAME);
-        fs::write(&dest, b"fresh-per-user").unwrap();
-        age(&src, 60);
-
-        assert!(!import_shared_data_into_per_user(&dest, &[shared]));
-
-        assert_eq!(fs::read_to_string(&dest).unwrap(), "fresh-per-user");
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn imports_over_a_stale_per_user_file() {
-        // The pre-v3 per-user -> shared migration copied without deleting, so
-        // an upgrading Windows account can hold a per-user file frozen at
-        // migration time next to the shared file it has been editing since.
-        // Preferring the stale local copy would silently revert the blocklist.
-        let root = temp_root("stale");
-        let shared = root.join("ProgramData");
-        write_shared(&shared, b"live-shared");
-        let dest_dir = root.join("per-user");
-        fs::create_dir_all(&dest_dir).unwrap();
-        let dest = dest_dir.join(DATA_FILE_NAME);
-        fs::write(&dest, b"stale-per-user").unwrap();
-        age(&dest, 60);
-
-        assert!(import_shared_data_into_per_user(&dest, &[shared]));
-
-        assert_eq!(fs::read_to_string(&dest).unwrap(), "live-shared");
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn prefers_the_first_shared_dir_that_has_the_file() {
-        // Primary first, then the rebranded legacy ProgramData folders.
-        let root = temp_root("order");
-        let primary = root.join("Digital Habits Blocker");
-        let legacy = root.join("ReDD Blocker");
-        write_shared(&primary, b"from-primary");
-        write_shared(&legacy, b"from-legacy");
-        let dest = root.join("per-user").join(DATA_FILE_NAME);
-
-        assert!(import_shared_data_into_per_user(&dest, &[primary, legacy]));
-
-        assert_eq!(fs::read_to_string(&dest).unwrap(), "from-primary");
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn no_shared_data_creates_nothing() {
-        let root = temp_root("absent");
-        let dest = root.join("per-user").join(DATA_FILE_NAME);
-
-        assert!(!import_shared_data_into_per_user(
-            &dest,
-            &[root.join("ProgramData")]
-        ));
-
-        assert!(!dest.exists());
-        assert!(!dest.parent().unwrap().exists());
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn resolver_never_returns_a_machine_wide_path() {
-        // The regression guard for the shared-storage resolver: there is one
-        // branch now, so two accounts can never select the same file.
-        assert_eq!(canonical_data_path_static(), per_user_data_path_static());
-    }
-
-    #[test]
-    fn per_user_fallback_is_native_to_the_platform() {
-        // Reachable whenever dirs::data_dir() returns None. It used to hand
-        // back a macOS-shaped ~/Library path on every platform.
-        let home = PathBuf::from("/testhome");
-        let path = per_user_data_path_from(None, Some(home.clone()));
-
-        assert!(path.starts_with(&home), "fallback must stay under $HOME");
-        assert!(path.ends_with(DATA_FILE_NAME));
-
-        let shape = path.to_string_lossy().replace('\\', "/");
-        #[cfg(target_os = "macos")]
-        assert!(
-            shape.contains("Library/Application Support/com.reddblock"),
-            "macOS fallback should be an Application Support path: {shape}"
-        );
-        #[cfg(not(target_os = "macos"))]
-        assert!(
-            !shape.contains("Library/Application Support"),
-            "non-macOS fallback must not be macOS-shaped: {shape}"
-        );
-    }
-}
+mod shared_storage_import_tests;
 
 #[cfg(all(test, feature = "system-test"))]
 mod system_test_isolation_tests;
