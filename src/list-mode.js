@@ -69,9 +69,10 @@ export function updateAllowlistScopeHints(websiteCount = 0, appCount = 0) {
         const empty = count <= 0;
         el.classList.toggle('allowlist-scope-hint--empty', empty);
         el.classList.toggle('allowlist-scope-hint--active', !empty);
+        // "except this one" / "except these 3"
         const text = empty
             ? tSettings(emptyKey)
-            : tSettingsFmt(activeKey, { count });
+            : tSettingsFmt(count === 1 ? `${activeKey.replace(/Html$/, '')}OneHtml` : activeKey, { count });
         el.innerHTML = `${empty ? ALLOWLIST_SCOPE_CHECK_ICON : ALLOWLIST_SCOPE_LOCK_ICON}<span class="allowlist-scope-hint-text">${text}</span>`;
     };
 
