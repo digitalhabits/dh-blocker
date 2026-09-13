@@ -6445,6 +6445,27 @@ body.android .blocklists-container {
     flex-direction: column;
 }
 
+/* Third card line, like Android: "Blocking now · Mon, Tue · 09:00 – 17:00". */
+.blocklist-status-line{
+    font-size: 13px;
+    line-height: 1.35;
+    color: var(--text-muted);
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.blocklist-status-line.is-blocking{
+    color: hsl(142, 55%, 36%);
+    font-weight: 500;
+}
+
+body.ios .blocklist-status-line,
+body.android .blocklist-status-line{
+    font-size: 14px;
+}
+
 /* The switch is anchored to the whole header (title + meta line), not the
    title row, so it sits at the card's vertical centre. */
 .blocklist-card-header{

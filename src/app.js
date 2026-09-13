@@ -143,7 +143,6 @@ let startupInitializationPromise = null; // Prevent duplicate post-onboarding st
 /** Max length for blocklist display name (add/edit modal + persisted saves). */
 export const BLOCKLIST_NAME_MAX_LENGTH = 60;
 /** Past this length the card title row usually ellipsizes; use "in 11h" instead of "starts in 11h". */
-export const BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS = 26;
 /** Collapse stop-button emoji+name this many px before measured overflow (iOS flex overlap). */
 export const IOS_STOP_BTN_META_COLLAPSE_SLACK_PX = 24;
 

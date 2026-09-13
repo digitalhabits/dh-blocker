@@ -3,28 +3,26 @@
 import { state } from './state.js';
 import { getMaxOverrideWords, migrateOverrideDifficultyToWords } from './override-challenge.js';
 import { normalizeUnlockMinutes } from './unlock-duration.js';
-import { confirmDiscardEditorEdits, editorHasUnsavedEdits } from './focus-space-editor.js';
+import { confirmDiscardEditorEdits, editorHasUnsavedEdits, formatScheduleWhenSummary } from './focus-space-editor.js';
+import { deriveWhenToBlockKind } from './when-to-block.js';
 import { BaseDirectory } from '@tauri-apps/api/path';
 import { ask, message, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { escapeHtml, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
-import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, isBlockAlwaysOn, isScreenTimeSummaryEntry, normalizeBlocklist } from './blocklist-utils.js';
+import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, isAllowlistBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist } from './blocklist-utils.js';
 import { isOneOffBlockEnforced, isSchedulePausedNow } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render, renderNowBlockingRow, renderScheduleVisibilityChips } from './render.js';
 import { isFocusSpaceOn, setFocusSpaceEnabled } from './focus-space-switch.js';
 import { canEditScheduleBetweenBlocks, commitSegmentDelete, isScheduleSegmentActiveNow } from './schedule-editor.js';
 import {
-    BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS,
     BLOCKLIST_NAME_MAX_LENGTH,
-    formatBlockTimeRemainingShort,
-    formatPauseRemainingShort,
     generateId,
 } from './app.js';
 import { buildBlocklistCardMetaHtml, buildBlocklistCardDetailsHtml, blocklistCardHasExpandableSummary } from './list-presentation.js';
 import { cloneOverrideDifficulty, deselectBlocklist, handleBlocklistSelect, isBlocklistCardVisuallySelected, isEnterSchedulerModalOpen, openBlocklistModal } from './confirm-modals.js';
-import { APP_BLOCKING_SNOOZE_ICON_IMG_12, appBlockingWarningSnoozedUntilMs, formatAppBlockingSnoozeStartsIn, getActiveAppBlockingSnoozeBlocklistId } from './blocking-platform.js';
+import { appBlockingWarningSnoozedUntilMs, formatAppBlockingSnoozeStartsIn, getActiveAppBlockingSnoozeBlocklistId } from './blocking-platform.js';
 
 function getVisibleBlocklists() {
     return state.appData.blocklists || [];
@@ -74,55 +72,48 @@ async function openBlocklistEnterFromCard(blocklistId) {
     handleBlocklistSelect({ target: dropdown }, { openEnterUi: true });
 }
 
-const BLOCKLIST_RUNNING_DOT = '<span class="badge-running-dot" aria-hidden="true"></span>';
+/**
+ * The card's third line, like the Android app's: "{status} · {timing}".
+ * Status is Blocking now / Allowing now (green), Paused until 10:30, Off, or
+ * Scheduled; timing is "Manual · starts when enabled" or the schedule's days
+ * and times. A Manual space that is not running shows just the timing.
+ */
+function buildBlocklistCardStatusLine(bl, now = Date.now()) {
+    const schedule = (state.appData.schedules || []).find(
+        (s) => s.blocklistId === bl.id && s.segments?.length > 0,
+    ) || null;
+    const block = state.appData.activeBlocks.find(
+        (b) => b.blocklistId === bl.id && b.startTime <= now && b.endTime > now,
+    ) || null;
+    const nowLabel = tSettings(isAllowlistBlocklist(bl) ? 'cardStatusAllowingNow' : 'cardStatusBlockingNow');
+    const timing = formatScheduleWhenSummary(deriveWhenToBlockKind(schedule), schedule);
+    // 24-hour HH:MM, matching the schedule times on the same line.
+    const pausedUntil = (pauseEndTime) => {
+        const d = new Date(pauseEndTime);
+        const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        return tSettingsFmt('cardStatusPausedUntilFmt', { time: hhmm });
+    };
 
-function blocklistStatusIcon(innerHtml) {
-    return `<span class="blocklist-status-icon" aria-hidden="true">${innerHtml}</span>`;
-}
+    let status = null;
+    let tone = '';
+    if (block && !isOneOffPauseActive(block, now)) {
+        status = nowLabel; tone = ' is-blocking';
+    } else if (block) {
+        status = block.pauseEndTime ? pausedUntil(block.pauseEndTime) : tSettings('cardStatusOff');
+    } else if (schedule) {
+        if (isSchedulePausedNow(schedule, now)) {
+            status = schedule.pauseEndTime ? pausedUntil(schedule.pauseEndTime) : tSettings('cardStatusOff');
+        } else if (getActiveAppBlockingSnoozeBlocklistId(now) === bl.id) {
+            status = formatAppBlockingSnoozeStartsIn(appBlockingWarningSnoozedUntilMs - now);
+        } else if (isScheduleSegmentActiveNow(schedule, new Date(now))) {
+            status = nowLabel; tone = ' is-blocking';
+        } else {
+            status = tSettings('cardStatusScheduled');
+        }
+    }
 
-const BLOCKLIST_STATUS_ICON_PAUSE = blocklistStatusIcon(
-    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>',
-);
-const BLOCKLIST_STATUS_ICON_POWER = blocklistStatusIcon(
-    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>',
-);
-const BLOCKLIST_STATUS_ICON_HOURGLASS = blocklistStatusIcon(
-    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>',
-);
-const BLOCKLIST_STATUS_ICON_CALENDAR = blocklistStatusIcon(
-    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>',
-);
-// Deliberately a function, unlike its four literal siblings above: the snooze
-// icon is the only one whose markup comes from another module, and reading that
-// binding at module-evaluation time makes this file's correctness depend on
-// blocking-platform.js being evaluated first. It isn't, once anything adds an
-// import edge that reorders the graph — the module top level holds declarations
-// only, and this was the one call that broke the rule (see AGENTS.md).
-function blocklistStatusIconSnooze() {
-    return blocklistStatusIcon(APP_BLOCKING_SNOOZE_ICON_IMG_12);
-}
-
-function buildBlocklistStatusSegment(text, { showDot = false, iconHtml = '', textClass = 'blocklist-status-text' } = {}) {
-    const trimmed = String(text ?? '').trim();
-    if (!trimmed) return '';
-    const parts = [];
-    if (showDot) parts.push(BLOCKLIST_RUNNING_DOT);
-    if (iconHtml) parts.push(iconHtml);
-    parts.push(`<span class="${textClass}">${escapeHtml(trimmed)}</span>`);
-    return `<span class="blocklist-name-status-segment">${parts.join('')}</span>`;
-}
-
-/** "Paused 12m" for a timed pause; "Off" when the switch turned the space off open-ended. */
-function formatPausedBadgeText(pauseEndTime, now) {
-    return pauseEndTime ? formatPauseRemainingShort(pauseEndTime, now) : tSettings('blocklistOffBadge');
-}
-
-function buildPausedStatusSegment(text, { typeIcon, textClass, dualBadgeContext }) {
-    return buildBlocklistStatusSegment(text, {
-        showDot: false,
-        iconHtml: dualBadgeContext ? typeIcon : BLOCKLIST_STATUS_ICON_PAUSE,
-        textClass,
-    });
+    const text = status ? tSettingsFmt('cardStatusLineFmt', { status, timing }) : timing;
+    return `<div class="blocklist-status-line${tone}" title="${escapeHtml(text)}">${escapeHtml(text)}</div>`;
 }
 
 export function truncateBlocklistName(raw) {
@@ -864,174 +855,7 @@ export function renderBlocklists() {
 
         const activeClass = isActive ? ' blocklist-card-active' : (hasSchedule ? ' blocklist-card-scheduled' : '');
 
-        // Calculate badges - show BOTH if applicable
-        let oneOffBadge = '';
-        let scheduleBadge = '';
-
-        // Green "live" dot prefixed onto badges for blocks that are
-        // currently running (one-off active or active schedule segment).
-        // Same colour treatment as the BLOCKING NOW row dot.
-
-        const dualBadgeContext = isActive && !!activeBlock && hasSchedule;
-
-        // One-off block badge
-        if (isActive && activeBlock) {
-            if (activeBlock.isPaused) {
-                oneOffBadge = buildPausedStatusSegment(
-                    formatPausedBadgeText(activeBlock.pauseEndTime, now),
-                    {
-                        typeIcon: BLOCKLIST_STATUS_ICON_HOURGLASS,
-                        textClass: 'blocklist-status-text active-badge',
-                        dualBadgeContext,
-                    },
-                );
-            } else if (isBlockAlwaysOn(activeBlock)) {
-                oneOffBadge = buildBlocklistStatusSegment('Always', {
-                    showDot: true,
-                    iconHtml: BLOCKLIST_STATUS_ICON_POWER,
-                    textClass: 'blocklist-status-text active-badge',
-                });
-            } else {
-                const remaining = activeBlock.endTime - now;
-                const mins = Math.ceil(remaining / 60000);
-                oneOffBadge = buildBlocklistStatusSegment(formatBlockTimeRemainingShort(mins), {
-                    showDot: true,
-                    iconHtml: BLOCKLIST_STATUS_ICON_HOURGLASS,
-                    textClass: 'blocklist-status-text active-badge',
-                });
-            }
-        }
-
-        // Schedule badge (blue with calendar-sync)
-        let scheduleSegmentRunning = false;
-        if (hasSchedule) {
-            const compactScheduleUpcomingLabel =
-                (bl.name || '').trim().length > BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS;
-            const schedule = state.appData.schedules.find(s => s.blocklistId === bl.id);
-            let scheduleTimeText = '';
-            if (schedule && schedule.segments) {
-                if (isSchedulePausedNow(schedule, now)) {
-                    scheduleTimeText = formatPausedBadgeText(schedule.pauseEndTime, now);
-                } else {
-                    // Check if any segment is currently active
-                    const nowDate = new Date();
-                    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Mon=0
-                    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
-
-                    // Find active segment (handling cross-midnight segments)
-                    const activeSegment = schedule.segments.find(seg => {
-                        const startMins = seg.startHour * 60 + seg.startMinute;
-                        const endMins = seg.endHour * 60 + seg.endMinute;
-
-                        if (endMins > startMins) {
-                            // Same-day segment (e.g., 09:00 - 17:00)
-                            return seg.days.includes(currentDay) &&
-                                currentMins >= startMins &&
-                                currentMins < endMins;
-                        } else {
-                            // Cross-midnight segment (e.g., 22:00 - 04:00)
-                            const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-                            const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
-                            const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
-                            return inEveningPortion || inMorningPortion;
-                        }
-                    });
-
-                    if (activeSegment) {
-                        // Currently blocking - show time left (or snooze countdown)
-                        scheduleSegmentRunning = true;
-                        const snoozedBlocklistId = getActiveAppBlockingSnoozeBlocklistId(now);
-                        if (snoozedBlocklistId === bl.id) {
-                            scheduleTimeText = formatAppBlockingSnoozeStartsIn(
-                                appBlockingWarningSnoozedUntilMs - now,
-                            );
-                        } else {
-                            const startMins = activeSegment.startHour * 60 + activeSegment.startMinute;
-                            const endMins = activeSegment.endHour * 60 + activeSegment.endMinute;
-                            let minsLeft;
-
-                            if (endMins > startMins) {
-                                // Same-day segment
-                                minsLeft = endMins - currentMins;
-                            } else {
-                                // Cross-midnight segment
-                                if (currentMins >= startMins) {
-                                    // In evening portion: time until midnight + morning end
-                                    minsLeft = (24 * 60 - currentMins) + endMins;
-                                } else {
-                                    // In morning portion: time until end
-                                    minsLeft = endMins - currentMins;
-                                }
-                            }
-                            scheduleTimeText = formatBlockTimeRemainingShort(minsLeft);
-                        }
-                    } else {
-                        // Find next upcoming segment
-                        let nextStart = null;
-                        for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
-                            const checkDay = (currentDay + dayOffset) % 7;
-                            const segsForDay = schedule.segments.filter(seg => seg.days.includes(checkDay))
-                                .sort((a, b) => (a.startHour * 60 + a.startMinute) - (b.startHour * 60 + b.startMinute));
-
-                            for (const seg of segsForDay) {
-                                const segStartMins = seg.startHour * 60 + seg.startMinute;
-                                if (dayOffset === 0 && segStartMins <= currentMins) continue; // Already passed today
-
-                                // Found next segment. minsUntil = (full days) + (start-of-segment minutes) - (current minutes).
-                                // Same formula works whether dayOffset is 0 (today) or further out.
-                                const minsUntil = (dayOffset * 24 * 60) + segStartMins - currentMins;
-
-                                const nMinutes = String(minsUntil);
-                                const nHours = String(Math.floor(minsUntil / 60));
-                                const nDays = String(Math.floor(minsUntil / (24 * 60)));
-                                if (minsUntil < 60) {
-                                    scheduleTimeText = compactScheduleUpcomingLabel
-                                        ? tSettingsFmt('blocklistScheduleCompactMinutesFmt', { n: nMinutes })
-                                        : tSettingsFmt('blocklistScheduleStartsInMinutesFmt', { n: nMinutes });
-                                } else if (minsUntil < 24 * 60) {
-                                    scheduleTimeText = compactScheduleUpcomingLabel
-                                        ? tSettingsFmt('blocklistScheduleCompactHoursFmt', { n: nHours })
-                                        : tSettingsFmt('blocklistScheduleStartsInHoursFmt', { n: nHours });
-                                } else {
-                                    scheduleTimeText = compactScheduleUpcomingLabel
-                                        ? tSettingsFmt('blocklistScheduleCompactDaysFmt', { n: nDays })
-                                        : tSettingsFmt('blocklistScheduleStartsInDaysFmt', { n: nDays });
-                                }
-                                nextStart = true;
-                                break;
-                            }
-                            if (nextStart) break;
-                        }
-                        if (!scheduleTimeText) scheduleTimeText = tSettings('blocklistScheduleFallback');
-                    }
-                }
-            }
-            const isSnoozedCard = getActiveAppBlockingSnoozeBlocklistId(now) === bl.id;
-            const schedulePaused = !!(schedule && isSchedulePausedNow(schedule, now));
-            if (isSnoozedCard) {
-                scheduleBadge = buildBlocklistStatusSegment(scheduleTimeText, {
-                    iconHtml: blocklistStatusIconSnooze(),
-                    textClass: 'blocklist-status-text schedule-badge schedule-badge-snoozed',
-                });
-            } else if (schedulePaused) {
-                scheduleBadge = buildPausedStatusSegment(scheduleTimeText, {
-                    typeIcon: BLOCKLIST_STATUS_ICON_CALENDAR,
-                    textClass: 'blocklist-status-text schedule-badge',
-                    dualBadgeContext,
-                });
-            } else {
-                scheduleBadge = buildBlocklistStatusSegment(scheduleTimeText, {
-                    showDot: scheduleSegmentRunning,
-                    iconHtml: BLOCKLIST_STATUS_ICON_CALENDAR,
-                    textClass: 'blocklist-status-text schedule-badge',
-                });
-            }
-        }
-
-        const activeBadge = oneOffBadge + scheduleBadge;
-        const badgesHtml = activeBadge
-            ? `<span class="blocklist-name-badges">${activeBadge}</span>`
-            : '';
+        const statusLineHtml = buildBlocklistCardStatusLine(bl, now);
 
         const isSelected = isBlocklistCardVisuallySelected(bl.id);
         const selectedClass = isSelected ? ' selected' : '';
@@ -1059,13 +883,13 @@ export function renderBlocklists() {
               <div class="blocklist-name">
                 <span class="blocklist-emoji">${bl.emoji || '🚫'}</span>
                 <span class="blocklist-title-text">${escapeHtml(bl.name)}</span>
-                ${badgesHtml}
               </div>
               <div class="blocklist-actions">
                 ${switchHtml}
               </div>
             </div>
             <div class="blocklist-meta">${metaHtml}</div>
+            ${statusLineHtml}
           </div>
           ${detailsHtml}
         </div>
