@@ -9716,7 +9716,12 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     align-items: stretch;
     flex-wrap: nowrap;
     gap: 8px;
-    padding: 8px;
+    /* No wrapper card: the chips, input and Lists button stand on their own
+       inside the section. */
+    padding: 0;
+    border: none;
+    background: transparent;
+    min-height: 0;
     cursor: default;
     width: 100%;
     max-width: 100%;
@@ -16373,6 +16378,20 @@ body.dark-mode .app-blocking-warning-card{
     min-width: 0;
 }
 
+/* Advanced options reads as a ghost button: outline only, no fill. */
+#editor-section-advanced:not(.editor-section-open){
+    background: transparent;
+}
+
+#editor-section-advanced .editor-section-title{
+    font-weight: 600;
+}
+
+/* Room under the last section before the modal's Cancel / Save bar. */
+.blocklist-modal-editor-slot{
+    padding-bottom: 16px;
+}
+
 /* What to block: app chips as plain rows, then one full-width Add App button. */
 #blocklist-apps-group{
     display: flex;
@@ -16409,10 +16428,6 @@ body.dark-mode .app-blocking-warning-card{
 
 .add-app-btn svg{
     flex-shrink: 0;
-}
-
-#what-empty-hint{
-    margin: 0 0 2px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
