@@ -116,7 +116,7 @@ import {
     updateManageSectionVisibility, updateOverrideAllButtonVisibility,
 } from './settings.js';
 import { normalizeUnlockMinutes } from './unlock-duration.js';
-import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, scheduleSelectionPromptLayout, getEffectiveViewportWidth, bindUiZoomLayoutObserver } from './theme.js';
+import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, getEffectiveViewportWidth, bindUiZoomLayoutObserver } from './theme.js';
 import { checkForAppUpdate, getLatestVersionPlatformKey, isVersionHigher, resolveMicrosoftStorePackage, updateBannerWhatsNewButtonHtml } from './update-banner.js';
 import { updateDownloadInProgress } from './update-banner.js';
 import { getChallengeController } from './challenge-controller.js';
@@ -2708,7 +2708,6 @@ export function applySettingsLanguage() {
     }
     setText('instant-mode-tab-label', tSettings('modeTimer'));
     setText('schedule-mode-tab-label', tSettings('modeSchedule'));
-    setText('selection-prompt-label', tSettings('selectionPrompt'));
     const blocklistSelect = document.getElementById('blocklist-select');
     if (blocklistSelect && blocklistSelect.options.length > 0) {
         blocklistSelect.options[0].textContent = tSettings('selectionPromptOption');

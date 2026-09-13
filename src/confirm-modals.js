@@ -16,7 +16,7 @@ import { pad } from './time-inputs.js';
 import { formatUnlockDurationLabel, getWhenToBlockKind, isEditorInCreateModal, mountFocusSpaceEditor, notifyEditorChanged, populateFocusSpaceEditor, resyncEditorLockState, returnFocusSpaceEditorToPanel } from './focus-space-editor.js';
 import { resetModalScrollPosition, updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth, isHelperConnectionError } from './blocking-platform.js';
 import { resetWebsitesImportMenuPosition } from './website-input.js';
-import { bindUiZoomLayoutObserver, scheduleSelectionPromptLayout, scheduleUiZoomResponsiveLayout, usesStackSettingsPlacement } from './theme.js';
+import { bindUiZoomLayoutObserver, scheduleUiZoomResponsiveLayout, usesStackSettingsPlacement } from './theme.js';
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
 import {
     IOS_STOP_BTN_META_COLLAPSE_SLACK_PX, MINUTES_PER_DAY, MAX_SAME_DAY_END_MINUTES,
@@ -730,11 +730,6 @@ export function getLiveTimePickerContainer() {
     return document.querySelector('#scheduler-section .scheduler-content #time-picker-container');
 }
 
-function clearSchedulerPlaceholderMeasurer() {
-    const measurer = document.getElementById('scheduler-placeholder-measurer');
-    if (measurer) measurer.innerHTML = '';
-}
-
 function getEnterSchedulerModal() {
     return document.getElementById('enter-scheduler-modal');
 }
@@ -827,8 +822,6 @@ function openEnterSchedulerModal() {
     const timePicker = getLiveTimePickerContainer();
     if (!scrollBody || !timePicker) return;
 
-    clearSchedulerPlaceholderMeasurer();
-
     if (timePicker.parentElement !== scrollBody) {
         scrollBody.appendChild(timePicker);
     }
@@ -911,7 +904,6 @@ export function syncSchedulerChromeVisibility() {
     if (gridTopRow) gridTopRow.classList.toggle('grid-top-row--blocklist-selected', show);
     bindUiZoomLayoutObserver();
     scheduleUiZoomResponsiveLayout();
-    scheduleSelectionPromptLayout();
 }
 
 /** Re-sync the hidden dropdown and scheduler chrome from a focus-space id.
@@ -939,13 +931,11 @@ export function handleBlocklistSelect(e, { openEnterUi = false } = {}) {
 
     const timePicker = document.getElementById('time-picker-container');
     const passwordHint = document.getElementById('password-hint');
-    const selectionPrompt = document.getElementById('selection-prompt');
     const selectedBlocklist = state.selectedBlocklistId
         ? state.appData.blocklists.find((bl) => bl.id === state.selectedBlocklistId) || null
         : null;
 
     if (selectedBlocklist) {
-        if (selectionPrompt) selectionPrompt.classList.add('hidden');
         timePicker?.classList.remove('hidden');
         if (passwordHint) passwordHint.classList.remove('hidden');
         // While the create modal borrows the editor, leave it alone; closing the
@@ -958,8 +948,6 @@ export function handleBlocklistSelect(e, { openEnterUi = false } = {}) {
             }
         }
     } else {
-        if (selectionPrompt && !isMobilePhoneDevice()) selectionPrompt.classList.remove('hidden');
-        else if (selectionPrompt) selectionPrompt.classList.add('hidden');
         timePicker?.classList.add('hidden');
         if (passwordHint) passwordHint.classList.add('hidden');
         if (!isEditorInCreateModal()) state.editingBlocklistId = null;

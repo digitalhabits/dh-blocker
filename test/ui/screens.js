@@ -114,6 +114,14 @@ export const screens = [
         clip: '.week-calendar-section',
     },
 
+    // ---- Home with nothing selected: the scheduler column is simply empty ----
+    {
+        name: 'home-idle-desktop',
+        fixture: fixtures.cardStates,
+        platform: 'mac',
+        viewport: DESKTOP,
+    },
+
     // ---- Focus-space cards: switch on / off / paused --------------------------
     {
         name: 'cards-desktop',

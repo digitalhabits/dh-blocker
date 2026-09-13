@@ -2035,23 +2035,6 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
         height: 24px;
     }
 
-    
-
-    
-
-    
-
-    
-
-    body.ios:not(.ios-phone) .main-content .selection-prompt{
-        gap: 13px;
-        font-size: 18px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .selection-prompt svg{
-        width: 26px;
-        height: 26px;
-    }
 
     body.ios:not(.ios-phone) .main-content .time-picker-container{
         gap: 18px;
@@ -6373,68 +6356,6 @@ body.android .blocklists-container {
 /* Selected blocklist card (when preparing to start a block) */
 /* Box-shadow is applied inline via JS using the blocklist's color */
 
-/* Selection Prompt — positioned by syncSelectionPromptLayout() on the first card */
-.selection-prompt{
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 11px;
-    margin: 0;
-    padding: 0;
-    color: var(--text-muted);
-    font-size: 15px;
-    font-weight: 400;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-}
-
-.grid-top-row--selection-prompt-active .selection-prompt{
-    z-index: 5;
-}
-
-body.selection-prompt-layout-two-col .grid-top-row--selection-prompt-active .selection-prompt{
-    position: absolute;
-}
-
-body.selection-prompt-layout-stack .grid-top-row--selection-prompt-active .scheduler-section{
-    min-height: 24px;
-}
-
-body.selection-prompt-layout-stack .grid-top-row--selection-prompt-active .scheduler-content{
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-}
-
-body.selection-prompt-layout-stack .grid-top-row--selection-prompt-active .selection-prompt{
-    position: static;
-    padding: 12px 0 0 24px;
-    margin: 0;
-    flex-shrink: 0;
-}
-
-body.selection-prompt-layout-two-col .selection-prompt svg{
-    transform: none;
-}
-
-body.selection-prompt-layout-stack .selection-prompt svg{
-    transform: rotate(90deg);
-}
-
-.selection-prompt svg{
-    display: block;
-    flex-shrink: 0;
-    width: 24px;
-    height: 24px;
-    opacity: 0.55;
-}
-
-body.ios .selection-prompt,
-body.android .selection-prompt {
-    font-size: 17px;
-}
 
 .grid-top-row:not(.grid-top-row--blocklist-selected) .scheduler-content{
     min-height: 0;
@@ -10561,9 +10482,7 @@ body.handset-device .mobile-fullscreen-modal .mobile-modal-scroll-body{
    Sit below the native title bar (z-index 1000) so the back + space-name header
    isn’t hidden under the traffic lights / blocking chips. */
 body.desktop-compact-layout .scheduler-section,
-body.desktop-compact-layout .selection-prompt,
-body.enter-scheduler-sheet-layout .scheduler-section,
-body.enter-scheduler-sheet-layout .selection-prompt{
+body.enter-scheduler-sheet-layout .scheduler-section{
     display: none !important;
 }
 
@@ -10891,8 +10810,7 @@ body.mobile-phone-home .grid-top-row{
     min-height: 0;
 }
 
-body.mobile-phone-home .scheduler-section,
-body.mobile-phone-home .selection-prompt{
+body.mobile-phone-home .scheduler-section{
     display: none !important;
 }
 

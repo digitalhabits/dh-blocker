@@ -10,9 +10,8 @@ import { saveData, updateHostsFile } from './persistence.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { autoSelectSoleBlocklist, renderBlocklists } from './blocklists.js';
 import { updateBlockedApps, updateOnboardingVisibility, updateWindowHeight } from './blocking-platform.js';
-import { handleBlocklistSelect, isMobilePhoneDevice, openOverrideModal, openScheduleOverrideModal, syncSchedulerChromeVisibility, refreshCalendarPreviews, handleTimeChange } from './confirm-modals.js';
+import { handleBlocklistSelect, openOverrideModal, openScheduleOverrideModal, syncSchedulerChromeVisibility, refreshCalendarPreviews, handleTimeChange } from './confirm-modals.js';
 import { getWhenToBlockKind, syncEditorFooter } from './focus-space-editor.js';
-import { scheduleSelectionPromptLayout } from './theme.js';
 import { updateCleanHostsBtnState, updateOverrideAllButtonVisibility } from './settings.js';
 import {
     formatBlockTimeRemainingShort, formatDuration, formatTime,
@@ -48,20 +47,7 @@ export function render() {
     renderBlocklists();
     syncSelectedControlState();
 
-    // Hide "Select a blocklist" prompt if there are no blocklists
-    const selectionPrompt = document.getElementById('selection-prompt');
-    if (selectionPrompt) {
-        if (savedFocusSpaces.length === 0 || isMobilePhoneDevice()) {
-            selectionPrompt.classList.add('hidden');
-        } else if (!state.selectedBlocklistId) {
-            // Only show prompt if there are blocklists but none selected
-            selectionPrompt.classList.remove('hidden');
-        }
-    }
-
     syncSchedulerChromeVisibility();
-
-    scheduleSelectionPromptLayout();
 
     // Adjust window height to fit content
     updateWindowHeight();
