@@ -10,7 +10,6 @@ import { updateBlockedApps, openExternal, isHelperInstallCancelled, checkHelperS
 import { attachCopyChipHandlers, extensionsUrlChipHtml, restartOnboardingFromSettings, BROWSER_STORE_LINKS, MAC_BLOCKING_METHOD_KEYS, browserBlockingMethod, browserIconUrl, browserUsesAutomation, lastOnboardingState, openExtensionSetupOverlay, updateGraceSettingLock } from './enforcement.js';
 import { hasAnyBlockingStateToClear, hasAnyEnforcedBlocks, isOneOffBlockStillActive, refreshDesktopHelperStatus, scheduleCanStillBecomeActive } from './schedule-engine.js';
 import { tauriAPI, openUrl } from './tauri-api.js';
-import { syncDefaultPauseSettingUi } from './pause-default.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage } from './i18n.js';
 import { invoke } from '@tauri-apps/api/core';
 import { ask, message } from '@tauri-apps/plugin-dialog';
@@ -907,8 +906,6 @@ export function updateOverrideAllButtonVisibility() {
     updateManageSectionVisibility();
     updateGraceSettingLock();
     // Cheap, and catches app-data changes that bypass the language pass
-    // (importing a backup rewrites settings.defaultPauseMinutes).
-    syncDefaultPauseSettingUi();
 }
 
 // Show challenge for removing helper when blocks are active

@@ -38,11 +38,12 @@ import {
     IOS_ALLOWLIST_EXCEPTION_LIMIT,
 } from './allowlist-ios.js';
 import {
-    getDefaultPauseMinutes,
-    clampDefaultPauseMinutes,
-    FALLBACK_DEFAULT_PAUSE_MINUTES,
-    MAX_DEFAULT_PAUSE_MINUTES,
-} from './pause-default.js';
+    DEFAULT_UNLOCK_MINUTES,
+    UNLOCK_MINUTE_OPTIONS,
+    applyStopToTarget,
+    normalizeUnlockMinutes,
+} from './unlock-duration.js';
+import { openScheduleOverrideModal } from './confirm-modals.js';
 
 // Expose for integration tests (dev mode only)
 window.__REDDBLOCK_INTERNALS__ = {
@@ -102,10 +103,11 @@ window.__REDDBLOCK_INTERNALS__ = {
     setupAndroidBackButtonHandling,
     appBlockingWarningRows,
     updateBlockedApps,
-    getDefaultPauseMinutes,
-    clampDefaultPauseMinutes,
-    FALLBACK_DEFAULT_PAUSE_MINUTES,
-    MAX_DEFAULT_PAUSE_MINUTES,
+    DEFAULT_UNLOCK_MINUTES,
+    UNLOCK_MINUTE_OPTIONS,
+    applyStopToTarget,
+    normalizeUnlockMinutes,
+    openScheduleOverrideModal,
 };
 
 // ========================================

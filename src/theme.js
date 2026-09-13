@@ -7,7 +7,7 @@ import { resolveMicrosoftStorePackage, isVersionHigher, getLatestVersionPlatform
 import { updateOverrideAllButtonVisibility, refreshUninstallButtonState } from './settings.js';
 import { stopHelperUiRefreshLoop } from './modal-manager.js';
 import { saveData } from './persistence.js';
-import { getLiveTimePickerContainer, syncPauseDurationRowLayout, syncEnterSchedulerSheetLayout } from './confirm-modals.js';
+import { getLiveTimePickerContainer, syncEnterSchedulerSheetLayout } from './confirm-modals.js';
 import { wireEnforcementToggle, wireBlockingMethodSettings, resetSettingsEnforcementSection } from './enforcement.js';
 import { applyEnforcementDescCopy } from './onboarding.js';
 import {
@@ -311,10 +311,6 @@ export function syncUiZoomResponsiveLayout() {
     syncMobileScheduleDayLabelsViewportMode();
     syncEnterSchedulerSheetLayout();
     scheduleSelectionPromptLayout();
-    const pauseModal = document.getElementById('pause-modal');
-    if (pauseModal && !pauseModal.classList.contains('hidden')) {
-        syncPauseDurationRowLayout();
-    }
 }
 
 export function usesStackSettingsPlacement() {

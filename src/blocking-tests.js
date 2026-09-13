@@ -17,7 +17,7 @@
  * - T48-T50: Protected Domain Prevention
  * - T51-T54, T51da: Blocklist duplication (schedules copy switched off; DA uses "kopi")
  * - T55-T62: iOS allowlist effective-policy resolvers (pure helpers)
- * - T63-T65: Default pause length setting (fallback, configured value, clamping)
+ * - T63-T68: Stop = temporary unlock (timed pause the switch reads as off, Never removes / switches off, Flexible skips the challenge)
  * - T169-T172: Single-column (≤718px) desktop focus-space cards open the enter sheet on tap; the switch does not
  * - T173-T177: Card switch state (isFocusSpaceOn) for manual blocks and schedules
  */
@@ -1876,63 +1876,124 @@
         }
     }
 
-    // CATEGORY 15: DEFAULT PAUSE LENGTH (T63-T65)
+    // CATEGORY 15: STOP = TEMPORARY UNLOCK (T63-T68)
     // ========================================
 
-    // The configurable prefill duration behind the "Stop all"-style gate
-    // (Settings → Default pause length; all platforms). Pure helpers over
-    // appData.settings.defaultPauseMinutes.
-    function runDefaultPauseLengthTests() {
-        console.log('\n⏸️  Category 15: Default Pause Length');
+    // Stopping a running space applies its unlock duration. These compose the
+    // pure applyStopToTarget with what the card switch and the enforcement
+    // predicates read back, and check the Flexible-schedule waiver in the modal.
+    function runTemporaryUnlockTests() {
+        console.log('\n🔓 Category 15: Stop = temporary unlock');
         console.log('------------------------------------');
 
-        const {
-            getDefaultPauseMinutes,
-            clampDefaultPauseMinutes,
-            FALLBACK_DEFAULT_PAUSE_MINUTES,
-            MAX_DEFAULT_PAUSE_MINUTES
-        } = window.__REDDBLOCK_INTERNALS__;
-
-        const originalAppData = window.__REDDBLOCK_INTERNALS__.appData;
-        const withSetting = (value) => {
-            window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({
-                settings: value === undefined ? {} : { defaultPauseMinutes: value }
-            });
-        };
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        const savedAppData = internals.appData;
+        const now = Date.now();
+        const allDays = [0, 1, 2, 3, 4, 5, 6];
+        const seg = createMockSegment(0, 0, 23, 59, allDays);
 
         try {
-            // T63: unset / invalid values fall back to 15 minutes
+            // T63: a Manual block stopped with a 10-minute unlock is paused, still present, and the switch reads off
             (function T63() {
-                withSetting(undefined);
-                assertEqual(getDefaultPauseMinutes(), FALLBACK_DEFAULT_PAUSE_MINUTES,
-                    'T63: unset setting falls back to 10 minutes');
-                withSetting(0);
-                assertEqual(getDefaultPauseMinutes(), FALLBACK_DEFAULT_PAUSE_MINUTES,
-                    'T63: zero falls back to 10 minutes');
-                withSetting('not a number');
-                assertEqual(getDefaultPauseMinutes(), FALLBACK_DEFAULT_PAUSE_MINUTES,
-                    'T63: non-numeric falls back to 10 minutes');
+                const bl = createMockBlocklist({ id: 'bl-unlock-manual', unlockMinutes: 10, websites: ['unlock-manual.com'] });
+                const block = createMockBlock(bl.id, now - 60000, now + 3600000);
+                internals.appData = createMockAppData({ blocklists: [bl], activeBlocks: [block], schedules: [] });
+                const out = internals.applyStopToTarget(internals.appData, { block }, bl.unlockMinutes, now);
+                assertEqual(out?.kind, 'unlocked', 'T63: timed unlock outcome');
+                assertEqual(internals.appData.activeBlocks.length, 1, 'T63: block is kept, not removed');
+                assertEqual(block.pauseEndTime, now + 10 * 60000, 'T63: pause ends after the unlock duration');
+                assert(internals.isFocusSpaceOn(bl.id, now) === false, 'T63: switch reads off while unlocked');
+                assertSetEmpty(getBlockedDomains(internals.appData, now), 'T63: nothing enforced while unlocked');
+                assert(internals.isFocusSpaceOn(bl.id, now + 10 * 60000) === true, 'T63: switch reads on again once the unlock has expired');
             })();
 
-            // T64: a configured value is used verbatim
+            // T64: a Manual block stopped with Never is removed outright
             (function T64() {
-                withSetting(45);
-                assertEqual(getDefaultPauseMinutes(), 45, 'T64: configured 45 minutes is used');
-                withSetting(90);
-                assertEqual(getDefaultPauseMinutes(), 90, 'T64: values over an hour survive');
+                const bl = createMockBlocklist({ id: 'bl-unlock-never', unlockMinutes: 0 });
+                const block = createMockBlock(bl.id, now - 60000, now + 3600000);
+                internals.appData = createMockAppData({ blocklists: [bl], activeBlocks: [block], schedules: [] });
+                const out = internals.applyStopToTarget(internals.appData, { block }, bl.unlockMinutes, now);
+                assertEqual(out?.kind, 'removed', 'T64: Never removes the block');
+                assertEqual(internals.appData.activeBlocks.length, 0, 'T64: no block left');
+                assert(internals.isFocusSpaceOn(bl.id, now) === false, 'T64: switch reads off');
             })();
 
-            // T65: out-of-range values clamp to [1, one day]
+            // T65: a schedule stopped with a 1-hour unlock is paused until then; the engine skips it, then honours it again
             (function T65() {
-                assertEqual(clampDefaultPauseMinutes(-5), 1, 'T65: negatives clamp to 1 minute');
-                assertEqual(clampDefaultPauseMinutes(MAX_DEFAULT_PAUSE_MINUTES + 1),
-                    MAX_DEFAULT_PAUSE_MINUTES, 'T65: over a day clamps to a day');
-                withSetting(MAX_DEFAULT_PAUSE_MINUTES * 10);
-                assertEqual(getDefaultPauseMinutes(), MAX_DEFAULT_PAUSE_MINUTES,
-                    'T65: stored oversize value reads back clamped');
+                const bl = createMockBlocklist({ id: 'bl-unlock-sched', unlockMinutes: 60, websites: ['unlock-sched.com'] });
+                const schedule = createMockSchedule(bl.id, [seg]);
+                internals.appData = createMockAppData({ blocklists: [bl], activeBlocks: [], schedules: [schedule] });
+                const out = internals.applyStopToTarget(internals.appData, { schedule }, bl.unlockMinutes, now);
+                assertEqual(out?.kind, 'unlocked', 'T65: timed unlock outcome');
+                assert(internals.isSchedulePausedNow(schedule, now), 'T65: schedule paused now');
+                assert(!internals.isSchedulePausedNow(schedule, now + 60 * 60000), 'T65: schedule no longer paused after the unlock');
+                assert(internals.isFocusSpaceOn(bl.id, now) === false, 'T65: switch reads off');
+                assert(internals.isFocusSpaceOn(bl.id, now + 60 * 60000) === true, 'T65: switch reads on after the unlock');
+            })();
+
+            // T66: a schedule stopped with Never is switched off open-ended and stays that way
+            (function T66() {
+                const bl = createMockBlocklist({ id: 'bl-unlock-sched-never', unlockMinutes: 0 });
+                const schedule = createMockSchedule(bl.id, [seg], { isPaused: true, pauseEndTime: now + 5000 });
+                internals.appData = createMockAppData({ blocklists: [bl], activeBlocks: [], schedules: [schedule] });
+                const out = internals.applyStopToTarget(internals.appData, { schedule }, bl.unlockMinutes, now);
+                assertEqual(out?.kind, 'off', 'T66: Never switches the schedule off');
+                assertEqual(internals.appData.schedules.length, 1, 'T66: schedule record kept');
+                assert(schedule.isPaused === true && schedule.pauseEndTime === undefined, 'T66: open-ended pause');
+                assert(internals.isFocusSpaceOn(bl.id, now + 365 * 24 * 3600000) === false, 'T66: still off a year later');
+            })();
+
+            // T67: a space saved before the field existed stops with the 24-hour default, never permanently
+            (function T67() {
+                const bl = createMockBlocklist({ id: 'bl-unlock-legacy' });
+                delete bl.unlockMinutes;
+                const block = createMockBlock(bl.id, now - 60000, now + 7 * 24 * 3600000);
+                internals.appData = createMockAppData({ blocklists: [bl], activeBlocks: [block], schedules: [] });
+                const out = internals.applyStopToTarget(internals.appData, { block }, bl.unlockMinutes, now);
+                assertEqual(out?.kind, 'unlocked', 'T67: legacy record gets a timed unlock');
+                assertEqual(block.pauseEndTime, now + internals.DEFAULT_UNLOCK_MINUTES * 60000, 'T67: 24-hour default');
+            })();
+
+            // T68: the stop modal waives the challenge only for a Flexible schedule between its blocks
+            (function T68() {
+                const modal = document.getElementById('override-modal');
+                const confirmBtn = document.getElementById('confirm-override-btn');
+                if (!modal || !confirmBtn) {
+                    console.log('   ⏭️  T68 skipped: override modal not in DOM');
+                    return;
+                }
+                // A segment that is never active now: one minute long, on the day two days from today.
+                const nowDate = new Date(now);
+                const mon0 = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
+                const farDay = (mon0 + 2) % 7;
+                const inactiveSeg = createMockSegment(3, 0, 3, 1, [farDay]);
+
+                const flexible = createMockBlocklist({ id: 'bl-flex', name: 'Flexible' });
+                const committed = createMockBlocklist({ id: 'bl-committed', name: 'Committed' });
+                const flexSchedule = createMockSchedule(flexible.id, [inactiveSeg], { allowEditsBetweenBlocks: true });
+                const strictSchedule = createMockSchedule(committed.id, [inactiveSeg], { allowEditsBetweenBlocks: false });
+                internals.appData = createMockAppData({
+                    blocklists: [flexible, committed],
+                    activeBlocks: [],
+                    schedules: [flexSchedule, strictSchedule],
+                });
+
+                internals.openScheduleOverrideModal(flexSchedule);
+                assert(!modal.classList.contains('hidden'), 'T68: stop modal opens for the Flexible schedule');
+                assert(modal.classList.contains('override-frictionless'), 'T68: Flexible schedule between blocks is frictionless');
+                assert(document.getElementById('challenge-text')?.classList.contains('hidden'), 'T68: challenge text hidden when frictionless');
+                assert(confirmBtn.disabled === false, 'T68: confirm enabled without typing');
+                modal.classList.add('hidden');
+
+                internals.openScheduleOverrideModal(strictSchedule);
+                assert(!modal.classList.contains('override-frictionless'), 'T68: Committed schedule keeps the challenge');
+                assert(!document.getElementById('challenge-text')?.classList.contains('hidden'), 'T68: challenge text shown for Committed');
+                modal.classList.add('hidden');
+                modal.classList.remove('override-frictionless');
+                delete window.overrideScheduleId;
             })();
         } finally {
-            window.__REDDBLOCK_INTERNALS__.appData = originalAppData;
+            internals.appData = savedAppData;
         }
     }
 
@@ -2675,7 +2736,7 @@
             runEditFrictionGateTests();
             runChallengePrimitiveTests();
             runChallengeControllerTests();
-            runDefaultPauseLengthTests();
+            runTemporaryUnlockTests();
             runCompactDesktopCardTapTests();
             runFocusSpaceSwitchTests();
         } catch (error) {
@@ -2706,7 +2767,7 @@
         runEditFrictionGateTests,
         runChallengePrimitiveTests,
         runChallengeControllerTests,
-        runDefaultPauseLengthTests,
+        runTemporaryUnlockTests,
         runCompactDesktopCardTapTests
     };
 

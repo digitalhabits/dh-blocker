@@ -2470,10 +2470,6 @@ body.ios:not(.ios-phone) .main-content .always-on-chip svg{
         max-width: calc(500px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-content.pause-modal,
-body.ios:not(.ios-phone) #pause-modal .modal-content{
-        max-width: calc(500px * var(--ipad-s));
-    }
 
     body.ios:not(.ios-phone) #override-modal .modal-content,
 body.ios:not(.ios-phone) #override-all-modal .modal-content{
@@ -2835,58 +2831,6 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         font-size: calc(15px * var(--ipad-s));
     }
 
-    /* Pause modal duration */
-    body.ios:not(.ios-phone) .modal-overlay .pause-remaining-info{
-        font-size: calc(15px * var(--ipad-s));
-        margin-bottom: calc(18px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section{
-        margin-bottom: calc(16px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-row{
-        gap: calc(16px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-col > .time-label{
-        margin-bottom: calc(6px * var(--ipad-s));
-        font-size: calc(13px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-inputs,
-body.ios:not(.ios-phone) .modal-overlay .pause-duration-col > .time-picker-row{
-        min-height: calc(36px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .pause-time-input{
-        width: calc(34px * var(--ipad-s));
-        height: calc(36px * var(--ipad-s));
-        font-size: calc(17px * var(--ipad-s));
-        border-radius: calc(8px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .time-part{
-        width: calc(34px * var(--ipad-s));
-        min-width: calc(34px * var(--ipad-s));
-        height: calc(36px * var(--ipad-s));
-        font-size: calc(17px * var(--ipad-s));
-        border-radius: calc(8px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .time-colon{
-        font-size: calc(17px * var(--ipad-s));
-        line-height: calc(36px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-time-unit{
-        font-size: calc(15px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-arrow svg{
-        width: calc(18px * var(--ipad-s));
-        height: calc(18px * var(--ipad-s));
-    }
 
     body.ios:not(.ios-phone) .modal-overlay .next-day-badge{
         padding: calc(4px * var(--ipad-s)) calc(8px * var(--ipad-s));
@@ -5051,7 +4995,8 @@ body.dark-mode .tag.locked{
     border-color: rgba(255, 255, 255, 0.10);
 }
 
-/* Start Block Button — primary teal CTA, matching the canonical brand
+/* Start Block Button — primary teal CTA,
+matching the canonical brand
    ("Get started now" on reddfocus.org). */
 
 /* Emoji + blocklist name share one flex item so wrapping the label doesn’t
@@ -5059,148 +5004,6 @@ body.dark-mode .tag.locked{
 
 /* Keep the action icon at a stable size when label + blocklist name wrap. */
 
-/* Stop Block / Stop Schedule — ghost. Pause carries the visual weight in
-   the action row; stop is available but steps back. */
-
-/* Block action buttons wrapper (pause + stop side by side) */
-
-/* Pause Block Button — filled secondary. Pause is the gentler, undoable action
-   and carries visual weight beside the ghost Stop Block / Stop Schedule. The
-   to teal-soft to signal "ready to go again" — same teal family as the primary
-   CTA. */
-
-/* Pause Modal — popup width only; handset full-screen modals expand to viewport. */
-body:not(.handset-device) .modal-content.pause-modal,
-body:not(.handset-device) .start-confirm-modal.pause-modal{
-    max-width: 500px;
-}
-
-.start-confirm-modal.pause-modal .pause-duration-section{
-    margin-bottom: 16px;
-}
-
-.pause-remaining-info{
-    font-size: 15px;
-    color: var(--text-muted);
-    margin-top: -8px;
-    margin-bottom: 18px;
-    font-style: italic;
-}
-
-.pause-duration-section{
-    margin-bottom: 16px;
-}
-
-.pause-duration-row{
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-/* When horizontal layout overflows, JS adds this class: restarts-at block below pause-for, no arrow */
-.pause-duration-row.pause-duration-row--stacked{
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-}
-
-.pause-duration-row.pause-duration-row--stacked .pause-arrow{
-    display: none;
-}
-
-.pause-duration-row.pause-duration-row--stacked .pause-duration-col{
-    flex: 0 0 auto;
-    width: 100%;
-    max-width: 100%;
-}
-
-.pause-duration-col{
-    flex: 0 0 auto;
-    display: flex;
-    flex-direction: column;
-}
-
-.pause-duration-col > .time-label{
-    margin: 0 0 6px 0;
-}
-
-.pause-duration-inputs,
-.pause-duration-col > .time-picker-row{
-    display: flex;
-    align-items: center;
-    min-height: 36px;
-}
-
-.pause-duration-inputs{
-    gap: 8px;
-}
-
-.pause-time-input-group{
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.pause-duration-section .pause-time-input{
-    width: 34px;
-    height: 36px;
-    padding: 0 4px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--input-bg);
-    color: var(--text-primary);
-    font-size: 17px;
-    font-weight: 600;
-    text-align: center;
-    box-sizing: border-box;
-    line-height: 1;
-    -moz-appearance: textfield;
-    appearance: textfield;
-}
-
-.pause-duration-section .pause-time-input::-webkit-inner-spin-button,
-.pause-duration-section .pause-time-input::-webkit-outer-spin-button{
-    -webkit-appearance: none;
-    margin: 0;
-}
-
-/* Match pause input footprint; keep .time-part hover / focus / .active for popover */
-.pause-duration-section .time-part{
-    width: 34px;
-    min-width: 34px;
-    height: 36px;
-    padding: 0 4px;
-    border-radius: 8px;
-    box-sizing: border-box;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-}
-
-.pause-duration-section .time-colon{
-    font-size: 17px;
-    font-weight: 600;
-    line-height: 36px;
-    padding: 0 2px;
-}
-
-.pause-time-unit{
-    font-size: 15px;
-    color: var(--text-secondary);
-}
-
-.pause-arrow{
-    color: var(--text-secondary);
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    align-self: flex-end;
-    margin-bottom: 9px;
-}
-
-/* Scheduler Mode Tabs */
 
 /* Schedule Block Panel */
 .when-times{
@@ -6313,9 +6116,6 @@ body.android .day-toggle {
     display: none;
 }
 
-#pause-modal.pause-frictionless .pause-challenge-friction-only {
-    display: none;
-}
 
 .schedule-pending-label{
     color: var(--text-color);
@@ -6880,7 +6680,7 @@ body.mobile-phone-home .blocklist-meta-items-btn{
     }
 }
 
-/* Mobile phones: the card body is inert; pause/stop/edit live in the overflow menu. */
+/* Mobile phones: the card body is inert; tapping it opens the editor sheet. */
 body.mobile-phone-home .blocklist-card{
     --blocklist-action-btn-size: 32px;
 }
@@ -10736,7 +10536,6 @@ body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #settings-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #override-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #override-all-modal.mobile-fullscreen-modal .modal-content,
-body.handset-device #pause-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #enter-scheduler-modal.mobile-fullscreen-modal .modal-content{
     display: flex;
     flex-direction: column;
@@ -10779,14 +10578,13 @@ body.enter-scheduler-sheet-layout .selection-prompt{
 
 /* Desktop enter sheet: always full-bleed under the title bar whenever open —
    keyed on enter-scheduler-modal-open so we never fall back to a centered dialog.
-   Same treatment for create/settings and override/pause challenges. */
+   Same treatment for create/settings and the override challenge. */
 body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal,
 body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal,
 body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal,
 body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal,
 body.desktop-compact-layout #override-modal.mobile-fullscreen-modal,
-body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal,
-body.desktop-compact-layout #pause-modal.mobile-fullscreen-modal{
+body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal{
     top: var(--title-bar-height);
     left: 0;
     right: 0;
@@ -10805,8 +10603,7 @@ body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .moda
 body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .modal-content,
 body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-content,
 body.desktop-compact-layout #override-modal.mobile-fullscreen-modal .modal-content,
-body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .modal-content,
-body.desktop-compact-layout #pause-modal.mobile-fullscreen-modal .modal-content{
+body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .modal-content{
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -10826,8 +10623,7 @@ body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .mobi
 body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .mobile-modal-header,
 body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .mobile-modal-header,
 body.desktop-compact-layout #override-modal.mobile-fullscreen-modal .mobile-modal-header,
-body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .mobile-modal-header,
-body.desktop-compact-layout #pause-modal.mobile-fullscreen-modal .mobile-modal-header{
+body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .mobile-modal-header{
     position: relative;
     top: auto;
     flex-shrink: 0;
@@ -10900,8 +10696,7 @@ body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .mobi
 body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
 body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
 body.desktop-compact-layout #override-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
-body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
-body.desktop-compact-layout #pause-modal.mobile-fullscreen-modal .mobile-modal-scroll-body{
+body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .mobile-modal-scroll-body{
     flex: 1;
     min-height: 0;
     min-width: 0;
@@ -10914,9 +10709,9 @@ body.desktop-compact-layout #pause-modal.mobile-fullscreen-modal .mobile-modal-s
     scrollbar-gutter: stable;
 }
 
-/* Title lives in the sheet header — keep the space chip, drop the duplicate h3 row chrome. */
-body.desktop-compact-layout #override-modal .start-confirm-header-room,
-body.desktop-compact-layout #pause-modal .start-confirm-header-room{
+/* Title lives in the sheet header — keep the space chip,
+drop the duplicate h3 row chrome. */
+body.desktop-compact-layout #override-modal .start-confirm-header-room{
     margin-top: 0;
 }
 
@@ -10944,7 +10739,7 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
 }
 
 /* Narrow desktop: same full-screen sheets via viewport media query (not only the
-   JS body class). Covers create/edit focus space, settings, and override/pause
+   JS body class). Covers create/edit focus space, settings, and the override
    when the window is ≤718px. */
 @media (max-width: 718px) {
     body:not(.handset-device):not(.ios):not(.android) :is(
@@ -10952,8 +10747,7 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
         #blocklist-modal,
         #settings-modal,
         #override-modal,
-        #override-all-modal,
-        #pause-modal
+        #override-all-modal
     ).mobile-fullscreen-modal{
         top: var(--title-bar-height);
         left: 0;
@@ -10973,8 +10767,7 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
         #blocklist-modal,
         #settings-modal,
         #override-modal,
-        #override-all-modal,
-        #pause-modal
+        #override-all-modal
     ).mobile-fullscreen-modal .modal-content{
         display: flex;
         flex-direction: column;
@@ -10995,8 +10788,7 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
         #blocklist-modal,
         #settings-modal,
         #override-modal,
-        #override-all-modal,
-        #pause-modal
+        #override-all-modal
     ).mobile-fullscreen-modal .mobile-modal-header{
         position: relative;
         top: auto;
@@ -11057,8 +10849,7 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
         #blocklist-modal,
         #settings-modal,
         #override-modal,
-        #override-all-modal,
-        #pause-modal
+        #override-all-modal
     ).mobile-fullscreen-modal .mobile-modal-scroll-body{
         flex: 1;
         min-height: 0;
@@ -12895,9 +12686,6 @@ body.dark-mode .modal-btn.black-btn:hover{
     color: var(--text-secondary);
 }
 
-.start-confirm-modal.override-challenge.pause-modal .override-challenge-instruction{
-    margin-top: 0;
-}
 
 /* #override-all-modal's content lacks .start-confirm-modal, so without the
    second selector it alone fell through to the 16px in the shared block below —
@@ -13748,6 +13536,33 @@ body.dark-mode.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-bu
 
 #focus-space-editor .exit-difficulty-row-label{
     font-weight: 600;
+}
+
+/* Temporary unlock duration: what "stop" does to this space (Android's
+   "auto re-enable"). Label + hint stack on the left, the menu sits right. */
+#focus-space-editor .unlock-duration-row{
+    align-items: start;
+}
+
+#focus-space-editor .unlock-duration-row .settings-row-hint{
+    max-width: 34ch;
+}
+
+#focus-space-editor .exit-difficulty-row-control .unlock-duration-select{
+    min-width: 128px;
+    max-width: 100%;
+}
+
+#focus-space-editor .unlock-duration-select.form-select-disabled{
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+/* A Flexible schedule between its blocks stops without typing: the controller
+   hides the challenge inputs, this hides the instruction and progress bar. */
+#override-modal.override-frictionless .override-challenge-instruction,
+#override-modal.override-frictionless .challenge-progress{
+    display: none;
 }
 
 #focus-space-editor .exit-difficulty-row-control .override-type-select{

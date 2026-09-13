@@ -69,24 +69,3 @@ export function handlePopoverOutsideClick(e) {
     closeAllPopovers();
 }
 
-// Handle click on a time-part anchor (pause dialog restart time): open its list.
-export function handleTimePartClick(e) {
-    e.stopPropagation();
-    const btn = e.currentTarget;
-    const type = btn.dataset.type;
-    const target = btn.dataset.target;
-
-    // Close all popovers first (keep row scroll position when switching fields)
-    closeAllPopovers();
-
-    // Open the relevant popover
-    const popover = document.getElementById(`${target}-${type}-popover`);
-    if (!popover) return;
-    popover.classList.remove('hidden');
-    btn.classList.add('active');
-
-    // Scroll to selected option inside the popover only
-    const scroll = popover.querySelector('.popover-scroll');
-    const selectedOption = popover.querySelector('.popover-option.selected');
-    scrollPopoverOptionIntoView(scroll, selectedOption);
-}

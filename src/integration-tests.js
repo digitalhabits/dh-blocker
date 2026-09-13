@@ -1148,9 +1148,11 @@
         });
     }
 
-    async function testI5_editWarningPauseUnlocksModal() {
+    async function testI5_editWarningTurnOffUnlocksEditor() {
         return runIsolatedIntegrationTest('I5', async () => {
             hideAllIntegrationModals();
+            // The default unlock duration (24 h) makes "Turn off" a timed pause,
+            // which is what unlocks the editor without losing the block.
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'I5 Modal' });
             const block = addActiveBlock(bl.id, { durationMs: 5 * 60 * 1000 });
             await callSaveData();
@@ -1169,10 +1171,10 @@
                 document.getElementById('editor-section-what-header')?.click();
             }
             assertOrThrow(isVisible('active-blocklist-warning'), 'I5: active warning missing');
-            const pauseButton = document.getElementById('active-blocklist-pause-btn');
-            assertOrThrow(pauseButton && !pauseButton.classList.contains('hidden'), 'I5: warning Pause button missing');
+            const turnOffButton = document.getElementById('active-blocklist-turn-off-btn');
+            assertOrThrow(turnOffButton && !turnOffButton.classList.contains('hidden'), 'I5: warning Turn off button missing');
 
-            // Type an unsaved addition before pausing: the post-pause refresh
+            // Type an unsaved addition before stopping: the post-stop refresh
             // must swap the locked sets without rebuilding the working list
             // from saved data, or this silently disappears.
             const websiteInput = document.getElementById('modal-website-input');
@@ -1180,32 +1182,43 @@
             websiteInput.value = TEST_DOMAINS.b;
             websiteInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
             const tagText = () => document.getElementById('modal-websites-tags')?.textContent || '';
-            assertOrThrow(tagText().includes(TEST_DOMAINS.b), 'I5: pending website was not added before pausing');
+            assertOrThrow(tagText().includes(TEST_DOMAINS.b), 'I5: pending website was not added before stopping');
 
-            pauseButton.click();
-            await waitForIntegrationCondition(() => isVisible('pause-modal'), 'I5 pause modal');
+            turnOffButton.click();
+            await waitForIntegrationCondition(() => isVisible('override-modal'), 'I5 stop modal');
+            assertOrThrow(
+                !document.getElementById('override-modal')?.classList.contains('override-frictionless'),
+                'I5: a running Manual block must keep the challenge',
+            );
 
             await completeIntegrationChallenge('I5', {
-                modalId: 'pause-modal',
-                textId: 'pause-challenge-text',
-                inputId: 'pause-challenge-input',
-                wordInputId: 'pause-challenge-word-input',
-                currentWordId: 'pause-current-word',
-                confirmId: 'confirm-pause-btn',
+                modalId: 'override-modal',
+                textId: 'challenge-text',
+                inputId: 'challenge-input',
+                wordInputId: 'challenge-word-input',
+                currentWordId: 'challenge-current-word',
+                confirmId: 'confirm-override-btn',
             });
 
             await waitForIntegrationCondition(
-                () => !isVisible('pause-modal')
+                () => !isVisible('override-modal')
                     && isVisible('time-picker-container')
                     && !!getAppData().activeBlocks.find(candidate => candidate.id === block.id)?.isPaused,
-                'I5 pause unlocks editor',
+                'I5 stop unlocks editor',
             );
-            assertOrThrow(!isVisible('active-blocklist-warning'), 'I5: warning stayed visible after pause');
-            assertOrThrow(!document.getElementById('override-type')?.disabled, 'I5: override settings stayed locked after pause');
-            assertOrThrow(tagText().includes(TEST_DOMAINS.b), 'I5: unsaved website edit was discarded by the pause refresh');
+            const stopped = getAppData().activeBlocks.find(candidate => candidate.id === block.id);
+            assertOrThrow(stopped, 'I5: the block must be paused, not removed, with a 24 h unlock');
+            assertOrThrow(
+                typeof stopped.pauseEndTime === 'number' && stopped.pauseEndTime > Date.now() + 23 * 60 * 60 * 1000,
+                'I5: the pause should end about 24 hours from now',
+            );
+            assertOrThrow(!isVisible('active-blocklist-warning'), 'I5: warning stayed visible after stopping');
+            assertOrThrow(!document.getElementById('override-type')?.disabled, 'I5: override settings stayed locked after stopping');
+            assertOrThrow(!document.getElementById('unlock-duration-select')?.disabled, 'I5: unlock duration stayed locked after stopping');
+            assertOrThrow(tagText().includes(TEST_DOMAINS.b), 'I5: unsaved website edit was discarded by the stop refresh');
             assertOrThrow(
                 !document.querySelector('#modal-websites-tags .tag.locked'),
-                'I5: website tags stayed locked after pause',
+                'I5: website tags stayed locked after stopping',
             );
             hideAllIntegrationModals();
             return { passed: true };
@@ -1263,7 +1276,7 @@
             { group: 'I', name: 'I2: Stop-all success restores Settings', fn: testI2_stopAllSuccessRestoresSettings },
             { group: 'I', name: 'I3: Stop cancel keeps the block', fn: testI3_stopCancelWorkflow },
             { group: 'I', name: 'I4: Android back closes topmost modal', fn: testI4_androidBackClosesTopmostModal },
-            { group: 'I', name: 'I5: Edit warning Pause unlocks modal', fn: testI5_editWarningPauseUnlocksModal },
+            { group: 'I', name: 'I5: Edit warning Pause unlocks modal', fn: testI5_editWarningTurnOffUnlocksEditor },
             { group: 'I', name: 'I6: Let\'s go acknowledges before shell reconcile', fn: testI6_letsGoAcknowledgesBeforeShellReconcile }
         ];
 

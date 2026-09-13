@@ -41,7 +41,7 @@ import {
     collectActiveIOSManualBlockPayload,
 } from './blocklist-utils.js';
 import { openInstalledAppsPicker } from './apps-picker.js';
-import { handlePopoverOutsideClick, handleTimePartClick } from './time-inputs.js';
+import { handlePopoverOutsideClick } from './time-inputs.js';
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
 import { applyEditorScheduleForBlocklist, applyFocusSpaceEditorLanguage, getWhenToBlockKind, isEditorInCreateModal, populateFocusSpaceEditor, setupFocusSpaceEditor } from './focus-space-editor.js';
 import { loadData, saveData, updateHostsFile } from './persistence.js';
@@ -94,7 +94,7 @@ import {
     syncScheduleOverlayCustomiseEditorState, syncScheduleOverlayCustomiseTitle,
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
-import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closePauseModal, deselectBlocklist, handleBlocklistSelect, openBlocklistModal, openPauseModal, proceedWithPause, refreshSelectedBlocklistUi, setStartConfirmPrimaryLabel, syncOverrideCountUi, syncPauseDurationRowLayout, updateOverridePreview, updatePauseRestartTime, openOverrideModal } from './confirm-modals.js';
+import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, deselectBlocklist, handleBlocklistSelect, openBlocklistModal, refreshSelectedBlocklistUi, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncOverrideCountUi, updateOverridePreview, openOverrideModal } from './confirm-modals.js';
 import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, deleteBlocklist, isBlocklistEditFrictionRequired, pendingDelete, saveBlocklistOrderFromDOM, setUndoToastMessage } from './blocklists.js';
 import {
     getSelectedBlocklistModalMode,
@@ -115,7 +115,7 @@ import {
     syncUninstallConfirmModal, updateCleanHostsBtnState, updateHelperStatusIndicator,
     updateManageSectionVisibility, updateOverrideAllButtonVisibility,
 } from './settings.js';
-import { setupDefaultPauseSetting, syncDefaultPauseSettingUi } from './pause-default.js';
+import { normalizeUnlockMinutes } from './unlock-duration.js';
 import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, scheduleSelectionPromptLayout, getEffectiveViewportWidth, bindUiZoomLayoutObserver } from './theme.js';
 import { checkForAppUpdate, getLatestVersionPlatformKey, isVersionHigher, resolveMicrosoftStorePackage, updateBannerWhatsNewButtonHtml } from './update-banner.js';
 import { updateDownloadInProgress } from './update-banner.js';
@@ -196,7 +196,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupBlocklistsImportExportButtons();
     setupAppForegroundRefresh();
     setupOverrideAll();
-    setupDefaultPauseSetting();
     setupInAppUninstall();
     setupWindowsUninstallGuidance();
     setupMacAutomationIntroModal();
@@ -564,13 +563,7 @@ function setupEventListeners() {
     // Windows custom title bar: sync maximize/restore icon from window events (no polling).
     void setupMaximizeButtonSync();
 
-    // Time pickers — instant end uses compact `input.time-part time-popover-anchor` (click opens list + caret);
-    // schedule uses its own overlays; pause modal uses button anchors.
-    document.querySelectorAll('.time-popover-anchor').forEach(el => {
-        el.addEventListener('click', handleTimePartClick);
-    });
-
-    // Close popovers on outside click
+    // Close the schedule editor's time popovers on outside click.
     document.addEventListener('click', handlePopoverOutsideClick);
 
     // Click on background to deselect blocklists
@@ -1592,6 +1585,7 @@ function setupModalListeners() {
             showItemDetails,
             alwaysShowInSchedule,
             overrideDifficulty: overrideDifficultyPayload,
+            unlockMinutes: normalizeUnlockMinutes(document.getElementById('unlock-duration-select')?.value),
         };
         // Daily / Weekly spaces activate on save, so the same platform checks
         // that used to guard "Start schedule" apply here.
@@ -1808,52 +1802,14 @@ function setupOverrideModalListeners() {
     // Typing, progress, paste-blocking and Enter now live in the shared
     // controller (challenge-controller.js); it wires its own listeners on first
     // use. What stays here is the override modal's confirm action, which is what
-    // actually distinguishes it from pause and stop-all.
+    // actually distinguishes it from stop-all.
     getChallengeController('override');
 
     document.getElementById('cancel-override-btn').addEventListener('click', () => {
         closeOverrideModal();
     });
 
-    // Pause block button
-
     document.getElementById('cancel-enter-scheduler-btn')?.addEventListener('click', deselectBlocklist);
-
-    // Pause modal event listeners
-    document.getElementById('cancel-pause-btn').addEventListener('click', closePauseModal);
-    document.getElementById('pause-modal').addEventListener('click', (e) => {
-        if (e.target === e.currentTarget) closePauseModal();
-    });
-
-    document.getElementById('confirm-pause-btn').addEventListener('click', async () => {
-        await proceedWithPause();
-    });
-
-    // Pause duration inputs — update restart time display
-    document.getElementById('pause-days').addEventListener('input', updatePauseRestartTime);
-    document.getElementById('pause-hours').addEventListener('input', function () {
-        let val = parseInt(this.value);
-        if (val > 23) { this.value = 23; }
-        if (val < 0) { this.value = 0; }
-        updatePauseRestartTime();
-    });
-    document.getElementById('pause-minutes').addEventListener('input', function () {
-        let val = parseInt(this.value);
-        if (val > 59) { this.value = 59; }
-        if (val < 0) { this.value = 0; }
-        updatePauseRestartTime();
-    });
-
-    // Pause shares the same engine; its confirm action (proceedWithPause) lives
-    // in confirm-modals.js alongside the duration controls.
-    getChallengeController('pause');
-
-    const pauseDurationSection = document.querySelector('#pause-modal .pause-duration-section');
-    if (pauseDurationSection && typeof ResizeObserver !== 'undefined') {
-        const pauseDurationRo = new ResizeObserver(() => syncPauseDurationRowLayout());
-        pauseDurationRo.observe(pauseDurationSection);
-    }
-    window.addEventListener('resize', () => syncPauseDurationRowLayout());
 
     window.addEventListener('resize', () => syncMobileScheduleDayLabelsViewportMode());
     window.visualViewport?.addEventListener('resize', syncMobileScheduleDayLabelsViewportMode);
@@ -1864,81 +1820,32 @@ function setupOverrideModalListeners() {
         // A correct but non-final word: the controller already advanced the UI.
         if (result.status !== 'ok') return;
 
-        // Stop a running block, or tear down a schedule.
-        if (state.overrideBlockId || window.overrideScheduleId) {
-            if (state.overrideBlockId) {
-                const overriddenBlock = state.appData.activeBlocks.find(b => b.id === state.overrideBlockId);
-                const blocklistIdToClear = state.overrideBlocklistIdForHelper ?? (overriddenBlock ? overriddenBlock.blocklistId : null);
-                state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== state.overrideBlockId);
-                await saveData();
+        // Stop a running Manual block or a Daily / Weekly schedule. What "stop"
+        // does is the space's temporary unlock duration: a timed pause it comes
+        // back from on its own, or with Never the block is removed / the
+        // schedule switched off open-ended (stopFocusSpaceTarget).
+        const block = state.overrideBlockId
+            ? state.appData.activeBlocks.find(b => b.id === state.overrideBlockId) || null
+            : null;
+        const scheduleId = window.overrideScheduleId;
+        const schedule = !block && scheduleId
+            ? state.appData.schedules.find(s => s.id === scheduleId || s.blocklistId === scheduleId) || null
+            : null;
+        if (!block && !schedule) return;
 
-                if (state.isIOS) {
-                    await tauriAPI.screentimeClearBlock();
-                    state.lastBlockedDomains = new Set();
-                    await updateHostsFile();
-                    await syncSchedulesToHelper();
-                } else if (state.isAndroid) {
-                    try {
-                        await tauriAPI.androidStopManualBlock(state.overrideBlockId);
-                    } catch (err) {
-                        console.error('androidStopManualBlock failed:', err);
-                    }
-                    await syncSchedulesToHelper();
-                } else {
-                    const status = await refreshDesktopHelperStatus();
-                    if (status.helperReady) {
-                        if (blocklistIdToClear != null) {
-                            await tauriAPI.clearBlockViaHelper(blocklistIdToClear);
-                        } else {
-                            console.error('[override] No blocklist id for single-block override; not touching helper state');
-                        }
-                    } else {
-                        await updateHostsFile();
-                    }
-                }
+        await stopFocusSpaceTarget({ block, schedule });
+        state.overrideBlocklistIdForHelper = null;
+        delete window.overrideScheduleId;
 
-                state.overrideBlocklistIdForHelper = null;
-                // Update blocked apps (will stop watcher if no apps to block, including schedules)
-                await updateBlockedApps();
-            } else if (window.overrideScheduleId) {
-                // Stopping a schedule switches it off rather than deleting it: an
-                // open-ended pause (isPaused without pauseEndTime) that every
-                // enforcement layer reads as "off until turned on again". The
-                // times stay on the record, ready for the switch to flip back.
-                const scheduleId = window.overrideScheduleId;
-                const scheduleToStop = state.appData.schedules.find(s =>
-                    s.id === scheduleId || s.blocklistId === scheduleId
-                );
+        const keepSelectedId = state.selectedBlocklistId;
+        render();
 
-                if (scheduleToStop) {
-                    scheduleToStop.isPaused = true;
-                    delete scheduleToStop.pauseEndTime;
-                }
+        // Keep the focus space selected so the scheduler panel stays open; only
+        // its lock state is resynced, so in-flight edits survive the stop.
+        refreshSelectedBlocklistUi(keepSelectedId);
+        await refreshOpenHelperUi();
 
-                // On iOS, clear both Screen Time stores so the overridden schedule's blocks are removed
-                // immediately; updateHostsFile and syncSchedulesToHelper will then re-apply correct state.
-                if (state.isIOS) {
-                    await tauriAPI.screentimeClearBlock();
-                    state.lastBlockedDomains = new Set();
-                }
-
-                await saveData();
-                await updateHostsFile();
-                await syncSchedulesToHelper();
-                await updateBlockedApps();
-
-                delete window.overrideScheduleId;
-            }
-
-            const keepSelectedId = state.selectedBlocklistId;
-            render();
-
-            // Keep the focus space selected so the scheduler panel stays open.
-            refreshSelectedBlocklistUi(keepSelectedId);
-            await refreshOpenHelperUi();
-
-            closeOverrideModal();
-        }
+        closeOverrideModal();
     });
 
     // Click outside to close
@@ -2849,16 +2756,14 @@ export function applySettingsLanguage() {
     syncModalAppPlaceholder();
     syncModalWebsitePlaceholder();
     setPlaceholder('challenge-input', tSettings('typeHere'));
-    setPlaceholder('pause-challenge-input', tSettings('typeHere'));
     setPlaceholder('override-all-challenge-input', tSettings('typeHere'));
-    setPlaceholder('pause-default-challenge-input', tSettings('typeHere'));
     setText('website-input-error', tSettings('invalidDomainMsg'));
     setText('custom-override-text-error', tSettings('customOverrideEmptyError'));
 
     // Focus-space editor
     applyFocusSpaceEditorLanguage();
     setText('active-blocklist-warning-text', tSettings('activeBlocklistWarning'));
-    setText('active-blocklist-pause-btn', tSettings('pause'));
+    setText('active-blocklist-turn-off-btn', tSettings('turnOff'));
     updateBlocklistModalModeLabels(getSelectedBlocklistModalMode());
     setText('override-method-label', tSettings('overrideMethod'));
     setText('override-option-random-words', tSettings('overrideRandomWords'));
@@ -2899,14 +2804,6 @@ export function applySettingsLanguage() {
     setText('override-modal-instruction', tSettings('overrideInstruction'));
     setText('cancel-override-btn', tSettings('cancel'));
     setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
-    setText('pause-modal-title', tSettings('pauseFocusSpaceTitle'));
-    setText('pause-confirm-blocking-label', tSettings('startConfirmBlockingLabel'));
-    setText('pause-confirm-show-all-blocking', tSettings('showAll'));
-    setText('pause-modal-instruction', tSettings('pauseInstruction'));
-    setText('pause-for-label', tSettings('pauseFor'));
-    setText('pause-restarts-at-label', tSettings('restartsAt'));
-    setText('cancel-pause-btn', tSettings('cancel'));
-    setStartConfirmPrimaryLabel('confirm-pause-btn', tSettings('pauseBlock'));
     setText('confirm-override-header', tSettings('startBlockHoldHeader'));
     const panelOverlayCustomiseBtn = document.getElementById('schedule-panel-overlay-customise-btn');
     if (panelOverlayCustomiseBtn) {
@@ -2980,7 +2877,6 @@ export function applySettingsLanguage() {
     setText('cancel-override-all-btn', tSettings('cancel'));
     setText('confirm-override-all-btn', tSettings('overrideAll'));
     setText('next-day-indicator', `+1 ${tSettings('nextDay')}`);
-    setText('pause-next-day-indicator', `+1 ${tSettings('nextDay')}`);
 
     setText('settings-modal-title', tSettings('settingsTitle'));
     setText('settings-general-heading', tSettings('settingsGeneralHeading'));
@@ -2995,19 +2891,6 @@ export function applySettingsLanguage() {
     setText('settings-override-all-label', tSettings('settingsOverrideAllLabel'));
     setText('settings-override-all-hint', tSettings('settingsOverrideAllHint'));
     setText('settings-override-all-btn-label', tSettings('settingsOverrideAllBtn'));
-    setText('settings-pause-default-label', tSettings('settingsPauseDefaultLabel'));
-    setText('settings-pause-default-hint', tSettings('settingsPauseDefaultHint'));
-    setText('pause-default-title', tSettings('pauseDefaultTitle'));
-    // Android additionally prefills its native block screen from this setting,
-    // so it gets a subtitle that says so.
-    setText('pause-default-subtitle',
-        tSettings(state.isAndroid ? 'pauseDefaultSubtitleAndroid' : 'pauseDefaultSubtitle'));
-    setText('pause-default-instruction', tSettings('pauseDefaultInstruction'));
-    setText('pause-default-hours-unit', tSettings('pauseDefaultUnitHours'));
-    setText('pause-default-minutes-unit', tSettings('pauseDefaultUnitMinutes'));
-    setText('cancel-pause-default-btn', tSettings('cancel'));
-    setText('confirm-pause-default-btn', tSettings('pauseDefaultSave'));
-    syncDefaultPauseSettingUi();
     setText('settings-uninstall-label', tSettings('uninstallApp'));
     setText('settings-uninstall-hint', tSettings('settingsUninstallHint'));
     setText('settings-uninstall-btn-label', tSettings('uninstallAppBtn'));

@@ -10,7 +10,7 @@ import { saveData, updateHostsFile } from './persistence.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { autoSelectSoleBlocklist, renderBlocklists } from './blocklists.js';
 import { updateBlockedApps, updateOnboardingVisibility, updateWindowHeight } from './blocking-platform.js';
-import { handleBlocklistSelect, isMobilePhoneDevice, openOverrideModal, openPauseModal, openScheduleOverrideModal, syncSchedulerChromeVisibility, refreshCalendarPreviews, handleTimeChange } from './confirm-modals.js';
+import { handleBlocklistSelect, isMobilePhoneDevice, openOverrideModal, openScheduleOverrideModal, syncSchedulerChromeVisibility, refreshCalendarPreviews, handleTimeChange } from './confirm-modals.js';
 import { getWhenToBlockKind, syncEditorFooter } from './focus-space-editor.js';
 import { scheduleSelectionPromptLayout } from './theme.js';
 import { updateCleanHostsBtnState, updateOverrideAllButtonVisibility } from './settings.js';
@@ -423,7 +423,7 @@ export function closeNowBlockingChipMenus() {
     document.querySelectorAll('.now-blocking-chip-menu').forEach(el => el.remove());
 }
 
-// Open a small Edit / Pause / Stop popover anchored to `triggerBtn` for the given entry.
+// Open a small Edit / Stop popover anchored to `triggerBtn` for the given entry.
 export function openNowBlockingChipMenu(triggerBtn, entry) {
     closeNowBlockingChipMenus();
 
@@ -433,13 +433,11 @@ export function openNowBlockingChipMenu(triggerBtn, entry) {
 
     // square = Stop focus space button (matches the Lucide icon on the main action button).
     const editIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>';
-    const pauseIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
     const stopIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>';
 
     const items = [];
     items.push(
         { label: tSettings('nowBlockingMenuEdit'), icon: editIcon, action: () => handleNowBlockingEdit(entry) },
-        { label: tSettings('nowBlockingMenuPause'), icon: pauseIcon, action: () => handleNowBlockingPause(entry) },
         { label: tSettings('nowBlockingMenuStop'), icon: stopIcon, action: () => handleNowBlockingStop(entry), danger: true },
     );
 
@@ -504,25 +502,8 @@ export function selectFocusSpaceForEditing(blocklistId) {
     }
 }
 
-// Pause action: open the pause modal for the corresponding block or schedule.
-export function handleNowBlockingPause(entry) {
-    if (entry.kind === 'block') {
-        state.pauseScheduleData = null;
-        openPauseModal(entry.id);
-        return;
-    }
-    if (entry.kind === 'schedule') {
-        state.pauseScheduleData = {
-            blocklistId: entry.blocklistId,
-            isActiveNow: true,
-            // Now-blocking chip only appears while enforcing — keep friction.
-            frictionless: false,
-        };
-        openPauseModal(null);
-    }
-}
-
 // Stop action: open the override modal so the user has to type the challenge to stop.
+// What the stop does afterwards is the space's temporary unlock duration.
 export function handleNowBlockingStop(entry) {
     if (entry.kind === 'block') {
         openOverrideModal(entry.id);

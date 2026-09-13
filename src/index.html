@@ -692,7 +692,7 @@
                         <line x1="12" y1="8" x2="12.01" y2="8"></line>
                     </svg>
                     <span id="active-blocklist-warning-text">This focus space is active. Some settings are locked.</span>
-                    <button type="button" id="active-blocklist-pause-btn" class="warning-banner-action">Pause</button>
+                    <button type="button" id="active-blocklist-turn-off-btn" class="warning-banner-action">Turn off</button>
                 </div>
 
 <div class="form-group" id="blocklist-name-group">
@@ -853,6 +853,26 @@
                                 </div>
                                 <input type="range" id="override-count" class="editor-slider override-words-slider" min="1" max="300" value="15" step="1" aria-labelledby="override-count-label">
                             </div>
+                            <div class="exit-difficulty-row settings-row unlock-duration-row" id="unlock-duration-row">
+                                <div class="exit-difficulty-row-copy settings-row-copy">
+                                    <span class="exit-difficulty-row-label settings-row-label" id="unlock-duration-label">Temporary unlock duration</span>
+                                    <span class="settings-row-hint" id="unlock-duration-hint">How long blocking is lifted when you stop this focus space. It turns itself back on afterwards.</span>
+                                </div>
+                                <div class="exit-difficulty-row-control settings-row-control">
+                                    <select id="unlock-duration-select" class="form-select unlock-duration-select">
+                                        <option value="0" id="unlock-option-0">Never</option>
+                                        <option value="5" id="unlock-option-5">5 minutes</option>
+                                        <option value="10" id="unlock-option-10">10 minutes</option>
+                                        <option value="15" id="unlock-option-15">15 minutes</option>
+                                        <option value="30" id="unlock-option-30">30 minutes</option>
+                                        <option value="60" id="unlock-option-60">1 hour</option>
+                                        <option value="120" id="unlock-option-120">2 hours</option>
+                                        <option value="240" id="unlock-option-240">4 hours</option>
+                                        <option value="480" id="unlock-option-480">8 hours</option>
+                                        <option value="1440" id="unlock-option-1440" selected>24 hours</option>
+                                    </select>
+                                </div>
+                            </div>
                         </div>
                         <div id="override-preview-block" class="exit-difficulty-preview">
                             <span class="exit-difficulty-preview-label" id="override-preview-label">Looks like</span>
@@ -960,7 +980,7 @@
                                             </button>
                                             <button type="button" class="strictness-option" data-value="flexible">
                                                 <span class="strictness-option-title" id="strictness-option-flexible-title">Flexible</span>
-                                                <span class="strictness-option-desc" id="strictness-option-flexible-desc">You can edit or pause this schedule whenever it isn't actively blocking.</span>
+                                                <span class="strictness-option-desc" id="strictness-option-flexible-desc">You can edit or turn off this schedule whenever it isn't actively blocking.</span>
                                             </button>
                                         </div>
                                     </div>
@@ -1236,121 +1256,6 @@
             </div>
         </div>
 
-        <!-- Pause Block Modal -->
-        <div id="pause-modal" class="modal-overlay hidden">
-            <div class="modal-content start-confirm-modal override-challenge pause-modal">
-                <div class="start-confirm-header-room">
-                    <h3 id="pause-modal-title">Pause focus space?</h3>
-                    <div class="start-confirm-room-chip" id="pause-confirm-room-chip">
-                        <span class="start-confirm-room-chip-emoji" id="pause-confirm-room-chip-emoji" aria-hidden="true">🎯</span>
-                        <span class="start-confirm-room-chip-name" id="pause-confirm-room-chip-name"></span>
-                    </div>
-                </div>
-                <div class="start-confirm-status-row">
-                    <div class="start-confirm-status-icon" aria-hidden="true">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
-                        </svg>
-                    </div>
-                    <p class="start-confirm-subtitle" id="pause-confirm-subtitle"></p>
-                </div>
-                <div class="start-confirm-summary-card">
-                    <div class="start-confirm-summary-row" id="pause-confirm-blocking-row">
-                        <div class="start-confirm-row-label">
-                            <svg class="start-confirm-row-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                                stroke="currentColor" stroke-width="2" aria-hidden="true">
-                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                            </svg>
-                            <span id="pause-confirm-blocking-label">Blocking</span>
-                        </div>
-                        <div class="start-confirm-row-value">
-                            <div class="start-confirm-blocking-list" id="pause-confirm-blocking-list"></div>
-                            <button type="button" class="start-confirm-show-more hidden"
-                                id="pause-confirm-show-all-blocking">show all</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Pause duration picker -->
-                <div class="pause-duration-section">
-                    <div class="pause-duration-row">
-                        <div class="pause-duration-col">
-                            <label class="time-label" id="pause-for-label">PAUSE FOR</label>
-                            <div class="pause-duration-inputs">
-                                <div class="pause-time-input-group">
-                                    <input type="number" id="pause-days" inputmode="numeric" min="0" max="365" value="0"
-                                        class="pause-time-input">
-                                    <span class="pause-time-unit">days</span>
-                                </div>
-                                <div class="pause-time-input-group">
-                                    <input type="number" id="pause-hours" inputmode="numeric" min="0" max="23" value="0"
-                                        class="pause-time-input">
-                                    <span class="pause-time-unit">hrs</span>
-                                </div>
-                                <div class="pause-time-input-group">
-                                    <input type="number" id="pause-minutes" inputmode="numeric" min="0" max="59" value="10"
-                                        class="pause-time-input">
-                                    <span class="pause-time-unit">mins</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="pause-arrow">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M5 12h14"></path>
-                                <path d="M12 5l7 7-7 7"></path>
-                            </svg>
-                        </div>
-                        <div class="pause-duration-col">
-                            <label class="time-label" id="pause-restarts-at-label">RESTARTS AT</label>
-                            <div class="time-picker-row">
-                                <div class="time-display" id="pause-restart-time-display">
-                                    <div class="time-part-wrapper">
-                                        <button class="time-part time-popover-anchor" id="pause-restart-hour-btn"
-                                            data-type="hour" data-target="pause-restart">00</button>
-                                        <div class="time-popover hidden" id="pause-restart-hour-popover">
-                                            <div class="popover-scroll" id="pause-restart-hour-options"></div>
-                                        </div>
-                                    </div>
-                                    <span class="time-colon">:</span>
-                                    <div class="time-part-wrapper">
-                                        <button class="time-part time-popover-anchor" id="pause-restart-minute-btn"
-                                            data-type="minute" data-target="pause-restart">00</button>
-                                        <div class="time-popover hidden" id="pause-restart-minute-popover">
-                                            <div class="popover-scroll" id="pause-restart-minute-options"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <span id="pause-next-day-indicator" class="next-day-badge hidden">+1 day</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div id="pause-remaining-info" class="pause-remaining-info hidden"></div>
-
-                <p id="pause-modal-instruction" class="override-challenge-instruction">To pause this focus space, type the following:</p>
-                <div id="pause-challenge-text" class="challenge-text pause-challenge-friction-only"></div>
-                <div id="pause-word-progress" class="challenge-word-progress hidden pause-challenge-friction-only"></div>
-                <div id="pause-current-word" class="challenge-current-word hidden pause-challenge-friction-only"></div>
-                <input id="pause-challenge-word-input" class="challenge-input challenge-word-input hidden pause-challenge-friction-only"
-                    placeholder="Type current word..." autocomplete="off" autocorrect="off" autocapitalize="off"
-                    spellcheck="false">
-                <textarea id="pause-challenge-input" class="challenge-input pause-challenge-friction-only" placeholder="Type here..."
-                    autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
-                <div class="challenge-progress pause-challenge-friction-only">
-                    <div id="pause-challenge-progress-bar" class="challenge-progress-bar"></div>
-                </div>
-
-                <div class="modal-buttons start-confirm-actions">
-                    <button id="cancel-pause-btn" class="modal-btn cancel-btn">Cancel</button>
-                    <button id="confirm-pause-btn" class="modal-btn black-btn start-confirm-primary-btn" disabled>
-                        <svg class="start-confirm-primary-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
-                        <span class="start-confirm-primary-label">Pause focus space</span>
-                    </button>
-                </div>
-            </div>
-        </div>
 
         <!-- Schedule start overlay customisation -->
         <div id="schedule-overlay-customise-modal" class="modal-overlay hidden">
@@ -1751,23 +1656,6 @@
                                 </div>
                             </div>
 
-                            <div id="settings-pause-default-row" class="settings-row">
-                                <div class="settings-row-copy">
-                                    <span id="settings-pause-default-label" class="settings-row-label">Default pause length</span>
-                                    <span id="settings-pause-default-hint" class="settings-row-hint">Prefilled when you pause a focus space.</span>
-                                </div>
-                                <div class="settings-row-control">
-                                    <button id="settings-pause-default-btn" class="settings-override-all-btn" type="button">
-                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                            <circle cx="12" cy="12" r="9"></circle>
-                                            <polyline points="12 7 12 12 15 14"></polyline>
-                                        </svg>
-                                        <span id="settings-pause-default-btn-label">10 min</span>
-                                    </button>
-                                </div>
-                            </div>
-
                             <div class="settings-row">
                                 <div class="settings-row-copy">
                                     <span id="settings-blocklists-io-label" class="settings-row-label">Blocklists &amp; schedules</span>
@@ -2152,45 +2040,6 @@
                 <div class="modal-buttons">
                     <button id="cancel-override-all-btn" class="modal-btn cancel-btn">Cancel</button>
                     <button id="confirm-override-all-btn" class="modal-btn danger-btn">Stop All</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Default Pause Length Modal (gated like Stop All) -->
-        <div id="pause-default-modal" class="modal-overlay hidden">
-            <div class="modal-content override-challenge pause-default-modal">
-                <h3 id="pause-default-title">Default pause length</h3>
-                <p class="override-all-subline" id="pause-default-subtitle">How long a pause lasts when you pause a
-                    focus space.</p>
-                <div class="pause-duration-section">
-                    <div class="pause-duration-inputs">
-                        <div class="pause-time-input-group">
-                            <input type="number" id="pause-default-hours" inputmode="numeric" min="0" max="24" value="0"
-                                class="pause-time-input">
-                            <span class="pause-time-unit" id="pause-default-hours-unit">hrs</span>
-                        </div>
-                        <div class="pause-time-input-group">
-                            <input type="number" id="pause-default-minutes" inputmode="numeric" min="0" max="59"
-                                value="10" class="pause-time-input">
-                            <span class="pause-time-unit" id="pause-default-minutes-unit">mins</span>
-                        </div>
-                    </div>
-                </div>
-                <p class="override-all-subline" id="pause-default-instruction">To change this, type the following:</p>
-                <div id="pause-default-challenge-text" class="challenge-text"></div>
-                <div id="pause-default-word-progress" class="challenge-word-progress hidden"></div>
-                <div id="pause-default-current-word" class="challenge-current-word hidden"></div>
-                <input id="pause-default-challenge-word-input" class="challenge-input challenge-word-input hidden"
-                    placeholder="Type current word..." autocomplete="off" autocorrect="off" autocapitalize="off"
-                    spellcheck="false">
-                <textarea id="pause-default-challenge-input" class="challenge-input" placeholder="Type here..."
-                    autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
-                <div class="challenge-progress">
-                    <div id="pause-default-progress-bar" class="challenge-progress-bar"></div>
-                </div>
-                <div class="modal-buttons">
-                    <button id="cancel-pause-default-btn" class="modal-btn cancel-btn">Cancel</button>
-                    <button id="confirm-pause-default-btn" class="modal-btn black-btn">Save</button>
                 </div>
             </div>
         </div>

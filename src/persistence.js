@@ -10,6 +10,7 @@ import { normalizeLoadedEulaState } from './onboarding.js';
 import { migrateBlocklistStartOverlaysToGlobal, migrateLegacyScheduleStartOverlays } from './schedule-overlay.js';
 import { migrateLegacyRepeatType } from './when-to-block.js';
 import { DEFAULT_OVERRIDE_WORDS, getMaxOverrideWords, migrateOverrideDifficultyToWords } from './override-challenge.js';
+import { DEFAULT_UNLOCK_MINUTES, normalizeUnlockMinutes } from './unlock-duration.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 
 
@@ -83,6 +84,23 @@ export async function loadData() {
         state.appData.settings.overrideCountUnit = 'words';
         shouldSave = true;
     }
+    // Every space carries a temporary unlock duration. Spaces saved before the
+    // field existed get the 24-hour default: a stop that used to be permanent
+    // now resumes on its own, the stricter of the two readings. The old global
+    // "Default pause length" setting has nothing left to prefill.
+    for (const bl of state.appData.blocklists) {
+        if (bl.unlockMinutes === undefined) {
+            bl.unlockMinutes = DEFAULT_UNLOCK_MINUTES;
+            shouldSave = true;
+        } else if (bl.unlockMinutes !== normalizeUnlockMinutes(bl.unlockMinutes)) {
+            bl.unlockMinutes = normalizeUnlockMinutes(bl.unlockMinutes);
+            shouldSave = true;
+        }
+    }
+    if ('defaultPauseMinutes' in state.appData.settings) {
+        delete state.appData.settings.defaultPauseMinutes;
+        shouldSave = true;
+    }
     if (healFocusSpaceColors(state.appData.blocklists)) {
         shouldSave = true;
     }
@@ -138,7 +156,8 @@ export function createDefaultBlocklist() {
         websites: ['instagram.com', 'youtube.com', 'reddit.com'],
         apps: [],
         iosScreenTimeSelection: null,
-        overrideDifficulty: { type: 'random-words', count: DEFAULT_OVERRIDE_WORDS, customText: '' }
+        overrideDifficulty: { type: 'random-words', count: DEFAULT_OVERRIDE_WORDS, customText: '' },
+        unlockMinutes: DEFAULT_UNLOCK_MINUTES,
     });
 }
 

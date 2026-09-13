@@ -8,12 +8,13 @@ val isPrefsInitialized: Boolean
     get() = ::prefs.isInitialized
 
 /** Pause length prefilled by the native friction gate, in minutes. Written by
- *  `BlockerPlugin.setSchedules` from the webview setting
- *  (`appData.settings.defaultPauseMinutes`), read by `UnlockActivity`. */
+ *  `BlockerPlugin.setSchedules` when the webview passes `defaultPauseMinutes`
+ *  (the webview no longer does: its "Default pause length" setting was replaced
+ *  by a per-space temporary unlock duration, `blocklist.unlockMinutes`, which
+ *  this plugin does not read yet), read by `UnlockActivity`. */
 const val PREF_DEFAULT_PAUSE_MINUTES = "default_pause_minutes"
 
-/** Fallback when the user has never changed the setting. Mirrors
- *  `FALLBACK_DEFAULT_PAUSE_MINUTES` in src/pause-default.js. */
+/** Fallback when nothing has ever written the pref. */
 const val FALLBACK_DEFAULT_PAUSE_MINUTES = 10
 
 /** Same clamp as the webview setting: at least a minute, at most a day. */

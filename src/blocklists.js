@@ -2,6 +2,7 @@
 // Extracted verbatim from app.js.
 import { state } from './state.js';
 import { getMaxOverrideWords, migrateOverrideDifficultyToWords } from './override-challenge.js';
+import { normalizeUnlockMinutes } from './unlock-duration.js';
 import { BaseDirectory } from '@tauri-apps/api/path';
 import { ask, message, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
@@ -211,7 +212,7 @@ export function isOneOffPauseActive(block, now = Date.now()) {
  * a live focus space between blocking and allowing changes what the next
  * segment enforces. Pausing is the one action that clears both.
  *
- * Doubles as "what would the edit modal's Pause action act on", which is why it
+ * Doubles as "what would the editor banner's Turn off act on", which is why it
  * returns the row rather than a boolean.
  */
 export function getRunningEnforcementTarget(blocklistId, now = Date.now()) {
@@ -368,7 +369,8 @@ export function serializeBlocklistForExport(blocklist) {
         iosScreenTimeSelection: cloneIOSScreenTimeSelection(getBlocklistIOSScreenTimeSelection(blocklist)),
         showItemDetails: blocklist.showItemDetails !== false,
         alwaysShowInSchedule: blocklist.alwaysShowInSchedule !== false,
-        overrideDifficulty: cloneOverrideDifficulty(blocklist.overrideDifficulty)
+        overrideDifficulty: cloneOverrideDifficulty(blocklist.overrideDifficulty),
+        unlockMinutes: normalizeUnlockMinutes(blocklist.unlockMinutes),
     };
 
     const schedule = state.appData.schedules?.find((s) => s.blocklistId === blocklist.id);
@@ -482,6 +484,8 @@ export function normalizeImportedBlocklist(raw) {
         showItemDetails: raw.showItemDetails !== false,
         alwaysShowInSchedule: raw.alwaysShowInSchedule !== false,
         overrideDifficulty: normalizeImportedDifficulty(raw.overrideDifficulty),
+        // Files from before the field existed import with the 24-hour default.
+        unlockMinutes: normalizeUnlockMinutes(raw.unlockMinutes),
         schedule
     };
 
@@ -529,7 +533,8 @@ export function blocklistFromImportedEntry(entry) {
         iosScreenTimeSelection: cloneIOSScreenTimeSelection(getBlocklistIOSScreenTimeSelection(entry)),
         showItemDetails: entry.showItemDetails !== false,
         alwaysShowInSchedule: entry.alwaysShowInSchedule !== false,
-        overrideDifficulty: cloneOverrideDifficulty(entry.overrideDifficulty)
+        overrideDifficulty: cloneOverrideDifficulty(entry.overrideDifficulty),
+        unlockMinutes: normalizeUnlockMinutes(entry.unlockMinutes),
     };
 }
 

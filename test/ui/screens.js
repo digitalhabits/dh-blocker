@@ -129,6 +129,30 @@ export const screens = [
         viewport: IPHONE,
     },
 
+    // ---- Stopping a space: the challenge modal + unlock outcome line -------
+    {
+        name: 'stop-modal-manual',
+        fixture: fixtures.manualRunning,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#override-modal .modal-content',
+        prepare: async (page) => {
+            await page.click('.blocklist-card[data-id="bl-manual"] .blocklist-switch');
+            await page.waitForSelector('#override-modal:not(.hidden)');
+        },
+    },
+    {
+        name: 'stop-modal-flexible',
+        fixture: fixtures.flexibleBetweenBlocks,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#override-modal .modal-content',
+        prepare: async (page) => {
+            await page.click('.blocklist-card[data-id="bl-flex"] .blocklist-switch');
+            await page.waitForSelector('#override-modal.override-frictionless:not(.hidden)');
+        },
+    },
+
     // ---- The focus-space editor -------------------------------------------
     // One form for create (modal) and edit (panel; sheet on phones). The sole
     // space in the fixture is auto-selected, so the panel shows its editor.

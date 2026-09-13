@@ -13,12 +13,11 @@ import { isSchedulePausedNow, refreshDesktopHelperStatus, scheduleHasFutureSingl
 import { saveData, updateHostsFile, createDefaultBlocklist } from './persistence.js';
 import { render } from './render.js';
 import { renderBlocklists } from './blocklists.js';
-import { canEditScheduleBetweenBlocks, isScheduleSegmentActiveNow } from './schedule-editor.js';
+import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { applyScheduleStartOverlayPresentation, getScheduleStartOverlayForWarningApps, playAppBlockingLetsGoVoice } from './schedule-overlay.js';
-import { closeBlocklistModal, closeOverrideModal, closePauseModal, initializeOverrideModalChallenge, openPauseModal, populateOverrideConfirmModalContent } from './confirm-modals.js';
+import { closeBlocklistModal, closeOverrideModal, initializeOverrideModalChallenge, openScheduleOverrideModal, populateOverrideConfirmModalContent } from './confirm-modals.js';
 import { isModalVisible } from './modal-manager.js';
 import { updateManageSectionVisibility, closeOverrideAllModal } from './settings.js';
-import { closeDefaultPauseModal } from './pause-default.js';
 import { CURRENT_EULA_REVISION, getAcceptedEulaRevision, hasAcceptedEula, isFirstRunOnboardingInProgress } from './onboarding.js';
 import { generateId, runPostAcceptanceStartup } from './app.js';
 
@@ -1107,8 +1106,6 @@ export async function onAndroidResumed() {
 export const ANDROID_MODAL_CLOSE_FNS = {
     'blocklist-modal': closeBlocklistModal,
     'override-modal': closeOverrideModal,
-    'pause-modal': closePauseModal,
-    'pause-default-modal': closeDefaultPauseModal,
     'override-all-modal': closeOverrideAllModal,
 };
 
@@ -1214,24 +1211,22 @@ export function openAndroidFrictionGateModal(event) {
     // Newest gate wins. A friction gate only makes sense for the app the
     // user is trying to open right now, so a gate that is still open for a
     // *different* target (user hopped between blocked apps) must be closed
-    // before opening the new one: override-modal and pause-modal share
-    // z-index 200, so DOM order — not open order — decides which paints on
-    // top, and the close functions are also what clears the other gate's
-    // backing state. If the incoming event matches the gate already showing,
-    // keep it instead so a half-typed challenge survives re-interception.
+    // before opening the new one, because closing is also what clears the
+    // gate's backing state (state.overrideBlockId / window.overrideScheduleId).
+    // If the incoming event matches the gate already showing, keep it instead
+    // so a half-typed challenge survives re-interception.
     if (target.type === 'block'
         && isModalVisible('override-modal')
         && state.overrideBlockId === target.block.id) {
         return;
     }
     if (target.type === 'schedule'
-        && isModalVisible('pause-modal')
-        && !state.pauseBlockId
-        && state.pauseScheduleData?.blocklistId === target.schedule.blocklistId) {
+        && isModalVisible('override-modal')
+        && !state.overrideBlockId
+        && window.overrideScheduleId === (target.schedule.id || target.schedule.blocklistId)) {
         return;
     }
     closeOverrideModal();
-    closePauseModal();
 
     if (target.type === 'block') {
         state.overrideBlockId = target.block.id;
@@ -1247,18 +1242,10 @@ export function openAndroidFrictionGateModal(event) {
         return;
     }
 
-    const scheduleBlocklist = state.appData.blocklists.find(bl => bl.id === target.schedule.blocklistId);
-    if (!scheduleBlocklist) {
-        console.error('[friction-gate] No matching blocklist for schedule:', target.schedule.blocklistId);
-        return;
-    }
-
-    state.pauseScheduleData = {
-        blocklistId: target.schedule.blocklistId,
-        isActiveNow: isScheduleSegmentActiveNow(target.schedule),
-        frictionless: canEditScheduleBetweenBlocks(target.schedule),
-    };
-    openPauseModal(null);
+    // A schedule target goes through the same stop modal as the card switch:
+    // the challenge (waived for a Flexible schedule between blocks), then the
+    // space's temporary unlock duration.
+    openScheduleOverrideModal(target.schedule);
 }
 
 export async function initializeIOSBlockingState() {
@@ -1496,10 +1483,8 @@ export function setupHandsetModalScreens() {
     const modalIds = [
         'blocklist-modal',
         'override-modal',
-        'pause-modal',
         'settings-modal',
         'override-all-modal',
-        'pause-default-modal',
         // Desktop single-column reuses this sheet; wrap chrome on every platform.
         'enter-scheduler-modal',
     ];

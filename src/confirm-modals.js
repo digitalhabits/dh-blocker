@@ -7,13 +7,13 @@ import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipCo
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
 import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn } from './blocklist-utils.js';
 import { DEFAULT_OVERRIDE_WORDS, generateOverrideChallengeText, getMaxOverrideCountForType, getMaxOverrideWords, getMinOverrideCountForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, migrateOverrideDifficultyToWords, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType, sanitizeChallengeTargetText } from './override-challenge.js';
-import { isAndroidAllowlistUnsupported, isSchedulePausedNow, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
+import { isAndroidAllowlistUnsupported, isSchedulePausedNow, refreshDesktopHelperStatus, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
 import { getRunningEnforcementTarget, isBlocklistEditFrictionRequired, renderBlocklists, truncateBlocklistName } from './blocklists.js';
 import { areSegmentsEqual, getSelectedSchedule, isScheduleSegmentActiveNow, canEditScheduleBetweenBlocks } from './schedule-editor.js';
-import { closeAllPopovers, pad } from './time-inputs.js';
-import { getWhenToBlockKind, isEditorInCreateModal, mountFocusSpaceEditor, notifyEditorChanged, populateFocusSpaceEditor, resyncEditorLockState, returnFocusSpaceEditorToPanel } from './focus-space-editor.js';
+import { pad } from './time-inputs.js';
+import { formatUnlockDurationLabel, getWhenToBlockKind, isEditorInCreateModal, mountFocusSpaceEditor, notifyEditorChanged, populateFocusSpaceEditor, resyncEditorLockState, returnFocusSpaceEditorToPanel } from './focus-space-editor.js';
 import { resetModalScrollPosition, updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth, isHelperConnectionError } from './blocking-platform.js';
 import { resetWebsitesImportMenuPosition } from './website-input.js';
 import { bindUiZoomLayoutObserver, scheduleSelectionPromptLayout, scheduleUiZoomResponsiveLayout, usesStackSettingsPlacement } from './theme.js';
@@ -24,7 +24,8 @@ import {
     formatMinutesAsHHMM, formatTime, generateId,
     shouldUseCompactMobileScheduleDayLabels, snapMinutesToInterval,
 } from './app.js';
-import { getDefaultPauseMinutes } from './pause-default.js';
+import { applyStopToTarget, getBlocklistUnlockMinutes } from './unlock-duration.js';
+import { setFocusSpaceEnabled } from './focus-space-switch.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
 import {
     setBlocklistModalMode,
@@ -147,12 +148,6 @@ export const OVERRIDE_CONFIRM_ROOM_CHIP_IDS = {
     nameId: 'override-confirm-room-chip-name',
 };
 
-export const PAUSE_CONFIRM_ROOM_CHIP_IDS = {
-    chipId: 'pause-confirm-room-chip',
-    emojiId: 'pause-confirm-room-chip-emoji',
-    nameId: 'pause-confirm-room-chip-name',
-};
-
 export function formatRemainingDurationLabel(remainingMs) {
     const remainingMins = Math.max(1, Math.floor(remainingMs / 60000));
     const hours = Math.floor(remainingMins / 60);
@@ -168,7 +163,11 @@ export function formatStopBlockSubtitle(block) {
     return tSettingsFmt('stopBlockSubtitleFmt', { remaining });
 }
 
-export function populateOverrideConfirmModalContent(blocklist, { block = null, isSchedule = false } = {}) {
+export function populateOverrideConfirmModalContent(blocklist, {
+    block = null,
+    isSchedule = false,
+    isScheduleInactive = false,
+} = {}) {
     if (!blocklist) return;
 
     setStartConfirmRoomChip(blocklist, OVERRIDE_CONFIRM_ROOM_CHIP_IDS);
@@ -178,9 +177,11 @@ export function populateOverrideConfirmModalContent(blocklist, { block = null, i
 
     const subtitleEl = document.getElementById('override-confirm-subtitle');
     if (subtitleEl) {
-        subtitleEl.innerHTML = isSchedule
-            ? tSettings('stopScheduleSubtitle')
-            : formatStopBlockSubtitle(block);
+        let base;
+        if (isScheduleInactive) base = tSettings('stopScheduleInactiveSubtitle');
+        else if (isSchedule) base = tSettings('stopScheduleSubtitle');
+        else base = formatStopBlockSubtitle(block);
+        subtitleEl.innerHTML = `${base} ${formatStopOutcomeLine(blocklist)}`;
     }
 
     setConfirmModalBlockingLabel(blocklist, 'override-confirm-blocking-label');
@@ -195,46 +196,13 @@ export function populateOverrideConfirmModalContent(blocklist, { block = null, i
     setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
 }
 
-export function formatPauseBlockSubtitle(blocklist, block, { isSchedule = false, isScheduleInactive = false } = {}) {
-    const isAllow = isBlocklistAllowlistMode(blocklist);
-    if (isScheduleInactive) return tSettings('pauseScheduleInactiveSubtitle');
-    if (isSchedule) {
-        return tSettings(isAllow ? 'pauseScheduleSubtitleAllow' : 'pauseScheduleSubtitle');
+/** "Blocking resumes automatically after 10 minutes." / "It stays off until you turn it on again." */
+export function formatStopOutcomeLine(blocklist) {
+    const minutes = getBlocklistUnlockMinutes(blocklist);
+    if (minutes > 0) {
+        return tSettingsFmt('stopResumesAfterFmt', { duration: formatUnlockDurationLabel(minutes) });
     }
-    if (!block || isBlockAlwaysOn(block)) {
-        return tSettings(isAllow ? 'pauseBlockSubtitleAllowAlways' : 'pauseBlockSubtitleAlways');
-    }
-    const remaining = formatRemainingDurationLabel(block.endTime - Date.now());
-    return tSettingsFmt('pauseBlockSubtitleFmt', { remaining });
-}
-
-export function populatePauseConfirmModalContent(blocklist, {
-    block = null,
-    isSchedule = false,
-    isScheduleInactive = false,
-} = {}) {
-    if (!blocklist) return;
-
-    setStartConfirmRoomChip(blocklist, PAUSE_CONFIRM_ROOM_CHIP_IDS);
-
-    const titleEl = document.getElementById('pause-modal-title');
-    if (titleEl) titleEl.textContent = tSettings('pauseFocusSpaceTitle');
-
-    const subtitleEl = document.getElementById('pause-confirm-subtitle');
-    if (subtitleEl) {
-        subtitleEl.innerHTML = formatPauseBlockSubtitle(blocklist, block, { isSchedule, isScheduleInactive });
-    }
-
-    setConfirmModalBlockingLabel(blocklist, 'pause-confirm-blocking-label');
-
-    renderStartConfirmBlockingDetails(
-        blocklist,
-        document.getElementById('pause-confirm-blocking-list'),
-        document.getElementById('pause-confirm-show-all-blocking'),
-        document.getElementById('pause-confirm-blocking-row'),
-    );
-
-    setStartConfirmPrimaryLabel('confirm-pause-btn', tSettings('pauseBlock'));
+    return tSettings('stopStaysOff');
 }
 
 export function applyRoomChipTint(chip, accentColor) {
@@ -270,8 +238,16 @@ export function openScheduleOverrideModal(schedule) {
     state.overrideBlockId = null;
     state.overrideBlocklistIdForHelper = null;
 
-    populateOverrideConfirmModalContent(blocklist, { isSchedule: true });
-    initializeOverrideModalChallenge(difficulty, blocklist.color);
+    // A Flexible schedule sitting between its blocks stops without typing; the
+    // unlock duration still applies so it comes back on its own. The challenge
+    // stack is hidden by #override-modal.override-frictionless in CSS and the
+    // controller clears both inputs so nothing stale can be submitted.
+    const frictionless = canEditScheduleBetweenBlocks(schedule);
+    populateOverrideConfirmModalContent(blocklist, {
+        isSchedule: true,
+        isScheduleInactive: !isScheduleSegmentActiveNow(schedule),
+    });
+    initializeOverrideModalChallenge(difficulty, blocklist.color, { skipChallenge: frictionless });
 }
 
 // Something in the When to block section changed: redraw the calendar preview
@@ -1148,24 +1124,6 @@ export function applyModalBlocklistTint(hexColor) {
     }
 }
 
-export function openBlocklistEditPauseModal(blocklistId = state.editingBlocklistId) {
-    const target = getRunningEnforcementTarget(blocklistId);
-    if (!target) return;
-
-    if (target.type === 'block') {
-        state.pauseScheduleData = null;
-        openPauseModal(target.block.id);
-        return;
-    }
-
-    state.pauseScheduleData = {
-        blocklistId,
-        isActiveNow: isScheduleSegmentActiveNow(target.schedule),
-        frictionless: canEditScheduleBetweenBlocks(target.schedule),
-    };
-    openPauseModal(null);
-}
-
 /**
  * Swap the modal's locked-item sets without touching what the user has typed
  * into it. setModalData rebuilds the working lists from saved data, which is
@@ -1187,13 +1145,17 @@ function applyModalLockedItems(lockedWebsitesList, lockedAppsList) {
 export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { preserveModalItems = false } = {}) {
     const isActive = isBlocklistEditFrictionRequired(blocklist?.id, now);
     const warningEl = document.getElementById('active-blocklist-warning');
-    const pauseBtn = document.getElementById('active-blocklist-pause-btn');
+    const turnOffBtn = document.getElementById('active-blocklist-turn-off-btn');
+    // The unlock duration is locked with the rest of To stop early: lengthening
+    // it while the space runs would be a cheaper way out than the challenge.
     const overrideInputs = [
         document.getElementById('override-type'),
         document.getElementById('override-count'),
         document.getElementById('custom-override-text'),
+        document.getElementById('unlock-duration-select'),
     ];
     const overrideTypeSelect = document.getElementById('override-type');
+    const unlockSelect = document.getElementById('unlock-duration-select');
     const overrideCountInput = document.getElementById('override-count');
     const overrideCountWrapperEl = document.getElementById('override-count-wrapper');
     const overrideMethodRowEl = document.getElementById('override-method-row');
@@ -1202,18 +1164,21 @@ export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { prese
 
     const runningTarget = getRunningEnforcementTarget(blocklist?.id, now);
 
-    const canPauseToEdit = isActive && !!runningTarget;
-    pauseBtn?.classList.toggle('hidden', !canPauseToEdit);
-    if (pauseBtn) {
-        pauseBtn.onclick = canPauseToEdit
-            ? () => openBlocklistEditPauseModal(blocklist.id)
+    // "Turn off" in the banner is the card switch by another name: the stop
+    // goes through the override challenge and then the unlock duration.
+    const canTurnOffToEdit = isActive && !!runningTarget;
+    turnOffBtn?.classList.toggle('hidden', !canTurnOffToEdit);
+    if (turnOffBtn) {
+        turnOffBtn.onclick = canTurnOffToEdit
+            ? () => { void setFocusSpaceEnabled(blocklist.id, false); }
             : null;
     }
 
     if (isActive) {
         warningEl.classList.remove('hidden');
-        overrideInputs.forEach(el => el.disabled = true);
+        overrideInputs.forEach(el => { if (el) el.disabled = true; });
         overrideTypeSelect?.classList.add('form-select-disabled');
+        unlockSelect?.classList.add('form-select-disabled');
         overrideCountInput?.classList.add('form-input-disabled');
         overrideTimeEstimateEl?.classList.add('time-estimate-disabled');
         overrideMethodRowEl?.classList.add('blocklist-active-locked');
@@ -1235,8 +1200,9 @@ export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { prese
     }
 
     warningEl.classList.add('hidden');
-    overrideInputs.forEach(el => el.disabled = false);
+    overrideInputs.forEach(el => { if (el) el.disabled = false; });
     overrideTypeSelect?.classList.remove('form-select-disabled');
+    unlockSelect?.classList.remove('form-select-disabled');
     overrideCountInput?.classList.remove('form-input-disabled');
     overrideTimeEstimateEl?.classList.remove('time-estimate-disabled');
     overrideMethodRowEl?.classList.remove('blocklist-active-locked');
@@ -1323,6 +1289,9 @@ export function populateBlocklistFormFields(blocklist) {
     state.lastOverrideCountValue = String(overrideCountField.value);
     state.lastCustomOverrideTextValue = customTextArea.value;
     state.lastOverrideTypeValue = document.getElementById('override-type').value;
+
+    const unlockSelect = document.getElementById('unlock-duration-select');
+    if (unlockSelect) unlockSelect.value = String(getBlocklistUnlockMinutes(blocklist));
 
     // Restore color swatch selection
     document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
@@ -1501,6 +1470,7 @@ export function openOverrideModal(blockId) {
 // Close override modal
 export function closeOverrideModal() {
     document.getElementById('override-modal').classList.add('hidden');
+    document.getElementById('override-modal').classList.remove('override-frictionless');
     state.overrideBlockId = null;
     state.overrideBlocklistIdForHelper = null;
     getChallengeController('override').reset();
@@ -1510,13 +1480,15 @@ export function closeOverrideModal() {
     if (confirmBtn) confirmBtn.disabled = false;
 }
 
-export function initializeOverrideModalChallenge(difficulty, progressColor = null) {
+export function initializeOverrideModalChallenge(difficulty, progressColor = null, { skipChallenge = false } = {}) {
     // Signature preserved: the Android friction gate deliberately bypasses
     // openOverrideModal and calls this directly (blocking-platform.js), setting
     // state.overrideBlockId itself.
     const controller = getChallengeController('override');
-    controller.open({ difficulty, progressColor });
-    document.getElementById('override-modal').classList.remove('hidden');
+    controller.open({ difficulty, progressColor, skipChallenge });
+    const modal = document.getElementById('override-modal');
+    modal.classList.toggle('override-frictionless', !!skipChallenge);
+    modal.classList.remove('hidden');
     requestAnimationFrame(() => controller.focus());
 }
 
@@ -1549,405 +1521,108 @@ export async function resumePausedSchedule(schedule) {
     refreshSelectedBlocklistUi();
 }
 
-// ── Pause Block Modal ──
+// ── Stopping a focus space ──
 
-export function openPauseModal(blockId) {
-    state.pauseBlockId = blockId;
+/**
+ * A confirmed stop: the override challenge passed (or was waived for a
+ * Flexible schedule between blocks). Applies the space's temporary unlock
+ * duration in memory (`applyStopToTarget`) and then syncs every enforcement
+ * layer for what actually happened. Returns that outcome, or null when
+ * nothing was running.
+ */
+export async function stopFocusSpaceTarget({ block = null, schedule = null } = {}) {
+    const blocklistId = schedule?.blocklistId ?? block?.blocklistId ?? null;
+    const blocklist = state.appData.blocklists.find(bl => bl.id === blocklistId) || null;
+    const outcome = applyStopToTarget(state.appData, { block, schedule }, getBlocklistUnlockMinutes(blocklist));
+    if (!outcome) return null;
+    console.log('[stop] Applying stop', { blocklistId, kind: outcome.kind, until: outcome.until || null });
 
-    let block, blocklist;
-
-    if (blockId) {
-        // One-off block pause
-        block = state.appData.activeBlocks.find(b => b.id === blockId);
-        blocklist = state.appData.blocklists.find(bl => bl.id === block?.blocklistId);
-    } else if (state.pauseScheduleData) {
-        // Schedule pause — create a synthetic block object
-        blocklist = state.appData.blocklists.find(bl => bl.id === state.pauseScheduleData.blocklistId);
-        block = {
-            id: null,
-            blocklistId: state.pauseScheduleData.blocklistId,
-            startTime: Date.now(),
-            endTime: ALWAYS_ON_END_TIME,
-            isScheduleBlock: true
-        };
-    }
-
-    if (!blocklist) return;
-
-    const isSchedule = !blockId && !!state.pauseScheduleData;
-    const isScheduleInactive = isSchedule && !state.pauseScheduleData.isActiveNow;
-    const frictionless = isSchedule && !!state.pauseScheduleData.frictionless;
-    const pauseModal = document.getElementById('pause-modal');
-    pauseModal?.classList.toggle('pause-frictionless', frictionless);
-
-    populatePauseConfirmModalContent(blocklist, {
-        block,
-        isSchedule,
-        isScheduleInactive,
-    });
-
-    // Calculate remaining time and max pause duration
-    const remainingInfo = document.getElementById('pause-remaining-info');
-    const daysGroup = document.getElementById('pause-days').closest('.pause-time-input-group');
-    const hoursGroup = document.getElementById('pause-hours').closest('.pause-time-input-group');
-
-    if (!isBlockAlwaysOn(block)) {
-        const remainingMs = block.endTime - Date.now();
-        const remainingMins = Math.floor(remainingMs / 60000);
-        state.pauseMaxMinutes = Math.max(1, remainingMins - 2); // 2 min buffer
-
-        remainingInfo.classList.add('hidden');
-
-        // Show/hide fields based on max pause
-        if (state.pauseMaxMinutes < 60) {
-            // Less than 1 hour max: hide days and hours
-            daysGroup.style.display = 'none';
-            hoursGroup.style.display = 'none';
-        } else if (state.pauseMaxMinutes < 24 * 60) {
-            // Less than 1 day max: hide days
-            daysGroup.style.display = 'none';
-            hoursGroup.style.display = '';
+    if (outcome.kind === 'removed') {
+        // Never: the Manual block is gone, the same way "Stop" always removed it.
+        await saveData();
+        if (state.isIOS) {
+            await tauriAPI.screentimeClearBlock();
+            state.lastBlockedDomains = new Set();
+            await updateHostsFile();
+            await syncSchedulesToHelper();
+        } else if (state.isAndroid) {
+            try {
+                await tauriAPI.androidStopManualBlock(block.id);
+            } catch (err) {
+                console.error('androidStopManualBlock failed:', err);
+            }
+            await syncSchedulesToHelper();
         } else {
-            daysGroup.style.display = '';
-            hoursGroup.style.display = '';
+            const status = await refreshDesktopHelperStatus();
+            if (status.helperReady) {
+                if (blocklistId != null) {
+                    await tauriAPI.clearBlockViaHelper(blocklistId);
+                } else {
+                    console.error('[stop] No blocklist id for single-block stop; not touching helper state');
+                }
+            } else {
+                await updateHostsFile();
+            }
         }
-    } else {
-        state.pauseMaxMinutes = null; // No cap for always-on blocks
-        remainingInfo.classList.add('hidden');
-        daysGroup.style.display = '';
-        hoursGroup.style.display = '';
+        // Update blocked apps (will stop watcher if no apps to block, including schedules)
+        await updateBlockedApps();
+        return outcome;
     }
 
-    // Reset duration inputs
-    const configuredDefaultMins = getDefaultPauseMinutes();
-    const defaultMins = state.pauseMaxMinutes !== null
-        ? Math.min(configuredDefaultMins, state.pauseMaxMinutes)
-        : configuredDefaultMins;
-    // Split across the three inputs — the configured default can exceed an
-    // hour, and each field only accepts its own unit's range.
-    document.getElementById('pause-days').value = Math.floor(defaultMins / (24 * 60));
-    document.getElementById('pause-hours').value = Math.floor((defaultMins % (24 * 60)) / 60);
-    document.getElementById('pause-minutes').value = defaultMins % 60;
-    initPauseRestartPopovers();
-    updatePauseRestartTime();
-
-    const instructionEl = document.getElementById('pause-modal-instruction');
-    if (instructionEl) {
-        instructionEl.textContent = tSettings(frictionless
-            ? 'pauseDifficultyLiftedByAllowEdits'
-            : 'pauseInstruction');
-    }
-
-    // A flexible schedule between segments pauses without friction. The
-    // challenge stack is hidden by #pause-modal.pause-frictionless in CSS;
-    // skipChallenge clears both inputs so nothing stale can be submitted.
-    getChallengeController('pause').open({
-        difficulty: blocklist.overrideDifficulty || { type: 'random-words', count: DEFAULT_OVERRIDE_WORDS },
-        progressColor: blocklist.color,
-        skipChallenge: frictionless,
-    });
-
-    document.getElementById('pause-modal').classList.remove('hidden');
-    requestAnimationFrame(() => {
-        syncPauseDurationRowLayout();
-        getChallengeController('pause').focus();
-    });
-}
-
-/** Pause modal: use horizontal row only if it fits; otherwise stack (hide arrow). */
-export function syncPauseDurationRowLayout() {
-    const modal = document.getElementById('pause-modal');
-    if (!modal || modal.classList.contains('hidden')) return;
-    const row = modal.querySelector('.pause-duration-row');
-    if (!row) return;
-    row.classList.remove('pause-duration-row--stacked');
-    void row.offsetWidth;
-    if (row.scrollWidth > row.clientWidth + 1) {
-        row.classList.add('pause-duration-row--stacked');
-    }
-}
-
-export function closePauseModal() {
-    const pauseModal = document.getElementById('pause-modal');
-    pauseModal?.classList.add('hidden');
-    pauseModal?.classList.remove('pause-frictionless');
-    state.pauseBlockId = null;
-    state.pauseScheduleData = null;
-    getChallengeController('pause').reset();
-    // Pause re-disables its confirm button on close; the challenge re-enables it
-    // on the next open. (The other two modals leave theirs enabled.)
-    document.getElementById('confirm-pause-btn').disabled = true;
-}
-
-export function updatePauseRestartTime() {
-    let days = parseInt(document.getElementById('pause-days').value) || 0;
-    let hours = parseInt(document.getElementById('pause-hours').value) || 0;
-    let minutes = parseInt(document.getElementById('pause-minutes').value) || 0;
-
-    let totalMinutes = days * 24 * 60 + hours * 60 + minutes;
-
-    // Clamp to max if set
-    if (state.pauseMaxMinutes !== null && totalMinutes > state.pauseMaxMinutes) {
-        totalMinutes = state.pauseMaxMinutes;
-        days = Math.floor(totalMinutes / (24 * 60));
-        const rem = totalMinutes % (24 * 60);
-        hours = Math.floor(rem / 60);
-        minutes = rem % 60;
-        document.getElementById('pause-days').value = days;
-        document.getElementById('pause-hours').value = hours;
-        document.getElementById('pause-minutes').value = minutes;
-    }
-
-    const restartTime = new Date(Date.now() + totalMinutes * 60 * 1000);
-
-    // Update time-part buttons
-    const hourBtn = document.getElementById('pause-restart-hour-btn');
-    const minuteBtn = document.getElementById('pause-restart-minute-btn');
-    if (hourBtn) hourBtn.textContent = pad(restartTime.getHours());
-    if (minuteBtn) minuteBtn.textContent = pad(restartTime.getMinutes());
-
-    // Show +N days badge if restart is not today
-    const today = new Date();
-    const nextDayBadge = document.getElementById('pause-next-day-indicator');
-    if (nextDayBadge) {
-        // Calculate day difference
-        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        const restartStart = new Date(restartTime.getFullYear(), restartTime.getMonth(), restartTime.getDate());
-        const dayDiff = Math.round((restartStart - todayStart) / (24 * 60 * 60 * 1000));
-        if (dayDiff > 0) {
-            nextDayBadge.textContent = `+${dayDiff} ${dayDiff === 1 ? 'day' : 'days'}`;
-            nextDayBadge.classList.remove('hidden');
-        } else {
-            nextDayBadge.classList.add('hidden');
-        }
-    }
-
-    // Update selected state in popovers
-    updatePauseRestartPopoverSelection(restartTime.getHours(), restartTime.getMinutes());
-    syncPauseDurationRowLayout();
-}
-
-export function updatePauseRestartPopoverSelection(hour, minute) {
-    document.querySelectorAll('#pause-restart-hour-options .popover-option').forEach(btn => {
-        btn.classList.toggle('selected', parseInt(btn.dataset.value) === hour);
-    });
-    document.querySelectorAll('#pause-restart-minute-options .popover-option').forEach(btn => {
-        btn.classList.toggle('selected', parseInt(btn.dataset.value) === minute);
-    });
-}
-
-// Initialize pause restart time popovers with hour/minute options
-export function initPauseRestartPopovers() {
-    const hourContainer = document.getElementById('pause-restart-hour-options');
-    if (hourContainer) {
-        hourContainer.innerHTML = '';
-        for (let h = 0; h < 24; h++) {
-            const btn = document.createElement('button');
-            btn.className = 'popover-option';
-            btn.textContent = pad(h);
-            btn.dataset.value = h;
-            btn.dataset.type = 'hour';
-            btn.dataset.target = 'pause-restart';
-            btn.addEventListener('click', selectPauseRestartTimeOption);
-            hourContainer.appendChild(btn);
-        }
-    }
-
-    const minuteContainer = document.getElementById('pause-restart-minute-options');
-    if (minuteContainer) {
-        minuteContainer.innerHTML = '';
-        for (let m = 0; m < 60; m++) {
-            const btn = document.createElement('button');
-            btn.className = 'popover-option';
-            btn.textContent = pad(m);
-            btn.dataset.value = m;
-            btn.dataset.type = 'minute';
-            btn.dataset.target = 'pause-restart';
-            btn.addEventListener('click', selectPauseRestartTimeOption);
-            minuteContainer.appendChild(btn);
-        }
-    }
-
-    // Popover triggers use `.time-popover-anchor` — wired once at DOMContentLoaded.
-}
-
-// When user selects a restart time, reverse-calculate the duration
-export function selectPauseRestartTimeOption(e) {
-    e.stopPropagation();
-    const btn = e.currentTarget;
-    const value = parseInt(btn.dataset.value);
-    const type = btn.dataset.type;
-
-    // Get current restart time from the buttons
-    const hourBtn = document.getElementById('pause-restart-hour-btn');
-    const minuteBtn = document.getElementById('pause-restart-minute-btn');
-    let restartHour = parseInt(hourBtn.textContent);
-    let restartMinute = parseInt(minuteBtn.textContent);
-
-    if (type === 'hour') restartHour = value;
-    else restartMinute = value;
-
-    // Update button display
-    hourBtn.textContent = pad(restartHour);
-    minuteBtn.textContent = pad(restartMinute);
-
-    closeAllPopovers();
-
-    // Calculate duration from now to selected restart time
-    const now = new Date();
-    const restartTime = new Date(now);
-    restartTime.setHours(restartHour, restartMinute, 0, 0);
-
-    // If restart time is in the past or within 1 minute, assume next day
-    if (restartTime.getTime() <= now.getTime() + 60000) {
-        restartTime.setDate(restartTime.getDate() + 1);
-    }
-
-    const diffMs = restartTime.getTime() - now.getTime();
-    let diffMins = Math.round(diffMs / 60000);
-
-    // Clamp to max if set
-    if (state.pauseMaxMinutes !== null && diffMins > state.pauseMaxMinutes) {
-        diffMins = state.pauseMaxMinutes;
-        // Recalculate restart time from clamped duration
-        const clampedRestart = new Date(now.getTime() + diffMins * 60000);
-        restartHour = clampedRestart.getHours();
-        restartMinute = clampedRestart.getMinutes();
-        hourBtn.textContent = pad(restartHour);
-        minuteBtn.textContent = pad(restartMinute);
-    }
-
-    const durationDays = Math.floor(diffMins / (24 * 60));
-    const remainingMins = diffMins % (24 * 60);
-    const durationHours = Math.floor(remainingMins / 60);
-    const durationMins = remainingMins % 60;
-
-    // Update PAUSE FOR inputs
-    document.getElementById('pause-days').value = durationDays;
-    document.getElementById('pause-hours').value = durationHours;
-    document.getElementById('pause-minutes').value = durationMins;
-
-    // Update +N days badge
-    const nextDayBadge = document.getElementById('pause-next-day-indicator');
-    if (nextDayBadge) {
-        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const restartStart = new Date(restartTime.getFullYear(), restartTime.getMonth(), restartTime.getDate());
-        const dayDiff = Math.round((restartStart - todayStart) / (24 * 60 * 60 * 1000));
-        if (dayDiff > 0) {
-            nextDayBadge.textContent = `+${dayDiff} ${dayDiff === 1 ? 'day' : 'days'}`;
-            nextDayBadge.classList.remove('hidden');
-        } else {
-            nextDayBadge.classList.add('hidden');
-        }
-    }
-
-    updatePauseRestartPopoverSelection(restartHour, restartMinute);
-    syncPauseDurationRowLayout();
-}
-
-export async function proceedWithPause() {
-    if (!state.pauseBlockId && !state.pauseScheduleData) return;
-
-    const pausedBlocklistId = state.pauseScheduleData?.blocklistId
-        || state.appData.activeBlocks.find(b => b.id === state.pauseBlockId)?.blocklistId
-        || null;
-
-    // The controller already knows whether this open was frictionless, so the
-    // frictionless short-circuit lives there rather than being re-derived here.
-    const result = getChallengeController('pause').handleConfirm();
-    // 'advanced' = a correct but non-final word; the user keeps typing.
-    if (result.status !== 'ok') return;
-
-    const days = parseInt(document.getElementById('pause-days').value) || 0;
-    const hours = parseInt(document.getElementById('pause-hours').value) || 0;
-    const minutes = parseInt(document.getElementById('pause-minutes').value) || 0;
-    const pauseDurationMs = (days * 24 * 60 + hours * 60 + minutes) * 60 * 1000;
-
-    if (pauseDurationMs <= 0) {
-        closePauseModal();
-        return;
-    }
-
-    if (state.pauseScheduleData) {
-        // Schedule pause — set pause state on the schedule itself
-        const schedule = state.appData.schedules?.find(s => s.blocklistId === state.pauseScheduleData.blocklistId);
-        if (schedule) {
-            schedule.isPaused = true;
-            schedule.pauseEndTime = Date.now() + pauseDurationMs;
-        }
-    } else {
-        // One-off block pause
-        const block = state.appData.activeBlocks.find(b => b.id === state.pauseBlockId);
-        if (!block) {
-            closePauseModal();
-            return;
-        }
-        block.isPaused = true;
-        block.pauseEndTime = Date.now() + pauseDurationMs;
+    if (outcome.kind === 'off' && state.isIOS) {
+        // Clear both Screen Time stores so the switched-off schedule's blocks are
+        // removed immediately; updateHostsFile and syncSchedulesToHelper then
+        // re-apply the correct state for everything else.
+        await tauriAPI.screentimeClearBlock();
+        state.lastBlockedDomains = new Set();
     }
 
     await saveData();
-    console.log('[pause-resume] Proceeding with pause sync', {
-        pauseBlockId: state.pauseBlockId,
-        scheduleBlocklistId: state.pauseScheduleData?.blocklistId || null
-    });
-    await syncActiveBlocksToHelper();
+    if (block) await syncActiveBlocksToHelper();
     await syncSchedulesToHelper();
-
-    // Update blocking rules — updateHostsFile skips paused blocks' domains
+    // updateHostsFile skips paused blocks' domains.
     await updateHostsFile();
     await updateBlockedApps();
 
-    // iOS: register one-off DeviceActivity so pause expiry re-evaluates background enforcement.
-    if (state.isIOS) {
-        if (state.pauseScheduleData) {
-            const schedule = state.appData.schedules?.find(s => s.blocklistId === state.pauseScheduleData.blocklistId);
-            if (schedule?.pauseEndTime) {
-                try {
-                    const res = await tauriAPI.screentimeRegisterOneOffActivity(
-                        'redd-schedule-resume-' + schedule.id,
-                        schedule.pauseEndTime
-                    );
-                    if (res && res.success === false) {
-                        console.error('[iOS] Schedule pause-resume registration failed:', res.error || 'Unknown error');
-                    }
-                } catch (e) {
-                    console.warn('[iOS] Schedule pause-resume registration threw:', e);
+    // iOS: register a one-off DeviceActivity so the unlock's expiry re-evaluates
+    // background enforcement even if the app is not running by then.
+    if (outcome.kind === 'unlocked' && state.isIOS) {
+        if (schedule) {
+            try {
+                const res = await tauriAPI.screentimeRegisterOneOffActivity(
+                    'redd-schedule-resume-' + schedule.id,
+                    schedule.pauseEndTime
+                );
+                if (res && res.success === false) {
+                    console.error('[iOS] Schedule pause-resume registration failed:', res.error || 'Unknown error');
                 }
+            } catch (e) {
+                console.warn('[iOS] Schedule pause-resume registration threw:', e);
             }
-        } else if (state.pauseBlockId) {
-            const block = state.appData.activeBlocks.find(b => b.id === state.pauseBlockId);
-            if (block && block.pauseEndTime) {
-                try {
-                    const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
-                    const iosPayload = getBlocklistIOSPayload(blocklist);
-                    await tauriAPI.screentimeSetResumePayload({
-                        blockId: state.pauseBlockId,
-                        domains: blocklist?.websites || [],
-                        appTokenData: iosPayload.appTokenData,
-                        categoryTokenData: iosPayload.categoryTokenData,
-                        // Without this the re-applied state treats an allow-mode
-                        // block's allowed items as blocked ones.
-                        mode: isAllowlistBlocklist(blocklist) ? 'allowlist' : null
-                    });
-                    const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-resume-' + state.pauseBlockId, block.pauseEndTime);
-                    if (res && res.success === false) {
-                        console.error('[iOS] One-off DeviceActivity registration failed:', res.error || 'Unknown error');
-                    }
-                } catch (e) {
-                    console.warn('[iOS] One-off pause-resume registration failed:', e);
+        } else if (block) {
+            try {
+                const iosPayload = getBlocklistIOSPayload(blocklist);
+                await tauriAPI.screentimeSetResumePayload({
+                    blockId: block.id,
+                    domains: blocklist?.websites || [],
+                    appTokenData: iosPayload.appTokenData,
+                    categoryTokenData: iosPayload.categoryTokenData,
+                    // Without this the re-applied state treats an allow-mode
+                    // block's allowed items as blocked ones.
+                    mode: isAllowlistBlocklist(blocklist) ? 'allowlist' : null
+                });
+                const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-resume-' + block.id, block.pauseEndTime);
+                if (res && res.success === false) {
+                    console.error('[iOS] One-off DeviceActivity registration failed:', res.error || 'Unknown error');
                 }
+            } catch (e) {
+                console.warn('[iOS] One-off pause-resume registration failed:', e);
             }
         }
     }
-
-    const keepSelectedId = state.selectedBlocklistId;
-    render();
-    refreshSelectedBlocklistUi(keepSelectedId);
-    // refreshSelectedBlocklistUi above re-synced the editor's lock state for
-    // pausedBlocklistId without discarding in-flight edits.
-    closePauseModal();
+    return outcome;
 }
+
 export function updateOverridePreview() {
     const typeSelect = document.getElementById('override-type');
     const countInput = document.getElementById('override-count');

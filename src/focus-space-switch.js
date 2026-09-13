@@ -4,11 +4,13 @@
 //                  OFF = no block, or the block is paused
 //   Daily/Weekly   ON  = its schedule record exists and is not paused
 //                  OFF = the schedule is paused (open-ended = switched off,
-//                        timed = temporary unlock, chunk 4)
+//                        timed = temporary unlock)
 //
 // Turning ON never asks anything: it falls toward blocking. Turning OFF goes
-// through the override challenge; the `#confirm-override-btn` handler in
-// app.js then pauses the schedule open-ended or removes the manual block.
+// through the override challenge (waived for a Flexible schedule between its
+// blocks); the `#confirm-override-btn` handler in app.js then applies the
+// space's temporary unlock duration (stopFocusSpaceTarget): a timed pause, or
+// with "Never" the block is removed / the schedule switched off open-ended.
 //
 // Declarations only at module top level (hub import cycle).
 import { state } from './state.js';

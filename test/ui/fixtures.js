@@ -91,4 +91,21 @@ export const cardStates = {
     settings: {},
 };
 
-export const fixtures = { crowdedWeek, singleSchedule, manualRunning, cardStates };
+/**
+ * A Flexible (allowEditsBetweenBlocks) schedule whose only segment is one minute
+ * at 03:00, so at any sane capture time it is *between* blocks: stopping it
+ * must open the stop modal without a typing challenge.
+ */
+export const flexibleBetweenBlocks = {
+    blocklists: [
+        { id: 'bl-flex', name: 'Night owl', emoji: '🦉', color: '#B3D2C8', websites: ['owl.invalid'], apps: [], unlockMinutes: 30 },
+    ],
+    activeBlocks: [],
+    schedules: [
+        { id: 's-flex', blocklistId: 'bl-flex', repeatType: 'forever', allowEditsBetweenBlocks: true, segments: [seg(3, 0, 3, 1, [MON, TUE, WED, THU, FRI, SAT, SUN])] },
+    ],
+    startOverlays: [],
+    settings: {},
+};
+
+export const fixtures = { crowdedWeek, singleSchedule, manualRunning, cardStates, flexibleBetweenBlocks };

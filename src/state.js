@@ -56,7 +56,6 @@ export const state = {
     draftAllowEditsBetweenBlocks: false,
     lastBlockedDomains: new Set(), // Track what's currently blocked to avoid re-prompting
     activatedBlockIds: new Set(), // Track blocks that have already triggered host updates
-    pauseScheduleData: null, // Track schedule-specific pause data { blocklistId, segmentEndTime }
     scheduleSegments: null, // Array of time segments with per-segment days (set at startup)
     expandedScheduleSegmentIndex: 0, // Which segment shows the full editor when multiple exist (-1 = all collapsed)
     scheduleRepeatDate: null, // Date object when repeatType is 'date'
@@ -74,8 +73,6 @@ export const state = {
     lastOverrideTypeValue: '',
     overrideBlockId: null,
     overrideBlocklistIdForHelper: null,
-    pauseBlockId: null, // Track which block is being paused
-    pauseMaxMinutes: null, // Maximum pause duration in minutes (null = unlimited)
     startupInitializationComplete: false, // Track whether post-onboarding startup already ran
     migrationOnboardingActive: false,
     migrationOnboardingDismissed: false,
