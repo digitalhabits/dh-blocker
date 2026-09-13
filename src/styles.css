@@ -2344,7 +2344,7 @@ body.ios:not(.ios-phone) .main-content .schedule-pending-save{
 
     body.ios:not(.ios-phone) .main-content .blocklist-card{
         --blocklist-action-btn-size: 40px;
-        --blocklist-actions-slot: calc(var(--blocklist-action-btn-size) * 2);
+        --blocklist-actions-slot: 60px;
         --blocklist-menu-anchor-offset: var(--blocklist-action-btn-size);
     }
 
@@ -6308,7 +6308,8 @@ body.android .blocklists-container {
     --blocklist-status-tight-gap: 4px;
     --blocklist-action-btn-size: 30px;
     --blocklist-actions-gap: 2px;
-    --blocklist-actions-slot: calc(var(--blocklist-action-btn-size) * 2 + var(--blocklist-actions-gap));
+    /* Room the header keeps clear for the switch (44px) plus a gap. */
+    --blocklist-actions-slot: 56px;
     --blocklist-menu-anchor-offset: calc(var(--blocklist-action-btn-size) + var(--blocklist-actions-gap));
     display: flex;
     align-items: stretch;
@@ -6522,16 +6523,20 @@ body.android .selection-prompt {
     flex-direction: column;
 }
 
+/* The switch is anchored to the whole header (title + meta line), not the
+   title row, so it sits at the card's vertical centre. */
 .blocklist-card-header{
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 5px;
     min-width: 0;
     padding-left: 9px;
+    padding-right: var(--blocklist-actions-slot);
 }
 
 .blocklist-card-title-row{
-    position: relative;
+    position: static;
     min-width: 0;
 }
 
@@ -6542,7 +6547,6 @@ body.android .selection-prompt {
     gap: 0;
     width: 100%;
     min-width: 0;
-    padding-right: var(--blocklist-actions-slot);
     box-sizing: border-box;
     font-weight: 600;
     font-size: 17px;
@@ -6685,19 +6689,6 @@ body.mobile-phone-home .blocklist-card{
     --blocklist-action-btn-size: 32px;
 }
 
-body.mobile-phone-home .blocklist-card-title-row{
-    position: static;
-}
-
-body.mobile-phone-home .blocklist-card-header{
-    position: relative;
-    padding-right: var(--blocklist-actions-slot);
-}
-
-body.mobile-phone-home .blocklist-name{
-    padding-right: 0;
-}
-
 body.mobile-phone-home .blocklist-actions{
     right: 0;
     top: 50%;
@@ -6775,7 +6766,7 @@ body.ios .blocklist-card,
 body.android .blocklist-card{
     --blocklist-action-btn-size: 38px;
     --blocklist-actions-gap: 0px;
-    --blocklist-actions-slot: calc(var(--blocklist-action-btn-size) * 2);
+    --blocklist-actions-slot: 56px;
     --blocklist-menu-anchor-offset: var(--blocklist-action-btn-size);
 }
 
@@ -16664,8 +16655,8 @@ body.dark-mode .app-blocking-warning-card{
 
 .blocklist-switch{
     position: relative;
-    width: 52px;
-    height: 30px;
+    width: 44px;
+    height: 26px;
     padding: 0;
     border: none;
     border-radius: 999px;
@@ -16696,8 +16687,8 @@ body.dark-mode .app-blocking-warning-card{
     position: absolute;
     top: 3px;
     left: 3px;
-    width: 24px;
-    height: 24px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     background: #ffffff;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
@@ -16705,7 +16696,7 @@ body.dark-mode .app-blocking-warning-card{
 }
 
 .blocklist-switch.on .blocklist-switch-knob{
-    transform: translateX(22px);
+    transform: translateX(18px);
 }
 
 .blocklist-context-menu{
