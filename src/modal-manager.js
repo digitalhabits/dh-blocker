@@ -5,7 +5,6 @@ import { updateHelperStatusIndicator, updateCleanHostsBtnState } from './setting
 import { closeAllLanguagePickers, isAnyLanguagePickerOpen } from './app.js';
 import { resetWebsitesImportMenuPosition } from './website-input.js';
 import { closeAllBlocklistMenus } from './blocklists.js';
-import { closeNowBlockingChipMenus } from './render.js';
 import { closeAllPopovers } from './time-inputs.js';
 
 export const HELPER_UI_REFRESH_MS = 3000;
@@ -17,12 +16,8 @@ export function isModalVisible(id) {
     return !!(modal && !modal.classList.contains('hidden'));
 }
 
-/** ESC: title-bar chip menu → other sub-overlays → topmost modal → (elsewhere) deselect blocklist. */
+/** ESC: sub-overlays → topmost modal → (elsewhere) deselect blocklist. */
 export function dismissTopmostEscapeLayer() {
-    if (document.querySelector('.now-blocking-chip-menu')) {
-        closeNowBlockingChipMenus();
-        return true;
-    }
     if (closeEscapeSubLayer()) return true;
     return closeEscapeDialog();
 }

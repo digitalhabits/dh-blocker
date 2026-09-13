@@ -105,8 +105,8 @@ import {
     updateBlocklistModalModeLabels,
 } from './list-mode.js';
 import { countIOSScreenTimeSelectionItems } from './list-presentation.js';
-import { render, kickClockNow, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderNowBlockingRow, renderScheduleAlwaysOnRow, renderScheduleVisibilityChips, renderWeekBlocks, renderBlocklistSelector, getCalendarSegmentLayout, layoutOverlappingBlocks } from './render.js';
-import { formatTitleBarScheduleStartWhen, hasAnyEnforcedBlocks, isAndroidAllowlistUnsupported, isNonRepeatingSchedule, isOneOffBlockEnforced, pickEarliestUpcomingScheduledBlock, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
+import { render, kickClockNow, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderScheduleAlwaysOnRow, renderScheduleVisibilityChips, renderWeekBlocks, renderBlocklistSelector, getCalendarSegmentLayout, layoutOverlappingBlocks } from './render.js';
+import { hasAnyEnforcedBlocks, isAndroidAllowlistUnsupported, isNonRepeatingSchedule, isOneOffBlockEnforced, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
 import {
     refreshUninstallButtonState,
@@ -184,7 +184,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         listenForAndroidFrictionGate();
         setupAndroidBackButtonHandling();
     }
-    setupNowBlockingChipScroll();
     setupEventListeners();
     setupAppBlockingWarningOverlay();
     initWelcomeDemoControls();
@@ -220,78 +219,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
 });
-
-function setupNowBlockingChipScroll() {
-    const chipsEl = document.getElementById('now-blocking-chips');
-    if (!chipsEl) return;
-
-    let isPointerDown = false;
-    let isDragging = false;
-    let suppressClick = false;
-    let startX = 0;
-    let startScrollLeft = 0;
-
-    window.addEventListener('resize', () => syncNowBlockingChipsScrollability(), { passive: true });
-
-    chipsEl.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        if (e.target.closest('.now-blocking-chip-menu-btn')) return;
-        if (!chipsEl.classList.contains('can-horizontal-scroll')) return;
-
-        isPointerDown = true;
-        isDragging = false;
-        suppressClick = false;
-        startX = e.clientX;
-        startScrollLeft = chipsEl.scrollLeft;
-        chipsEl.classList.add('is-dragging');
-        e.preventDefault();
-    });
-
-    const stopDragging = () => {
-        suppressClick = isDragging;
-        isPointerDown = false;
-        isDragging = false;
-        chipsEl.classList.remove('is-dragging');
-    };
-
-    document.addEventListener('mousemove', (e) => {
-        if (!isPointerDown) return;
-        const deltaX = e.clientX - startX;
-        if (Math.abs(deltaX) > 3) {
-            isDragging = true;
-        }
-        chipsEl.scrollLeft = startScrollLeft - deltaX;
-        e.preventDefault();
-    });
-
-    document.addEventListener('mouseup', stopDragging);
-    chipsEl.addEventListener('mouseleave', () => {
-        if (!isPointerDown) return;
-        stopDragging();
-    });
-
-    chipsEl.addEventListener('click', (e) => {
-        if (!suppressClick) return;
-        if (e.target.closest('.now-blocking-chip-menu-btn')) {
-            suppressClick = false;
-            return;
-        }
-        suppressClick = false;
-        e.preventDefault();
-        e.stopPropagation();
-    }, true);
-}
-
-export function syncNowBlockingChipsScrollability() {
-    const chipsEl = document.getElementById('now-blocking-chips');
-    const row = document.getElementById('now-blocking-row');
-    if (!chipsEl || !row || row.classList.contains('hidden')) return;
-    if (row.classList.contains('idle')) {
-        chipsEl.classList.remove('can-horizontal-scroll');
-        return;
-    }
-    chipsEl.classList.toggle('can-horizontal-scroll', chipsEl.scrollWidth > chipsEl.clientWidth + 1);
-}
 
 export async function runPostAcceptanceStartup() {
     if (state.startupInitializationComplete) return;
@@ -1651,7 +1578,6 @@ function setupModalListeners() {
         renderBlocklists();
         renderBlocklistSelector();
         renderWeekBlocks(); // Refresh calendar so colour / emoji / name changes propagate
-        renderNowBlockingRow(); // Title-bar chips read emoji/name from freshly saved blocklist
         renderScheduleAlwaysOnRow();
 
         if (wasNewBlocklist) {
@@ -2752,7 +2678,6 @@ export function applySettingsLanguage() {
         'always-on-row-label-hint',
         ` (${tSettings('alwaysOnRowTimelineHint')}):`
     );
-    setText('now-blocking-label-text', tSettings('nowBlockingLabel'));
     setText('schedule-footer-hint', tSettings('scheduleFooterHint'));
     setText('schedule-strictness-label', `${tSettings('scheduleStrictnessLabel')}${tSettings('stopScheduleMetaColon')}`);
     setText('strictness-option-committed-title', tSettings('allowEditsStrictLabel'));
@@ -3029,6 +2954,5 @@ export function applySettingsLanguage() {
     if (typeof syncSelectedControlState === 'function') syncSelectedControlState();
     if (typeof updateWeekCalendar === 'function') updateWeekCalendar();
     if (typeof rebuildScheduleSegments === 'function') rebuildScheduleSegments();
-    renderNowBlockingRow();
     if (typeof updateOverridePreview === 'function') updateOverridePreview();
 }

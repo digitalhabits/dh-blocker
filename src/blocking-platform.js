@@ -1294,12 +1294,6 @@ export function updateOnboardingVisibility() {
         document.getElementById('android-accessibility-status')?.classList.toggle('hidden', state.androidPermissionsGranted);
     }
 
-    // Hide the BLOCKING NOW title-bar row on onboarding screens
-    const nowBlockingRow = document.getElementById('now-blocking-row');
-    if (nowBlockingRow) {
-        nowBlockingRow.classList.toggle('hidden', blockMainUi);
-    }
-
 }
 
 export function activeExclusiveOnboardingScreenId() {

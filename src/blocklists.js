@@ -13,7 +13,7 @@ import { tSettings, tSettingsFmt } from './i18n.js';
 import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, isAllowlistBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist } from './blocklist-utils.js';
 import { isOneOffBlockEnforced, isSchedulePausedNow } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
-import { render, renderNowBlockingRow, renderScheduleVisibilityChips } from './render.js';
+import { render, renderScheduleVisibilityChips } from './render.js';
 import { isFocusSpaceOn, setFocusSpaceEnabled } from './focus-space-switch.js';
 import { canEditScheduleBetweenBlocks, commitSegmentDelete, isScheduleSegmentActiveNow } from './schedule-editor.js';
 import {
@@ -1098,6 +1098,5 @@ export function saveBlocklistOrderFromDOM() {
     // Re-render the bits of UI that mirror blocklist order. Don't call full render() —
     // the cards are already in the right order in the DOM (the user just dropped them
     // there), and a full re-render would briefly flicker.
-    renderNowBlockingRow();
     renderScheduleVisibilityChips();
 }

@@ -78,12 +78,8 @@
     /* Title bar: slightly cooler / greyer than `--redd-cream` (#F7F5F0) so the
        strip reads as its own band without going flat white. */
     --title-bar-bg: #efede8;
-    --title-bar-height: 44px;
-    /* Clear native traffic lights (mac) / custom window controls (win). Kept tight so
-       centred chips keep as much width as possible in a narrow window. */
-    --title-bar-center-safe-inset-start: 76px;
-    --title-bar-center-safe-inset-end: 16px;
-
+    /* Slim drag strip; tall enough for the traffic lights / Windows controls. */
+    --title-bar-height: 30px;
     /* Stacked top banners (desktop):
        - margin-x / margin-y: uniform outer inset — title bar → first inset card,
          app side edges → setup card, and gap between stacked banners.
@@ -400,7 +396,9 @@ body.android .time-pickers-row{
 
 /* Title Bar */
 .title-bar{
-    /* Hosting macOS traffic lights + `.now-blocking-row` (perfectly centred). */
+    /* A slim strip: macOS traffic lights on the left, Windows controls on the
+       right, and otherwise only somewhere to grab the window (like the
+       planner's NativeTitleDragStrip). */
     height: var(--title-bar-height);
     background: var(--title-bar-bg);
     /* Visually separate from the warmer body (`--container-bg`). */
@@ -423,18 +421,9 @@ body.android .time-pickers-row{
 }
 
 /* macOS traffic-light buttons sit at fixed top-left coordinates inside
-   the webview (overlay-style title bar). With the chips centered
-   absolutely below, they don't collide on any normal window width, so
-   we no longer need the legacy 80px left padding. */
+   the webview (overlay-style title bar); nothing else lives in the bar. */
 body.mac .title-bar{
     padding-left: 0;
-}
-
-/* Windows: chrome buttons sit on the right; reserve space so BLOCKING NOW
-   stays clear of them (same idea as mac traffic-light insets). */
-body.windows{
-    --title-bar-center-safe-inset-start: 16px;
-    --title-bar-center-safe-inset-end: 100px;
 }
 
 .app-title{
@@ -457,7 +446,6 @@ body.windows{
     -webkit-app-region: no-drag;
 }
 
-/* Window controls only — `.now-blocking-chip` also contains `button` for ⋯. */
 .title-bar > .window-controls button,
 #rebrand-onboarding .eula-title-bar > .window-controls button,
 .win-btn{
@@ -470,7 +458,7 @@ body.windows{
     align-items: center;
     width: 46px;
     height: 100%;
-    min-height: 30px;
+    min-height: 28px;
     background-color: transparent;
     color: var(--text-primary);
     cursor: pointer;
@@ -3121,9 +3109,6 @@ body.ios.ui-zoom-tier-cramped .blocklist-card{
 
 /* Wider iOS viewports: size tabs to label content instead of equal-flex in 250px bar. */
 
-body.ios.ui-zoom-tier-narrow .now-blocking-row:not(.idle) .now-blocking-heading{
-    display: none;
-}
 
 body.ios.ui-zoom-tier-stack .grid-top-row{
     grid-template-columns: 1fr;
@@ -3452,11 +3437,6 @@ body:not(.ios) #settings-toolbar-scheduler{
     display: flex !important;
 }
 
-.now-blocking-chip-emoji{
-    font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
-    font-style: normal;
-    line-height: 1;
-}
 
 .blocklists-section > .section-header.blocklists-section-header .settings-top-btn{
     width: 30px;
@@ -3618,240 +3598,6 @@ body.dark-mode .blocklists-create-btn--secondary .blocklists-create-btn-icon{
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 8px 12px;
-}
-
-/* BLOCKING NOW row — heading, pulse dot, chips; centred in `.title-bar`. */
-.now-blocking-row{
-    position: absolute;
-    left: var(--title-bar-center-safe-inset-start);
-    right: var(--title-bar-center-safe-inset-end);
-    top: 50%;
-    transform: translateY(-50%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-wrap: nowrap;
-    gap: 8px;
-    margin: 0;
-    padding: 0;
-    min-width: 0;
-    -webkit-app-region: drag;
-}
-
-.now-blocking-heading{
-    flex-shrink: 0;
-    font-family: var(--font-section-label);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--header-text);
-    white-space: nowrap;
-    line-height: 1;
-    user-select: none;
-}
-
-.now-blocking-row.hidden{
-    display: none;
-}
-
-.now-blocking-dot{
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: hsl(142, 60%, 45%);
-    box-shadow: 0 0 0 3px hsla(142, 60%, 45%, 0.18);
-    flex-shrink: 0;
-}
-
-.now-blocking-chips{
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 6px;
-    min-width: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-    -webkit-app-region: no-drag;
-}
-
-.now-blocking-chips::-webkit-scrollbar{
-    display: none;
-}
-
-.now-blocking-chips.can-horizontal-scroll{
-    cursor: grab;
-}
-
-.now-blocking-chips.can-horizontal-scroll.is-dragging{
-    cursor: grabbing;
-}
-
-.now-blocking-row.idle .now-blocking-heading,
-.now-blocking-row.idle .now-blocking-dot{
-    display: none;
-}
-
-/* Omit "BLOCKING NOW" / localized heading on narrow widths so centred chips aren’t cramped. */
-@media (max-width: 800px) {
-    .now-blocking-row:not(.idle) .now-blocking-heading{
-        display: none;
-    }
-}
-
-.now-blocking-idle-msg{
-    -webkit-app-region: drag;
-    font-size: 13px;
-    font-weight: 400;
-    font-style: italic;
-    color: var(--text-muted);
-    white-space: nowrap;
-    max-width: min(70vw, 520px);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    user-select: none;
-    /* Italic extends past advance width; reserve space so `overflow:hidden` doesn’t clip the last glyph. */
-    padding-inline-start: 0.05em;
-    padding-inline-end: 0.35em;
-}
-
-/* Many simultaneous blocks — hide per-chip names; emoji + countdown stay visible. */
-.now-blocking-row.many-active-chips .now-blocking-chip-name{
-    display: none;
-}
-
-/* Each "blocking now" chip: rounded pill containing emoji, name, "until HH:MM",
-   and a ⋯ menu trigger. Visually similar to the always-on chip but a bit larger
-   to host the trailing time/menu. */
-.now-blocking-chip{
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 0 2px 0 9px;
-    line-height: 1;
-    border-radius: 999px;
-    background: var(--element-bg);
-    border: 1px solid var(--border-color);
-    font-size: 13px;
-    color: var(--text-primary);
-    user-select: none;
-}
-
-.now-blocking-chip-emoji{
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-    line-height: 1;
-    flex-shrink: 0;
-    /* Color emoji glyphs sit low in the em box — nudge up to match text. */
-    transform: translateY(-1px);
-}
-
-.now-blocking-chip-name{
-    font-weight: 500;
-    line-height: 1;
-}
-
-.now-blocking-chip-until{
-    color: var(--text-muted);
-    font-size: 12px;
-    line-height: 1.2;
-    white-space: nowrap;
-}
-
-.now-blocking-chip-emoji,
-.now-blocking-chip-name,
-.now-blocking-chip-until{
-    pointer-events: none;
-    -webkit-user-select: none;
-    user-select: none;
-}
-
-.now-blocking-chip-menu-btn{
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    border: none;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-    flex-shrink: 0;
-    /* The parent row is `-webkit-app-region: drag` so users can grab the
-       title bar anywhere outside the menu button. The button itself
-       must opt out, or clicks register as window drags instead. */
-    -webkit-app-region: no-drag;
-}
-
-.now-blocking-chip-menu-btn:hover,
-.now-blocking-chip-menu-btn[aria-expanded="true"]{
-    background: var(--border-color);
-    color: var(--text-primary);
-}
-
-.now-blocking-chip-menu-btn svg{
-    width: 15px;
-    height: 15px;
-}
-
-/* Popover menu shown when ⋯ is clicked. Absolutely positioned so it can overflow
-   the chip; JS pins it just below the trigger. */
-.now-blocking-chip-menu{
-    position: absolute;
-    z-index: 1000;
-    min-width: 140px;
-    padding: 4px;
-    border-radius: 8px;
-    background: var(--panel-bg);
-    border: 1px solid var(--border-color);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-}
-
-.now-blocking-chip-menu-item{
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-primary);
-    font-size: 13px;
-    text-align: left;
-    cursor: pointer;
-    transition: background 0.1s;
-}
-
-.now-blocking-chip-menu-item:hover{
-    background: var(--border-color);
-}
-
-.now-blocking-chip-menu-item.danger{
-    color: hsl(0, 65%, 45%);
-}
-
-.now-blocking-chip-menu-item svg{
-    flex-shrink: 0;
-    width: 14px;
-    height: 14px;
-    opacity: 0.8;
-}
-
-body.dark-mode .now-blocking-chip-menu{
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-}
-
-body.dark-mode .now-blocking-chip-menu-item.danger{
-    color: hsl(0, 70%, 70%);
 }
 
 /* Combined status row: visibility-toggle chips + always-on chips flow inline together.
@@ -14786,24 +14532,6 @@ body.handset-device .main-content .repeat-option{
     min-height: 44px;
 }
 
-body.handset-device .now-blocking-chip-menu{
-    min-width: 160px;
-    padding: 6px;
-    border-radius: 10px;
-}
-
-body.handset-device .now-blocking-chip-menu-item{
-    padding: 12px 14px;
-    font-size: 16px;
-    min-height: 44px;
-    gap: 10px;
-    border-radius: 8px;
-}
-
-body.handset-device .now-blocking-chip-menu-item svg{
-    width: 18px;
-    height: 18px;
-}
 
 body.handset-device .modal-overlay .websites-import-menu{
     min-width: 220px;

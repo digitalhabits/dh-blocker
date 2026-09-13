@@ -59,19 +59,11 @@
         </div>
     </div>
     <div class="app-container">
-        <!-- Title Bar -->
+        <!-- Title Bar: nothing but somewhere to grab the window. macOS draws its
+             traffic lights into it (overlay title bar); Windows gets the custom
+             controls on the right. -->
         <div class="title-bar" data-tauri-drag-region>
             <div data-tauri-drag-region></div>
-            <!-- Blocking row: "BLOCKING NOW" + chips when something is enforcing; idle copy
-                 in the chips slot when nothing is active (may show next scheduled start).
-                 Drag-region applied to non-interactive elements so the user can drag the
-                 window from the label/idle text; chips opt out via the chip class. -->
-            <div id="now-blocking-row" class="now-blocking-row hidden" role="status"
-                aria-labelledby="now-blocking-label-text" data-tauri-drag-region>
-                <span id="now-blocking-label-text" class="now-blocking-heading" data-tauri-drag-region>BLOCKING NOW</span>
-                <span class="now-blocking-dot" aria-hidden="true" data-tauri-drag-region></span>
-                <div class="now-blocking-chips" id="now-blocking-chips" data-tauri-drag-region></div>
-            </div>
             <div id="window-controls" class="window-controls hidden">
                 <button id="titlebar-minimize" class="win-btn" title="Minimize">
                     <!-- Windows minimize icon: horizontal line -->
@@ -637,10 +629,7 @@
             </div>
         </div>
 
-        <!-- Main Content - Grid Layout (hidden until JS clears onboarding gate; avoids flash before EULA on iOS).
-             The "BLOCKING NOW" row that used to live here has moved into
-             the title bar (see `#now-blocking-row` near the top of body),
-             so the active blocklists are visible from anywhere in the app. -->
+        <!-- Main Content - Grid Layout (hidden until JS clears onboarding gate; avoids flash before EULA on iOS). -->
         <div id="main-content" class="main-content hidden">
             <!-- Top Row: Scheduler + Blocklists -->
             <div class="grid-top-row">
