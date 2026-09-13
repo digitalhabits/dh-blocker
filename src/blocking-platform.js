@@ -15,7 +15,7 @@ import { render } from './render.js';
 import { renderBlocklists } from './blocklists.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { applyScheduleStartOverlayPresentation, getScheduleStartOverlayForWarningApps, playAppBlockingLetsGoVoice } from './schedule-overlay.js';
-import { closeBlocklistModal, closeOverrideModal, initializeOverrideModalChallenge, openScheduleOverrideModal, populateOverrideConfirmModalContent } from './confirm-modals.js';
+import { closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, initializeOverrideModalChallenge, openScheduleOverrideModal, populateOverrideConfirmModalContent } from './confirm-modals.js';
 import { isModalVisible } from './modal-manager.js';
 import { updateManageSectionVisibility, closeOverrideAllModal } from './settings.js';
 import { CURRENT_EULA_REVISION, getAcceptedEulaRevision, hasAcceptedEula, isFirstRunOnboardingInProgress } from './onboarding.js';
@@ -1106,6 +1106,7 @@ export async function onAndroidResumed() {
 export const ANDROID_MODAL_CLOSE_FNS = {
     'blocklist-modal': closeBlocklistModal,
     'override-modal': closeOverrideModal,
+    'start-block-confirm-modal': closeStartConfirmModal,
     'override-all-modal': closeOverrideAllModal,
 };
 
@@ -1483,6 +1484,7 @@ export function setupHandsetModalScreens() {
     const modalIds = [
         'blocklist-modal',
         'override-modal',
+        'start-block-confirm-modal',
         'settings-modal',
         'override-all-modal',
         // Desktop single-column reuses this sheet; wrap chrome on every platform.

@@ -137,6 +137,30 @@ export const screens = [
         viewport: IPHONE,
     },
 
+    // ---- Turning a space on: what will be blocked, the way out, the unlock ----
+    {
+        name: 'start-confirm-modal',
+        fixture: fixtures.cardStates,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#start-block-confirm-modal .modal-content',
+        prepare: async (page) => {
+            await page.click('.blocklist-card[data-id="bl-sched-off"] .blocklist-switch');
+            await page.waitForSelector('#start-block-confirm-modal:not(.hidden)');
+        },
+    },
+    {
+        name: 'editor-edit-dirty',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#time-picker-container',
+        prepare: async (page) => {
+            await page.fill('#blocklist-name', 'Deep Work (renamed)');
+            await page.dispatchEvent('#blocklist-name', 'input');
+        },
+    },
+
     // ---- Stopping a space: the challenge modal + unlock outcome line -------
     {
         name: 'stop-modal-manual',

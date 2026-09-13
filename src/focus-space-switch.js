@@ -6,11 +6,13 @@
 //                  OFF = the schedule is paused (open-ended = switched off,
 //                        timed = temporary unlock)
 //
-// Turning ON never asks anything: it falls toward blocking. Turning OFF goes
-// through the override challenge (waived for a Flexible schedule between its
-// blocks); the `#confirm-override-btn` handler in app.js then applies the
-// space's temporary unlock duration (stopFocusSpaceTarget): a timed pause, or
-// with "Never" the block is removed / the schedule switched off open-ended.
+// Turning ON shows the start confirmation (what gets blocked, the way out,
+// what turning it off does) and then `turnFocusSpaceOn` falls toward blocking
+// with no further questions. Turning OFF goes through the override challenge
+// (waived for a Flexible schedule between its blocks); the
+// `#confirm-override-btn` handler in app.js then applies the space's temporary
+// unlock duration (stopFocusSpaceTarget): a timed pause, or with "Never" the
+// block is removed / the schedule switched off open-ended.
 //
 // Declarations only at module top level (hub import cycle).
 import { state } from './state.js';
@@ -19,6 +21,7 @@ import { isOneOffPauseActive } from './blocklists.js';
 import {
     openOverrideModal,
     openScheduleOverrideModal,
+    openStartConfirmModal,
     resumePausedBlock,
     resumePausedSchedule,
     startManualBlock,
@@ -57,29 +60,21 @@ export function getFocusSpaceOffUntil(blocklistId, now = Date.now()) {
 
 /**
  * Flip the switch. Returns true when the change was applied immediately;
- * false when the override challenge was opened instead (the user still has to
- * pass it) or nothing could be done.
+ * false when a modal was opened instead (the start confirmation, or the
+ * override challenge the user still has to pass) or nothing could be done.
  */
 export async function setFocusSpaceEnabled(blocklistId, on, now = Date.now()) {
     const blocklist = state.appData.blocklists.find((bl) => bl.id === blocklistId);
     if (!blocklist) return false;
-    const schedule = scheduleFor(blocklistId);
-    const block = liveBlockFor(blocklistId, now);
 
     if (on) {
-        if (schedule) {
-            if (!isSchedulePausedNow(schedule, now)) return false;
-            await resumePausedSchedule(schedule);
-            return true;
-        }
-        if (block) {
-            if (!isOneOffPauseActive(block, now)) return false;
-            await resumePausedBlock(block);
-            return true;
-        }
-        return startManualBlock(blocklistId);
+        if (isFocusSpaceOn(blocklistId, now)) return false;
+        openStartConfirmModal(blocklistId);
+        return false;
     }
 
+    const schedule = scheduleFor(blocklistId);
+    const block = liveBlockFor(blocklistId, now);
     if (schedule && !isSchedulePausedNow(schedule, now)) {
         openScheduleOverrideModal(schedule);
         return false;
@@ -89,4 +84,28 @@ export async function setFocusSpaceEnabled(blocklistId, on, now = Date.now()) {
         return false;
     }
     return false;
+}
+
+/**
+ * The confirmed "on": resume a paused schedule or block, or start a new
+ * always-on block for a Manual space. Never asks anything — this falls
+ * toward blocking. Returns true when the space is now on.
+ */
+export async function turnFocusSpaceOn(blocklistId, now = Date.now()) {
+    const blocklist = state.appData.blocklists.find((bl) => bl.id === blocklistId);
+    if (!blocklist) return false;
+    const schedule = scheduleFor(blocklistId);
+    const block = liveBlockFor(blocklistId, now);
+
+    if (schedule) {
+        if (!isSchedulePausedNow(schedule, now)) return false;
+        await resumePausedSchedule(schedule);
+        return true;
+    }
+    if (block) {
+        if (!isOneOffPauseActive(block, now)) return false;
+        await resumePausedBlock(block);
+        return true;
+    }
+    return startManualBlock(blocklistId);
 }

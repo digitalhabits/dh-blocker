@@ -2455,6 +2455,7 @@ body.ios:not(.ios-phone) .main-content .always-on-chip svg{
 
 
     body.ios:not(.ios-phone) #override-modal .modal-content,
+body.ios:not(.ios-phone) #start-block-confirm-modal .modal-content,
 body.ios:not(.ios-phone) #override-all-modal .modal-content{
         max-width: calc(500px * var(--ipad-s));
     }
@@ -10447,6 +10448,7 @@ body.handset-device .mobile-fullscreen-modal .modal-content,
 body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #settings-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #override-modal.mobile-fullscreen-modal .modal-content,
+body.handset-device #start-block-confirm-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #override-all-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #enter-scheduler-modal.mobile-fullscreen-modal .modal-content{
     display: flex;
@@ -10494,6 +10496,7 @@ body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal,
 body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal,
 body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal,
 body.desktop-compact-layout #override-modal.mobile-fullscreen-modal,
+body.desktop-compact-layout #start-block-confirm-modal.mobile-fullscreen-modal,
 body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal{
     top: var(--title-bar-height);
     left: 0;
@@ -10513,6 +10516,7 @@ body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .moda
 body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .modal-content,
 body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-content,
 body.desktop-compact-layout #override-modal.mobile-fullscreen-modal .modal-content,
+body.desktop-compact-layout #start-block-confirm-modal.mobile-fullscreen-modal .modal-content,
 body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .modal-content{
     display: flex;
     flex-direction: column;
@@ -10533,6 +10537,7 @@ body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .mobi
 body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .mobile-modal-header,
 body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .mobile-modal-header,
 body.desktop-compact-layout #override-modal.mobile-fullscreen-modal .mobile-modal-header,
+body.desktop-compact-layout #start-block-confirm-modal.mobile-fullscreen-modal .mobile-modal-header,
 body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .mobile-modal-header{
     position: relative;
     top: auto;
@@ -10606,6 +10611,7 @@ body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .mobi
 body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
 body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
 body.desktop-compact-layout #override-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
+body.desktop-compact-layout #start-block-confirm-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
 body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .mobile-modal-scroll-body{
     flex: 1;
     min-height: 0;
@@ -10621,7 +10627,8 @@ body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .mobile-
 
 /* Title lives in the sheet header — keep the space chip,
 drop the duplicate h3 row chrome. */
-body.desktop-compact-layout #override-modal .start-confirm-header-room{
+body.desktop-compact-layout #override-modal .start-confirm-header-room,
+body.desktop-compact-layout #start-block-confirm-modal .start-confirm-header-room{
     margin-top: 0;
 }
 
@@ -10657,6 +10664,7 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
         #blocklist-modal,
         #settings-modal,
         #override-modal,
+        #start-block-confirm-modal,
         #override-all-modal
     ).mobile-fullscreen-modal{
         top: var(--title-bar-height);
@@ -10677,6 +10685,7 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
         #blocklist-modal,
         #settings-modal,
         #override-modal,
+        #start-block-confirm-modal,
         #override-all-modal
     ).mobile-fullscreen-modal .modal-content{
         display: flex;
@@ -10698,6 +10707,7 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
         #blocklist-modal,
         #settings-modal,
         #override-modal,
+        #start-block-confirm-modal,
         #override-all-modal
     ).mobile-fullscreen-modal .mobile-modal-header{
         position: relative;
@@ -10759,6 +10769,7 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
         #blocklist-modal,
         #settings-modal,
         #override-modal,
+        #start-block-confirm-modal,
         #override-all-modal
     ).mobile-fullscreen-modal .mobile-modal-scroll-body{
         flex: 1;
@@ -13465,6 +13476,100 @@ body.dark-mode.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-bu
 #focus-space-editor .unlock-duration-select.form-select-disabled{
     opacity: 0.55;
     pointer-events: none;
+}
+
+/* Start confirmation (switch on). Desktop popup: scroll body when content
+   exceeds the viewport; handset: room-style header like the stop modal. */
+body:not(.handset-device) #start-block-confirm-modal .modal-content{
+    display: flex;
+    flex-direction: column;
+    max-height: 95vh;
+    overflow: hidden;
+}
+
+body:not(.handset-device) #start-block-confirm-modal .mobile-modal-scroll-body{
+    flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+body:not(.handset-device) #start-block-confirm-modal .start-confirm-actions{
+    flex-shrink: 0;
+    margin-top: 0;
+    padding-top: 12px;
+}
+
+body.handset-device #start-block-confirm-modal .mobile-modal-header{
+    align-items: center;
+}
+
+body.handset-device #start-block-confirm-modal .mobile-modal-back-btn{
+    align-self: flex-start;
+    margin-top: 2px;
+}
+
+body.handset-device #start-block-confirm-modal .start-confirm-header-room{
+    margin-bottom: 0;
+    min-width: 0;
+    flex: 1 1 auto;
+    gap: 8px 10px;
+}
+
+body.handset-device #start-block-confirm-modal .start-confirm-header-room h3{
+    font-size: 1.45rem;
+    color: var(--text-primary);
+}
+
+#start-block-confirm-modal .start-confirm-warning.override-info-box{
+    background: var(--redd-teal-soft);
+    border: 1px solid var(--redd-teal-soft-border);
+}
+
+#start-block-confirm-modal .start-confirm-warning .override-info-header{
+    color: var(--redd-navy);
+}
+
+#start-block-confirm-modal .start-confirm-warning-icon,
+#start-block-confirm-modal .start-confirm-warning .override-info-header svg{
+    color: var(--redd-teal);
+}
+
+#start-block-confirm-modal .start-confirm-warning.override-info-box p{
+    color: var(--text-muted);
+}
+
+/* Editor panel footer: always there, stuck to the bottom of the scrolling
+   page (or sheet) so Save is reachable however tall the form is. While
+   nothing changed only a disabled Save shows. */
+#editor-panel-footer{
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    margin: 0 -16px -16px;
+    padding: 8px 16px 12px;
+    background: var(--panel-bg);
+    border-radius: 0 0 12px 12px;
+}
+
+.schedule-pending-bar.is-clean{
+    justify-content: flex-end;
+    border-color: transparent;
+    background: transparent;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.schedule-pending-bar.is-clean .schedule-pending-label,
+.schedule-pending-bar.is-clean .schedule-pending-discard{
+    display: none;
+}
+
+.schedule-pending-save:disabled{
+    opacity: 0.45;
+    cursor: default;
 }
 
 /* A Flexible schedule between its blocks stops without typing: the controller

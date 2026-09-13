@@ -11,7 +11,7 @@ import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { autoSelectSoleBlocklist, renderBlocklists } from './blocklists.js';
 import { updateBlockedApps, updateOnboardingVisibility, updateWindowHeight } from './blocking-platform.js';
 import { handleBlocklistSelect, openOverrideModal, openScheduleOverrideModal, syncSchedulerChromeVisibility, refreshCalendarPreviews, handleTimeChange } from './confirm-modals.js';
-import { getWhenToBlockKind, syncEditorFooter } from './focus-space-editor.js';
+import { confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, syncEditorFooter } from './focus-space-editor.js';
 import { updateCleanHostsBtnState, updateOverrideAllButtonVisibility } from './settings.js';
 import {
     formatBlockTimeRemainingShort, formatDuration, formatTime,
@@ -474,11 +474,12 @@ export function openNowBlockingChipMenu(triggerBtn, entry) {
 export function handleNowBlockingEdit(entry) {
     const blocklist = entry.blocklist;
     if (!blocklist) return;
-    selectFocusSpaceForEditing(blocklist.id);
+    void selectFocusSpaceForEditing(blocklist.id);
 }
 
 /** Select a focus space and open its editor (sheet on phones / narrow desktop). */
-export function selectFocusSpaceForEditing(blocklistId) {
+export async function selectFocusSpaceForEditing(blocklistId) {
+    if (blocklistId !== state.selectedBlocklistId && editorHasUnsavedEdits() && !(await confirmDiscardEditorEdits())) return;
     const dropdown = document.getElementById('blocklist-select');
     if (dropdown) {
         dropdown.value = blocklistId;
@@ -1043,7 +1044,7 @@ export function renderScheduleSegmentOnWeekday(schedule, segment, segmentIdx, da
 
         el.addEventListener('click', (e) => {
             e.stopPropagation();
-            selectFocusSpaceForEditing(schedule.blocklistId);
+            void selectFocusSpaceForEditing(schedule.blocklistId);
         });
 
         return el;

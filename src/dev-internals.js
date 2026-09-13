@@ -8,7 +8,7 @@ import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { PROTECTED_APP_NAMES, PROTECTED_DOMAINS, isAllowlistBlocklist, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
 import { buildAndroidScheduleEntries, buildIOSScheduleEntries, isAndroidAllowlistUnsupported, isSchedulePausedNow } from './schedule-engine.js';
-import { isFocusSpaceOn, setFocusSpaceEnabled } from './focus-space-switch.js';
+import { isFocusSpaceOn, setFocusSpaceEnabled, turnFocusSpaceOn } from './focus-space-switch.js';
 import {
     buildWordChallengeState,
     getCompletedChallengeText,
@@ -43,7 +43,7 @@ import {
     applyStopToTarget,
     normalizeUnlockMinutes,
 } from './unlock-duration.js';
-import { openScheduleOverrideModal } from './confirm-modals.js';
+import { closeStartConfirmModal, openScheduleOverrideModal } from './confirm-modals.js';
 
 // Expose for integration tests (dev mode only)
 window.__REDDBLOCK_INTERNALS__ = {
@@ -108,6 +108,8 @@ window.__REDDBLOCK_INTERNALS__ = {
     applyStopToTarget,
     normalizeUnlockMinutes,
     openScheduleOverrideModal,
+    closeStartConfirmModal,
+    turnFocusSpaceOn,
 };
 
 // ========================================

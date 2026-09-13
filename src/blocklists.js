@@ -3,6 +3,7 @@
 import { state } from './state.js';
 import { getMaxOverrideWords, migrateOverrideDifficultyToWords } from './override-challenge.js';
 import { normalizeUnlockMinutes } from './unlock-duration.js';
+import { confirmDiscardEditorEdits, editorHasUnsavedEdits } from './focus-space-editor.js';
 import { BaseDirectory } from '@tauri-apps/api/path';
 import { ask, message, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
@@ -53,9 +54,10 @@ function toggleBlocklistCardExpanded(card, id) {
     setBlocklistCardExpanded(card, id, !expandedBlocklistCardIds.has(id));
 }
 
-function openBlocklistEnterFromCard(blocklistId) {
+async function openBlocklistEnterFromCard(blocklistId) {
     if (state.selectedBlocklistId === blocklistId) {
         if (isEnterSchedulerModalOpen()) {
+            if (editorHasUnsavedEdits() && !(await confirmDiscardEditorEdits())) return;
             deselectBlocklist();
             return;
         }
@@ -65,6 +67,8 @@ function openBlocklistEnterFromCard(blocklistId) {
         return;
     }
 
+    // Moving to another space drops in-flight edits on this one — ask first.
+    if (editorHasUnsavedEdits() && !(await confirmDiscardEditorEdits())) return;
     const dropdown = document.getElementById('blocklist-select');
     dropdown.value = blocklistId;
     handleBlocklistSelect({ target: dropdown }, { openEnterUi: true });
@@ -1081,7 +1085,7 @@ export function renderBlocklists() {
             if (e.target.closest('.blocklist-meta-items-btn')) return;
             if (e.target.closest('.blocklist-actions')) return;
             closeAllBlocklistMenus();
-            openBlocklistEnterFromCard(id);
+            void openBlocklistEnterFromCard(id);
         });
 
         // The switch: on is immediate, off goes through the override challenge.

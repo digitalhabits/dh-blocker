@@ -72,6 +72,7 @@ export const state = {
     lastCustomOverrideTextValue: '',
     lastOverrideTypeValue: '',
     overrideBlockId: null,
+    pendingStartBlocklistId: null, // Space waiting in the start confirmation modal
     overrideBlocklistIdForHelper: null,
     startupInitializationComplete: false, // Track whether post-onboarding startup already ran
     migrationOnboardingActive: false,

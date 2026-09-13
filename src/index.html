@@ -1248,6 +1248,93 @@
         </div>
 
 
+        <!-- Start focus space confirmation: what is about to be blocked, the
+             way out (typing challenge) and what turning it off does (unlock duration). -->
+        <div id="start-block-confirm-modal" class="modal-overlay hidden">
+            <div class="modal-content start-confirm-modal">
+                <div class="start-confirm-header-room">
+                    <h3 id="start-block-confirm-title">Start focus space?</h3>
+                    <div class="start-confirm-room-chip" id="start-confirm-room-chip">
+                        <span class="start-confirm-room-chip-emoji" id="start-confirm-room-chip-emoji" aria-hidden="true">🎯</span>
+                        <span class="start-confirm-room-chip-name" id="start-confirm-room-chip-name"></span>
+                    </div>
+                </div>
+                <div class="start-confirm-status-row">
+                    <div class="start-confirm-status-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+                        </svg>
+                    </div>
+                    <p class="start-confirm-subtitle" id="start-confirm-subtitle"></p>
+                </div>
+                <div class="start-confirm-summary-card">
+                    <div class="start-confirm-summary-row" id="start-confirm-blocking-row">
+                        <div class="start-confirm-row-label">
+                            <svg class="start-confirm-row-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                            </svg>
+                            <span id="start-confirm-blocking-label">Blocking</span>
+                        </div>
+                        <div class="start-confirm-row-value">
+                            <div class="start-confirm-blocking-list" id="start-confirm-blocking-list"></div>
+                            <button type="button" class="start-confirm-show-more hidden"
+                                id="start-confirm-show-all-blocking">show all</button>
+                        </div>
+                    </div>
+                    <div class="start-confirm-summary-divider"></div>
+                    <div class="start-confirm-summary-row" id="start-confirm-duration-row">
+                        <div class="start-confirm-row-label">
+                            <svg class="start-confirm-row-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                            <span id="start-confirm-duration-label">Duration</span>
+                        </div>
+                        <div class="start-confirm-row-value">
+                            <div class="start-confirm-duration-copy" id="start-confirm-duration"></div>
+                        </div>
+                    </div>
+                    <div class="start-confirm-summary-divider"></div>
+                    <div class="start-confirm-summary-row" id="start-confirm-unlock-row">
+                        <div class="start-confirm-row-label">
+                            <svg class="start-confirm-row-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <rect x="3" y="11" width="18" height="11" rx="2"></rect>
+                                <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+                            </svg>
+                            <span id="start-confirm-unlock-label">If turned off</span>
+                        </div>
+                        <div class="start-confirm-row-value">
+                            <div class="start-confirm-duration-copy" id="start-confirm-unlock"></div>
+                        </div>
+                    </div>
+                </div>
+                <div id="start-confirm-override-info" class="override-info-box start-confirm-warning">
+                    <div class="override-info-header">
+                        <span class="start-confirm-warning-icon" aria-hidden="true">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                        </span>
+                        <span id="confirm-override-header">Leaving early takes a moment — on purpose.</span>
+                    </div>
+                    <p id="start-confirm-override-text"></p>
+                </div>
+                <div class="modal-buttons start-confirm-actions">
+                    <button id="cancel-start-confirm-btn" class="modal-btn cancel-btn">Cancel</button>
+                    <button id="proceed-start-confirm-btn" class="modal-btn black-btn start-confirm-primary-btn">
+                        <svg class="start-confirm-primary-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                        <span class="start-confirm-primary-label">Start focus space</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Schedule start overlay customisation -->
         <div id="schedule-overlay-customise-modal" class="modal-overlay hidden">
             <div class="modal-content schedule-overlay-customise-modal">

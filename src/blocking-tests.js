@@ -19,7 +19,7 @@
  * - T55-T62: iOS allowlist effective-policy resolvers (pure helpers)
  * - T63-T68: Stop = temporary unlock (timed pause the switch reads as off, Never removes / switches off, Flexible skips the challenge)
  * - T169-T172: Single-column (≤718px) desktop focus-space cards open the enter sheet on tap; the switch does not
- * - T173-T177: Card switch state (isFocusSpaceOn) for manual blocks and schedules
+ * - T173-T178: Card switch state (isFocusSpaceOn) for manual blocks and schedules; switching on asks first
  */
 
 (function () {
@@ -2704,6 +2704,25 @@
             assert(internals.isFocusSpaceOn(schedOff.id, now) === false, 'T176: open-ended paused schedule → switch off');
             assert(internals.isFocusSpaceOn(schedTimed.id, now) === false, 'T176b: timed-paused schedule → switch off');
             assert(internals.isFocusSpaceOn(idle.id, now) === false, 'T177: no block, no schedule → switch off');
+
+            // T178: switching ON asks first — the start confirmation opens and nothing changes until it is confirmed
+            (function T178() {
+                const modal = document.getElementById('start-block-confirm-modal');
+                if (!modal) {
+                    console.log('   ⏭️  T178 skipped: start confirmation modal not in DOM');
+                    return;
+                }
+                const beforeOff = internals.appData.schedules.find(s => s.blocklistId === schedOff.id);
+                void internals.setFocusSpaceEnabled(schedOff.id, true, now);
+                assert(!modal.classList.contains('hidden'), 'T178: switching on opens the start confirmation');
+                assert(beforeOff.isPaused === true, 'T178: the schedule stays off until confirmed');
+                assert(internals.isFocusSpaceOn(schedOff.id, now) === false, 'T178: switch still reads off');
+                const unlockLine = document.getElementById('start-confirm-unlock')?.textContent || '';
+                assert(unlockLine.length > 0, 'T178: the confirmation says what turning it off does');
+                internals.closeStartConfirmModal();
+                assert(modal.classList.contains('hidden'), 'T178: cancel closes it');
+                assert(beforeOff.isPaused === true, 'T178: cancelling leaves the schedule off');
+            })();
         } finally {
             internals.appData = savedAppData;
         }

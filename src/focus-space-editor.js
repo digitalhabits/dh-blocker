@@ -9,6 +9,7 @@
 //
 // Nothing here runs at module top level — the hub modules import this file and
 // this file imports them back; every cross-module call is made at runtime.
+import { ask } from '@tauri-apps/plugin-dialog';
 import { state } from './state.js';
 import { tSettings, tSettingsFmt, weekdayAbbrevMon0List } from './i18n.js';
 import {
@@ -394,7 +395,18 @@ export function updateEditorSummaries() {
     document.getElementById('what-empty-hint')?.classList.toggle('hidden', counts.websites + counts.apps > 0);
 
     const kind = getWhenToBlockKind();
-    let whenText = formatWhenToBlockSummary(kind, state.scheduleSegments, {
+    let whenText = formatScheduleWhenSummary(kind, { segments: state.scheduleSegments });
+    if (kind !== 'manual' && getUntilMode() === 'date' && state.scheduleRepeatDate) {
+        whenText += ` · ${tSettingsFmt('untilDateSummaryFmt', { date: formatDateForDisplay(new Date(state.scheduleRepeatDate)) })}`;
+    }
+    setSummary('when', whenText);
+
+    setSummary('stop', formatStopEarlySummary());
+}
+
+/** "Manual · starts when enabled" / "Daily 09:00 – 17:00" / "Mon, Tue · 09:00 – 17:00" for a schedule record. */
+export function formatScheduleWhenSummary(kind, schedule) {
+    return formatWhenToBlockSummary(kind, schedule?.segments || [], {
         manual: tSettings('whenManualSummary'),
         dailyFmt: (range) => tSettingsFmt('whenDailySummaryFmt', { range }),
         weeklyFmt: (days, range) => tSettingsFmt('whenWeeklySummaryFmt', { days, range }),
@@ -402,12 +414,33 @@ export function updateEditorSummaries() {
         everyDay: tSettings('segmentDaysEveryDay'),
         noDays: tSettings('segmentDaysNone'),
     });
-    if (kind !== 'manual' && getUntilMode() === 'date' && state.scheduleRepeatDate) {
-        whenText += ` · ${tSettingsFmt('untilDateSummaryFmt', { date: formatDateForDisplay(new Date(state.scheduleRepeatDate)) })}`;
-    }
-    setSummary('when', whenText);
+}
 
-    setSummary('stop', formatStopEarlySummary());
+/**
+ * Leaving the editor (another card, the background, the create buttons, the
+ * sheet's Cancel) with unsaved edits asks first. Resolves true when it is fine
+ * to go ahead; nothing to lose never asks.
+ */
+export function editorHasUnsavedEdits() {
+    return !isEditorInCreateModal() && !!state.editingBlocklistId && isEditorDirty();
+}
+
+export async function confirmDiscardEditorEdits() {
+    // Callers check editorHasUnsavedEdits() first so a clean form never
+    // yields to a microtask (the card click must close the sheet synchronously).
+    if (!editorHasUnsavedEdits()) return true;
+    const body = tSettings('discardChangesBody');
+    try {
+        return await ask(body, {
+            title: tSettings('discardChangesTitle'),
+            kind: 'warning',
+            okLabel: tSettings('discardChangesOk'),
+            cancelLabel: tSettings('discardChangesCancel'),
+        });
+    } catch {
+        // No dialog plugin (harness) — fall back to the browser's own prompt.
+        return window.confirm(body);
+    }
 }
 
 /** "24 hours", "10 minutes", "Never" — the unlock menu's own labels. */
@@ -431,15 +464,20 @@ function setSummary(key, text) {
 }
 
 /**
- * Panel footer: Discard / Save changes while there are unsaved edits. Starting
- * and stopping live on the card switch, and the create modal has its own
- * Cancel / Save.
+ * Panel footer: a Save changes button that is always there (disabled while
+ * nothing changed, like Android's), joined by "Unsaved changes" + Discard once
+ * the form is dirty. Starting and stopping live on the card switch, and the
+ * create modal has its own Cancel / Save.
  */
 export function syncEditorFooter() {
     const pendingBar = document.getElementById('editor-pending-bar');
     if (!pendingBar) return;
-    const dirty = !isEditorInCreateModal() && !!state.editingBlocklistId && isEditorDirty();
-    pendingBar.classList.toggle('hidden', !dirty);
+    const inPanel = !isEditorInCreateModal() && !!state.editingBlocklistId;
+    const dirty = inPanel && isEditorDirty();
+    pendingBar.classList.toggle('hidden', !inPanel);
+    pendingBar.classList.toggle('is-clean', !dirty);
+    const saveBtn = document.getElementById('editor-save-btn');
+    if (saveBtn) saveBtn.disabled = !dirty;
 }
 
 /** Coalesced "something in the form changed" — summaries and footer. */

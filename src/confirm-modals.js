@@ -13,7 +13,7 @@ import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderSchedu
 import { getRunningEnforcementTarget, isBlocklistEditFrictionRequired, renderBlocklists, truncateBlocklistName } from './blocklists.js';
 import { areSegmentsEqual, getSelectedSchedule, isScheduleSegmentActiveNow, canEditScheduleBetweenBlocks } from './schedule-editor.js';
 import { pad } from './time-inputs.js';
-import { formatUnlockDurationLabel, getWhenToBlockKind, isEditorInCreateModal, mountFocusSpaceEditor, notifyEditorChanged, populateFocusSpaceEditor, resyncEditorLockState, returnFocusSpaceEditorToPanel } from './focus-space-editor.js';
+import { formatScheduleWhenSummary, formatUnlockDurationLabel, getWhenToBlockKind, isEditorInCreateModal, mountFocusSpaceEditor, notifyEditorChanged, populateFocusSpaceEditor, resyncEditorLockState, returnFocusSpaceEditorToPanel } from './focus-space-editor.js';
 import { resetModalScrollPosition, updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth, isHelperConnectionError } from './blocking-platform.js';
 import { resetWebsitesImportMenuPosition } from './website-input.js';
 import { bindUiZoomLayoutObserver, scheduleUiZoomResponsiveLayout, usesStackSettingsPlacement } from './theme.js';
@@ -26,6 +26,7 @@ import {
 } from './app.js';
 import { applyStopToTarget, getBlocklistUnlockMinutes } from './unlock-duration.js';
 import { setFocusSpaceEnabled } from './focus-space-switch.js';
+import { deriveWhenToBlockKind } from './when-to-block.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
 import {
     setBlocklistModalMode,
@@ -194,6 +195,80 @@ export function populateOverrideConfirmModalContent(blocklist, {
     );
 
     setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
+}
+
+/**
+ * Turning a space on shows what is about to happen first: what gets blocked,
+ * when, the typing challenge on the way out, and what turning it off does
+ * (the temporary unlock duration). Confirming calls turnFocusSpaceOn.
+ */
+export function openStartConfirmModal(blocklistId) {
+    const blocklist = state.appData.blocklists.find(bl => bl.id === blocklistId);
+    const modal = document.getElementById('start-block-confirm-modal');
+    if (!blocklist || !modal) return false;
+    state.pendingStartBlocklistId = blocklistId;
+
+    const schedule = (state.appData.schedules || []).find(
+        s => s.blocklistId === blocklistId && s.segments?.length > 0,
+    ) || null;
+
+    setStartConfirmRoomChip(blocklist);
+    const titleEl = document.getElementById('start-block-confirm-title');
+    if (titleEl) titleEl.textContent = tSettings('startThisBlock');
+    const subtitleEl = document.getElementById('start-confirm-subtitle');
+    if (subtitleEl) {
+        subtitleEl.textContent = tSettings(schedule ? 'startConfirmSubtitleSchedule' : 'startConfirmSubtitleManual');
+    }
+
+    setConfirmModalBlockingLabel(blocklist, 'start-confirm-blocking-label');
+    renderStartConfirmBlockingDetails(
+        blocklist,
+        document.getElementById('start-confirm-blocking-list'),
+        document.getElementById('start-confirm-show-all-blocking'),
+        document.getElementById('start-confirm-blocking-row'),
+    );
+
+    const durationLabelEl = document.getElementById('start-confirm-duration-label');
+    const durationEl = document.getElementById('start-confirm-duration');
+    if (durationLabelEl) {
+        durationLabelEl.textContent = tSettings(schedule ? 'startConfirmTimesLabel' : 'startConfirmDurationLabel');
+    }
+    if (durationEl) {
+        durationEl.textContent = schedule
+            ? formatScheduleWhenSummary(deriveWhenToBlockKind(schedule), schedule)
+            : tSettings('startConfirmDurationManual');
+    }
+
+    const unlockEl = document.getElementById('start-confirm-unlock');
+    if (unlockEl) {
+        const minutes = getBlocklistUnlockMinutes(blocklist);
+        unlockEl.innerHTML = minutes > 0
+            ? tSettingsFmt('startConfirmUnlockLineFmt', { duration: formatUnlockDurationLabel(minutes) })
+            : tSettings('startConfirmUnlockNever');
+    }
+
+    const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: DEFAULT_OVERRIDE_WORDS };
+    const type = normalizeOverrideType(difficulty.type);
+    const count = normalizeOverrideCount(difficulty.count, type);
+    const overrideTextEl = document.getElementById('start-confirm-override-text');
+    if (overrideTextEl) {
+        overrideTextEl.innerHTML = formatConfirmModalOverrideTypingLine({
+            type,
+            count,
+            estimatedMinutes: getOverrideEstimatedMinutes(type, count, difficulty.customText || ''),
+            customText: difficulty.customText || '',
+        });
+    }
+
+    setStartConfirmPrimaryLabel('proceed-start-confirm-btn', tSettings('startBlock'));
+    modal.classList.remove('hidden');
+    resetModalScrollPosition(modal);
+    return true;
+}
+
+export function closeStartConfirmModal() {
+    document.getElementById('start-block-confirm-modal')?.classList.add('hidden');
+    state.pendingStartBlocklistId = null;
 }
 
 /** "Blocking resumes automatically after 10 minutes." / "It stays off until you turn it on again." */

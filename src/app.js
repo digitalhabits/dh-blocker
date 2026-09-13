@@ -43,7 +43,7 @@ import {
 import { openInstalledAppsPicker } from './apps-picker.js';
 import { handlePopoverOutsideClick } from './time-inputs.js';
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
-import { applyEditorScheduleForBlocklist, applyFocusSpaceEditorLanguage, getWhenToBlockKind, isEditorInCreateModal, populateFocusSpaceEditor, setupFocusSpaceEditor } from './focus-space-editor.js';
+import { applyEditorScheduleForBlocklist, applyFocusSpaceEditorLanguage, confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, isEditorInCreateModal, populateFocusSpaceEditor, setupFocusSpaceEditor } from './focus-space-editor.js';
 import { loadData, saveData, updateHostsFile } from './persistence.js';
 import { cleanDomainInput, isValidDomain, processWebsiteInput, setupWebsitesImportMenu, resetWebsitesImportMenuPosition } from './website-input.js';
 import { updateBlockedApps, acceptEula, appBlockingWarningSnoozedUntilMs, checkAndroidPermissions, checkHelperStatus, checkScreentimeAuth, collectManualBlockedApps, collectScheduleBlockedApps, detectPlatform, displayNameForBlockedApp, ensureInstalledAppsCache, initializeAndroidBlockingState, initializeIOSBlockingState, listenForAndroidFrictionGate, onAndroidResumed, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAndroidBackButtonHandling, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility, openExternal, updateWindowHeight, isHelperInstallCancelled, isHelperConnectionError, joinAppListWithLimit, findResponsibleBlocklistForWarningApps, getActiveAppBlockingSnoozeBlocklistId, formatAppBlockingSnoozeStartsIn, APP_BLOCKING_SNOOZE_ICON_IMG_12 } from './blocking-platform.js';
@@ -94,7 +94,7 @@ import {
     syncScheduleOverlayCustomiseEditorState, syncScheduleOverlayCustomiseTitle,
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
-import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, deselectBlocklist, handleBlocklistSelect, openBlocklistModal, refreshSelectedBlocklistUi, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncOverrideCountUi, updateOverridePreview, openOverrideModal } from './confirm-modals.js';
+import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, openBlocklistModal, refreshSelectedBlocklistUi, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncOverrideCountUi, updateOverridePreview, openOverrideModal } from './confirm-modals.js';
 import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, deleteBlocklist, isBlocklistEditFrictionRequired, pendingDelete, saveBlocklistOrderFromDOM, setUndoToastMessage } from './blocklists.js';
 import {
     getSelectedBlocklistModalMode,
@@ -116,6 +116,7 @@ import {
     updateManageSectionVisibility, updateOverrideAllButtonVisibility,
 } from './settings.js';
 import { normalizeUnlockMinutes } from './unlock-duration.js';
+import { turnFocusSpaceOn } from './focus-space-switch.js';
 import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, getEffectiveViewportWidth, bindUiZoomLayoutObserver } from './theme.js';
 import { checkForAppUpdate, getLatestVersionPlatformKey, isVersionHigher, resolveMicrosoftStorePackage, updateBannerWhatsNewButtonHtml } from './update-banner.js';
 import { updateDownloadInProgress } from './update-banner.js';
@@ -587,9 +588,10 @@ function setupEventListeners() {
             return;
         }
 
-        // Deselect blocklist if one is selected
+        // Deselect blocklist if one is selected (asks first when there are unsaved edits)
         if (state.selectedBlocklistId) {
-            deselectBlocklist();
+            if (!editorHasUnsavedEdits()) deselectBlocklist();
+            else void confirmDiscardEditorEdits().then((ok) => { if (ok) deselectBlocklist(); });
         }
     });
 
@@ -677,8 +679,14 @@ function setupEventListeners() {
     document.getElementById('blocklist-select').addEventListener('change', handleBlocklistSelect);
 
     // Add blocklist / allow-only buttons (mode chosen by entry point, not in-dialog)
-    document.getElementById('add-blocklist-btn').addEventListener('click', () => openBlocklistModal());
-    document.getElementById('allow-only-blocklist-btn')?.addEventListener('click', () => {
+    // The create modal borrows the editor node, so unsaved edits on the
+    // selected space would be lost — ask first.
+    document.getElementById('add-blocklist-btn').addEventListener('click', async () => {
+        if (!(await confirmDiscardEditorEdits())) return;
+        openBlocklistModal();
+    });
+    document.getElementById('allow-only-blocklist-btn')?.addEventListener('click', async () => {
+        if (!(await confirmDiscardEditorEdits())) return;
         openBlocklistModal(null, { mode: 'allowlist' });
     });
 
@@ -1809,7 +1817,20 @@ function setupOverrideModalListeners() {
         closeOverrideModal();
     });
 
-    document.getElementById('cancel-enter-scheduler-btn')?.addEventListener('click', deselectBlocklist);
+    document.getElementById('cancel-enter-scheduler-btn')?.addEventListener('click', async () => {
+        if (await confirmDiscardEditorEdits()) deselectBlocklist();
+    });
+
+    // Start confirmation (switch on): Cancel / overlay close it, Start proceeds.
+    document.getElementById('cancel-start-confirm-btn')?.addEventListener('click', closeStartConfirmModal);
+    document.getElementById('start-block-confirm-modal')?.addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeStartConfirmModal();
+    });
+    document.getElementById('proceed-start-confirm-btn')?.addEventListener('click', async () => {
+        const blocklistId = state.pendingStartBlocklistId;
+        closeStartConfirmModal();
+        if (blocklistId) await turnFocusSpaceOn(blocklistId);
+    });
 
     window.addEventListener('resize', () => syncMobileScheduleDayLabelsViewportMode());
     window.visualViewport?.addEventListener('resize', syncMobileScheduleDayLabelsViewportMode);
@@ -2804,6 +2825,12 @@ export function applySettingsLanguage() {
     setText('cancel-override-btn', tSettings('cancel'));
     setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
     setText('confirm-override-header', tSettings('startBlockHoldHeader'));
+    setText('start-block-confirm-title', tSettings('startThisBlock'));
+    setText('start-confirm-blocking-label', tSettings('startConfirmBlockingLabel'));
+    setText('start-confirm-show-all-blocking', tSettings('showAll'));
+    setText('start-confirm-unlock-label', tSettings('startConfirmUnlockLabel'));
+    setText('cancel-start-confirm-btn', tSettings('cancel'));
+    setStartConfirmPrimaryLabel('proceed-start-confirm-btn', tSettings('startBlock'));
     const panelOverlayCustomiseBtn = document.getElementById('schedule-panel-overlay-customise-btn');
     if (panelOverlayCustomiseBtn) {
         panelOverlayCustomiseBtn.title = tSettings('scheduleOverlayCustomiseBtn');
