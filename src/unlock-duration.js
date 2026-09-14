@@ -1,8 +1,8 @@
-// Temporary unlock duration — what "stop" means for a focus space.
+// Auto-start after stop — what "stop" means for a focus space.
 //
 // Every focus space carries `unlockMinutes`. Stopping a running space (the
-// card switch, the now-blocking chip, the editor banner, the Android friction
-// gate) pauses it for that long and it turns itself back on afterwards. 0 is
+// card switch, the Android friction gate) pauses it for that long and it turns
+// itself back on afterwards. 0 is
 // "Never": a Manual block is removed and a Daily / Weekly schedule is switched
 // off open-ended (`isPaused` with no `pauseEndTime`, honoured by every
 // enforcement layer). Mirrors `autoReenableMinutes` in the Android app.
@@ -14,6 +14,14 @@ export const UNLOCK_MINUTE_OPTIONS = Object.freeze([0, 5, 10, 15, 30, 60, 120, 2
 
 /** 24 hours, the Android default. Also applied to spaces saved before this field existed. */
 export const DEFAULT_UNLOCK_MINUTES = 1440;
+
+/**
+ * What a newly created focus space starts on: Never. Auto-start is opt-in, so
+ * a new space stays off when stopped until the user picks a duration. This is
+ * deliberately not DEFAULT_UNLOCK_MINUTES, which remains the fallback for
+ * missing or malformed values on existing spaces.
+ */
+export const NEW_SPACE_UNLOCK_MINUTES = 0;
 
 /**
  * Anything that is not exactly one of the menu options falls back to the

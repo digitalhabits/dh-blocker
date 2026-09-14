@@ -10,7 +10,7 @@ import { escapeHtml } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
 import { isProtectedApp, ALWAYS_ON_END_TIME } from './blocklist-utils.js';
 import { isSchedulePausedNow, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncSchedulesToHelper } from './schedule-engine.js';
-import { saveData, updateHostsFile, createDefaultBlocklist } from './persistence.js';
+import { saveData, updateHostsFile } from './persistence.js';
 import { render } from './render.js';
 import { renderBlocklists } from './blocklists.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
@@ -18,6 +18,7 @@ import { applyScheduleStartOverlayPresentation, getScheduleStartOverlayForWarnin
 import { closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, initializeOverrideModalChallenge, openScheduleOverrideModal, populateOverrideConfirmModalContent } from './confirm-modals.js';
 import { isModalVisible } from './modal-manager.js';
 import { updateManageSectionVisibility, closeOverrideAllModal } from './settings.js';
+import { closeEditorDiscardConfirmModal } from './focus-space-editor.js';
 import { CURRENT_EULA_REVISION, getAcceptedEulaRevision, hasAcceptedEula, isFirstRunOnboardingInProgress } from './onboarding.js';
 import { generateId, runPostAcceptanceStartup } from './app.js';
 
@@ -1023,11 +1024,8 @@ export async function migrateAndroidNativeSchedules() {
 
         if (!state.appData.settings) state.appData.settings = {};
         state.appData.settings.androidMigrationDone = true;
-        // No legacy data to import (genuinely fresh Android install) — create
-        // the default space here, since loadData deferred it pending migration.
-        if (state.appData.blocklists.length === 0) {
-            createDefaultBlocklist();
-        }
+        // No legacy data to import leaves a fresh install empty, as on every
+        // other platform: there is no default focus space.
         await saveData();
 
         // Restore Kotlin sessions for carried-over always-on blocks: the sync
@@ -1108,6 +1106,9 @@ export const ANDROID_MODAL_CLOSE_FNS = {
     'override-modal': closeOverrideModal,
     'start-block-confirm-modal': closeStartConfirmModal,
     'override-all-modal': closeOverrideAllModal,
+    // An arrow, so the binding is read at back-press time, not while this
+    // module is still evaluating (focus-space-editor.js imports back into it).
+    'editor-discard-modal': () => closeEditorDiscardConfirmModal(false),
 };
 
 // Tauri's generated WryActivity.onKeyDown only calls webView.goBack() on

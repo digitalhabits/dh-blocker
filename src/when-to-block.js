@@ -94,21 +94,39 @@ export function formatSegmentRange(seg) {
 /**
  * One-line summary for the "When to block" section header.
  * `labels`: { manual, dailyFmt(range), weeklyFmt(days, range), dayNames: string[7], noDays }
+ *
+ * Compact (default) shows the first segment and counts the rest ("+2").
+ * `full` lists every range instead, grouped under identical day sets in the
+ * order they first appear — the focus-space card uses it when it fits.
  */
-export function formatWhenToBlockSummary(kind, segments, labels) {
+export function formatWhenToBlockSummary(kind, segments, labels, { full = false } = {}) {
     if (kind === 'manual' || !Array.isArray(segments) || segments.length === 0) {
         return labels.manual;
     }
     if (kind === 'daily') {
         return labels.dailyFmt(formatSegmentRange(segments[0]));
     }
-    const first = segments[0];
-    const days = Array.isArray(first.days) ? [...first.days].sort((a, b) => a - b) : [];
-    const dayText = days.length === 0
+    const sortedDays = (seg) => (Array.isArray(seg.days) ? [...seg.days].sort((a, b) => a - b) : []);
+    const dayTextFor = (days) => (days.length === 0
         ? labels.noDays
-        : (coversEveryDay(days) ? labels.everyDay : days.map((d) => labels.dayNames[d]).join(', '));
+        : (coversEveryDay(days) ? labels.everyDay : days.map((d) => labels.dayNames[d]).join(', ')));
+
+    if (full) {
+        const groups = new Map();
+        for (const seg of segments) {
+            const days = sortedDays(seg);
+            const key = days.join(',');
+            if (!groups.has(key)) groups.set(key, { dayText: dayTextFor(days), ranges: [] });
+            groups.get(key).ranges.push(formatSegmentRange(seg));
+        }
+        return [...groups.values()]
+            .map((group) => labels.weeklyFmt(group.dayText, group.ranges.join(', ')))
+            .join('; ');
+    }
+
+    const first = segments[0];
     const range = segments.length > 1
         ? `${formatSegmentRange(first)} +${segments.length - 1}`
         : formatSegmentRange(first);
-    return labels.weeklyFmt(dayText, range);
+    return labels.weeklyFmt(dayTextFor(sortedDays(first)), range);
 }

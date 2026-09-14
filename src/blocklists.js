@@ -2,7 +2,7 @@
 // Extracted verbatim from app.js.
 import { state } from './state.js';
 import { getMaxOverrideWords, migrateOverrideDifficultyToWords } from './override-challenge.js';
-import { normalizeUnlockMinutes } from './unlock-duration.js';
+import { getBlocklistUnlockMinutes, normalizeUnlockMinutes } from './unlock-duration.js';
 import { confirmDiscardEditorEdits, editorHasUnsavedEdits, formatScheduleWhenSummary } from './focus-space-editor.js';
 import { deriveWhenToBlockKind } from './when-to-block.js';
 import { BaseDirectory } from '@tauri-apps/api/path';
@@ -11,7 +11,7 @@ import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { escapeHtml, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
 import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, isAllowlistBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist } from './blocklist-utils.js';
-import { isOneOffBlockEnforced, isSchedulePausedNow } from './schedule-engine.js';
+import { computeNextOneShotOccurrenceMs, computeNextRepeatingOccurrenceMs, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render, renderScheduleVisibilityChips } from './render.js';
 import { isFocusSpaceOn, setFocusSpaceEnabled } from './focus-space-switch.js';
@@ -72,11 +72,18 @@ async function openBlocklistEnterFromCard(blocklistId) {
     handleBlocklistSelect({ target: dropdown }, { openEnterUi: true });
 }
 
+/** "starts in 2h" → "Starts in 2h": the status sits at the start of the card line. */
+function capitalizeFirst(text) {
+    return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+}
+
 /**
  * The card's third line, like the Android app's: "{status} · {timing}".
  * Status is Blocking now / Allowing now (green), Paused until 10:30, Off, or
  * Scheduled; timing is "Manual · starts when enabled" or the schedule's days
- * and times. A Manual space that is not running shows just the timing.
+ * and times. A Manual space that is not running shows just the timing. One
+ * that has been started and auto-starts after a stop says just "Manual":
+ * "starts when enabled" would suggest it waits for the switch.
  */
 function buildBlocklistCardStatusLine(bl, now = Date.now()) {
     const schedule = (state.appData.schedules || []).find(
@@ -86,7 +93,10 @@ function buildBlocklistCardStatusLine(bl, now = Date.now()) {
         (b) => b.blocklistId === bl.id && b.startTime <= now && b.endTime > now,
     ) || null;
     const nowLabel = tSettings(isAllowlistBlocklist(bl) ? 'cardStatusAllowingNow' : 'cardStatusBlockingNow');
-    const timing = formatScheduleWhenSummary(deriveWhenToBlockKind(schedule), schedule);
+    const kind = deriveWhenToBlockKind(schedule);
+    const manualAutoStarts = kind === 'manual' && !!block && getBlocklistUnlockMinutes(bl) > 0;
+    const timing = manualAutoStarts ? tSettings('whenManualShort') : formatScheduleWhenSummary(kind, schedule);
+    const fullTiming = manualAutoStarts ? timing : formatScheduleWhenSummary(kind, schedule, { full: true });
     // 24-hour HH:MM, matching the schedule times on the same line.
     const pausedUntil = (pauseEndTime) => {
         const d = new Date(pauseEndTime);
@@ -104,16 +114,66 @@ function buildBlocklistCardStatusLine(bl, now = Date.now()) {
         if (isSchedulePausedNow(schedule, now)) {
             status = schedule.pauseEndTime ? pausedUntil(schedule.pauseEndTime) : tSettings('cardStatusOff');
         } else if (getActiveAppBlockingSnoozeBlocklistId(now) === bl.id) {
-            status = formatAppBlockingSnoozeStartsIn(appBlockingWarningSnoozedUntilMs - now);
+            status = capitalizeFirst(formatAppBlockingSnoozeStartsIn(appBlockingWarningSnoozedUntilMs - now));
         } else if (isScheduleSegmentActiveNow(schedule, new Date(now))) {
             status = nowLabel; tone = ' is-blocking';
         } else {
-            status = tSettings('cardStatusScheduled');
+            // On but between blocks: "Starts in 12h 40m". A schedule with no
+            // start left (its end date has passed) keeps plain "Scheduled".
+            const nextStartMs = isNonRepeatingSchedule(schedule)
+                ? computeNextOneShotOccurrenceMs(schedule, now)
+                : computeNextRepeatingOccurrenceMs(schedule, now);
+            status = nextStartMs != null
+                ? capitalizeFirst(formatAppBlockingSnoozeStartsIn(nextStartMs - now))
+                : tSettings('cardStatusScheduled');
         }
     }
 
-    const text = status ? tSettingsFmt('cardStatusLineFmt', { status, timing }) : timing;
-    return `<div class="blocklist-status-line${tone}" title="${escapeHtml(text)}">${escapeHtml(text)}</div>`;
+    const lineText = (t) => (status ? tSettingsFmt('cardStatusLineFmt', { status, timing: t }) : t);
+    const text = lineText(timing);
+    const fullText = lineText(fullTiming);
+    // Both forms ride along when they differ; fitBlocklistStatusLines picks the
+    // full one whenever it fits on the line.
+    const fitAttrs = fullText !== text
+        ? ` data-full="${escapeHtml(fullText)}" data-compact="${escapeHtml(text)}"`
+        : '';
+    return `<div class="blocklist-status-line${tone}" title="${escapeHtml(fullText)}"${fitAttrs}>${escapeHtml(text)}</div>`;
+}
+
+/**
+ * Show each card's full schedule ("00:00 – 07:00, 09:00 – 12:00") when it fits
+ * on the single status line, and the compact "00:00 – 07:00 +1" otherwise.
+ */
+function fitBlocklistStatusLine(line) {
+    // Not laid out yet (rendered while hidden): 0 <= 0 would read as "fits".
+    // The observer below fits it once it gets a width.
+    if (line.clientWidth === 0) return;
+    line.textContent = line.dataset.full;
+    if (line.scrollWidth > line.clientWidth + 1) line.textContent = line.dataset.compact;
+}
+
+function fitBlocklistStatusLines(container) {
+    container.querySelectorAll('.blocklist-status-line[data-compact]').forEach(fitBlocklistStatusLine);
+}
+
+// Observe the lines themselves, re-attached on every render: a ResizeObserver
+// always reports a newly observed element once it is laid out, which covers a
+// list rendered while hidden and shown without its width changing, and it
+// reports again whenever a line's width changes (window resize, column switch).
+// Swapping the text never changes the line's box, so fitting cannot loop.
+// Web fonts re-fit too: the swap from a fallback font changes no box width.
+let blocklistStatusLineObserver = null;
+function observeBlocklistStatusLines(container) {
+    if (typeof ResizeObserver === 'undefined') return;
+    if (!blocklistStatusLineObserver) {
+        blocklistStatusLineObserver = new ResizeObserver((entries) => {
+            entries.forEach(({ target }) => fitBlocklistStatusLine(target));
+        });
+        document.fonts?.addEventListener?.('loadingdone', () => fitBlocklistStatusLines(container));
+    }
+    blocklistStatusLineObserver.disconnect();
+    container.querySelectorAll('.blocklist-status-line[data-compact]')
+        .forEach((line) => blocklistStatusLineObserver.observe(line));
 }
 
 export function truncateBlocklistName(raw) {
@@ -195,37 +255,6 @@ export function getNextCopyName(blocklist) {
 /** Is this one-off block's pause live right now (open-ended pauses never expire)? */
 export function isOneOffPauseActive(block, now = Date.now()) {
     return !!(block?.isPaused && (!block.pauseEndTime || block.pauseEndTime > now));
-}
-
-/**
- * Which one-off block or schedule is *running* this focus space right now, if
- * any — running meaning enforcing or due to resume on its own, i.e. not paused.
- *
- * Deliberately NOT the same question as isBlocklistEditFrictionRequired. A
- * flexible schedule sitting between segments is not edit-gated but is still
- * running, and the blocklist/allowlist mode radios stay locked for it: swapping
- * a live focus space between blocking and allowing changes what the next
- * segment enforces. Pausing is the one action that clears both.
- *
- * Doubles as "what would the editor banner's Turn off act on", which is why it
- * returns the row rather than a boolean.
- */
-export function getRunningEnforcementTarget(blocklistId, now = Date.now()) {
-    if (!blocklistId) return null;
-    const block = state.appData.activeBlocks.find(
-        b => b.blocklistId === blocklistId
-            && b.startTime <= now
-            && b.endTime > now
-            && !isOneOffPauseActive(b, now)
-    );
-    if (block) return { type: 'block', block };
-
-    const schedule = state.appData.schedules?.find(
-        s => s.blocklistId === blocklistId
-            && s.segments?.length > 0
-            && !isSchedulePausedNow(s, now)
-    );
-    return schedule ? { type: 'schedule', schedule } : null;
 }
 
 /**
@@ -808,6 +837,40 @@ export function undoDelete() {
 
 // Main render function
 
+// The card markup last written to the list, with each status line left out, so
+// renderBlocklists can leave the elements alone when nothing but status text
+// changed (see the check before innerHTML below). The status lines themselves
+// are kept per card id and patched in place.
+let lastRenderedBlocklistsHtml = null;
+let lastRenderedStatusLinesById = new Map();
+
+const STATUS_LINE_SLOT = '<!--status-line-->';
+
+/**
+ * Swap only the status lines whose markup changed ("Starts in 12h 40m" ticks
+ * every minute). Replacing a line inside a card keeps the card element, so a
+ * click that straddles the re-render still reaches the card's listener.
+ */
+function updateBlocklistStatusLinesInPlace(container, statusLinesById) {
+    let replaced = false;
+    statusLinesById.forEach((html, id) => {
+        if (lastRenderedStatusLinesById.get(id) === html) return;
+        const line = container.querySelector(`.blocklist-card[data-id="${id}"] .blocklist-status-line`);
+        if (!line) return;
+        const template = document.createElement('template');
+        template.innerHTML = html.trim();
+        const next = template.content.firstElementChild;
+        if (!next) return;
+        line.replaceWith(next);
+        replaced = true;
+    });
+    lastRenderedStatusLinesById = statusLinesById;
+    if (replaced) {
+        fitBlocklistStatusLines(container);
+        observeBlocklistStatusLines(container);
+    }
+}
+
 // Render blocklists
 export function renderBlocklists() {
     closeAllBlocklistMenus();
@@ -824,6 +887,8 @@ export function renderBlocklists() {
     }
 
     if (visibleBlocklists.length === 0) {
+        lastRenderedBlocklistsHtml = null;
+        lastRenderedStatusLinesById = new Map();
         container.innerHTML = `
       <div class="no-active-blocks clickable" id="empty-blocklists-cta" style="cursor: pointer;">
         <p>${tSettings('noBlocklistsYet')}</p>
@@ -836,7 +901,8 @@ export function renderBlocklists() {
         return;
     }
 
-    container.innerHTML = visibleBlocklists.map(bl => {
+    const statusLinesById = new Map();
+    const cardsHtml = visibleBlocklists.map(bl => {
         const metaHtml = buildBlocklistCardMetaHtml(bl);
         const isExpanded = expandedBlocklistCardIds.has(bl.id);
         const showDetails = blocklistCardHasExpandableSummary(bl);
@@ -855,7 +921,8 @@ export function renderBlocklists() {
 
         const activeClass = isActive ? ' blocklist-card-active' : (hasSchedule ? ' blocklist-card-scheduled' : '');
 
-        const statusLineHtml = buildBlocklistCardStatusLine(bl, now);
+        statusLinesById.set(bl.id, buildBlocklistCardStatusLine(bl, now));
+        const statusLineHtml = STATUS_LINE_SLOT;
 
         const isSelected = isBlocklistCardVisuallySelected(bl.id);
         const selectedClass = isSelected ? ' selected' : '';
@@ -896,6 +963,23 @@ export function renderBlocklists() {
       </div>
     `;
     }).join('');
+
+    // Same cards: keep the card elements, patching only status text that moved.
+    // render() runs on every window focus and once a minute, and replacing the
+    // cards between mousedown and mouseup sends the click to the container
+    // instead of the card — the first click on an unfocused window did nothing.
+    // The listeners attached by the last real render are still in place.
+    if (cardsHtml === lastRenderedBlocklistsHtml && container.querySelector('.blocklist-card')) {
+        updateBlocklistStatusLinesInPlace(container, statusLinesById);
+        return;
+    }
+    lastRenderedBlocklistsHtml = cardsHtml;
+    lastRenderedStatusLinesById = statusLinesById;
+    let slotIndex = 0;
+    container.innerHTML = cardsHtml.replace(
+        new RegExp(STATUS_LINE_SLOT, 'g'),
+        () => statusLinesById.get(visibleBlocklists[slotIndex++].id),
+    );
 
     // Add event listeners
     container.querySelectorAll('.blocklist-card').forEach(card => {
@@ -989,6 +1073,9 @@ export function renderBlocklists() {
             document.addEventListener('mouseup', onMouseUp);
         });
     });
+
+    fitBlocklistStatusLines(container);
+    observeBlocklistStatusLines(container);
 }
 
 /// Pre-select the sole blocklist as the default state. Skipped if the

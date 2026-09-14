@@ -6,11 +6,11 @@ import { tauriAPI } from './tauri-api.js';
 import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
 import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn } from './blocklist-utils.js';
-import { DEFAULT_OVERRIDE_WORDS, generateOverrideChallengeText, getMaxOverrideCountForType, getMaxOverrideWords, getMinOverrideCountForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, migrateOverrideDifficultyToWords, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType, sanitizeChallengeTargetText } from './override-challenge.js';
+import { DEFAULT_OVERRIDE_WORDS, generateOverrideChallengeText, getMaxOverrideCountForType, getMaxOverrideWords, getMinOverrideCountForType, getOverrideEstimatedMinutes, isMobileOverrideChallengePlatform, migrateOverrideDifficultyToWords, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType, sanitizeChallengeTargetText } from './override-challenge.js';
 import { isAndroidAllowlistUnsupported, isSchedulePausedNow, refreshDesktopHelperStatus, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
-import { getRunningEnforcementTarget, isBlocklistEditFrictionRequired, renderBlocklists, truncateBlocklistName } from './blocklists.js';
+import { isBlocklistEditFrictionRequired,renderBlocklists, truncateBlocklistName } from './blocklists.js';
 import { areSegmentsEqual, getSelectedSchedule, isScheduleSegmentActiveNow, canEditScheduleBetweenBlocks } from './schedule-editor.js';
 import { pad } from './time-inputs.js';
 import { formatScheduleWhenSummary, formatUnlockDurationLabel, getWhenToBlockKind, isEditorInCreateModal, mountFocusSpaceEditor, notifyEditorChanged, populateFocusSpaceEditor, resyncEditorLockState, returnFocusSpaceEditorToPanel } from './focus-space-editor.js';
@@ -24,8 +24,7 @@ import {
     formatMinutesAsHHMM, formatTime, generateId,
     shouldUseCompactMobileScheduleDayLabels, snapMinutesToInterval,
 } from './app.js';
-import { applyStopToTarget, getBlocklistUnlockMinutes } from './unlock-duration.js';
-import { setFocusSpaceEnabled } from './focus-space-switch.js';
+import { NEW_SPACE_UNLOCK_MINUTES, applyStopToTarget, getBlocklistUnlockMinutes } from './unlock-duration.js';
 import { deriveWhenToBlockKind } from './when-to-block.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
 import {
@@ -1207,8 +1206,6 @@ function applyModalLockedItems(lockedWebsitesList, lockedAppsList) {
  */
 export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { preserveModalItems = false } = {}) {
     const isActive = isBlocklistEditFrictionRequired(blocklist?.id, now);
-    const warningEl = document.getElementById('active-blocklist-warning');
-    const turnOffBtn = document.getElementById('active-blocklist-turn-off-btn');
     // The unlock duration is locked with the rest of To stop early: lengthening
     // it while the space runs would be a cheaper way out than the challenge.
     const overrideInputs = [
@@ -1222,23 +1219,9 @@ export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { prese
     const overrideCountInput = document.getElementById('override-count');
     const overrideCountWrapperEl = document.getElementById('override-count-wrapper');
     const overrideMethodRowEl = document.getElementById('override-method-row');
-    const overridePreviewBlockEl = document.getElementById('override-preview-block');
     const overrideTimeEstimateEl = document.getElementById('override-count-time-estimate');
 
-    const runningTarget = getRunningEnforcementTarget(blocklist?.id, now);
-
-    // "Turn off" in the banner is the card switch by another name: the stop
-    // goes through the override challenge and then the unlock duration.
-    const canTurnOffToEdit = isActive && !!runningTarget;
-    turnOffBtn?.classList.toggle('hidden', !canTurnOffToEdit);
-    if (turnOffBtn) {
-        turnOffBtn.onclick = canTurnOffToEdit
-            ? () => { void setFocusSpaceEnabled(blocklist.id, false); }
-            : null;
-    }
-
     if (isActive) {
-        warningEl.classList.remove('hidden');
         overrideInputs.forEach(el => { if (el) el.disabled = true; });
         overrideTypeSelect?.classList.add('form-select-disabled');
         unlockSelect?.classList.add('form-select-disabled');
@@ -1246,7 +1229,6 @@ export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { prese
         overrideTimeEstimateEl?.classList.add('time-estimate-disabled');
         overrideMethodRowEl?.classList.add('blocklist-active-locked');
         overrideCountWrapperEl?.classList.add('blocklist-active-locked');
-        overridePreviewBlockEl?.classList.add('blocklist-active-locked');
 
         if (preserveModalItems) {
             applyModalLockedItems(blocklist.websites || [], getBlocklistModalLockedApps(blocklist));
@@ -1262,7 +1244,6 @@ export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { prese
         return;
     }
 
-    warningEl.classList.add('hidden');
     overrideInputs.forEach(el => { if (el) el.disabled = false; });
     overrideTypeSelect?.classList.remove('form-select-disabled');
     unlockSelect?.classList.remove('form-select-disabled');
@@ -1270,7 +1251,6 @@ export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { prese
     overrideTimeEstimateEl?.classList.remove('time-estimate-disabled');
     overrideMethodRowEl?.classList.remove('blocklist-active-locked');
     overrideCountWrapperEl?.classList.remove('blocklist-active-locked');
-    overridePreviewBlockEl?.classList.remove('blocklist-active-locked');
 
     if (preserveModalItems) {
         applyModalLockedItems([], []);
@@ -1286,8 +1266,8 @@ export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { prese
 }
 
 /**
- * Clear the per-form transient state (undo stack, last-value trackers, preview
- * freeze) before the editor is (re)populated.
+ * Clear the per-form transient state (undo stack, last-value trackers) before
+ * the editor is (re)populated.
  */
 export function resetBlocklistFormState() {
     state.blocklistModalUndoStack.length = 0;
@@ -1296,8 +1276,6 @@ export function resetBlocklistFormState() {
     state.lastOverrideCountValue = '';
     state.lastCustomOverrideTextValue = '';
     state.lastOverrideTypeValue = '';
-    state.overridePreviewFrozenByType = { 'random-words': null };
-    state.lastOverridePreviewType = null;
 
     // Revert the "show names on card" live preview of whatever was loaded before.
     if (state.blocklistModalPreviewSnapshot?.id) {
@@ -1354,7 +1332,10 @@ export function populateBlocklistFormFields(blocklist) {
     state.lastOverrideTypeValue = document.getElementById('override-type').value;
 
     const unlockSelect = document.getElementById('unlock-duration-select');
-    if (unlockSelect) unlockSelect.value = String(getBlocklistUnlockMinutes(blocklist));
+    // A new space starts on Never; an existing one shows what it has saved.
+    if (unlockSelect) {
+        unlockSelect.value = String(blocklist ? getBlocklistUnlockMinutes(blocklist) : NEW_SPACE_UNLOCK_MINUTES);
+    }
 
     // Restore color swatch selection
     document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
@@ -1691,16 +1672,12 @@ export function updateOverridePreview() {
     const countInput = document.getElementById('override-count');
     const customTextArea = document.getElementById('custom-override-text');
     const estimateEl = document.getElementById('override-count-time-estimate');
-    const previewEl = document.getElementById('override-preview-text');
-    const blockEl = document.getElementById('override-preview-block');
-    if (!previewEl || !blockEl) return;
 
     const type = normalizeOverrideType(typeSelect?.value);
     const count = normalizeOverrideCount(countInput?.value, 'random-words');
     const customText = customTextArea?.value ?? '';
 
     const estimatedMins = getOverrideEstimatedMinutes(type, count, customText);
-    const previewText = getOverridePreviewText(type, count, customText);
 
     if (estimateEl && type !== 'custom') {
         estimateEl.textContent = tSettingsFmt('overrideWordsEstimateFmt', { count: String(count), minutes: String(estimatedMins) });
@@ -1711,9 +1688,6 @@ export function updateOverridePreview() {
         const pct = max > min ? ((count - min) / (max - min)) * 100 : 0;
         countInput.style.setProperty('--slider-pct', `${Math.max(0, Math.min(100, pct))}%`);
     }
-
-    previewEl.textContent = previewText;
-    previewEl.title = previewText;
 }
 
 export function syncOverrideCountUi() {
@@ -1731,7 +1705,6 @@ export function applyOverrideTypeUi(type) {
     const customErrorEl = document.getElementById('custom-override-text-error');
     const overrideCountWrapper = document.getElementById('override-count-wrapper');
     const warningEl = document.getElementById('override-count-warning');
-    const previewBlockEl = document.getElementById('override-preview-block');
     syncOverrideCountUi();
 
     customTextArea?.classList.remove('input-error');
@@ -1743,7 +1716,6 @@ export function applyOverrideTypeUi(type) {
         overrideCountWrapper.classList.add('hidden');
         warningEl.classList.add('hidden');
         warningEl.textContent = '';
-        if (previewBlockEl) previewBlockEl.classList.add('hidden');
         return;
     }
 
@@ -1751,7 +1723,6 @@ export function applyOverrideTypeUi(type) {
     overrideCountWrapper.classList.remove('hidden');
     warningEl.classList.add('hidden');
     warningEl.textContent = '';
-    if (previewBlockEl) previewBlockEl.classList.remove('hidden');
     updateOverridePreview();
 }
 

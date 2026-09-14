@@ -2728,6 +2728,234 @@
         }
     }
 
+    // ========================================
+    // CATEGORY: CARD RENDER STABILITY (T179-T180)
+    // ========================================
+    // Window focus (onAppForeground → kickClockNow → render) and the minute
+    // clock tick both call render(). If that swaps the card elements out between
+    // mousedown and mouseup, the browser sends the click to the list container
+    // instead of the card and the tap is lost — the "first click on an unfocused
+    // window does nothing" bug. A render with nothing changed must keep them.
+    function runCardRenderStabilityTests() {
+        console.log('\n🧷 Card render stability');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        const savedAppData = internals.appData;
+        try {
+            // Two spaces so render() does not auto-select the sole one.
+            const spaceA = createMockBlocklist({ id: 'bl-stable-a', name: 'Stable A' });
+            const spaceB = createMockBlocklist({ id: 'bl-stable-b', name: 'Stable B' });
+            internals.appData = createMockAppData({ blocklists: [spaceA, spaceB] });
+            internals.render();
+
+            const cardBefore = document.querySelector(`.blocklist-card[data-id="${spaceA.id}"]`);
+            assert(!!cardBefore, 'T179: card renders');
+            internals.render();
+            const cardAfter = document.querySelector(`.blocklist-card[data-id="${spaceA.id}"]`);
+            assert(
+                !!cardBefore && cardAfter === cardBefore && cardBefore.isConnected,
+                'T179: re-rendering unchanged data keeps the same card element (a click straddling a focus re-render must still land)',
+            );
+
+            // T180: a real change still re-renders.
+            internals.appData.blocklists[1].name = 'Stable B renamed';
+            internals.render();
+            const titleB = document.querySelector(`.blocklist-card[data-id="${spaceB.id}"] .blocklist-title-text`)?.textContent;
+            assertEqual(titleB, 'Stable B renamed', 'T180: a changed space still re-renders');
+        } finally {
+            internals.appData = savedAppData;
+            internals.render();
+        }
+    }
+
+    // ========================================
+    // CATEGORY: SCHEDULED CARD COUNTDOWN (T181-T182)
+    // ========================================
+    // A scheduled space that is on but between blocks says how long until it
+    // starts ("Starts in 12h 40m"), like "Paused until 19:23" for a paused one.
+    // That text changes every minute, so a re-render must update it without
+    // replacing the card (see T179).
+    function runScheduledCardCountdownTests() {
+        console.log('\n⏳ Scheduled card countdown');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        const savedAppData = internals.appData;
+        const statusText = (id) => document.querySelector(`.blocklist-card[data-id="${id}"] .blocklist-status-line`)?.textContent || '';
+        try {
+            const mon0Today = (new Date().getDay() + 6) % 7;
+            const tomorrow = (mon0Today + 1) % 7;
+            const upcoming = createMockBlocklist({ id: 'bl-countdown-upcoming', name: 'Upcoming' });
+            const other = createMockBlocklist({ id: 'bl-countdown-other', name: 'Other' });
+            // Tomorrow only, so it is never running now and always ahead.
+            const schedule = createMockSchedule(upcoming.id, [createMockSegment(12, 0, 13, 0, [tomorrow])]);
+            internals.appData = createMockAppData({ blocklists: [upcoming, other], schedules: [schedule] });
+            internals.render();
+
+            assert(/^Starts in \d/.test(statusText(upcoming.id)), `T181: a scheduled space between blocks says when it starts (got "${statusText(upcoming.id)}")`);
+
+            // T182: change only what the status line shows; the card must survive.
+            const cardBefore = document.querySelector(`.blocklist-card[data-id="${upcoming.id}"]`);
+            internals.appData.schedules[0].segments[0].startHour = 11;
+            internals.render();
+            const cardAfter = document.querySelector(`.blocklist-card[data-id="${upcoming.id}"]`);
+            assert(!!cardBefore && cardAfter === cardBefore, 'T182: a status-line-only change keeps the card element');
+            assert(statusText(upcoming.id).includes('11:00'), `T182: the status line still shows the new time (got "${statusText(upcoming.id)}")`);
+        } finally {
+            internals.appData = savedAppData;
+            internals.render();
+        }
+    }
+
+    // ========================================
+    // CATEGORY: EDITOR DEFAULTS AND DIALOGS (T183-T186)
+    // ========================================
+    function runEditorDefaultsAndDialogTests() {
+        console.log('\n🧩 Editor defaults and dialogs');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+
+        // T183: auto-start after stop is opt-in, so a new space starts on Never.
+        if (typeof internals.openBlocklistModal !== 'function') {
+            assert(false, 'T183: openBlocklistModal is exposed to tests');
+        } else {
+            internals.openBlocklistModal();
+            try {
+                assertEqual(document.getElementById('unlock-duration-select')?.value, '0', 'T183: a new focus space starts on Never');
+            } finally {
+                internals.closeBlocklistModal();
+            }
+        }
+
+        // T184: the setting's label.
+        assertEqual(document.getElementById('unlock-duration-label')?.textContent, 'Auto-start after stop', 'T184: the unlock row is called "Auto-start after stop"');
+
+        // T185: the "Looks like" preview is gone from To stop early.
+        assert(!document.getElementById('override-preview-block'), 'T185: no "Looks like" preview in the editor');
+
+        // T186: discarding edits asks in an in-app dialog, not a native one.
+        if (typeof internals.showEditorDiscardConfirmModal !== 'function') {
+            assert(false, 'T186: showEditorDiscardConfirmModal is exposed to tests');
+        } else {
+            void internals.showEditorDiscardConfirmModal();
+            const modal = document.getElementById('editor-discard-modal');
+            assert(!!modal && !modal.classList.contains('hidden'), 'T186: the discard dialog opens in the app');
+            assert((modal?.querySelector('h3')?.textContent || '').length > 0, 'T186: it has a title');
+            document.getElementById('cancel-editor-discard-btn')?.click();
+            assert(!!modal && modal.classList.contains('hidden'), 'T186: Keep editing closes it');
+        }
+    }
+
+    // ========================================
+    // CATEGORY: CARD TIMING TEXT AND SECTION KEYBOARD (T187-T190)
+    // ========================================
+    function runCardTimingAndSectionKeyboardTests() {
+        console.log('\n⌨️ Card timing text and section keyboard');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        const savedAppData = internals.appData;
+        const statusText = (id) => document.querySelector(`.blocklist-card[data-id="${id}"] .blocklist-status-line`)?.textContent || '';
+        try {
+            const now = Date.now();
+            const FOREVER = 253402300799999;
+            // A Manual space that has been started and auto-starts again after a stop.
+            const autoStart = createMockBlocklist({ id: 'bl-timing-auto', name: 'Auto', unlockMinutes: 60 });
+            // A Manual space running with Never: turning it back on stays up to the user.
+            const never = createMockBlocklist({ id: 'bl-timing-never', name: 'Never', unlockMinutes: 0 });
+            internals.appData = createMockAppData({
+                blocklists: [autoStart, never],
+                activeBlocks: [
+                    createMockBlock(autoStart.id, now - 60000, FOREVER, { isAlwaysOn: true, isPaused: true, pauseEndTime: now + 30 * 60000 }),
+                    createMockBlock(never.id, now - 60000, FOREVER, { isAlwaysOn: true }),
+                ],
+            });
+            internals.render();
+            const autoText = statusText(autoStart.id);
+            assert(autoText.startsWith('Paused until') && !autoText.includes('starts when enabled'),
+                `T187: a stopped Manual space that auto-starts drops "starts when enabled" (got "${autoText}")`);
+            assert(statusText(never.id).includes('starts when enabled'),
+                `T188: a Manual space set to Never keeps "starts when enabled" (got "${statusText(never.id)}")`);
+        } finally {
+            internals.appData = savedAppData;
+            internals.render();
+        }
+
+        // T189/T190: tabbing onto a section header opens it, like a click; a
+        // mouse press (which also focuses) leaves opening to the click itself.
+        if (typeof internals.openBlocklistModal !== 'function' || typeof internals.setupFocusSpaceEditor !== 'function') {
+            assert(false, 'T189: openBlocklistModal and setupFocusSpaceEditor are exposed to tests');
+            return;
+        }
+        // Without this the editor has no listeners here (startup never gets past
+        // loadData in the headless page), and T190 would pass for no reason.
+        internals.setupFocusSpaceEditor();
+        internals.openBlocklistModal();
+        try {
+            // The focus event is dispatched rather than produced by .focus():
+            // the headless runner's window has no OS focus, and then .focus()
+            // moves activeElement without firing `focus` at all. In a focused
+            // window a real Tab fires the same event (checked in Chromium).
+            const focusHeader = (el) => el?.dispatchEvent(new FocusEvent('focus'));
+            const whenHeader = document.getElementById('editor-section-when-header');
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+            focusHeader(whenHeader);
+            assertEqual(whenHeader?.getAttribute('aria-expanded'), 'true', 'T189: tabbing to When to block opens it');
+
+            const stopHeader = document.getElementById('editor-section-stop-header');
+            stopHeader?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+            focusHeader(stopHeader);
+            assertEqual(stopHeader?.getAttribute('aria-expanded'), 'false', 'T190: a mouse press alone does not open a section');
+        } finally {
+            document.activeElement?.blur?.();
+            internals.closeBlocklistModal();
+        }
+    }
+
+    // ========================================
+    // CATEGORY: APP-STYLED DROPDOWNS (T191-T195)
+    // ========================================
+    // Native <select>s get the Settings language picker's look; the native
+    // element stays the source of truth for .value, .disabled and `change`.
+    function runCustomSelectTests() {
+        console.log('\n🔽 App-styled dropdowns');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        if (typeof internals.enhanceSelect !== 'function' || typeof internals.enhanceNativeSelects !== 'function') {
+            assert(false, 'T191: enhanceSelect and enhanceNativeSelects are exposed to tests');
+            return;
+        }
+        const host = document.createElement('div');
+        document.body.appendChild(host);
+        let menu = null;
+        try {
+            host.innerHTML = '<select id="custom-select-test"><option value="a">Alpha</option><option value="b">Beta</option></select>';
+            const select = host.querySelector('select');
+            internals.enhanceSelect(select);
+            const trigger = host.querySelector('.custom-select-trigger');
+            assert(!!trigger, 'T191: a native select gets an app-styled trigger');
+            assertEqual(trigger?.textContent.trim(), 'Alpha', 'T191: the trigger shows the selected option');
+
+            select.value = 'b';
+            assertEqual(trigger?.textContent.trim(), 'Beta', 'T192: setting .value in code updates the trigger');
+
+            let changes = 0;
+            select.addEventListener('change', () => { changes += 1; });
+            trigger?.click();
+            menu = document.getElementById(trigger?.getAttribute('aria-controls') || '');
+            assert(!!menu && !menu.classList.contains('hidden'), 'T193: clicking the trigger opens the menu');
+            menu?.querySelector('[data-value="a"]')?.click();
+            assertEqual(select.value, 'a', 'T193: choosing an option sets the native value');
+            assertEqual(changes, 1, 'T193: choosing an option fires change once');
+            assert(!!menu && menu.classList.contains('hidden'), 'T193: choosing an option closes the menu');
+
+            select.disabled = true;
+            assert(!!trigger?.disabled, 'T194: disabling the select disables the trigger');
+
+            internals.enhanceNativeSelects();
+            const missed = [...document.querySelectorAll('select')]
+                .filter((el) => el.id !== 'blocklist-select' && el.dataset.customSelectBound !== '1')
+                .map((el) => el.id || '(no id)');
+            assertEqual(missed.join(', '), '', 'T195: every app dropdown except the hidden blocklist select is app-styled');
+        } finally {
+            host.remove();
+            menu?.remove();
+        }
+    }
+
     function runAllTests() {
         console.clear();
         console.log('🧪 ReddBlock Blocking Tests');
@@ -2758,6 +2986,11 @@
             runTemporaryUnlockTests();
             runCompactDesktopCardTapTests();
             runFocusSpaceSwitchTests();
+            runCardRenderStabilityTests();
+            runScheduledCardCountdownTests();
+            runEditorDefaultsAndDialogTests();
+            runCardTimingAndSectionKeyboardTests();
+            runCustomSelectTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
         }

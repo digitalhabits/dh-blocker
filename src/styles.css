@@ -2240,18 +2240,6 @@ body.ios:not(.ios-phone) .main-content .schedule-pending-save{
         border-radius: 8px;
     }
 
-    body.ios:not(.ios-phone) .main-content .warning-banner{
-        padding: 10px 14px;
-        font-size: 16px;
-        gap: 10px;
-        border-radius: 8px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .warning-banner svg{
-        width: 20px;
-        height: 20px;
-    }
-
     body.ios:not(.ios-phone) .main-content .blocklists-container{
         gap: 12px;
         --blocklists-scroll-max-height: 440px;
@@ -2491,19 +2479,6 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         margin-right: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .warning-banner{
-        padding: calc(8px * var(--ipad-s)) calc(12px * var(--ipad-s));
-        font-size: calc(15px * var(--ipad-s));
-        gap: calc(8px * var(--ipad-s));
-        border-radius: calc(6px * var(--ipad-s));
-        margin-bottom: calc(16px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .warning-banner svg{
-        width: calc(20px * var(--ipad-s));
-        height: calc(20px * var(--ipad-s));
-    }
-
     body.ios:not(.ios-phone) .modal-overlay .form-group{
         margin-bottom: calc(16px * var(--ipad-s));
     }
@@ -2654,14 +2629,6 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         min-width: calc(140px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .exit-difficulty-preview{
-        padding: calc(10px * var(--ipad-s)) calc(14px * var(--ipad-s)) calc(12px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .exit-difficulty-preview-label{
-        font-size: calc(13px * var(--ipad-s));
-        margin-bottom: calc(4px * var(--ipad-s));
-    }
 
     
 
@@ -2669,10 +2636,6 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
 
     body.ios:not(.ios-phone) .modal-overlay .exit-difficulty-time-estimate{
         font-size: calc(13px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .exit-difficulty-preview .override-preview-text{
-        font-size: calc(15px * var(--ipad-s));
     }
 
     /* Override / pause challenge */
@@ -3342,7 +3305,8 @@ body.ios .scheduler-section > .section-header {
     .grid-top-row .scheduler-content{
         grid-column: 2;
         grid-row: 2;
-        padding-top: 8px;
+        /* 0 so the editor card's top edge lines up with the Block / Allow buttons. */
+        padding-top: 0;
         min-width: 0;
     }
 }
@@ -4654,48 +4618,6 @@ body.dark-mode .time-part.active{
     font-size: 17px;
     font-weight: 600;
     color: var(--text-secondary);
-}
-
-/* Warning Banner */
-.warning-banner{
-    background: #fffbeb;
-    color: #92400e;
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 15px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 16px;
-    border: 1px solid #fcd34d;
-}
-
-.warning-banner svg{
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-}
-
-.warning-banner-action{
-    flex-shrink: 0;
-    margin-left: auto;
-    border: 1px solid currentColor;
-    border-radius: 6px;
-    background: transparent;
-    color: inherit;
-    padding: 4px 10px;
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-}
-
-.warning-banner-action:hover{
-    background: rgba(146, 64, 14, 0.08);
-}
-
-.warning-banner-action:focus-visible{
-    outline: 2px solid currentColor;
-    outline-offset: 2px;
 }
 
 .mode-option.disabled{
@@ -10371,6 +10293,13 @@ body.desktop-compact-layout .mobile-fullscreen-modal .mobile-modal-title-source{
     display: none;
 }
 
+/* The desktop edit sheet has no header bar: the back chevron and title sit in
+   the card's own title row, as in the two-column panel. Out-specifies the
+   ≤718px :is(...) header rule below, which sets display: grid. */
+body.enter-scheduler-modal-open:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header{
+    display: none;
+}
+
 /* The dialog title is moved into .mobile-modal-header, so the title row keeps
    no top margin under the sticky mobile header. */
 
@@ -12958,6 +12887,172 @@ body.dark-mode .language-picker-dropdown{
     display: none;
 }
 
+/* App-styled dropdowns (custom-select.js): every <select> gets the language
+   picker's trigger and menu. The native select stays in the DOM, hidden. */
+.custom-select{
+    position: relative;
+    display: block;
+    width: 100%;
+    min-width: 0;
+}
+
+.custom-select.hidden{
+    display: none;
+}
+
+.custom-select-native{
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    pointer-events: none;
+}
+
+.custom-select-trigger{
+    display: flex;
+    width: 100%;
+    box-sizing: border-box;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color-medium);
+    border-radius: 8px;
+    background: var(--modal-bg);
+    color: var(--text-primary);
+    font-size: 15px;
+    font-family: inherit;
+    line-height: 1.25;
+    text-align: left;
+    cursor: pointer;
+    min-width: 0;
+    transition: border-color 0.15s ease;
+}
+
+.custom-select-trigger:hover{
+    border-color: var(--border-color-strong, var(--border-color-medium));
+}
+
+.custom-select-trigger[aria-expanded="true"],
+.custom-select-trigger:focus-visible{
+    border-color: var(--accent-color);
+    outline: none;
+}
+
+.custom-select-value{
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.custom-select-chevron{
+    flex-shrink: 0;
+    color: var(--text-muted);
+}
+
+.custom-select-trigger[aria-expanded="true"] .custom-select-chevron{
+    color: var(--icon-btn-hover-color);
+}
+
+.custom-select-trigger:disabled{
+    opacity: 0.55;
+    cursor: default;
+}
+
+/* The editor's locked state while a space is running. */
+.custom-select-trigger--locked{
+    opacity: 0.55;
+    cursor: default;
+    pointer-events: none;
+}
+
+.custom-select-menu{
+    position: fixed;
+    z-index: 3000;
+    box-sizing: border-box;
+    min-width: 140px;
+    max-width: min(22rem, calc(100vw - 16px));
+    padding: 6px;
+    overflow-y: auto;
+    background: var(--modal-bg);
+    border: 1px solid var(--border-color-light);
+    border-radius: 12px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+    text-align: left;
+}
+
+body.dark-mode .custom-select-menu{
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.custom-select-menu.hidden{
+    display: none;
+}
+
+.custom-select-option{
+    display: flex;
+    align-items: center;
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 400;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.custom-select-option:hover,
+.custom-select-option:focus-visible{
+    background: var(--border-color-light);
+    outline: none;
+}
+
+.custom-select-option--selected{
+    background: var(--border-color-light);
+    font-weight: 500;
+}
+
+.custom-select-option:disabled{
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* Where the dropdowns sit: keep each spot's old footprint. */
+#focus-space-editor .exit-difficulty-row-control .custom-select{
+    width: auto;
+    min-width: 140px;
+}
+
+.start-confirm-overlay-controls .custom-select{
+    flex: 1;
+    width: auto;
+}
+
+.start-confirm-overlay-controls .custom-select-trigger{
+    height: 100%;
+    min-height: 42px;
+    padding: 0 12px 0 16px;
+    font-weight: 500;
+}
+
+.settings-blocking-method-rows .custom-select-trigger{
+    padding: 7px 10px;
+    font-size: 13px;
+}
+
 .settings-modal-header{
     display: flex;
     align-items: baseline;
@@ -13221,16 +13316,11 @@ body.dark-mode.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-bu
     overflow: hidden;
 }
 
-#focus-space-editor .exit-difficulty-preview{
-    background: var(--modal-bg);
-    border-radius: 0 0 11px 11px;
-}
-
 #focus-space-editor .exit-difficulty-row-label{
     font-weight: 600;
 }
 
-/* Temporary unlock duration: what "stop" does to this space (Android's
+/* Auto-start after stop: what "stop" does to this space (Android's
    "auto re-enable"). Label + hint stack on the left, the menu sits right. */
 #focus-space-editor .unlock-duration-row{
     align-items: start;
@@ -13386,19 +13476,6 @@ body.handset-device #start-block-confirm-modal .start-confirm-header-room h3{
     flex-shrink: 0;
 }
 
-.exit-difficulty-preview{
-    padding: 10px 14px 12px;
-    border-top: 1px solid var(--border-color-medium);
-}
-
-.exit-difficulty-preview-label{
-    display: block;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-muted);
-    margin-bottom: 4px;
-}
-
 /* Count stepper non-interactive when max difficulty is on */
 
 .exit-difficulty-time-estimate.time-estimate-disabled{
@@ -13407,37 +13484,13 @@ body.handset-device #start-block-confirm-modal .start-confirm-header-room h3{
 
 /* When blocklist has active block or schedule: grey out override panel rows */
 #override-method-row.blocklist-active-locked,
-#override-count-wrapper.blocklist-active-locked,
-#override-preview-block.blocklist-active-locked{
+#override-count-wrapper.blocklist-active-locked{
     pointer-events: none;
     opacity: 0.7;
 }
 
 #override-count-wrapper.blocklist-active-locked .exit-difficulty-time-estimate{
     cursor: default;
-}
-
-/* Override difficulty: preview text (truncate with ...) */
-.exit-difficulty-preview .override-preview-text{
-    margin-top: 0;
-    width: 100%;
-    background: transparent;
-    padding: 0;
-    border-radius: 0;
-}
-
-.override-preview-text{
-    width: 100%;
-    box-sizing: border-box;
-    color: var(--text-primary);
-    font-family: monospace;
-    font-size: 15px;
-    line-height: 1.4;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    user-select: none;
-    -webkit-user-select: none;
 }
 
 /* Platform-specific uninstall UI in Settings → Manage.
@@ -14061,19 +14114,34 @@ body.dark-mode #mac-automation-intro-modal .modal-btn.cancel-btn:hover{
 
 /* Start alert confirmation modals (discard + delete) */
 #schedule-overlay-discard-modal,
-#schedule-overlay-delete-modal{
+#schedule-overlay-delete-modal,
+#editor-discard-modal{
     z-index: 220;
 }
 
 #schedule-overlay-discard-modal .modal-content,
-#schedule-overlay-delete-modal .modal-content{
+#schedule-overlay-delete-modal .modal-content,
+#editor-discard-modal .modal-content{
     max-width: 520px;
     padding: 28px 28px 24px;
     box-shadow: 0 16px 48px rgba(30, 45, 62, 0.14);
 }
 
+#editor-discard-modal .modal-content{
+    max-width: 440px;
+}
+
+/* The focus-space editor's "Discard changes?" body line. */
+#editor-discard-modal .editor-discard-body{
+    margin: 0 0 20px;
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
 #schedule-overlay-discard-modal h3,
-#schedule-overlay-delete-modal h3{
+#schedule-overlay-delete-modal h3,
+#editor-discard-modal h3{
     font-family: var(--font-heading);
     font-size: 24px;
     font-weight: 700;
@@ -14088,32 +14156,37 @@ body.dark-mode #mac-automation-intro-modal .modal-btn.cancel-btn:hover{
 }
 
 #schedule-overlay-discard-modal .modal-buttons,
-#schedule-overlay-delete-modal .modal-buttons{
+#schedule-overlay-delete-modal .modal-buttons,
+#editor-discard-modal .modal-buttons{
     gap: 12px;
     margin-top: 0;
 }
 
 #schedule-overlay-discard-modal .modal-btn,
-#schedule-overlay-delete-modal .modal-btn{
+#schedule-overlay-delete-modal .modal-btn,
+#editor-discard-modal .modal-btn{
     padding: 12px 16px;
     border-radius: 10px;
     font-size: 15px;
 }
 
 #schedule-overlay-discard-modal .modal-btn.cancel-btn,
-#schedule-overlay-delete-modal .modal-btn.cancel-btn{
+#schedule-overlay-delete-modal .modal-btn.cancel-btn,
+#editor-discard-modal .modal-btn.cancel-btn{
     background: #ffffff;
     border: 1px solid var(--border-color-medium);
     color: var(--text-secondary);
 }
 
 #schedule-overlay-discard-modal .modal-btn.cancel-btn:hover,
-#schedule-overlay-delete-modal .modal-btn.cancel-btn:hover{
+#schedule-overlay-delete-modal .modal-btn.cancel-btn:hover,
+#editor-discard-modal .modal-btn.cancel-btn:hover{
     background: var(--redd-warm-grey);
 }
 
 #schedule-overlay-discard-modal .modal-btn.danger-btn:hover:not(:disabled),
-#schedule-overlay-delete-modal .modal-btn.danger-btn:hover:not(:disabled){
+#schedule-overlay-delete-modal .modal-btn.danger-btn:hover:not(:disabled),
+#editor-discard-modal .modal-btn.danger-btn:hover:not(:disabled){
     filter: brightness(0.95);
 }
 
@@ -14123,14 +14196,16 @@ body.dark-mode #schedule-overlay-delete-modal h3{
 }
 
 body.dark-mode #schedule-overlay-discard-modal .modal-btn.cancel-btn,
-body.dark-mode #schedule-overlay-delete-modal .modal-btn.cancel-btn{
+body.dark-mode #schedule-overlay-delete-modal .modal-btn.cancel-btn,
+body.dark-mode #editor-discard-modal .modal-btn.cancel-btn{
     background: var(--surface-secondary);
     border-color: var(--border-color);
     color: var(--text-secondary);
 }
 
 body.dark-mode #schedule-overlay-discard-modal .modal-btn.cancel-btn:hover,
-body.dark-mode #schedule-overlay-delete-modal .modal-btn.cancel-btn:hover{
+body.dark-mode #schedule-overlay-delete-modal .modal-btn.cancel-btn:hover,
+body.dark-mode #editor-discard-modal .modal-btn.cancel-btn:hover{
     background: rgba(255, 255, 255, 0.06);
 }
 
@@ -16136,6 +16211,9 @@ body.dark-mode .app-blocking-warning-card{
     justify-content: space-between;
     gap: 8px;
     min-width: 0;
+    /* Pull "Focus space name" up: the container's 16px gap is too airy under
+       a header that is already 34px tall for its icon buttons. */
+    margin-bottom: -8px;
 }
 
 .editor-panel-title{
@@ -16378,9 +16456,16 @@ body.dark-mode .app-blocking-warning-card{
     min-width: 0;
 }
 
-/* Advanced options reads as a ghost button: outline only, no fill. */
+/* Advanced options reads as a plain row: no fill and no outline until it is
+   hovered, focused or opened. The border stays (transparent) so nothing shifts. */
 #editor-section-advanced:not(.editor-section-open){
     background: transparent;
+    border-color: transparent;
+}
+
+#editor-section-advanced:not(.editor-section-open):hover,
+#editor-section-advanced:not(.editor-section-open):focus-within{
+    border-color: var(--border-color);
 }
 
 #editor-section-advanced .editor-section-title{
@@ -16540,6 +16625,48 @@ body.dark-mode .editor-panel-action-btn--delete:hover{
 
 #enter-scheduler-modal .editor-panel-title{
     display: none;
+}
+
+.editor-panel-title-group{
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+}
+
+.editor-panel-back-btn{
+    display: none;
+}
+
+/* Desktop single-column sheet: same title row as the two-column panel, with a
+   back chevron in front. Phones keep their native sheet header (above). */
+body:not(.handset-device) #enter-scheduler-modal .editor-panel-header{
+    justify-content: space-between;
+}
+
+body:not(.handset-device) #enter-scheduler-modal .editor-panel-title{
+    display: block;
+}
+
+body:not(.handset-device) #enter-scheduler-modal .editor-panel-back-btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin-left: -6px;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-subtle);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+body:not(.handset-device) #enter-scheduler-modal .editor-panel-back-btn:hover{
+    background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+    color: var(--text-primary);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════

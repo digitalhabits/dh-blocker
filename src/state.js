@@ -40,9 +40,6 @@ export const state = {
     // access was revoked, updateOnboardingVisibility immediately replaces it
     // with the native-permissions gate.
     androidFirstFrameCommitted: false,
-    /** When the preview reaches OVERRIDE_PREVIEW_TRUNCATE_AT characters it is frozen (no more regeneration). */
-    overridePreviewFrozenByType: { 'random-words': null },
-    lastOverridePreviewType: null,
     installedAppsCache: null, // Cache the installed-apps list so we don't re-scan every open
     /** Focus-space editor: Daily / Weekly / Manual choice shown in the form. */
     editorKind: 'manual',

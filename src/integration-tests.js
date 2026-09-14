@@ -1097,7 +1097,7 @@
                 () => isVisible('time-picker-container') && switchEl()?.getAttribute('aria-checked') === 'true',
                 'I3 active block selection',
             );
-            assertOrThrow(isVisible('active-blocklist-warning'), 'I3: running space must show the locked-settings banner');
+            assertOrThrow(document.getElementById('override-type')?.disabled, 'I3: running space must lock the editor');
 
             switchEl()?.click();
             await waitForIntegrationCondition(() => isVisible('override-modal'), 'I3 stop modal');
@@ -1148,10 +1148,10 @@
         });
     }
 
-    async function testI5_editWarningTurnOffUnlocksEditor() {
+    async function testI5_switchStopUnlocksEditor() {
         return runIsolatedIntegrationTest('I5', async () => {
             hideAllIntegrationModals();
-            // The default unlock duration (24 h) makes "Turn off" a timed pause,
+            // The default unlock duration (24 h) makes switching off a timed pause,
             // which is what unlocks the editor without losing the block.
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'I5 Modal' });
             const block = addActiveBlock(bl.id, { durationMs: 5 * 60 * 1000 });
@@ -1170,9 +1170,9 @@
             if (document.getElementById('editor-section-what-header')?.getAttribute('aria-expanded') !== 'true') {
                 document.getElementById('editor-section-what-header')?.click();
             }
-            assertOrThrow(isVisible('active-blocklist-warning'), 'I5: active warning missing');
-            const turnOffButton = document.getElementById('active-blocklist-turn-off-btn');
-            assertOrThrow(turnOffButton && !turnOffButton.classList.contains('hidden'), 'I5: warning Turn off button missing');
+            assertOrThrow(document.getElementById('override-type')?.disabled, 'I5: running space must lock the editor');
+            const switchEl = card.querySelector('.blocklist-switch');
+            assertOrThrow(switchEl, 'I5: card switch missing');
 
             // Type an unsaved addition before stopping: the post-stop refresh
             // must swap the locked sets without rebuilding the working list
@@ -1184,7 +1184,7 @@
             const tagText = () => document.getElementById('modal-websites-tags')?.textContent || '';
             assertOrThrow(tagText().includes(TEST_DOMAINS.b), 'I5: pending website was not added before stopping');
 
-            turnOffButton.click();
+            switchEl.click();
             await waitForIntegrationCondition(() => isVisible('override-modal'), 'I5 stop modal');
             assertOrThrow(
                 !document.getElementById('override-modal')?.classList.contains('override-frictionless'),
@@ -1212,7 +1212,6 @@
                 typeof stopped.pauseEndTime === 'number' && stopped.pauseEndTime > Date.now() + 23 * 60 * 60 * 1000,
                 'I5: the pause should end about 24 hours from now',
             );
-            assertOrThrow(!isVisible('active-blocklist-warning'), 'I5: warning stayed visible after stopping');
             assertOrThrow(!document.getElementById('override-type')?.disabled, 'I5: override settings stayed locked after stopping');
             assertOrThrow(!document.getElementById('unlock-duration-select')?.disabled, 'I5: unlock duration stayed locked after stopping');
             assertOrThrow(tagText().includes(TEST_DOMAINS.b), 'I5: unsaved website edit was discarded by the stop refresh');
@@ -1276,7 +1275,7 @@
             { group: 'I', name: 'I2: Stop-all success restores Settings', fn: testI2_stopAllSuccessRestoresSettings },
             { group: 'I', name: 'I3: Stop cancel keeps the block', fn: testI3_stopCancelWorkflow },
             { group: 'I', name: 'I4: Android back closes topmost modal', fn: testI4_androidBackClosesTopmostModal },
-            { group: 'I', name: 'I5: Edit warning Pause unlocks modal', fn: testI5_editWarningTurnOffUnlocksEditor },
+            { group: 'I', name: 'I5: Card switch stop unlocks editor', fn: testI5_switchStopUnlocksEditor },
             { group: 'I', name: 'I6: Let\'s go acknowledges before shell reconcile', fn: testI6_letsGoAcknowledgesBeforeShellReconcile }
         ];
 

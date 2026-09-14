@@ -200,8 +200,6 @@ export const MAX_CUSTOM_OVERRIDE_CHARS = 7500;
 export const LETTERS_PER_WORD = 5;
 /** Average characters (letters + space) one desktop word used to cost — for migrating old counts. */
 export const LEGACY_CHARS_PER_WORD = 6;
-/** When the preview reaches this many characters it is frozen (no more regeneration). */
-export const OVERRIDE_PREVIEW_TRUNCATE_AT = 50;
 
 /**
  * Word-by-word challenge primitives. Moved here from app.js: they are pure
@@ -335,27 +333,6 @@ export function getDifficultyTypingCharCount(difficulty) {
         return typeof difficulty.customText === 'string' ? difficulty.customText.length : 0;
     }
     return getOverrideGeneratedCharCount('random-words', normalizeOverrideCount(difficulty.count, 'random-words'));
-}
-
-/** Preview text for the editor's "Looks like" box. */
-export function getOverridePreviewText(type, count, customText) {
-    if (normalizeOverrideType(type) === 'custom') {
-        const normalized = sanitizeChallengeTargetText(typeof customText === 'string' ? customText : '');
-        return normalized || 'Your custom text will appear here';
-    }
-    const words = normalizeOverrideCount(count, 'random-words');
-    if (type !== state.lastOverridePreviewType) {
-        state.lastOverridePreviewType = type;
-        state.overridePreviewFrozenByType['random-words'] = null;
-    }
-    if (getOverrideGeneratedCharCount('random-words', words) >= OVERRIDE_PREVIEW_TRUNCATE_AT) {
-        let frozen = state.overridePreviewFrozenByType['random-words'];
-        if (frozen != null) return frozen;
-        frozen = generateRandomWordsByCount(words).slice(0, OVERRIDE_PREVIEW_TRUNCATE_AT);
-        state.overridePreviewFrozenByType['random-words'] = frozen;
-        return frozen;
-    }
-    return generateRandomWordsByCount(words);
 }
 
 /** Estimated minutes to type the challenge (letters at ~200 per minute). */

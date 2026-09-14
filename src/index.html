@@ -644,7 +644,14 @@
                         <!-- Time Pickers (hidden until blocklist selected) -->
                         <div class="time-picker-container hidden" id="time-picker-container">
 <div class="editor-panel-header" id="editor-panel-header">
-    <h2 class="editor-panel-title" id="editor-panel-title">Edit focus space</h2>
+    <div class="editor-panel-title-group">
+        <button type="button" class="editor-panel-back-btn" id="editor-back-btn" aria-label="Back">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M15 18l-6-6 6-6"></path>
+            </svg>
+        </button>
+        <h2 class="editor-panel-title" id="editor-panel-title">Edit focus space</h2>
+    </div>
     <div class="editor-panel-actions">
         <button type="button" class="editor-panel-action-btn" id="editor-duplicate-btn" title="Duplicate" aria-label="Duplicate">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -663,17 +670,6 @@
 </div>
 
 <div class="focus-space-editor" id="focus-space-editor">
-<div id="active-blocklist-warning" class="warning-banner hidden">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        aria-hidden="true">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" y1="16" x2="12" y2="12"></line>
-                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                    </svg>
-                    <span id="active-blocklist-warning-text">This focus space is active. Some settings are locked.</span>
-                    <button type="button" id="active-blocklist-turn-off-btn" class="warning-banner-action">Turn off</button>
-                </div>
 
 <div class="form-group" id="blocklist-name-group">
     <label for="blocklist-name" id="blocklist-name-label">Focus space name</label>
@@ -834,12 +830,12 @@
                             </div>
                             <div class="exit-difficulty-row settings-row unlock-duration-row" id="unlock-duration-row">
                                 <div class="exit-difficulty-row-copy settings-row-copy">
-                                    <span class="exit-difficulty-row-label settings-row-label" id="unlock-duration-label">Temporary unlock duration</span>
-                                    <span class="settings-row-hint" id="unlock-duration-hint">How long blocking is lifted when you stop this focus space. It turns itself back on afterwards.</span>
+                                    <span class="exit-difficulty-row-label settings-row-label" id="unlock-duration-label">Auto-start after stop</span>
+                                    <span class="settings-row-hint" id="unlock-duration-hint">When you stop this focus space, it turns itself back on after this long. Never keeps it off until you turn it on again.</span>
                                 </div>
                                 <div class="exit-difficulty-row-control settings-row-control">
                                     <select id="unlock-duration-select" class="form-select unlock-duration-select">
-                                        <option value="0" id="unlock-option-0">Never</option>
+                                        <option value="0" id="unlock-option-0" selected>Never</option>
                                         <option value="5" id="unlock-option-5">5 minutes</option>
                                         <option value="10" id="unlock-option-10">10 minutes</option>
                                         <option value="15" id="unlock-option-15">15 minutes</option>
@@ -848,14 +844,10 @@
                                         <option value="120" id="unlock-option-120">2 hours</option>
                                         <option value="240" id="unlock-option-240">4 hours</option>
                                         <option value="480" id="unlock-option-480">8 hours</option>
-                                        <option value="1440" id="unlock-option-1440" selected>24 hours</option>
+                                        <option value="1440" id="unlock-option-1440">24 hours</option>
                                     </select>
                                 </div>
                             </div>
-                        </div>
-                        <div id="override-preview-block" class="exit-difficulty-preview">
-                            <span class="exit-difficulty-preview-label" id="override-preview-label">Looks like</span>
-                            <div id="override-preview-text" class="override-preview-text" title=""></div>
                         </div>
                     </div>
                     <textarea id="custom-override-text" class="form-textarea hidden"
@@ -1133,6 +1125,18 @@
                 <h3 id="enter-scheduler-modal-title"></h3>
                 <div class="modal-buttons hidden" aria-hidden="true">
                     <button type="button" id="cancel-enter-scheduler-btn" class="modal-btn cancel-btn">Back</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Discard unsaved focus-space edits: the app's own dialog, not the OS one -->
+        <div id="editor-discard-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="editor-discard-title">
+            <div class="modal-content editor-discard-modal">
+                <h3 id="editor-discard-title">Discard changes?</h3>
+                <p id="editor-discard-body" class="editor-discard-body">You have unsaved changes to this focus space. Discard them?</p>
+                <div class="modal-buttons">
+                    <button type="button" id="cancel-editor-discard-btn" class="modal-btn cancel-btn">Keep editing</button>
+                    <button type="button" id="confirm-editor-discard-btn" class="modal-btn danger-btn">Discard</button>
                 </div>
             </div>
         </div>

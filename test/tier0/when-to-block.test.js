@@ -2,12 +2,48 @@ import { describe, expect, test } from 'vitest';
 import {
     ALL_DAYS,
     deriveWhenToBlockKind,
+    formatWhenToBlockSummary,
     migrateLegacyRepeatType,
     segmentsForKind,
 } from '../../src/when-to-block.js';
 
 const seg = (startHour, endHour, days = [...ALL_DAYS]) => ({
     startHour, startMinute: 0, endHour, endMinute: 0, days,
+});
+
+describe('formatWhenToBlockSummary', () => {
+    const labels = {
+        manual: 'Manual',
+        dailyFmt: (range) => `Daily ${range}`,
+        weeklyFmt: (days, range) => `${days} · ${range}`,
+        dayNames: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        everyDay: 'Every day',
+        noDays: 'No days',
+    };
+
+    test('compact shows the first range and counts the rest', () => {
+        const segments = [seg(0, 23, [0, 1]), seg(9, 12, [0, 1]), seg(14, 16, [0, 1])];
+        expect(formatWhenToBlockSummary('weekly', segments, labels)).toBe('Mon, Tue · 00:00 – 23:00 +2');
+    });
+
+    // The focus-space card shows this when it fits on the line.
+    test('full lists every range, grouped under shared days', () => {
+        const segments = [seg(0, 23, [0, 1]), seg(9, 12, [0, 1]), seg(14, 16, [0, 1])];
+        expect(formatWhenToBlockSummary('weekly', segments, labels, { full: true }))
+            .toBe('Mon, Tue · 00:00 – 23:00, 09:00 – 12:00, 14:00 – 16:00');
+    });
+
+    test('full keeps segments on different days as separate groups, in order', () => {
+        const segments = [seg(9, 12, [1, 0]), seg(14, 16, [5]), seg(18, 20, [0, 1])];
+        expect(formatWhenToBlockSummary('weekly', segments, labels, { full: true }))
+            .toBe('Mon, Tue · 09:00 – 12:00, 18:00 – 20:00; Sat · 14:00 – 16:00');
+    });
+
+    test('full is the same as compact when there is nothing to expand', () => {
+        expect(formatWhenToBlockSummary('weekly', [seg(9, 12, [0])], labels, { full: true })).toBe('Mon · 09:00 – 12:00');
+        expect(formatWhenToBlockSummary('daily', [seg(9, 12)], labels, { full: true })).toBe('Daily 09:00 – 12:00');
+        expect(formatWhenToBlockSummary('manual', [], labels, { full: true })).toBe('Manual');
+    });
 });
 
 describe('deriveWhenToBlockKind', () => {

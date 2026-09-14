@@ -9,7 +9,6 @@
 //
 // Nothing here runs at module top level — the hub modules import this file and
 // this file imports them back; every cross-module call is made at runtime.
-import { ask } from '@tauri-apps/plugin-dialog';
 import { state } from './state.js';
 import { tSettings, tSettingsFmt, weekdayAbbrevMon0List } from './i18n.js';
 import {
@@ -404,7 +403,7 @@ export function updateEditorSummaries() {
 }
 
 /** "Manual · starts when enabled" / "Daily 09:00 – 17:00" / "Mon, Tue · 09:00 – 17:00" for a schedule record. */
-export function formatScheduleWhenSummary(kind, schedule) {
+export function formatScheduleWhenSummary(kind, schedule, options) {
     return formatWhenToBlockSummary(kind, schedule?.segments || [], {
         manual: tSettings('whenManualSummary'),
         dailyFmt: (range) => tSettingsFmt('whenDailySummaryFmt', { range }),
@@ -412,7 +411,7 @@ export function formatScheduleWhenSummary(kind, schedule) {
         dayNames: weekdayAbbrevMon0List(),
         everyDay: tSettings('segmentDaysEveryDay'),
         noDays: tSettings('segmentDaysNone'),
-    });
+    }, options);
 }
 
 /**
@@ -428,18 +427,55 @@ export async function confirmDiscardEditorEdits() {
     // Callers check editorHasUnsavedEdits() first so a clean form never
     // yields to a microtask (the card click must close the sheet synchronously).
     if (!editorHasUnsavedEdits()) return true;
-    const body = tSettings('discardChangesBody');
-    try {
-        return await ask(body, {
-            title: tSettings('discardChangesTitle'),
-            kind: 'warning',
-            okLabel: tSettings('discardChangesOk'),
-            cancelLabel: tSettings('discardChangesCancel'),
-        });
-    } catch {
-        // No dialog plugin (harness) — fall back to the browser's own prompt.
-        return window.confirm(body);
-    }
+    return showEditorDiscardConfirmModal();
+}
+
+let editorDiscardResolver = null;
+
+/**
+ * The app's own "Discard changes?" dialog (not the OS one), so it looks like
+ * the rest of the app. Resolves true for Discard, false for Keep editing,
+ * Escape, a click outside, or Android back.
+ */
+export function showEditorDiscardConfirmModal() {
+    const modal = document.getElementById('editor-discard-modal');
+    if (!modal) return Promise.resolve(window.confirm(tSettings('discardChangesBody')));
+    bindEditorDiscardModal(modal);
+    const setText = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    };
+    setText('editor-discard-title', tSettings('discardChangesTitle'));
+    setText('editor-discard-body', tSettings('discardChangesBody'));
+    setText('cancel-editor-discard-btn', tSettings('discardChangesCancel'));
+    setText('confirm-editor-discard-btn', tSettings('discardChangesOk'));
+    // A second request while one is open answers the first as Keep editing.
+    if (editorDiscardResolver) closeEditorDiscardConfirmModal(false);
+    return new Promise((resolve) => {
+        editorDiscardResolver = resolve;
+        modal.classList.remove('hidden');
+        // Focus the safe choice, so Enter never discards by accident.
+        document.getElementById('cancel-editor-discard-btn')?.focus();
+    });
+}
+
+export function closeEditorDiscardConfirmModal(confirmed) {
+    document.getElementById('editor-discard-modal')?.classList.add('hidden');
+    const resolve = editorDiscardResolver;
+    editorDiscardResolver = null;
+    resolve?.(!!confirmed);
+}
+
+function bindEditorDiscardModal(modal) {
+    if (modal.dataset.bound === '1') return;
+    modal.dataset.bound = '1';
+    document.getElementById('cancel-editor-discard-btn')
+        ?.addEventListener('click', () => closeEditorDiscardConfirmModal(false));
+    document.getElementById('confirm-editor-discard-btn')
+        ?.addEventListener('click', () => closeEditorDiscardConfirmModal(true));
+    modal.addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeEditorDiscardConfirmModal(false);
+    });
 }
 
 /** "24 hours", "10 minutes", "Never" — the unlock menu's own labels. */
@@ -447,14 +483,23 @@ export function formatUnlockDurationLabel(minutes) {
     return tSettings(`unlock_${normalizeUnlockMinutes(minutes)}`);
 }
 
-// "Type 15 words · unlock 24 hours", like Android's stop_early_summary.
+// "Type 15 words · auto-start after 24 hours" / "… · no auto-start", like
+// Android's stop_early_summary.
 function formatStopEarlySummary() {
     const type = normalizeOverrideType(document.getElementById('override-type')?.value);
-    const duration = formatUnlockDurationLabel(document.getElementById('unlock-duration-select')?.value);
-    if (type === 'custom') return tSettingsFmt('stopEarlySummaryCustomFmt', { duration });
+    const unlockMinutes = normalizeUnlockMinutes(document.getElementById('unlock-duration-select')?.value);
+    const duration = formatUnlockDurationLabel(unlockMinutes);
+    const never = unlockMinutes === 0;
+    if (type === 'custom') {
+        return never ? tSettings('stopEarlySummaryCustomNever') : tSettingsFmt('stopEarlySummaryCustomFmt', { duration });
+    }
     const count = normalizeOverrideCount(document.getElementById('override-count')?.value, 'random-words');
     const minutes = getOverrideEstimatedMinutes(type, count, '');
-    return tSettingsFmt('stopEarlySummaryWordsFmt', { count: String(count), minutes: String(minutes), duration });
+    return tSettingsFmt(never ? 'stopEarlySummaryWordsNeverFmt' : 'stopEarlySummaryWordsFmt', {
+        count: String(count),
+        minutes: String(minutes),
+        duration,
+    });
 }
 
 function setSummary(key, text) {
@@ -495,10 +540,21 @@ export function setupFocusSpaceEditor({ onSave } = {}) {
     if (editorWired) return;
     editorWired = true;
 
+    // Tabbing onto a section header opens it, as if it were clicked. A mouse or
+    // touch press focuses the header too, so only focus that follows a Tab
+    // counts; the click after a press does its own toggling.
+    let lastKeyWasTab = false;
+    document.addEventListener('keydown', (e) => { lastKeyWasTab = e.key === 'Tab'; }, true);
+    document.addEventListener('pointerdown', () => { lastKeyWasTab = false; }, true);
+
     SECTION_KEYS.forEach((key) => {
-        document.getElementById(`editor-section-${key}-header`)?.addEventListener('click', (e) => {
+        const header = document.getElementById(`editor-section-${key}-header`);
+        header?.addEventListener('click', (e) => {
             e.stopPropagation();
             toggleEditorSection(key);
+        });
+        header?.addEventListener('focus', () => {
+            if (lastKeyWasTab && state.openEditorSection !== key) setOpenEditorSection(key);
         });
     });
 

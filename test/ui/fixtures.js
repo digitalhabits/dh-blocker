@@ -70,6 +70,31 @@ export const manualRunning = {
     settings: {},
 };
 
+/**
+ * Schedules with several time ranges. The card shows every range when the line
+ * has room and falls back to "first range +N" when it does not: the short one
+ * should fit at desktop width, the long one should not.
+ */
+export const multiRangeSchedules = {
+    blocklists: [
+        { id: 'bl-weekend', name: 'Weekends', emoji: '🌤', color: '#6BAF92', websites: ['weekend.invalid'], apps: [] },
+        { id: 'bl-workday', name: 'Workday', emoji: '💼', color: '#4A90D9', websites: ['work.invalid'], apps: [] },
+    ],
+    activeBlocks: [],
+    schedules: [
+        { id: 's1', blocklistId: 'bl-weekend', repeatType: 'forever', segments: [seg(9, 0, 12, 0, [SAT, SUN]), seg(18, 0, 22, 0, [SAT, SUN])] },
+        {
+            id: 's2', blocklistId: 'bl-workday', repeatType: 'forever', segments: [
+                seg(0, 0, 7, 0, [MON, TUE, WED, THU, FRI]),
+                seg(9, 0, 12, 30, [MON, TUE, WED, THU, FRI]),
+                seg(14, 0, 17, 0, [MON, TUE, WED, THU, FRI]),
+            ],
+        },
+    ],
+    startOverlays: [],
+    settings: {},
+};
+
 /** Every switch state at once: manual on, manual paused, schedule on, schedule off, idle. */
 export const cardStates = {
     blocklists: [
@@ -108,4 +133,13 @@ export const flexibleBetweenBlocks = {
     settings: {},
 };
 
-export const fixtures = { crowdedWeek, singleSchedule, manualRunning, cardStates, flexibleBetweenBlocks };
+/** A fresh install: no focus spaces at all (there is no default one). */
+export const emptyInstall = {
+    blocklists: [],
+    activeBlocks: [],
+    schedules: [],
+    startOverlays: [],
+    settings: {},
+};
+
+export const fixtures = { crowdedWeek, singleSchedule, manualRunning, cardStates, flexibleBetweenBlocks, multiRangeSchedules, emptyInstall };

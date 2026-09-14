@@ -4,12 +4,11 @@ import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { normalizeBlocklist, isProtectedDomain, collectActiveIOSManualBlockPayload, healFocusSpaceColors, migrateLegacyQuickStartBlocklists } from './blocklist-utils.js';
 import { isSchedulePausedNow, syncActiveBlocksToHelper, syncSchedulesToHelper, buildPersistedAppData } from './schedule-engine.js';
-import { generateId } from './app.js';
 import { updateBlockedApps } from './blocking-platform.js';
 import { normalizeLoadedEulaState } from './onboarding.js';
 import { migrateBlocklistStartOverlaysToGlobal, migrateLegacyScheduleStartOverlays } from './schedule-overlay.js';
 import { migrateLegacyRepeatType } from './when-to-block.js';
-import { DEFAULT_OVERRIDE_WORDS, getMaxOverrideWords, migrateOverrideDifficultyToWords } from './override-challenge.js';
+import { getMaxOverrideWords, migrateOverrideDifficultyToWords } from './override-challenge.js';
 import { DEFAULT_UNLOCK_MINUTES, normalizeUnlockMinutes } from './unlock-duration.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 
@@ -112,17 +111,8 @@ export async function loadData() {
     }
 
 
-    // Create default blocklist on first launch (no blocklists yet).
-    // On Android, defer until the native-schedule migration has had a chance
-    // to run (migrateAndroidNativeSchedules), otherwise users upgrading from
-    // the legacy app get a spurious "Distractions" default alongside their
-    // imported spaces — the migration (which runs later, post-onboarding)
-    // creates the default itself if there's no legacy data to import.
-    const androidMigrationPending = state.isAndroid && !state.appData.settings?.androidMigrationDone;
-    if (state.appData.blocklists.length === 0 && !androidMigrationPending && shouldCreateDefaultBlocklist()) {
-        createDefaultBlocklist();
-        shouldSave = true;
-    }
+    // No default focus space: a fresh install starts empty, so the first
+    // space is built by hand and teaches how the app works.
 
     if (shouldSave) {
         await saveData();
@@ -137,28 +127,6 @@ export function hasSeenAnyOnboarding() {
         || settings.welcomeOnboardingShown === true
         || settings.eulaAcceptedRevision != null
         || settings.eulaAcceptedAt != null;
-}
-
-function shouldCreateDefaultBlocklist() {
-    return !hasSeenAnyOnboarding();
-}
-
-// The first-launch default "Distractions" space. Shared by loadData and the
-// Android native-schedule migration (which owns default creation on Android).
-export function createDefaultBlocklist() {
-    state.appData.blocklists.push({
-        id: generateId(),
-        name: 'Distractions',
-        mode: 'blocklist',
-        // First colour in the palette (matches the openBlocklistModal default).
-        color: '#B8D1DE',
-        emoji: '📱',
-        websites: ['instagram.com', 'youtube.com', 'reddit.com'],
-        apps: [],
-        iosScreenTimeSelection: null,
-        overrideDifficulty: { type: 'random-words', count: DEFAULT_OVERRIDE_WORDS, customText: '' },
-        unlockMinutes: DEFAULT_UNLOCK_MINUTES,
-    });
 }
 
 // Save data to main process

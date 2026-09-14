@@ -122,12 +122,41 @@ export const screens = [
         viewport: DESKTOP,
     },
 
+    // ---- A fresh install: no default focus space ----------------------------
+    {
+        name: 'home-empty-desktop',
+        fixture: fixtures.emptyInstall,
+        platform: 'mac',
+        viewport: DESKTOP,
+    },
+    {
+        name: 'home-empty-iphone',
+        fixture: fixtures.emptyInstall,
+        platform: 'iphone',
+        viewport: IPHONE,
+    },
+
     // ---- Focus-space cards: switch on / off / paused --------------------------
     {
         name: 'cards-desktop',
         fixture: fixtures.cardStates,
         platform: 'mac',
         viewport: DESKTOP,
+        clip: '#blocklists-container',
+    },
+    {
+        // Full schedule when it fits ("09:00 – 12:00, 18:00 – 22:00"), "+N" when not.
+        name: 'cards-schedule-ranges',
+        fixture: fixtures.multiRangeSchedules,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#blocklists-container',
+    },
+    {
+        name: 'cards-schedule-ranges-one-column',
+        fixture: fixtures.multiRangeSchedules,
+        platform: 'mac',
+        viewport: { width: 700, height: 900 },
         clip: '#blocklists-container',
     },
     {
@@ -158,6 +187,30 @@ export const screens = [
         prepare: async (page) => {
             await page.fill('#blocklist-name', 'Deep Work (renamed)');
             await page.dispatchEvent('#blocklist-name', 'input');
+        },
+    },
+    {
+        // The editor's own "Discard changes?" dialog (it used to be the OS one).
+        name: 'editor-discard-dialog',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#editor-discard-modal .modal-content',
+        prepare: async (page) => {
+            await page.evaluate(() => { void window.__REDDBLOCK_INTERNALS__.showEditorDiscardConfirmModal(); });
+            await page.waitForSelector('#editor-discard-modal:not(.hidden)');
+        },
+    },
+    {
+        name: 'editor-discard-dialog-dark',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        theme: 'dark',
+        viewport: DESKTOP,
+        clip: '#editor-discard-modal .modal-content',
+        prepare: async (page) => {
+            await page.evaluate(() => { void window.__REDDBLOCK_INTERNALS__.showEditorDiscardConfirmModal(); });
+            await page.waitForSelector('#editor-discard-modal:not(.hidden)');
         },
     },
 
@@ -243,6 +296,47 @@ export const screens = [
         },
     },
     {
+        // App-styled dropdown menu (not the OS one), opened in the create form.
+        // The create form, not the edit panel: singleSchedule's space is running
+        // on weekday mornings, and a running space locks To stop early.
+        name: 'dropdown-unlock-open',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        viewport: DESKTOP,
+        prepare: async (page) => {
+            await page.click('#add-blocklist-btn');
+            await page.click('#editor-section-stop-header');
+            await page.click('#unlock-duration-select-trigger');
+            await page.waitForSelector('#unlock-duration-select-menu:not(.hidden)');
+        },
+    },
+    {
+        name: 'dropdown-unlock-open-dark',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        theme: 'dark',
+        viewport: DESKTOP,
+        prepare: async (page) => {
+            await page.click('#add-blocklist-btn');
+            await page.click('#editor-section-stop-header');
+            await page.click('#unlock-duration-select-trigger');
+            await page.waitForSelector('#unlock-duration-select-menu:not(.hidden)');
+        },
+    },
+    {
+        name: 'dropdown-settings-theme-open',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#settings-modal .modal-content',
+        prepare: async (page) => {
+            await page.click('#settings-btn');
+            await page.waitForSelector('#settings-modal:not(.hidden)');
+            await page.click('#theme-select-trigger');
+            await page.waitForSelector('#theme-select-menu:not(.hidden)');
+        },
+    },
+    {
         name: 'editor-edit-advanced',
         fixture: fixtures.singleSchedule,
         platform: 'mac',
@@ -274,6 +368,18 @@ export const screens = [
         prepare: async (page) => {
             // Locked space with websites and an app: chips render as locked.
             await page.click('#editor-section-what-header');
+        },
+    },
+    {
+        // Desktop single-column (≤718px): the editor opens as a sheet, and its
+        // title row should match the two-column panel's, back chevron in front.
+        name: 'editor-edit-narrow-desktop',
+        fixture: fixtures.cardStates,
+        platform: 'mac',
+        viewport: { width: 600, height: 900 },
+        prepare: async (page) => {
+            await page.click('.blocklist-card[data-id="bl-on"]', { position: { x: 30, y: 20 } });
+            await page.waitForSelector('body.enter-scheduler-modal-open');
         },
     },
     {

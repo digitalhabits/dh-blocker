@@ -95,6 +95,7 @@ import {
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
 import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, openBlocklistModal, refreshSelectedBlocklistUi, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncOverrideCountUi, updateOverridePreview, openOverrideModal } from './confirm-modals.js';
+import { enhanceNativeSelects } from './custom-select.js';
 import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, deleteBlocklist, isBlocklistEditFrictionRequired, pendingDelete, saveBlocklistOrderFromDOM, setUndoToastMessage } from './blocklists.js';
 import {
     getSelectedBlocklistModalMode,
@@ -153,6 +154,9 @@ state.scheduleSegments = getDefaultScheduleSegments(); // Array of time segments
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     detectPlatform(); // Before loadData so first-launch defaults can differ on iOS
+    // App-styled dropdowns over every <select>. Before loadData so the first
+    // paint never shows an OS menu; the native selects stay the source of truth.
+    enhanceNativeSelects();
     await loadData();
     await resetDevOnlyEulaAcceptance();
 
@@ -616,8 +620,7 @@ function setupEventListeners() {
         openBlocklistModal(null, { mode: 'allowlist' });
     });
 
-    // Onboarding
-    // Onboarding removed — default blocklist created in loadData()
+    // Onboarding removed. A fresh install starts with no focus spaces.
 
     // Modal listeners
     setupModalListeners();
@@ -1745,6 +1748,10 @@ function setupOverrideModalListeners() {
     document.getElementById('cancel-enter-scheduler-btn')?.addEventListener('click', async () => {
         if (await confirmDiscardEditorEdits()) deselectBlocklist();
     });
+    // The desktop sheet's back chevron lives in the card's title row.
+    document.getElementById('editor-back-btn')?.addEventListener('click', () => {
+        document.getElementById('cancel-enter-scheduler-btn')?.click();
+    });
 
     // Start confirmation (switch on): Cancel / overlay close it, Start proceeds.
     document.getElementById('cancel-start-confirm-btn')?.addEventListener('click', closeStartConfirmModal);
@@ -2706,13 +2713,10 @@ export function applySettingsLanguage() {
 
     // Focus-space editor
     applyFocusSpaceEditorLanguage();
-    setText('active-blocklist-warning-text', tSettings('activeBlocklistWarning'));
-    setText('active-blocklist-turn-off-btn', tSettings('turnOff'));
     updateBlocklistModalModeLabels(getSelectedBlocklistModalMode());
     setText('override-method-label', tSettings('overrideMethod'));
     setText('override-option-random-words', tSettings('overrideRandomWords'));
     setText('override-option-custom', tSettings('overrideCustomText'));
-    setText('override-preview-label', tSettings('overridePreviewLooksLike'));
     syncOverrideCountUi();
     updateOverridePreview();
     setText('blocklist-emoji-label', tSettings('emoji'));

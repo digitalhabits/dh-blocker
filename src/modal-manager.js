@@ -6,6 +6,7 @@ import { closeAllLanguagePickers, isAnyLanguagePickerOpen } from './app.js';
 import { resetWebsitesImportMenuPosition } from './website-input.js';
 import { closeAllBlocklistMenus } from './blocklists.js';
 import { closeAllPopovers } from './time-inputs.js';
+import { closeOpenCustomSelect } from './custom-select.js';
 
 export const HELPER_UI_REFRESH_MS = 3000;
 let helperUiRefreshTimer = null;
@@ -23,6 +24,7 @@ export function dismissTopmostEscapeLayer() {
 }
 
 export function closeEscapeSubLayer() {
+    if (closeOpenCustomSelect()) return true;
     const focused = document.activeElement;
     if (focused?.matches('#custom-color-input, input[type="color"]')) {
         focused.blur();
