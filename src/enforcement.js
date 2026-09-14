@@ -449,7 +449,6 @@ export async function presentSafariFdaOnboardingUi() {
     setLanguagePickerOpen(false);
     showExclusiveOnboardingScreen('fda-onboarding');
     document.getElementById('main-content')?.classList.add('hidden');
-    document.getElementById('now-blocking-row')?.classList.add('hidden');
     const statusEl = document.getElementById('fda-onboarding-status');
     if (statusEl && !session.pollHandle) {
         statusEl.classList.add('hidden');
@@ -2082,7 +2081,6 @@ export function finishOnboardingReplayToMainUi() {
     state.firstRunExtensionSetupPending = false;
     document.getElementById('welcome-onboarding')?.classList.add('hidden');
     document.getElementById('main-content')?.classList.remove('hidden');
-    document.getElementById('now-blocking-row')?.classList.remove('hidden');
 }
 
 export async function restartOnboardingFromSettings() {

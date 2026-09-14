@@ -428,23 +428,31 @@ countdown can float over third-party fullscreen Spaces without stealing focus.
    - App watcher: on `set_blocked_apps` and each poll
    - Enforcer: every 5 s via `derive_payload`
 
-### 9.3 Pause / resume
+### 9.3 Stop = temporary unlock
 
-Pause fields live in app data. While paused, domains/apps from that source are
-excluded from `derive_payload` and app-watcher effective sets. Schedule pause
-can suppress upcoming segments until pause end or manual resume.
+Every focus space carries `unlockMinutes` (0 = Never, else one of
+5/10/15/30/60/120/240/480/1440; helpers in `src/unlock-duration.js`, default 24 h
+— also applied to records saved before the field existed). Stopping a running
+space — the card switch, the now-blocking chip, the editor banner's "Turn off",
+or the Android friction gate — first passes the override challenge
+(`openOverrideModal` / `openScheduleOverrideModal`; waived for a Flexible
+schedule sitting between its blocks) and then `stopFocusSpaceTarget` applies the
+duration:
 
-The duration prefilled when pausing is user-configurable
-(`settings.defaultPauseMinutes`, default 10 min, clamped to [1 min, 1 day];
-helpers in `src/pause-default.js`). It is exposed as **Settings → Default pause
-length** on every platform — the pause modal it prefills is cross-platform —
-and changing it passes the same typing challenge as "Stop all" (hardest
-difficulty among whatever is currently blocking; no challenge when nothing is
-active). Android additionally mirrors the value into Kotlin prefs on every
-`set_schedules` sync so the native friction gate (`UnlockActivity`) prefills
-the same duration — it runs in its own activity and cannot query the webview.
-No mirror is needed on iOS/macOS/Windows: their block screens have no pause
-control, so the webview modal is the only consumer.
+- unlock > 0: a **timed pause** — `isPaused` + `pauseEndTime` on the block or
+  schedule; the render tick clears it at expiry, iOS additionally registers a
+  one-off DeviceActivity so expiry re-evaluates enforcement in the background.
+- Never: a Manual block is **removed**; a Daily/Weekly schedule is **switched
+  off** open-ended (`isPaused` with no `pauseEndTime`), which every enforcement
+  layer reads as "off until turned on again".
+
+While paused, domains/apps from that source are excluded from `derive_payload`
+and app-watcher effective sets, and a schedule pause suppresses upcoming
+segments until it ends. Turning a space back on never asks anything.
+
+Android's native gate (`UnlockActivity`) still prefills its own pause length from
+Kotlin prefs (fallback 10 min); the webview no longer writes that pref, and the
+plugin does not read `unlockMinutes` yet.
 
 ### 9.4 Merge semantics
 
@@ -464,14 +472,19 @@ and similar UX.
 Frontend challenge UX in `src/app.js`. Clearing a block updates app data and
 relies on backends to observe the file change — no helper IPC.
 
-### 10.1 Override difficulty and max difficulty mode
+### 10.1 Override difficulty
 
 Persisted on each blocklist as `overrideDifficulty`:
 
-- `type`: `random-words` | `gibberish` | `custom`
-- `count`, `customText`, `maxDifficulty`, `countBeforeMax`, `typeBeforeMax`
+- `type`: `random-words` | `custom`
+- `count`: a number of **words** on every platform (1–300 desktop, 1–100 iOS/Android; five-letter words), chosen with the "To stop early" slider
+- `customText`: typed verbatim for `custom`
 
-Max difficulty locks random types to 7500 (words) or 5000 (gibberish) chars.
+`appData.settings.overrideCountUnit === 'words'` marks a store that has been
+migrated; before v3.9 desktop stored a character target and offered gibberish
+and a "max difficulty" flag, all folded into word counts on load by
+`migrateOverrideDifficultyToWords` (`src/override-challenge.js`). Android's
+native gate maps `count` straight onto `frictionWordCount`.
 
 ### 10.2 Blocklist duplication
 

@@ -78,12 +78,8 @@
     /* Title bar: slightly cooler / greyer than `--redd-cream` (#F7F5F0) so the
        strip reads as its own band without going flat white. */
     --title-bar-bg: #efede8;
-    --title-bar-height: 44px;
-    /* Clear native traffic lights (mac) / custom window controls (win). Kept tight so
-       centred chips keep as much width as possible in a narrow window. */
-    --title-bar-center-safe-inset-start: 76px;
-    --title-bar-center-safe-inset-end: 16px;
-
+    /* Slim drag strip; tall enough for the traffic lights / Windows controls. */
+    --title-bar-height: 30px;
     /* Stacked top banners (desktop):
        - margin-x / margin-y: uniform outer inset — title bar → first inset card,
          app side edges → setup card, and gap between stacked banners.
@@ -383,8 +379,7 @@ body.handset-device #settings-modal .language-picker-trigger .language-picker-co
    block duration row). Wrapping these is a broader safety net beyond
    any single component fix — new unwrapped rows are easy to add by
    accident in a codebase this size. */
-body.android .duration-quick-btns,
-body.android .time-pickers-row {
+body.android .time-pickers-row{
     flex-wrap: wrap;
 }
 
@@ -401,7 +396,9 @@ body.android .time-pickers-row {
 
 /* Title Bar */
 .title-bar{
-    /* Hosting macOS traffic lights + `.now-blocking-row` (perfectly centred). */
+    /* A slim strip: macOS traffic lights on the left, Windows controls on the
+       right, and otherwise only somewhere to grab the window (like the
+       planner's NativeTitleDragStrip). */
     height: var(--title-bar-height);
     background: var(--title-bar-bg);
     /* Visually separate from the warmer body (`--container-bg`). */
@@ -424,18 +421,9 @@ body.android .time-pickers-row {
 }
 
 /* macOS traffic-light buttons sit at fixed top-left coordinates inside
-   the webview (overlay-style title bar). With the chips centered
-   absolutely below, they don't collide on any normal window width, so
-   we no longer need the legacy 80px left padding. */
+   the webview (overlay-style title bar); nothing else lives in the bar. */
 body.mac .title-bar{
     padding-left: 0;
-}
-
-/* Windows: chrome buttons sit on the right; reserve space so BLOCKING NOW
-   stays clear of them (same idea as mac traffic-light insets). */
-body.windows{
-    --title-bar-center-safe-inset-start: 16px;
-    --title-bar-center-safe-inset-end: 100px;
 }
 
 .app-title{
@@ -458,7 +446,6 @@ body.windows{
     -webkit-app-region: no-drag;
 }
 
-/* Window controls only — `.now-blocking-chip` also contains `button` for ⋯. */
 .title-bar > .window-controls button,
 #rebrand-onboarding .eula-title-bar > .window-controls button,
 .win-btn{
@@ -471,7 +458,7 @@ body.windows{
     align-items: center;
     width: 46px;
     height: 100%;
-    min-height: 30px;
+    min-height: 28px;
     background-color: transparent;
     color: var(--text-primary);
     cursor: pointer;
@@ -1966,28 +1953,8 @@ body.dark-mode .app-blocking-closedown-banner{
     
 
     /* Portrait stack: show Now/Schedule text unless JS detects overlap (ui-zoom-sched-tabs-icons). */
-    body.ios:not(.ios-phone) .scheduler-enter-header .mode-tab-label{
-        position: static;
-        width: auto;
-        height: auto;
-        padding: 0;
-        margin: 0;
-        overflow: visible;
-        clip: auto;
-        white-space: nowrap;
-        border: 0;
-    }
-    body.ios:not(.ios-phone).ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab-label{
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border: 0;
-    }
+    
+    
 
     /* -------------------------------------------------------------------------
        Portrait iPad: scale main-content UI (blocklists, scheduler, week calendar).
@@ -2056,37 +2023,6 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
         height: 24px;
     }
 
-    body.ios:not(.ios-phone) .main-content .scheduler-mode-tabs{
-        gap: 4px;
-        padding: 5px;
-        border-radius: 12px;
-        max-width: none;
-    }
-
-    body.ios:not(.ios-phone) .main-content .mode-tab{
-        padding: 10px 18px;
-        gap: 8px;
-        font-size: 17px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .mode-tab.active{
-        padding: 12px 19px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .mode-tab-icon{
-        width: 18px;
-        height: 18px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .selection-prompt{
-        gap: 13px;
-        font-size: 18px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .selection-prompt svg{
-        width: 26px;
-        height: 26px;
-    }
 
     body.ios:not(.ios-phone) .main-content .time-picker-container{
         gap: 18px;
@@ -2095,52 +2031,25 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
         padding: 16px 20px 20px;
     }
 
-    body.ios:not(.ios-phone) .main-content .quick-select-row{
-        gap: 6px;
-        margin-bottom: 14px;
-    }
+    
 
     body.ios:not(.ios-phone) .main-content .time-label{
         font-size: 14px;
     }
 
-    body.ios:not(.ios-phone) .main-content .quick-select-row .time-label,
-    body.ios:not(.ios-phone) .main-content #schedule-segments-heading{
-        font-size: 15px;
-    }
+    
 
-    body.ios:not(.ios-phone) .main-content .duration-input{
-        width: 68px;
-        padding: 8px 8px;
-        font-size: 18px;
-    }
+    
 
-    body.ios:not(.ios-phone) .main-content .duration-unit{
-        font-size: 16px;
-    }
+    
 
-    body.ios:not(.ios-phone) .main-content .quick-select-row .duration-quick-btn{
-        padding: 10px 16px;
-        font-size: 16px;
-        border-radius: 12px;
-    }
+    
 
-    body.ios:not(.ios-phone) .main-content .quick-select-row .duration-quick-btn-always svg{
-        width: 16px;
-        height: 16px;
-    }
+    
 
-    body.ios:not(.ios-phone) .main-content .always-on-message{
-        gap: 12px;
-        padding: 16px 18px;
-        font-size: 16px;
-        border-radius: 10px;
-    }
+    
 
-    body.ios:not(.ios-phone) .main-content .always-on-message svg{
-        width: 18px;
-        height: 18px;
-    }
+    
 
     body.ios:not(.ios-phone) .main-content .time-pickers-row{
         gap: 18px;
@@ -2150,19 +2059,11 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
         gap: 6px;
     }
 
-    body.ios:not(.ios-phone) .main-content #timed-controls .duration-input-wrapper,
-body.ios:not(.ios-phone) .main-content #timed-controls .time-picker-row{
-        min-height: 42px;
-    }
+    
 
-    body.ios:not(.ios-phone) .main-content #timed-controls .time-separator{
-        height: 42px;
-    }
+    
 
-    body.ios:not(.ios-phone) .main-content #timed-controls .time-separator svg{
-        width: 22px;
-        height: 22px;
-    }
+    
 
     body.ios:not(.ios-phone) .main-content .now-btn{
         padding: 10px 18px;
@@ -2184,18 +2085,17 @@ body.ios:not(.ios-phone) .main-content #timed-controls .time-picker-row{
         border-radius: 8px;
     }
 
-    body.ios:not(.ios-phone) .main-content #end-time-display input.time-part.time-popover-anchor,
-body.ios:not(.ios-phone) .main-content .schedule-block-panel .schedule-start-display input.time-part,
-body.ios:not(.ios-phone) .main-content .schedule-block-panel .schedule-end-display input.time-part{
+    body.ios:not(.ios-phone) .main-content .when-times .schedule-start-display input.time-part,
+body.ios:not(.ios-phone) .main-content .when-times .schedule-end-display input.time-part{
         min-width: 42px;
         max-width: 54px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-block-panel .time-picker-row{
+    body.ios:not(.ios-phone) .main-content .when-times .time-picker-row{
         min-height: 42px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-block-panel .time-separator{
+    body.ios:not(.ios-phone) .main-content .when-times .time-separator{
         align-self: flex-end;
         display: inline-flex;
         align-items: center;
@@ -2206,7 +2106,7 @@ body.ios:not(.ios-phone) .main-content .schedule-block-panel .schedule-end-displ
         min-width: 22px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-block-panel .time-separator svg{
+    body.ios:not(.ios-phone) .main-content .when-times .time-separator svg{
         width: 22px;
         height: 22px;
     }
@@ -2226,57 +2126,19 @@ body.ios:not(.ios-phone) .main-content .schedule-block-panel .schedule-end-displ
         min-width: 52px;
     }
 
-    body.ios:not(.ios-phone) .main-content .start-block-btn,
-body.ios:not(.ios-phone) .main-content .start-schedule-btn{
-        padding: 16px 18px;
-        border-radius: 12px;
-        font-size: 18px;
-        gap: 10px;
-    }
+    
 
-    body.ios:not(.ios-phone) .main-content .start-block-btn.stop-block,
-body.ios:not(.ios-phone) .main-content .start-block-btn.stop-schedule{
-        padding: 16px 20px;
-    }
+    
 
-    body.ios:not(.ios-phone) .main-content .start-block-btn > .start-block-btn-leading,
-    body.ios:not(.ios-phone) .main-content .start-block-btn > svg,
-body.ios:not(.ios-phone) .main-content .start-schedule-btn > svg{
-        flex: 0 0 20px;
-        width: 20px;
-        height: 20px;
-        min-width: 20px;
-        min-height: 20px;
-        max-width: 20px;
-        max-height: 20px;
-    }
+    
 
-    body.ios:not(.ios-phone) .main-content .start-block-btn > .start-block-btn-app-icon,
-    body.ios:not(.ios-phone) .main-content .start-block-btn > svg.start-block-btn-app-icon{
-        flex: 0 0 30px;
-        width: 30px;
-        height: 30px;
-        min-width: 30px;
-        min-height: 30px;
-        max-width: 30px;
-        max-height: 30px;
-    }
+    
 
-    body.ios:not(.ios-phone) .main-content .pause-block-btn{
-        padding: 16px 18px;
-        border-radius: 12px;
-        font-size: 18px;
-        gap: 8px;
-    }
+    
 
-    body.ios:not(.ios-phone) .main-content .pause-block-btn svg{
-        width: 20px;
-        height: 20px;
-    }
+    
 
-    body.ios:not(.ios-phone) .main-content .block-action-buttons{
-        gap: 10px;
-    }
+    
 
     body.ios:not(.ios-phone) .main-content .schedule-segments{
         gap: 12px;
@@ -2323,7 +2185,7 @@ body.ios:not(.ios-phone) .main-content .start-schedule-btn > svg{
         gap: 4px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-block-panel .segment-days{
+    body.ios:not(.ios-phone) .main-content .when-times .segment-days{
         min-height: 42px;
     }
 
@@ -2376,18 +2238,6 @@ body.ios:not(.ios-phone) .main-content .schedule-pending-save{
         padding: 8px 14px;
         font-size: 14px;
         border-radius: 8px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .warning-banner{
-        padding: 10px 14px;
-        font-size: 16px;
-        gap: 10px;
-        border-radius: 8px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .warning-banner svg{
-        width: 20px;
-        height: 20px;
     }
 
     body.ios:not(.ios-phone) .main-content .blocklists-container{
@@ -2453,18 +2303,13 @@ body.ios:not(.ios-phone) .main-content .schedule-pending-save{
 
     body.ios:not(.ios-phone) .main-content .blocklist-card{
         --blocklist-action-btn-size: 40px;
-        --blocklist-actions-slot: calc(var(--blocklist-action-btn-size) * 2);
+        --blocklist-actions-slot: 60px;
         --blocklist-menu-anchor-offset: var(--blocklist-action-btn-size);
     }
 
-    body.ios:not(.ios-phone) .main-content .blocklist-action-btn{
-        border-radius: calc(10px * var(--ipad-s));
-    }
+    
 
-    body.ios:not(.ios-phone) .main-content .blocklist-action-btn svg{
-        width: 24px;
-        height: 24px;
-    }
+    
 
     body.ios:not(.ios-phone) .main-content .week-calendar-section{
         margin-top: 16px;
@@ -2580,18 +2425,13 @@ body.ios:not(.ios-phone) .main-content .always-on-chip svg{
         --settings-control-width: calc(140px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-content.start-confirm-modal,
-body.ios:not(.ios-phone) #start-block-confirm-modal .modal-content,
-body.ios:not(.ios-phone) #start-schedule-confirm-modal .modal-content{
+    body.ios:not(.ios-phone) .modal-content.start-confirm-modal{
         max-width: calc(500px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-content.pause-modal,
-body.ios:not(.ios-phone) #pause-modal .modal-content{
-        max-width: calc(500px * var(--ipad-s));
-    }
 
     body.ios:not(.ios-phone) #override-modal .modal-content,
+body.ios:not(.ios-phone) #start-block-confirm-modal .modal-content,
 body.ios:not(.ios-phone) #override-all-modal .modal-content{
         max-width: calc(500px * var(--ipad-s));
     }
@@ -2639,19 +2479,6 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         margin-right: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .warning-banner{
-        padding: calc(8px * var(--ipad-s)) calc(12px * var(--ipad-s));
-        font-size: calc(15px * var(--ipad-s));
-        gap: calc(8px * var(--ipad-s));
-        border-radius: calc(6px * var(--ipad-s));
-        margin-bottom: calc(16px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .warning-banner svg{
-        width: calc(20px * var(--ipad-s));
-        height: calc(20px * var(--ipad-s));
-    }
-
     body.ios:not(.ios-phone) .modal-overlay .form-group{
         margin-bottom: calc(16px * var(--ipad-s));
     }
@@ -2661,7 +2488,7 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         margin-bottom: calc(6px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .form-group > label{
+    body.ios:not(.ios-phone) .modal-overlay #focus-space-editor .form-group > label{
         padding-top: calc(4px * var(--ipad-s));
     }
 
@@ -2675,12 +2502,7 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         width: calc(80px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .override-count-input{
-        width: calc(3.25rem * var(--ipad-s));
-        min-width: calc(3.25rem * var(--ipad-s));
-        max-width: calc(3.25rem * var(--ipad-s));
-        font-size: calc(15px * var(--ipad-s));
-    }
+    
 
     body.ios:not(.ios-phone) .modal-overlay .input-with-suffix{
         gap: calc(8px * var(--ipad-s));
@@ -2759,16 +2581,16 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .tags-input-container > .input-with-button{
+    body.ios:not(.ios-phone) .modal-overlay #focus-space-editor .tags-input-container > .input-with-button{
         gap: calc(6px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .tags-input-container .browse-btn{
+    body.ios:not(.ios-phone) .modal-overlay #focus-space-editor .tags-input-container .browse-btn{
         padding: calc(10px * var(--ipad-s)) calc(12px * var(--ipad-s));
         gap: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .tags-input-container .browse-btn-caption{
+    body.ios:not(.ios-phone) .modal-overlay #focus-space-editor .tags-input-container .browse-btn-caption{
         font-size: calc(13px * var(--ipad-s));
     }
 
@@ -2803,37 +2625,17 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         height: calc(280px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .exit-difficulty-panel .override-type-select{
+    body.ios:not(.ios-phone) .modal-overlay #focus-space-editor .exit-difficulty-panel .override-type-select{
         min-width: calc(140px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .exit-difficulty-preview{
-        padding: calc(10px * var(--ipad-s)) calc(14px * var(--ipad-s)) calc(12px * var(--ipad-s));
-    }
 
-    body.ios:not(.ios-phone) .modal-overlay .exit-difficulty-preview-label{
-        font-size: calc(13px * var(--ipad-s));
-        margin-bottom: calc(4px * var(--ipad-s));
-    }
+    
 
-    body.ios:not(.ios-phone) .modal-overlay .override-count-step-btn{
-        min-width: calc(36px * var(--ipad-s));
-        font-size: calc(18px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .override-count-input{
-        width: calc(2.75rem * var(--ipad-s));
-        min-width: calc(2.75rem * var(--ipad-s));
-        max-width: calc(2.75rem * var(--ipad-s));
-        font-size: calc(15px * var(--ipad-s));
-    }
+    
 
     body.ios:not(.ios-phone) .modal-overlay .exit-difficulty-time-estimate{
         font-size: calc(13px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .exit-difficulty-preview .override-preview-text{
-        font-size: calc(15px * var(--ipad-s));
     }
 
     /* Override / pause challenge */
@@ -2926,10 +2728,7 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         padding-top: calc(12px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .edit-schedule-notice{
-        margin-bottom: calc(14px * var(--ipad-s));
-        font-size: calc(15px * var(--ipad-s));
-    }
+    
 
     body.ios:not(.ios-phone) .modal-overlay .schedule-summary-header{
         font-size: calc(15px * var(--ipad-s));
@@ -2967,58 +2766,6 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         font-size: calc(15px * var(--ipad-s));
     }
 
-    /* Pause modal duration */
-    body.ios:not(.ios-phone) .modal-overlay .pause-remaining-info{
-        font-size: calc(15px * var(--ipad-s));
-        margin-bottom: calc(18px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section{
-        margin-bottom: calc(16px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-row{
-        gap: calc(16px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-col > .time-label{
-        margin-bottom: calc(6px * var(--ipad-s));
-        font-size: calc(13px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-inputs,
-body.ios:not(.ios-phone) .modal-overlay .pause-duration-col > .time-picker-row{
-        min-height: calc(36px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .pause-time-input{
-        width: calc(34px * var(--ipad-s));
-        height: calc(36px * var(--ipad-s));
-        font-size: calc(17px * var(--ipad-s));
-        border-radius: calc(8px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .time-part{
-        width: calc(34px * var(--ipad-s));
-        min-width: calc(34px * var(--ipad-s));
-        height: calc(36px * var(--ipad-s));
-        font-size: calc(17px * var(--ipad-s));
-        border-radius: calc(8px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .time-colon{
-        font-size: calc(17px * var(--ipad-s));
-        line-height: calc(36px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-time-unit{
-        font-size: calc(15px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .pause-arrow svg{
-        width: calc(18px * var(--ipad-s));
-        height: calc(18px * var(--ipad-s));
-    }
 
     body.ios:not(.ios-phone) .modal-overlay .next-day-badge{
         padding: calc(4px * var(--ipad-s)) calc(8px * var(--ipad-s));
@@ -3296,28 +3043,13 @@ body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-feedback-foote
         max-width: 100%;
     }
 
-    .mode-tab{
-        padding: 6px 12px;
-        gap: 0;
-    }
+    
 
-    .mode-tab.active{
-        padding: 8px 13px;
-    }
+    
 
-    body:not(.ios) .scheduler-enter-header .mode-tab{
-        padding-top: 0;
-        padding-bottom: 0;
-        padding-left: 12px;
-        padding-right: 12px;
-    }
+    
 
-    body:not(.ios) .scheduler-enter-header .mode-tab.active{
-        padding-top: 0;
-        padding-bottom: 0;
-        padding-left: 12px;
-        padding-right: 12px;
-    }
+    
 }
 
 /* UI zoom: phones use CSS `html { zoom }`; iPad uses `.app-container { transform: scale() }`.
@@ -3338,58 +3070,8 @@ body.ios.ui-zoom-tier-cramped .blocklist-card{
     max-width: 100%;
 }
 
-body.ios.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab-label{
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-}
-
-body.ios.ui-zoom-sched-tabs-icons .scheduler-enter-header .scheduler-mode-tabs{
-    max-width: none;
-    flex: 0 1 auto;
-    min-width: 0;
-}
-
-body.ios.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab{
-    padding: 8px 11px;
-    gap: 0;
-    font-size: 15px;
-    flex: 0 0 auto;
-    white-space: nowrap;
-}
-
-body.ios.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab.active{
-    padding: 10px 12px;
-}
-
-body.ios.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab-icon{
-    width: 18px;
-    height: 18px;
-}
-
 /* Wider iOS viewports: size tabs to label content instead of equal-flex in 250px bar. */
-body.ios:not(.ui-zoom-sched-tabs-icons) .scheduler-enter-header .scheduler-mode-tabs{
-    max-width: none;
-}
 
-body.ios:not(.ui-zoom-sched-tabs-icons) .scheduler-enter-header .mode-tab{
-    flex: 1 1 0;
-    width: 0;
-}
-
-body:not(.ios).ui-zoom-sched-hide-title #main-start-block-title{
-    display: none;
-}
-
-body.ios.ui-zoom-tier-narrow .now-blocking-row:not(.idle) .now-blocking-heading{
-    display: none;
-}
 
 body.ios.ui-zoom-tier-stack .grid-top-row{
     grid-template-columns: 1fr;
@@ -3494,105 +3176,8 @@ body:not(.ios) .scheduler-section > .section-header{
     padding-right: 172px;
 }
 
-body.ios.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab-label{
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-}
-
-body.ios.ui-zoom-sched-tabs-icons .scheduler-enter-header .scheduler-mode-tabs{
-    max-width: none;
-}
-
-body.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab{
-    gap: 0;
-    font-size: 15px;
-    flex: 1 1 0;
-    width: 0;
-    white-space: nowrap;
-}
-
-body.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab.active{
-    white-space: nowrap;
-}
-
-body:not(.ios).ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab{
-    padding-top: 0;
-    padding-bottom: 0;
-    padding-left: 11px;
-    padding-right: 11px;
-}
-
-body:not(.ios).ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab.active{
-    padding-top: 0;
-    padding-bottom: 0;
-    padding-left: 11px;
-    padding-right: 11px;
-}
-
-body:not(.ios).ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab-icon{
-    width: 16px;
-    height: 16px;
-}
-
 /* Desktop scheduler header tabs: fixed height so icon-only breakpoints never grow the bar
    when the schedule panel wraps (e.g. Start alert onto its own row). */
-body:not(.ios) .scheduler-enter-header .scheduler-mode-tabs{
-    --scheduler-tab-height: 34px;
-    --scheduler-tab-bar-padding: 3px;
-    width: 100%;
-    flex-shrink: 0;
-    min-width: 0;
-    align-self: stretch;
-    padding: var(--scheduler-tab-bar-padding);
-    box-sizing: border-box;
-}
-
-body:not(.ios) .scheduler-enter-header .mode-tab{
-    position: relative;
-    height: var(--scheduler-tab-height);
-    min-height: var(--scheduler-tab-height);
-    max-height: var(--scheduler-tab-height);
-    padding-top: 0;
-    padding-bottom: 0;
-    padding-left: 14px;
-    padding-right: 14px;
-    box-sizing: border-box;
-    flex: 1 1 0;
-    width: 0;
-    line-height: 1;
-    gap: 6px;
-}
-
-body:not(.ios) .scheduler-enter-header .mode-tab-label{
-    position: static;
-    width: auto;
-    height: auto;
-    padding: 0;
-    margin: 0;
-    overflow: visible;
-    clip: auto;
-    white-space: nowrap;
-    border: 0;
-}
-
-body:not(.ios) .scheduler-enter-header .mode-tab.active{
-    padding-top: 0;
-    padding-bottom: 0;
-    padding-left: 14px;
-    padding-right: 14px;
-}
-
-body:not(.ios) .scheduler-enter-header .mode-tab-icon{
-    width: 16px;
-    height: 16px;
-}
 
 .scheduler-section > .section-header .settings-toolbar{
     flex-shrink: 0;
@@ -3720,7 +3305,8 @@ body.ios .scheduler-section > .section-header {
     .grid-top-row .scheduler-content{
         grid-column: 2;
         grid-row: 2;
-        padding-top: 8px;
+        /* 0 so the editor card's top edge lines up with the Block / Allow buttons. */
+        padding-top: 0;
         min-width: 0;
     }
 }
@@ -3815,12 +3401,6 @@ body:not(.ios) #settings-toolbar-scheduler{
     display: flex !important;
 }
 
-.blocklist-card-quick-start .blocklist-emoji,
-.now-blocking-chip-emoji{
-    font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
-    font-style: normal;
-    line-height: 1;
-}
 
 .blocklists-section > .section-header.blocklists-section-header .settings-top-btn{
     width: 30px;
@@ -3897,10 +3477,6 @@ body.android .blocklists-create-btn--primary{
    just created and is most likely to want. */
 body.android #blocklists-container{
     padding-bottom: 76px;
-}
-
-body.android #quick-start-mode-group{
-    display: none;
 }
 
 .blocklists-create-btn{
@@ -3986,240 +3562,6 @@ body.dark-mode .blocklists-create-btn--secondary .blocklists-create-btn-icon{
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 8px 12px;
-}
-
-/* BLOCKING NOW row — heading, pulse dot, chips; centred in `.title-bar`. */
-.now-blocking-row{
-    position: absolute;
-    left: var(--title-bar-center-safe-inset-start);
-    right: var(--title-bar-center-safe-inset-end);
-    top: 50%;
-    transform: translateY(-50%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-wrap: nowrap;
-    gap: 8px;
-    margin: 0;
-    padding: 0;
-    min-width: 0;
-    -webkit-app-region: drag;
-}
-
-.now-blocking-heading{
-    flex-shrink: 0;
-    font-family: var(--font-section-label);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--header-text);
-    white-space: nowrap;
-    line-height: 1;
-    user-select: none;
-}
-
-.now-blocking-row.hidden{
-    display: none;
-}
-
-.now-blocking-dot{
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: hsl(142, 60%, 45%);
-    box-shadow: 0 0 0 3px hsla(142, 60%, 45%, 0.18);
-    flex-shrink: 0;
-}
-
-.now-blocking-chips{
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 6px;
-    min-width: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-    -webkit-app-region: no-drag;
-}
-
-.now-blocking-chips::-webkit-scrollbar{
-    display: none;
-}
-
-.now-blocking-chips.can-horizontal-scroll{
-    cursor: grab;
-}
-
-.now-blocking-chips.can-horizontal-scroll.is-dragging{
-    cursor: grabbing;
-}
-
-.now-blocking-row.idle .now-blocking-heading,
-.now-blocking-row.idle .now-blocking-dot{
-    display: none;
-}
-
-/* Omit "BLOCKING NOW" / localized heading on narrow widths so centred chips aren’t cramped. */
-@media (max-width: 800px) {
-    .now-blocking-row:not(.idle) .now-blocking-heading{
-        display: none;
-    }
-}
-
-.now-blocking-idle-msg{
-    -webkit-app-region: drag;
-    font-size: 13px;
-    font-weight: 400;
-    font-style: italic;
-    color: var(--text-muted);
-    white-space: nowrap;
-    max-width: min(70vw, 520px);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    user-select: none;
-    /* Italic extends past advance width; reserve space so `overflow:hidden` doesn’t clip the last glyph. */
-    padding-inline-start: 0.05em;
-    padding-inline-end: 0.35em;
-}
-
-/* Many simultaneous blocks — hide per-chip names; emoji + countdown stay visible. */
-.now-blocking-row.many-active-chips .now-blocking-chip-name{
-    display: none;
-}
-
-/* Each "blocking now" chip: rounded pill containing emoji, name, "until HH:MM",
-   and a ⋯ menu trigger. Visually similar to the always-on chip but a bit larger
-   to host the trailing time/menu. */
-.now-blocking-chip{
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 0 2px 0 9px;
-    line-height: 1;
-    border-radius: 999px;
-    background: var(--element-bg);
-    border: 1px solid var(--border-color);
-    font-size: 13px;
-    color: var(--text-primary);
-    user-select: none;
-}
-
-.now-blocking-chip-emoji{
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-    line-height: 1;
-    flex-shrink: 0;
-    /* Color emoji glyphs sit low in the em box — nudge up to match text. */
-    transform: translateY(-1px);
-}
-
-.now-blocking-chip-name{
-    font-weight: 500;
-    line-height: 1;
-}
-
-.now-blocking-chip-until{
-    color: var(--text-muted);
-    font-size: 12px;
-    line-height: 1.2;
-    white-space: nowrap;
-}
-
-.now-blocking-chip-emoji,
-.now-blocking-chip-name,
-.now-blocking-chip-until{
-    pointer-events: none;
-    -webkit-user-select: none;
-    user-select: none;
-}
-
-.now-blocking-chip-menu-btn{
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    border: none;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-    flex-shrink: 0;
-    /* The parent row is `-webkit-app-region: drag` so users can grab the
-       title bar anywhere outside the menu button. The button itself
-       must opt out, or clicks register as window drags instead. */
-    -webkit-app-region: no-drag;
-}
-
-.now-blocking-chip-menu-btn:hover,
-.now-blocking-chip-menu-btn[aria-expanded="true"]{
-    background: var(--border-color);
-    color: var(--text-primary);
-}
-
-.now-blocking-chip-menu-btn svg{
-    width: 15px;
-    height: 15px;
-}
-
-/* Popover menu shown when ⋯ is clicked. Absolutely positioned so it can overflow
-   the chip; JS pins it just below the trigger. */
-.now-blocking-chip-menu{
-    position: absolute;
-    z-index: 1000;
-    min-width: 140px;
-    padding: 4px;
-    border-radius: 8px;
-    background: var(--panel-bg);
-    border: 1px solid var(--border-color);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-}
-
-.now-blocking-chip-menu-item{
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-primary);
-    font-size: 13px;
-    text-align: left;
-    cursor: pointer;
-    transition: background 0.1s;
-}
-
-.now-blocking-chip-menu-item:hover{
-    background: var(--border-color);
-}
-
-.now-blocking-chip-menu-item.danger{
-    color: hsl(0, 65%, 45%);
-}
-
-.now-blocking-chip-menu-item svg{
-    flex-shrink: 0;
-    width: 14px;
-    height: 14px;
-    opacity: 0.8;
-}
-
-body.dark-mode .now-blocking-chip-menu{
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-}
-
-body.dark-mode .now-blocking-chip-menu-item.danger{
-    color: hsl(0, 70%, 70%);
 }
 
 /* Combined status row: visibility-toggle chips + always-on chips flow inline together.
@@ -4311,16 +3653,6 @@ body.dark-mode .now-blocking-chip-menu-item.danger{
 
 /* Preview chip shown while the user has the "always" tab selected but hasn't started the
    block yet. Styled distinctly so it can't be confused with an actually-running block. */
-.always-on-chip.preview{
-    border-style: dashed;
-    background: transparent;
-    opacity: 0.7;
-    cursor: default;
-}
-
-.always-on-chip.preview:hover{
-    background: transparent;
-}
 
 /* Calendar container */
 .week-calendar-container{
@@ -4558,9 +3890,6 @@ body.dark-mode .day-row.weekend{
 }
 
 /* NOW-mode previews can only be end-resized, not dragged — use default cursor */
-.calendar-block.preview.interactive.instant-preview{
-    cursor: default;
-}
 
 .calendar-block.preview.interactive:hover{
     opacity: 0.85;
@@ -4940,92 +4269,6 @@ body.dark-mode .calendar-lane-overflow{
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
-.scheduler-enter-header{
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-bottom: 2px;
-    container-type: inline-size;
-    container-name: sched-enter-header;
-}
-
-.scheduler-enter-header-row{
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 8px;
-    min-width: 0;
-    flex-wrap: wrap;
-}
-
-.scheduler-enter-header-row h2{
-    margin: 0;
-    flex-shrink: 0;
-    font-family: var(--font-section-label);
-    font-size: 16px;
-    font-weight: 700;
-    line-height: 1.2;
-    color: var(--text-subtle);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-}
-
-.time-picker-container .scheduler-room-chip{
-    position: absolute;
-    top: -1px;
-    left: 16px;
-    transform: translateY(-50%);
-    z-index: 2;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    max-width: calc(100% - 32px);
-    padding: 3px 9px 3px 7px;
-    border-radius: 999px;
-    border: none;
-    font-family: var(--font-section-label);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    line-height: 1.2;
-    /* This is a white-text pill. When the focus space has a custom colour,
-       applyRoomChipTint() overrides this background with a darkened accent;
-       but an uncoloured space (no tint) would otherwise inherit the pale
-       --redd-teal-soft fill from .start-confirm-room-chip, leaving white text
-       on pale mint (invisible). Default to a solid dark teal (~5.7:1 on white
-       text) so the untinted chip stays legible in both themes. */
-    background: #1a7361;
-    color: #fff;
-    pointer-events: none;
-    white-space: nowrap;
-}
-
-.time-picker-container .scheduler-room-chip .start-confirm-room-chip-emoji{
-    font-size: 11px;
-    line-height: 1;
-    flex-shrink: 0;
-}
-
-.time-picker-container .scheduler-room-chip .start-confirm-room-chip-name{
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.scheduler-enter-header .scheduler-mode-tabs{
-    display: flex;
-    width: 100%;
-    max-width: none;
-    box-sizing: border-box;
-}
-
-.scheduler-enter-header .mode-tab{
-    flex: 1 1 0;
-    width: 0;
-    min-width: 0;
-}
-
 .grid-top-row--blocklist-selected .scheduler-section > .section-header{
     display: none;
 }
@@ -5038,126 +4281,14 @@ body.dark-mode .calendar-lane-overflow{
 }
 
 /* Duration Picker */
-.duration-input-wrapper{
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.duration-input{
-    width: 60px;
-    padding: 6px 6px;
-    border: 1px solid var(--input-border);
-    border-radius: 8px;
-    font-size: 17px;
-    font-weight: 600;
-    text-align: center;
-    background: var(--input-bg);
-    color: var(--text-secondary);
-}
-
-.duration-input:focus{
-    outline: none;
-    border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.2);
-}
 
 /* Hide number input spinners */
-.duration-input::-webkit-outer-spin-button,
-.duration-input::-webkit-inner-spin-button{
-    -webkit-appearance: none;
-    margin: 0;
-}
-
-.duration-input[type=number]{
-    appearance: textfield;
-    -moz-appearance: textfield;
-}
-
-.duration-unit{
-    font-size: 15px;
-    color: var(--text-subtle);
-}
-
-.duration-quick-btns{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.duration-quick-btn{
-    padding: 9px 14px;
-    font-family: var(--font-body);
-    font-size: 15px;
-    font-weight: 700;
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    background: var(--element-bg);
-    color: var(--redd-navy);
-    cursor: pointer;
-    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.duration-quick-btn:hover:not(.active){
-    border-color: var(--border-color-medium);
-    color: var(--redd-navy);
-}
-
-.duration-quick-btn.active{
-    background: var(--redd-teal);
-    border-color: var(--redd-teal);
-    color: #ffffff;
-    box-shadow: 0 4px 12px rgba(42, 157, 143, 0.22);
-}
-
-.duration-quick-btn.active:hover{
-    color: #ffffff;
-}
 
 /* Until-I-stop sits after timed pills — keep the power icon + label grouped. */
-.duration-quick-btn-always{
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    margin-left: 0;
-}
-
-.duration-quick-btn-always svg{
-    flex-shrink: 0;
-    opacity: 0.9;
-}
-
-.duration-quick-btn-always.active svg{
-    opacity: 1;
-}
 
 /* Always-on message */
-.always-on-message{
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 14px 16px;
-    background: var(--redd-teal-soft);
-    border: 1px solid var(--redd-teal-soft-border);
-    border-radius: 8px;
-    color: var(--redd-teal-hover);
-    font-size: 15px;
-    line-height: 1.4;
-}
-
-.always-on-message svg{
-    flex-shrink: 0;
-    color: var(--redd-teal);
-}
-
-.always-on-message.hidden{
-    display: none;
-}
 
 /* Timed controls wrapper (for smooth show/hide) */
-.timed-controls.hidden{
-    display: none;
-}
 
 /* Time Pickers Row */
 .time-pickers-row{
@@ -5167,40 +4298,10 @@ body.dark-mode .calendar-lane-overflow{
     justify-content: flex-start;
 }
 
-.quick-select-row{
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin-bottom: 12px;
-}
-
-.quick-select-row .time-label,
-#schedule-segments-heading{
-    font-size: 14px;
-}
-
 /* Long duration / schedule prompts read better in sentence case than all-caps. */
-#quick-select-label,
-#schedule-segments-heading{
+#quick-select-label{
     text-transform: none;
     letter-spacing: normal;
-}
-
-.quick-select-row .duration-quick-btns{
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.quick-select-row .duration-quick-btn{
-    font-size: 15px;
-    font-weight: 700;
-    padding: 9px 14px;
-    border-radius: 12px;
-}
-
-.quick-select-row .duration-quick-btn-always svg{
-    width: 14px;
-    height: 14px;
 }
 
 .time-picker-group{
@@ -5210,34 +4311,6 @@ body.dark-mode .calendar-lane-overflow{
 }
 
 /* Keep Duration and End labels aligned in one-off timed controls */
-#timed-controls .time-pickers-row{
-    align-items: flex-end;
-}
-
-#timed-controls .time-picker-group{
-    gap: 6px;
-}
-
-#timed-controls .duration-input-wrapper,
-#timed-controls .time-picker-row{
-    min-height: 36px;
-}
-
-
-#timed-controls .time-separator{
-    align-self: flex-end;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    height: 36px;
-    padding-bottom: 0;
-    line-height: 0;
-}
-
-#timed-controls .time-separator svg{
-    width: 20px;
-    height: 20px;
-}
 
 .time-label{
     font-size: 13px;
@@ -5364,13 +4437,6 @@ body.dark-mode .calendar-lane-overflow{
 }
 
 /* Plain teal next-day hint shown inline next to the END label (no pill). */
-.next-day-inline{
-    font-size: 12px;
-    font-weight: 700;
-    line-height: 1;
-    color: var(--redd-teal);
-    white-space: nowrap;
-}
 
 body.dark-mode .next-day-badge{
     background: var(--redd-teal-soft);
@@ -5438,32 +4504,16 @@ body.dark-mode .time-part.active{
 }
 
 /* Compact instant end HH:MM — same footprint as legacy buttons; editable + opens list on click. */
-#end-time-display{
-    flex: 0 1 auto;
-    min-width: 0;
-}
-
-#end-time-display input.time-part.time-popover-anchor{
-    box-sizing: border-box;
-    flex: 0 0 auto;
-    width: 2.55em;
-    min-width: 36px;
-    max-width: 48px;
-    cursor: text;
-    -webkit-appearance: none;
-    appearance: none;
-    margin: 0;
-}
 
 /* Schedule segments: match instant end-time compact editable pills */
-.schedule-block-panel .schedule-start-display,
-.schedule-block-panel .schedule-end-display{
+.when-times .schedule-start-display,
+.when-times .schedule-end-display{
     flex: 0 1 auto;
     min-width: 0;
 }
 
-.schedule-block-panel .schedule-start-display input.time-part,
-.schedule-block-panel .schedule-end-display input.time-part{
+.when-times .schedule-start-display input.time-part,
+.when-times .schedule-end-display input.time-part{
     box-sizing: border-box;
     flex: 0 0 auto;
     width: 2.55em;
@@ -5570,48 +4620,6 @@ body.dark-mode .time-part.active{
     color: var(--text-secondary);
 }
 
-/* Warning Banner */
-.warning-banner{
-    background: #fffbeb;
-    color: #92400e;
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 15px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 16px;
-    border: 1px solid #fcd34d;
-}
-
-.warning-banner svg{
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-}
-
-.warning-banner-action{
-    flex-shrink: 0;
-    margin-left: auto;
-    border: 1px solid currentColor;
-    border-radius: 6px;
-    background: transparent;
-    color: inherit;
-    padding: 4px 10px;
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-}
-
-.warning-banner-action:hover{
-    background: rgba(146, 64, 14, 0.08);
-}
-
-.warning-banner-action:focus-visible{
-    outline: 2px solid currentColor;
-    outline-offset: 2px;
-}
-
 .mode-option.disabled{
     opacity: 0.5;
     pointer-events: none;
@@ -5639,452 +4647,24 @@ body.dark-mode .tag.locked{
     border-color: rgba(255, 255, 255, 0.10);
 }
 
-/* Start Block Button — primary teal CTA, matching the canonical brand
+/* Start Block Button — primary teal CTA,
+matching the canonical brand
    ("Get started now" on reddfocus.org). */
-.start-block-btn{
-    width: 100%;
-    padding: 14px;
-    border: none;
-    border-radius: 10px;
-    background: var(--button-bg);
-    color: var(--primary-btn-text);
-    font-size: 17px;
-    font-weight: 600;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    transition: all 0.2s ease;
-}
-
-.start-block-btn:hover:not(:disabled){
-    background: var(--button-hover);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.start-block-btn:disabled{
-    background: var(--button-disabled-bg);
-    cursor: not-allowed;
-}
-
-.start-block-btn .btn-name{
-    font-weight: inherit;
-    text-align: start;
-    flex: 0 1 auto;
-    min-width: 0;
-}
 
 /* Emoji + blocklist name share one flex item so wrapping the label doesn’t
    strand space between emoji and title. */
-.start-block-btn .btn-blocklist-meta{
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 6px;
-    flex: 0 1 auto;
-    flex-grow: 0;
-    min-width: 0;
-    width: fit-content;
-    max-width: 100%;
-}
-
-.start-block-btn .btn-blocklist-lead{
-    display: none;
-}
-
-.start-block-btn .btn-emoji{
-    flex: 0 0 auto;
-    text-align: center;
-}
-
-.start-block-btn .btn-label{
-    flex: 0 1 auto;
-    min-width: 0;
-    text-align: start;
-}
 
 /* Keep the action icon at a stable size when label + blocklist name wrap. */
-.start-block-btn > .start-block-btn-leading{
-    flex: 0 0 18px;
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
-    min-height: 18px;
-    max-width: 18px;
-    max-height: 18px;
-    align-self: center;
-}
 
-.start-block-btn > .start-block-btn-app-icon,
-.start-block-btn > svg.start-block-btn-app-icon{
-    flex: 0 0 26px;
-    width: 26px;
-    height: 26px;
-    min-width: 26px;
-    min-height: 26px;
-    max-width: 26px;
-    max-height: 26px;
-    object-fit: contain;
-}
-
-.start-block-btn > svg.start-block-btn-leading:not(.start-block-btn-app-icon),
-.start-block-btn > svg{
-    flex: 0 0 18px;
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
-    min-height: 18px;
-    max-width: 18px;
-    max-height: 18px;
-    align-self: center;
-}
-
-/* Stop Block / Stop Schedule — ghost. Pause carries the visual weight in
-   the action row; stop is available but steps back. */
-.start-block-btn.stop-block,
-.start-block-btn.stop-schedule{
-    background: transparent;
-    color: var(--text-secondary);
-    border: 1px solid transparent;
-    width: auto;
-    max-width: 100%;
-    min-width: 0;
-    justify-content: center;
-    padding: 14px 18px;
-    text-align: start;
-    white-space: nowrap;
-}
-
-.start-block-btn.stop-block:hover:not(:disabled),
-.start-block-btn.stop-schedule:hover:not(:disabled){
-    background: var(--element-hover-bg);
-    color: var(--text-primary);
-    transform: none;
-    box-shadow: none;
-}
-
-body.dark-mode .start-block-btn.stop-block,
-body.dark-mode .start-block-btn.stop-schedule{
-    background: transparent;
-    color: var(--text-secondary);
-    border-color: transparent;
-}
-
-body.dark-mode .start-block-btn.stop-block:hover:not(:disabled),
-body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled){
-    background: rgba(255, 255, 255, 0.06);
-    color: var(--text-primary);
-}
-
-/* Block action buttons wrapper (pause + stop side by side) */
-.block-action-buttons{
-    display: flex;
-    gap: 8px;
-    width: 100%;
-}
-
-.block-action-buttons .start-block-btn{
-    flex: 1;
-}
-
-.block-action-buttons .start-block-btn.stop-block,
-.block-action-buttons .start-block-btn.stop-schedule{
-    flex: 0 1 auto;
-}
-
-.start-block-btn:not(.stop-block) .btn-blocklist-meta,
-.start-schedule-btn:not(.stop-schedule) .btn-blocklist-meta{
-    display: none;
-}
-
-.block-action-buttons .start-block-btn.stop-block:not(.stop-meta-collapsed) .btn-label-context::after{
-    content: ':';
-}
-
-.start-block-btn.stop-meta-collapsed .btn-blocklist-meta,
-.start-schedule-btn.stop-meta-collapsed .btn-blocklist-meta{
-    display: none;
-}
-
-.block-action-buttons .start-block-btn,
-.block-action-buttons .start-schedule-btn{
-    white-space: nowrap;
-    min-width: 0;
-}
-
-/* Pause Block Button — filled secondary. Pause is the gentler, undoable action
-   and carries visual weight beside the ghost Stop Block / Stop Schedule. The
-   to teal-soft to signal "ready to go again" — same teal family as the primary
-   CTA. */
-.pause-block-btn{
-    padding: 14px 16px;
-    border-radius: 10px;
-    background: var(--redd-warm-grey);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    font-size: 17px;
-    font-weight: 600;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-}
-
-.pause-block-btn:hover{
-    background: rgba(30, 45, 62, 0.06);
-    color: var(--text-primary);
-}
-
-body.dark-mode .pause-block-btn{
-    background: var(--redd-warm-grey);
-    color: var(--text-primary);
-    border-color: var(--border-color);
-}
-
-body.dark-mode .pause-block-btn:hover{
-    background: rgba(255, 255, 255, 0.06);
-    color: var(--text-primary);
-}
-
-.pause-block-btn.resume-mode{
-    background: var(--redd-teal-soft);
-    color: var(--redd-teal-hover);
-    border-color: color-mix(in srgb, var(--redd-teal) 22%, transparent);
-}
-
-.pause-block-btn.resume-mode:hover{
-    background: color-mix(in srgb, var(--redd-teal) 16%, var(--redd-card));
-}
-
-body.dark-mode .pause-block-btn.resume-mode{
-    color: var(--redd-teal);
-    border-color: color-mix(in srgb, var(--redd-teal) 30%, transparent);
-}
-
-body.dark-mode .pause-block-btn.resume-mode:hover{
-    background: color-mix(in srgb, var(--redd-teal) 22%, transparent);
-}
-
-/* Pause Modal — popup width only; handset full-screen modals expand to viewport. */
-body:not(.handset-device) .modal-content.pause-modal,
-body:not(.handset-device) .start-confirm-modal.pause-modal{
-    max-width: 500px;
-}
-
-.start-confirm-modal.pause-modal .pause-duration-section{
-    margin-bottom: 16px;
-}
-
-.pause-remaining-info{
-    font-size: 15px;
-    color: var(--text-muted);
-    margin-top: -8px;
-    margin-bottom: 18px;
-    font-style: italic;
-}
-
-.pause-duration-section{
-    margin-bottom: 16px;
-}
-
-.pause-duration-row{
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-/* When horizontal layout overflows, JS adds this class: restarts-at block below pause-for, no arrow */
-.pause-duration-row.pause-duration-row--stacked{
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-}
-
-.pause-duration-row.pause-duration-row--stacked .pause-arrow{
-    display: none;
-}
-
-.pause-duration-row.pause-duration-row--stacked .pause-duration-col{
-    flex: 0 0 auto;
-    width: 100%;
-    max-width: 100%;
-}
-
-.pause-duration-col{
-    flex: 0 0 auto;
-    display: flex;
-    flex-direction: column;
-}
-
-.pause-duration-col > .time-label{
-    margin: 0 0 6px 0;
-}
-
-.pause-duration-inputs,
-.pause-duration-col > .time-picker-row{
-    display: flex;
-    align-items: center;
-    min-height: 36px;
-}
-
-.pause-duration-inputs{
-    gap: 8px;
-}
-
-.pause-time-input-group{
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.pause-duration-section .pause-time-input{
-    width: 34px;
-    height: 36px;
-    padding: 0 4px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--input-bg);
-    color: var(--text-primary);
-    font-size: 17px;
-    font-weight: 600;
-    text-align: center;
-    box-sizing: border-box;
-    line-height: 1;
-    -moz-appearance: textfield;
-    appearance: textfield;
-}
-
-.pause-duration-section .pause-time-input::-webkit-inner-spin-button,
-.pause-duration-section .pause-time-input::-webkit-outer-spin-button{
-    -webkit-appearance: none;
-    margin: 0;
-}
-
-/* Match pause input footprint; keep .time-part hover / focus / .active for popover */
-.pause-duration-section .time-part{
-    width: 34px;
-    min-width: 34px;
-    height: 36px;
-    padding: 0 4px;
-    border-radius: 8px;
-    box-sizing: border-box;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-}
-
-.pause-duration-section .time-colon{
-    font-size: 17px;
-    font-weight: 600;
-    line-height: 36px;
-    padding: 0 2px;
-}
-
-.pause-time-unit{
-    font-size: 15px;
-    color: var(--text-secondary);
-}
-
-.pause-arrow{
-    color: var(--text-secondary);
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    align-self: flex-end;
-    margin-bottom: 9px;
-}
-
-/* Scheduler Mode Tabs */
-.scheduler-mode-tabs{
-    display: inline-flex;
-    gap: 2px;
-    background: var(--container-bg);
-    padding: 4px;
-    border-radius: 10px;
-    max-width: 250px;
-    min-width: 0;
-}
-
-body.dark-mode .scheduler-mode-tabs{
-    background: var(--container-bg);
-}
-
-.mode-tab{
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    flex: 1 1 0;
-    min-width: 0;
-    padding: 6px 14px;
-    border: none;
-    border-radius: 8px;
-    background: var(--container-bg);
-    color: var(--text-muted);
-    font-size: 15px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    white-space: nowrap;
-}
-
-.mode-tab-icon{
-    flex-shrink: 0;
-    opacity: 0.85;
-}
-
-.mode-tab.active .mode-tab-icon{
-    opacity: 1;
-}
-
-.mode-tab:hover:not(.active){
-    color: var(--text-secondary);
-}
-
-.mode-tab.active{
-    background: var(--primary-btn-bg);
-    color: var(--primary-btn-text);
-    box-shadow: 0 1px 3px rgba(30, 45, 62, 0.18);
-    padding: 8px 15px;
-}
-
-body:not(.ios) .scheduler-enter-header .mode-tab.active{
-    padding-top: 0;
-    padding-bottom: 0;
-}
-
-.mode-tab.active:hover{
-    color: var(--primary-btn-text);
-}
-
-body.dark-mode .mode-tab.active{
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-    color: #ffffff;
-}
-
-body.dark-mode .mode-tab.active:hover{
-    color: #ffffff;
-}
-
-body.dark-mode .mode-tab.active .mode-tab-icon{
-    color: #ffffff;
-}
 
 /* Schedule Block Panel */
-.schedule-block-panel{
+.when-times{
     display: flex;
     flex-direction: column;
     gap: 12px;
 }
 
-.schedule-block-panel.hidden{
+.when-times.hidden{
     display: none;
 }
 
@@ -6283,11 +4863,11 @@ body:not(.ios) .schedule-segment{
 }
 
 /* Center the start→end arrow on the time input row (labels sit above). */
-.schedule-block-panel .time-picker-row{
+.when-times .time-picker-row{
     min-height: 36px;
 }
 
-.schedule-block-panel .time-separator{
+.when-times .time-separator{
     align-self: flex-end;
     display: inline-flex;
     align-items: center;
@@ -6297,7 +4877,7 @@ body:not(.ios) .schedule-segment{
     line-height: 0;
 }
 
-.schedule-block-panel .time-separator svg{
+.when-times .time-separator svg{
     width: 20px;
     height: 20px;
 }
@@ -6309,18 +4889,18 @@ body.ios .main-content .schedule-segment .time-pickers-row {
     gap: 8px;
 }
 
-body.ios .schedule-block-panel .time-picker-row {
+body.ios .when-times .time-picker-row {
     min-height: 42px;
 }
 
-body.ios .schedule-block-panel .time-separator {
+body.ios .when-times .time-separator {
     align-self: flex-end;
     height: 42px;
     min-width: 22px;
     opacity: 0.75;
 }
 
-body.ios .schedule-block-panel .time-separator svg {
+body.ios .when-times .time-separator svg {
     width: 22px;
     height: 22px;
 }
@@ -6354,7 +4934,7 @@ body.ios .schedule-segment .remove-segment-btn {
     flex-shrink: 0;
 }
 
-.schedule-block-panel .time-label{
+.when-times .time-label{
     line-height: var(--schedule-segment-label-line-height, 1.3);
 }
 
@@ -6427,14 +5007,14 @@ body.dark-mode .add-segment-btn:hover{
 }
 
 /* Segment Row - times on top, days full-width below (schedule enter panel). */
-.schedule-block-panel .segment-row{
+.when-times .segment-row{
     flex-direction: column;
     align-items: stretch;
     gap: 12px;
 }
 
-.schedule-block-panel .segment-row > .time-pickers-row,
-.schedule-block-panel .segment-row > .segment-days-group{
+.when-times .segment-row > .time-pickers-row,
+.when-times .segment-row > .segment-days-group{
     width: 100%;
 }
 
@@ -6473,7 +5053,7 @@ body:not(.ios) .segment-row > .time-pickers-row{
 @media (orientation: landscape) {
     body.handset-device .scheduler-content,
 body.handset-device .time-picker-container,
-body.handset-device .schedule-block-panel,
+body.handset-device .when-times,
 body.handset-device .schedule-segments,
 body.handset-device .schedule-segment,
 body.handset-device .segment-row,
@@ -6517,7 +5097,7 @@ body.handset-device .segment-days-group{
     gap: 4px;
 }
 
-.schedule-block-panel .segment-days{
+.when-times .segment-days{
     min-height: 36px;
     align-items: center;
 }
@@ -6655,7 +5235,6 @@ body.android .segment-days.compact-day-labels .segment-day-toggle {
     grid-column: 3;
     justify-self: start;
 }
-
 
 .strictness-option{
     display: flex;
@@ -7168,9 +5747,6 @@ body.android .day-toggle {
 }
 
 /* Start Schedule Button */
-.start-schedule-btn.hidden{
-    display: none;
-}
 
 /* Locked segment (part of active schedule) — controls disabled via JS; keep app-bg. */
 
@@ -7192,9 +5768,6 @@ body.android .day-toggle {
     display: none;
 }
 
-#pause-modal.pause-frictionless .pause-challenge-friction-only {
-    display: none;
-}
 
 .schedule-pending-label{
     color: var(--text-color);
@@ -7387,7 +5960,8 @@ body.android .blocklists-container {
     --blocklist-status-tight-gap: 4px;
     --blocklist-action-btn-size: 30px;
     --blocklist-actions-gap: 2px;
-    --blocklist-actions-slot: calc(var(--blocklist-action-btn-size) * 2 + var(--blocklist-actions-gap));
+    /* Room the header keeps clear for the switch (44px) plus a gap. */
+    --blocklist-actions-slot: 56px;
     --blocklist-menu-anchor-offset: calc(var(--blocklist-action-btn-size) + var(--blocklist-actions-gap));
     display: flex;
     align-items: stretch;
@@ -7413,27 +5987,6 @@ body.android .blocklists-container {
 .blocklist-card.selected{
     border-left-width: 0;
     overflow: visible;
-}
-
-/* Running Quick start: ephemeral card at the top of the list. */
-.blocklist-card-quick-start{
-    --blocklist-card-border: 2px;
-    border: var(--blocklist-card-border) dashed color-mix(in srgb, var(--text-muted) 55%, var(--border-color));
-    border-left-width: var(--blocklist-card-border);
-    padding-top: calc(var(--blocklist-card-padding-y) + 3px);
-    cursor: pointer;
-}
-
-.blocklist-card-quick-start.selected{
-    /* Keep full dashed outline — generic .selected removes left border for the colour stripe. */
-    border-style: dashed;
-    border-left-width: var(--blocklist-card-border);
-}
-
-/* Don't dim Quick start — dashed border is the ephemeral cue. */
-.blocklist-card-quick-start .blocklist-stripe{
-    /* Keep stripe width so content aligns with normal cards; hide the color. */
-    background: transparent !important;
 }
 
 .blocklist-entering-chip{
@@ -7472,68 +6025,6 @@ body.android .blocklists-container {
 /* Selected blocklist card (when preparing to start a block) */
 /* Box-shadow is applied inline via JS using the blocklist's color */
 
-/* Selection Prompt — positioned by syncSelectionPromptLayout() on the first card */
-.selection-prompt{
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 11px;
-    margin: 0;
-    padding: 0;
-    color: var(--text-muted);
-    font-size: 15px;
-    font-weight: 400;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-}
-
-.grid-top-row--selection-prompt-active .selection-prompt{
-    z-index: 5;
-}
-
-body.selection-prompt-layout-two-col .grid-top-row--selection-prompt-active .selection-prompt{
-    position: absolute;
-}
-
-body.selection-prompt-layout-stack .grid-top-row--selection-prompt-active .scheduler-section{
-    min-height: 24px;
-}
-
-body.selection-prompt-layout-stack .grid-top-row--selection-prompt-active .scheduler-content{
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-}
-
-body.selection-prompt-layout-stack .grid-top-row--selection-prompt-active .selection-prompt{
-    position: static;
-    padding: 12px 0 0 24px;
-    margin: 0;
-    flex-shrink: 0;
-}
-
-body.selection-prompt-layout-two-col .selection-prompt svg{
-    transform: none;
-}
-
-body.selection-prompt-layout-stack .selection-prompt svg{
-    transform: rotate(90deg);
-}
-
-.selection-prompt svg{
-    display: block;
-    flex-shrink: 0;
-    width: 24px;
-    height: 24px;
-    opacity: 0.55;
-}
-
-body.ios .selection-prompt,
-body.android .selection-prompt {
-    font-size: 17px;
-}
 
 .grid-top-row:not(.grid-top-row--blocklist-selected) .scheduler-content{
     min-height: 0;
@@ -7622,16 +6113,41 @@ body.android .selection-prompt {
     flex-direction: column;
 }
 
+/* Third card line, like Android: "Blocking now · Mon, Tue · 09:00 – 17:00". */
+.blocklist-status-line{
+    font-size: 13px;
+    line-height: 1.35;
+    color: var(--text-muted);
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.blocklist-status-line.is-blocking{
+    color: hsl(142, 55%, 36%);
+    font-weight: 500;
+}
+
+body.ios .blocklist-status-line,
+body.android .blocklist-status-line{
+    font-size: 14px;
+}
+
+/* The switch is anchored to the whole header (title + meta line), not the
+   title row, so it sits at the card's vertical centre. */
 .blocklist-card-header{
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 5px;
     min-width: 0;
     padding-left: 9px;
+    padding-right: var(--blocklist-actions-slot);
 }
 
 .blocklist-card-title-row{
-    position: relative;
+    position: static;
     min-width: 0;
 }
 
@@ -7642,7 +6158,6 @@ body.android .selection-prompt {
     gap: 0;
     width: 100%;
     min-width: 0;
-    padding-right: var(--blocklist-actions-slot);
     box-sizing: border-box;
     font-weight: 600;
     font-size: 17px;
@@ -7780,46 +6295,15 @@ body.mobile-phone-home .blocklist-meta-items-btn{
     }
 }
 
-/* Mobile phones: the card body is inert; pause/stop/edit live in the overflow menu. */
+/* Mobile phones: the card body is inert; tapping it opens the editor sheet. */
 body.mobile-phone-home .blocklist-card{
     --blocklist-action-btn-size: 32px;
-}
-
-body.mobile-phone-home .blocklist-card-title-row{
-    position: static;
-}
-
-body.mobile-phone-home .blocklist-card-header{
-    position: relative;
-    padding-right: var(--blocklist-actions-slot);
-}
-
-body.mobile-phone-home .blocklist-name{
-    padding-right: 0;
 }
 
 body.mobile-phone-home .blocklist-actions{
     right: 0;
     top: 50%;
     transform: translateY(-50%);
-}
-
-body.mobile-phone-home .blocklist-menu-btn{
-    -webkit-tap-highlight-color: transparent;
-}
-
-body.mobile-phone-home .blocklist-menu-btn svg{
-    width: 22px;
-    height: 22px;
-}
-
-@media (hover: none), (pointer: coarse) {
-    body.mobile-phone-home .blocklist-menu-btn:hover,
-    body.mobile-phone-home .blocklist-menu-btn:active,
-    body.mobile-phone-home .blocklist-menu-btn:focus-visible{
-        background: var(--element-hover-bg);
-        color: var(--text-secondary);
-    }
 }
 
 .blocklist-card-details.hidden{
@@ -7893,7 +6377,7 @@ body.ios .blocklist-card,
 body.android .blocklist-card{
     --blocklist-action-btn-size: 38px;
     --blocklist-actions-gap: 0px;
-    --blocklist-actions-slot: calc(var(--blocklist-action-btn-size) * 2);
+    --blocklist-actions-slot: 56px;
     --blocklist-menu-anchor-offset: var(--blocklist-action-btn-size);
 }
 
@@ -7905,56 +6389,10 @@ body.android .blocklist-actions {
 /* Enter-sheet cards carry only the overflow button, so reserve one slot and
    right-align the menu under it. `body` prefix keeps this above the
    ios/android two-slot defaults above. */
-body .blocklist-card.blocklist-card-menu-only{
-    --blocklist-actions-slot: var(--blocklist-action-btn-size);
-    --blocklist-menu-anchor-offset: 0px;
-}
 
 /* Phones only: the card body is not a tap target there, so no hover lift.
    The single-column desktop sheet keeps the default .blocklist-card:hover —
    its card body still opens the enter sheet. */
-body.mobile-phone-home .blocklist-card.blocklist-card-menu-only:hover{
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-}
-
-.blocklist-action-btn{
-    width: var(--blocklist-action-btn-size);
-    height: var(--blocklist-action-btn-size);
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-}
-
-.blocklist-action-btn svg{
-    width: 19px;
-    height: 19px;
-}
-
-body.ios .blocklist-action-btn svg,
-body.android .blocklist-action-btn svg {
-    width: 22px;
-    height: 22px;
-}
-
-.blocklist-action-btn:hover{
-    background: var(--element-hover-bg);
-    color: var(--text-secondary);
-}
-
-.blocklist-action-btn.delete:hover{
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
-}
-
-.blocklist-menu-wrapper{
-    position: relative;
-}
 
 .blocklist-menu{
     position: absolute;
@@ -11176,31 +9614,36 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
    panel surface as settings (.settings-panel-bg); inner inputs stay white.
    Unlocked chips use the picked blocklist colour via --blocklist-tint /
    --blocklist-tag-text (JS: applyModalBlocklistTint). */
-#blocklist-modal .tags-input-container{
+#focus-space-editor .tags-input-container{
     background: var(--settings-panel-bg);
 }
 
-#blocklist-modal .tags-input-container .tag:not(.locked){
+#focus-space-editor .tags-input-container .tag:not(.locked){
     background: var(--blocklist-tint, var(--accent-color));
     color: var(--blocklist-tag-text, white);
 }
 
-#blocklist-modal .tags-input-container .tag:not(.locked) .tag-remove{
+#focus-space-editor .tags-input-container .tag:not(.locked) .tag-remove{
     color: inherit;
     opacity: 0.55;
 }
 
-#blocklist-modal .tags-input-container .tag:not(.locked) .tag-remove:hover{
+#focus-space-editor .tags-input-container .tag:not(.locked) .tag-remove:hover{
     opacity: 1;
 }
 
 /* Websites: tags on top, bordered input + Lists button on their own row below. */
-#blocklist-modal .tags-input-container.tags-input-stacked{
+#focus-space-editor .tags-input-container.tags-input-stacked{
     flex-direction: column;
     align-items: stretch;
     flex-wrap: nowrap;
     gap: 8px;
-    padding: 8px;
+    /* No wrapper card: the chips, input and Lists button stand on their own
+       inside the section. */
+    padding: 0;
+    border: none;
+    background: transparent;
+    min-height: 0;
     cursor: default;
     width: 100%;
     max-width: 100%;
@@ -11208,22 +9651,22 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     overflow: visible;
 }
 
-#blocklist-modal .tags-input-stacked:focus-within{
+#focus-space-editor .tags-input-stacked:focus-within{
     border-color: var(--input-border);
     box-shadow: none;
 }
 
-#blocklist-modal .tags-input-stacked > .tags-container{
+#focus-space-editor .tags-input-stacked > .tags-container{
     width: 100%;
     flex: none;
     cursor: text;
 }
 
-#blocklist-modal .tags-input-stacked > .tags-container:empty{
+#focus-space-editor .tags-input-stacked > .tags-container:empty{
     display: none;
 }
 
-#blocklist-modal .tags-input-stacked > .input-with-button{
+#focus-space-editor .tags-input-stacked > .input-with-button{
     width: 100%;
     max-width: 100%;
     flex: none;
@@ -11234,7 +9677,7 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     gap: 8px;
 }
 
-#blocklist-modal .tags-input-stacked .form-input{
+#focus-space-editor .tags-input-stacked .form-input{
     flex: 1 1 0%;
     min-width: 0;
     width: auto;
@@ -11246,17 +9689,17 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     color: var(--text-primary);
 }
 
-#blocklist-modal .tags-input-stacked .form-input::placeholder{
+#focus-space-editor .tags-input-stacked .form-input::placeholder{
     color: var(--text-muted);
     opacity: 1;
 }
 
-#blocklist-modal .tags-input-stacked .form-input:focus{
+#focus-space-editor .tags-input-stacked .form-input:focus{
     border-color: var(--accent-color);
     box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
 }
 
-#blocklist-modal .tags-input-stacked .browse-btn{
+#focus-space-editor .tags-input-stacked .browse-btn{
     flex: 0 0 auto;
     align-self: stretch;
     background: var(--button-bg);
@@ -11267,25 +9710,25 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     white-space: nowrap;
 }
 
-body:not(.ios) #blocklist-modal .tags-input-stacked .browse-btn{
+body:not(.ios) #focus-space-editor .tags-input-stacked .browse-btn{
     gap: 8px;
 }
 
-#blocklist-modal .tags-input-stacked .browse-btn:hover{
+#focus-space-editor .tags-input-stacked .browse-btn:hover{
     background: var(--button-hover);
     color: white;
     border-color: transparent;
 }
 
-#blocklist-modal .tags-input-stacked .browse-btn-caption{
+#focus-space-editor .tags-input-stacked .browse-btn-caption{
     display: inline;
 }
 
-body:not(.ios) #blocklist-modal .browse-btn-caption{
+body:not(.ios) #focus-space-editor .browse-btn-caption{
     display: none;
 }
 
-body:not(.ios) #blocklist-modal .tags-input-stacked .browse-btn-caption{
+body:not(.ios) #focus-space-editor .tags-input-stacked .browse-btn-caption{
     display: inline;
 }
 
@@ -11428,23 +9871,23 @@ body.dark-mode .websites-import-menu{
 }
 
 /* Blocklist modal: iOS apps row uses full-width browse buttons; websites stacked row is side-by-side. */
-body.ios #blocklist-modal .tags-input-container {
+body.ios #focus-space-editor .tags-input-container {
     align-items: stretch;
 }
 
-body.ios #blocklist-modal .tags-input-container > .tags-container,
-body.android #blocklist-modal .tags-input-container > .tags-container {
+body.ios #focus-space-editor .tags-input-container > .tags-container,
+body.android #focus-space-editor .tags-input-container > .tags-container {
     flex: 1 1 100%;
     width: 100%;
 }
 
 /* Empty chip wells still participate in flex gap — removes the extra space above the apps/websites row until tags exist. */
-body.ios #blocklist-modal .tags-input-container > .tags-container:empty,
-body.android #blocklist-modal .tags-input-container > .tags-container:empty {
+body.ios #focus-space-editor .tags-input-container > .tags-container:empty,
+body.android #focus-space-editor .tags-input-container > .tags-container:empty {
     display: none;
 }
 
-body.ios #blocklist-modal .tags-input-container:not(.tags-input-stacked) > .input-with-button {
+body.ios #focus-space-editor .tags-input-container:not(.tags-input-stacked) > .input-with-button {
     flex: 1 1 100%;
     width: 100%;
     min-width: 0;
@@ -11454,26 +9897,26 @@ body.ios #blocklist-modal .tags-input-container:not(.tags-input-stacked) > .inpu
     gap: 6px;
 }
 
-body.ios #blocklist-modal .tags-input-stacked > .input-with-button {
+body.ios #focus-space-editor .tags-input-stacked > .input-with-button {
     flex-direction: row;
     align-items: stretch;
     gap: 8px;
 }
 
-body.ios #blocklist-modal .tags-input-stacked > .input-with-button .form-input {
+body.ios #focus-space-editor .tags-input-stacked > .input-with-button .form-input {
     flex: 1 1 0%;
     min-width: 0;
     width: auto;
 }
 
-body.ios #blocklist-modal .tags-input-container:not(.tags-input-stacked) > .input-with-button .form-input {
+body.ios #focus-space-editor .tags-input-container:not(.tags-input-stacked) > .input-with-button .form-input {
     width: 100%;
     min-width: 0;
     flex: 0 0 auto;
     box-sizing: border-box;
 }
 
-body.ios #blocklist-modal .tags-input-container:not(.tags-input-stacked) .browse-btn {
+body.ios #focus-space-editor .tags-input-container:not(.tags-input-stacked) .browse-btn {
     width: 100%;
     box-sizing: border-box;
     justify-content: center;
@@ -11481,35 +9924,23 @@ body.ios #blocklist-modal .tags-input-container:not(.tags-input-stacked) .browse
     padding: 10px 12px;
 }
 
-body.ios #blocklist-modal .tags-input-stacked .browse-btn {
+body.ios #focus-space-editor .tags-input-stacked .browse-btn {
     width: auto;
     flex: 0 0 auto;
     flex-shrink: 0;
 }
 
-body.handset-device #blocklist-modal .tags-input-stacked .browse-btn{
+body.handset-device #focus-space-editor .tags-input-stacked .browse-btn{
     padding: 8px 10px;
     gap: 6px;
 }
 
 /* iPhone and Android: app input is hidden — picker button spans the full row. */
-body.ios-phone #blocklist-modal .tags-input-stacked .apps-input-with-button .browse-btn,
-body.android #blocklist-modal .tags-input-stacked .apps-input-with-button .browse-btn,
-body.ios-phone #quick-start-modal .tags-input-stacked .apps-input-with-button .browse-btn,
-body.android #quick-start-modal .tags-input-stacked .apps-input-with-button .browse-btn{
-    width: 100%;
-    max-width: 100%;
-    flex: 1 1 auto;
-    box-sizing: border-box;
-    justify-content: center;
-    padding: 10px 12px;
-}
-
-body.ios #blocklist-modal .tags-input-stacked .apps-picker-only .browse-btn{
+body.ios #focus-space-editor .tags-input-stacked .apps-picker-only .browse-btn{
     width: 100%;
 }
 
-body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
+body.ios #focus-space-editor .tags-input-container .browse-btn-caption {
     font-size: 13px;
     font-weight: 500;
 }
@@ -11592,74 +10023,6 @@ body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
     line-height: 1.45;
     color: var(--text-secondary);
     box-sizing: border-box;
-}
-
-.mode-toggle{
-    display: flex;
-    gap: 4px;
-    background: var(--toggle-bg);
-    padding: 4px;
-    border-radius: 8px;
-}
-
-.mode-toggle--inline{
-    display: inline-flex;
-    flex: 0 0 auto;
-    align-items: center;
-    gap: 2px;
-    padding: 3px;
-    border-radius: 8px;
-    background: var(--redd-warm-grey);
-    vertical-align: middle;
-}
-
-.mode-btn{
-    flex: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 8px 12px;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    font-family: inherit;
-    font-size: 15px;
-    font-weight: 500;
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.mode-toggle--inline .mode-btn{
-    flex: 0 0 auto;
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 14px;
-    font-weight: 600;
-    line-height: 1.2;
-    color: var(--text-muted);
-}
-
-.mode-btn-label{
-    line-height: 1;
-}
-
-.mode-btn.active{
-    background: var(--popover-bg);
-    color: var(--text-secondary);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
-}
-
-.mode-toggle--inline .mode-btn.active{
-    background: var(--primary-btn-bg);
-    color: var(--primary-btn-text);
-    box-shadow: none;
-}
-
-.mode-btn.disabled{
-    opacity: 0.6;
-    cursor: not-allowed;
 }
 
 .mode-sentence-hint{
@@ -11777,13 +10140,10 @@ body.handset-device .mobile-fullscreen-modal{
 
 body.handset-device .mobile-fullscreen-modal .modal-content,
 body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-content,
-body.handset-device #quick-start-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #settings-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #override-modal.mobile-fullscreen-modal .modal-content,
-body.handset-device #override-all-modal.mobile-fullscreen-modal .modal-content,
-body.handset-device #pause-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #start-block-confirm-modal.mobile-fullscreen-modal .modal-content,
-body.handset-device #start-schedule-confirm-modal.mobile-fullscreen-modal .modal-content,
+body.handset-device #override-all-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #enter-scheduler-modal.mobile-fullscreen-modal .modal-content{
     display: flex;
     flex-direction: column;
@@ -11818,23 +10178,20 @@ body.handset-device .mobile-fullscreen-modal .mobile-modal-scroll-body{
    Sit below the native title bar (z-index 1000) so the back + space-name header
    isn’t hidden under the traffic lights / blocking chips. */
 body.desktop-compact-layout .scheduler-section,
-body.desktop-compact-layout .selection-prompt,
-body.enter-scheduler-sheet-layout .scheduler-section,
-body.enter-scheduler-sheet-layout .selection-prompt{
+body.enter-scheduler-sheet-layout .scheduler-section{
     display: none !important;
 }
 
 /* Desktop enter sheet: always full-bleed under the title bar whenever open —
    keyed on enter-scheduler-modal-open so we never fall back to a centered dialog.
-   Same treatment for create/settings/quick-start and override/pause challenges. */
+   Same treatment for create/settings and the override challenge. */
 body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal,
 body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal,
-body.desktop-compact-layout #quick-start-modal.mobile-fullscreen-modal,
 body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal,
 body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal,
 body.desktop-compact-layout #override-modal.mobile-fullscreen-modal,
-body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal,
-body.desktop-compact-layout #pause-modal.mobile-fullscreen-modal{
+body.desktop-compact-layout #start-block-confirm-modal.mobile-fullscreen-modal,
+body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal{
     top: var(--title-bar-height);
     left: 0;
     right: 0;
@@ -11850,12 +10207,11 @@ body.desktop-compact-layout #pause-modal.mobile-fullscreen-modal{
 
 body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .modal-content,
 body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .modal-content,
-body.desktop-compact-layout #quick-start-modal.mobile-fullscreen-modal .modal-content,
 body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .modal-content,
 body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-content,
 body.desktop-compact-layout #override-modal.mobile-fullscreen-modal .modal-content,
-body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .modal-content,
-body.desktop-compact-layout #pause-modal.mobile-fullscreen-modal .modal-content{
+body.desktop-compact-layout #start-block-confirm-modal.mobile-fullscreen-modal .modal-content,
+body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .modal-content{
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -11872,12 +10228,11 @@ body.desktop-compact-layout #pause-modal.mobile-fullscreen-modal .modal-content{
 
 body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .mobile-modal-header,
 body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header,
-body.desktop-compact-layout #quick-start-modal.mobile-fullscreen-modal .mobile-modal-header,
 body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .mobile-modal-header,
 body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .mobile-modal-header,
 body.desktop-compact-layout #override-modal.mobile-fullscreen-modal .mobile-modal-header,
-body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .mobile-modal-header,
-body.desktop-compact-layout #pause-modal.mobile-fullscreen-modal .mobile-modal-header{
+body.desktop-compact-layout #start-block-confirm-modal.mobile-fullscreen-modal .mobile-modal-header,
+body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .mobile-modal-header{
     position: relative;
     top: auto;
     flex-shrink: 0;
@@ -11938,13 +10293,15 @@ body.desktop-compact-layout .mobile-fullscreen-modal .mobile-modal-title-source{
     display: none;
 }
 
-/* Keep New list / Quick start tabs visible under the sticky mobile header when
-   the dialog title itself is moved into .mobile-modal-header. */
-body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .blocklist-modal-title-row,
-body.handset-device #blocklist-modal.mobile-fullscreen-modal .blocklist-modal-title-row{
-    justify-content: flex-end;
-    margin-top: 0;
+/* The desktop edit sheet has no header bar: the back chevron and title sit in
+   the card's own title row, as in the two-column panel. Out-specifies the
+   ≤718px :is(...) header rule below, which sets display: grid. */
+body.enter-scheduler-modal-open:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header{
+    display: none;
 }
+
+/* The dialog title is moved into .mobile-modal-header, so the title row keeps
+   no top margin under the sticky mobile header. */
 
 body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .modal-buttons{
     display: none;
@@ -11952,12 +10309,11 @@ body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .moda
 
 body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .mobile-modal-scroll-body,
 body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
-body.desktop-compact-layout #quick-start-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
 body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
 body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
 body.desktop-compact-layout #override-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
-body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
-body.desktop-compact-layout #pause-modal.mobile-fullscreen-modal .mobile-modal-scroll-body{
+body.desktop-compact-layout #start-block-confirm-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
+body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .mobile-modal-scroll-body{
     flex: 1;
     min-height: 0;
     min-width: 0;
@@ -11970,9 +10326,10 @@ body.desktop-compact-layout #pause-modal.mobile-fullscreen-modal .mobile-modal-s
     scrollbar-gutter: stable;
 }
 
-/* Title lives in the sheet header — keep the space chip, drop the duplicate h3 row chrome. */
+/* Title lives in the sheet header — keep the space chip,
+drop the duplicate h3 row chrome. */
 body.desktop-compact-layout #override-modal .start-confirm-header-room,
-body.desktop-compact-layout #pause-modal .start-confirm-header-room{
+body.desktop-compact-layout #start-block-confirm-modal .start-confirm-header-room{
     margin-top: 0;
 }
 
@@ -11983,10 +10340,6 @@ body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .tim
 }
 
 /* Space name lives in the sheet header — hide the duplicate room chip. */
-body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .scheduler-room-chip,
-body.desktop-compact-layout #enter-scheduler-modal .scheduler-room-chip{
-    display: none;
-}
 
 body.desktop-compact-layout #settings-modal .settings-modal-header{
     display: none;
@@ -12003,31 +10356,17 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
     background: var(--app-bg);
 }
 
-/* Quick start: flatten desktop wrappers like handset; title lives in the mobile header. */
-body.desktop-compact-layout #quick-start-modal.mobile-fullscreen-modal .quick-start-header,
-body.desktop-compact-layout #quick-start-modal.mobile-fullscreen-modal .quick-start-modal-scroll-body{
-    display: contents;
-}
-
-/* Override desktop popup sizing while compact. */
-body.desktop-compact-layout #quick-start-modal .modal-content{
-    max-width: 100%;
-    max-height: none;
-    padding: 0;
-}
-
 /* Narrow desktop: same full-screen sheets via viewport media query (not only the
-   JS body class). Covers create/edit focus space, settings, quick start, and
-   override/pause when the window is ≤718px. */
+   JS body class). Covers create/edit focus space, settings, and the override
+   when the window is ≤718px. */
 @media (max-width: 718px) {
     body:not(.handset-device):not(.ios):not(.android) :is(
         #enter-scheduler-modal,
-        #quick-start-modal,
         #blocklist-modal,
         #settings-modal,
         #override-modal,
-        #override-all-modal,
-        #pause-modal
+        #start-block-confirm-modal,
+        #override-all-modal
     ).mobile-fullscreen-modal{
         top: var(--title-bar-height);
         left: 0;
@@ -12044,12 +10383,11 @@ body.desktop-compact-layout #quick-start-modal .modal-content{
 
     body:not(.handset-device):not(.ios):not(.android) :is(
         #enter-scheduler-modal,
-        #quick-start-modal,
         #blocklist-modal,
         #settings-modal,
         #override-modal,
-        #override-all-modal,
-        #pause-modal
+        #start-block-confirm-modal,
+        #override-all-modal
     ).mobile-fullscreen-modal .modal-content{
         display: flex;
         flex-direction: column;
@@ -12067,12 +10405,11 @@ body.desktop-compact-layout #quick-start-modal .modal-content{
 
     body:not(.handset-device):not(.ios):not(.android) :is(
         #enter-scheduler-modal,
-        #quick-start-modal,
         #blocklist-modal,
         #settings-modal,
         #override-modal,
-        #override-all-modal,
-        #pause-modal
+        #start-block-confirm-modal,
+        #override-all-modal
     ).mobile-fullscreen-modal .mobile-modal-header{
         position: relative;
         top: auto;
@@ -12130,12 +10467,11 @@ body.desktop-compact-layout #quick-start-modal .modal-content{
 
     body:not(.handset-device):not(.ios):not(.android) :is(
         #enter-scheduler-modal,
-        #quick-start-modal,
         #blocklist-modal,
         #settings-modal,
         #override-modal,
-        #override-all-modal,
-        #pause-modal
+        #start-block-confirm-modal,
+        #override-all-modal
     ).mobile-fullscreen-modal .mobile-modal-scroll-body{
         flex: 1;
         min-height: 0;
@@ -12165,11 +10501,6 @@ body.desktop-compact-layout #quick-start-modal .modal-content{
         display: none;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) #quick-start-modal.mobile-fullscreen-modal .quick-start-header,
-    body:not(.handset-device):not(.ios):not(.android) #quick-start-modal.mobile-fullscreen-modal .quick-start-modal-scroll-body{
-        display: contents;
-    }
-
     body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .modal-buttons{
         display: none;
     }
@@ -12191,8 +10522,7 @@ body.mobile-phone-home .grid-top-row{
     min-height: 0;
 }
 
-body.mobile-phone-home .scheduler-section,
-body.mobile-phone-home .selection-prompt{
+body.mobile-phone-home .scheduler-section{
     display: none !important;
 }
 
@@ -12301,13 +10631,9 @@ body.mobile-phone-home #enter-scheduler-modal.mobile-fullscreen-modal .time-pick
     margin-bottom: 0;
 }
 
-body.mobile-phone-home #enter-scheduler-modal .scheduler-room-chip{
-    display: none;
-}
-
 /* Enter sheet schedule segments: two rows (time, then days); touch-sized natural-width day pills. */
-body.mobile-phone-home #enter-scheduler-modal .schedule-block-panel .segment-row > .time-pickers-row,
-body.mobile-phone-home #enter-scheduler-modal .schedule-block-panel .segment-row > .segment-days-group{
+body.mobile-phone-home #enter-scheduler-modal .when-times .segment-row > .time-pickers-row,
+body.mobile-phone-home #enter-scheduler-modal .when-times .segment-row > .segment-days-group{
     width: 100%;
 }
 
@@ -12332,28 +10658,20 @@ body.mobile-phone-home #enter-scheduler-modal .segment-days{
 
 /* Mobile phones: weekday pills use natural width everywhere (like desktop), never stretch to fill. */
 body.mobile-phone-home .segment-days,
-body.mobile-phone-home .segment-days.compact-day-labels,
-body.mobile-phone-home .start-confirm-segment-days,
-body.mobile-phone-home .start-confirm-segment-days.compact-day-labels{
+body.mobile-phone-home .segment-days.compact-day-labels{
     width: auto;
     max-width: 100%;
 }
 
-body.mobile-phone-home .segment-days.compact-day-labels .segment-day-toggle,
-body.mobile-phone-home .start-confirm-segment-days.compact-day-labels .segment-day-toggle{
+body.mobile-phone-home .segment-days.compact-day-labels .segment-day-toggle{
     flex: 0 0 auto;
     width: auto;
 }
 
 body.mobile-phone-home .segment-row > .segment-days-group,
-body.mobile-phone-home .schedule-block-panel .segment-row > .segment-days-group{
+body.mobile-phone-home .when-times .segment-row > .segment-days-group{
     width: 100%;
     max-width: 100%;
-}
-
-body.mobile-phone-home #start-schedule-confirm-modal .start-confirm-segment-days{
-    width: auto;
-    justify-content: flex-start;
 }
 
 body.handset-device .mobile-fullscreen-modal .mobile-modal-header{
@@ -12442,299 +10760,6 @@ body.handset-device .mobile-fullscreen-modal .modal-buttons{
     padding-bottom: 0;
 }
 
-/* ——— Quick start modal ———
-   Desktop: sticky header + inner scroll body (popup).
-   Handset: shares .mobile-fullscreen-modal layout with add/edit focus space
-   (header edge-to-edge + safe area; light content fills the viewport). */
-body:not(.handset-device) #quick-start-modal .modal-content{
-    max-width: 500px;
-    display: flex;
-    flex-direction: column;
-    max-height: 95vh;
-    overflow: hidden;
-    padding: 20px 24px 22px;
-}
-
-/* setupHandsetModalScreens wraps body in .mobile-modal-scroll-body on all
-   platforms; keep the desktop flex/scroll chain working through that wrapper. */
-body:not(.handset-device) #quick-start-modal .mobile-modal-scroll-body{
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
-}
-
-.quick-start-header{
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 12px;
-    margin-bottom: 16px;
-    flex-shrink: 0;
-    position: relative;
-    z-index: 2;
-}
-
-body:not(.handset-device) #quick-start-modal .quick-start-modal-scroll-body{
-    flex: 1;
-    min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-    -webkit-overflow-scrolling: touch;
-    margin: -96px -24px 0;
-    padding: 96px 24px 0;
-}
-
-#quick-start-modal .form-group .label-with-info,
-#quick-start-modal .info-tooltip-wrapper{
-    overflow: visible;
-}
-
-#quick-start-modal #quick-start-title{
-    margin: 0;
-    font-family: var(--font-heading);
-    font-size: 1.45rem;
-    font-weight: 700;
-    color: var(--text-primary);
-}
-
-#quick-start-modal .tags-input-container{
-    background: var(--settings-panel-bg);
-}
-
-#quick-start-modal .tags-input-container .tag:not(.locked){
-    background: var(--blocklist-tint, var(--accent-color));
-    color: var(--blocklist-tag-text, white);
-}
-
-#quick-start-modal .tags-input-container .tag:not(.locked) .tag-remove{
-    color: inherit;
-    opacity: 0.55;
-}
-
-#quick-start-modal .tags-input-container.tags-input-stacked{
-    flex-direction: column;
-    align-items: stretch;
-    flex-wrap: nowrap;
-    gap: 8px;
-    padding: 8px;
-    cursor: default;
-    width: 100%;
-    max-width: 100%;
-    box-sizing: border-box;
-    overflow: visible;
-}
-
-#quick-start-modal .tags-input-stacked:focus-within{
-    border-color: var(--input-border);
-    box-shadow: none;
-}
-
-#quick-start-modal .tags-input-stacked > .tags-container{
-    width: 100%;
-    flex: none;
-    cursor: text;
-}
-
-#quick-start-modal .tags-input-stacked > .tags-container:empty{
-    display: none;
-}
-
-#quick-start-modal .tags-input-stacked > .input-with-button{
-    width: 100%;
-    max-width: 100%;
-    flex: none;
-    min-width: 0;
-    box-sizing: border-box;
-    flex-direction: row;
-    align-items: stretch;
-    gap: 8px;
-}
-
-#quick-start-modal .tags-input-stacked .form-input{
-    flex: 1 1 0%;
-    min-width: 0;
-    width: auto;
-    border: 1px solid var(--input-border);
-    border-radius: 8px;
-    background: var(--input-bg);
-    padding: 8px 12px;
-    box-sizing: border-box;
-    color: var(--text-primary);
-}
-
-#quick-start-modal .tags-input-stacked .form-input:focus{
-    border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
-}
-
-#quick-start-modal .tags-input-stacked .browse-btn{
-    flex: 0 0 auto;
-    align-self: stretch;
-    background: var(--button-bg);
-    border: 1px solid transparent;
-    color: white;
-    border-radius: 8px;
-    padding: 8px 12px;
-    white-space: nowrap;
-    gap: 4px;
-}
-
-#quick-start-modal .tags-input-stacked .browse-btn:hover{
-    background: var(--button-hover);
-    color: white;
-    border-color: transparent;
-}
-
-body:not(.ios) #quick-start-modal .browse-btn-caption{
-    display: none;
-}
-
-body:not(.ios) #quick-start-modal .tags-input-stacked .browse-btn-caption{
-    display: inline;
-}
-
-.quick-start-duration-btns{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 6px;
-}
-
-.quick-start-duration-btn{
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    padding: 7px 12px;
-    border: 1px solid var(--input-border);
-    border-radius: 999px;
-    background: var(--input-bg);
-    color: var(--text-secondary);
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-
-.quick-start-duration-btn:hover{
-    border-color: var(--border-color-strong, var(--border-color-medium));
-    color: var(--text-primary);
-}
-
-.quick-start-duration-btn.active{
-    background: var(--accent-color);
-    border-color: var(--accent-color);
-    color: #ffffff;
-}
-
-.quick-start-effort-header{
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 8px;
-}
-
-.quick-start-effort-header label{
-    margin: 0;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-}
-
-.quick-start-effort-summary{
-    font-size: 13px;
-    color: var(--text-muted);
-    text-align: right;
-    flex-shrink: 0;
-}
-
-.quick-start-effort-slider-wrap{
-    padding: 4px 2px 0;
-}
-
-.quick-start-effort-slider{
-    width: 100%;
-    appearance: none;
-    height: 6px;
-    border-radius: 999px;
-    background: linear-gradient(
-        to right,
-        var(--accent-color) 0%,
-        var(--accent-color) var(--qs-effort-pct, 28%),
-        var(--redd-border) var(--qs-effort-pct, 28%),
-        var(--redd-border) 100%
-    );
-    outline: none;
-    cursor: pointer;
-}
-
-.quick-start-effort-slider::-webkit-slider-thumb{
-    appearance: none;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: #ffffff;
-    border: 2px solid var(--accent-color);
-    box-shadow: 0 1px 3px rgba(30, 45, 62, 0.18);
-    cursor: pointer;
-}
-
-.quick-start-effort-slider::-moz-range-thumb{
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: #ffffff;
-    border: 2px solid var(--accent-color);
-    box-shadow: 0 1px 3px rgba(30, 45, 62, 0.18);
-    cursor: pointer;
-}
-
-.quick-start-effort-ends{
-    display: flex;
-    justify-content: space-between;
-    margin-top: 8px;
-    font-size: 12px;
-    font-style: italic;
-    color: var(--text-muted);
-}
-
-.quick-start-start-btn{
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    margin-top: 8px;
-}
-
-.quick-start-hint{
-    margin: 10px 0 0;
-    text-align: center;
-    font-size: 13px;
-    color: var(--text-muted);
-    line-height: 1.4;
-}
-
-.quick-start-save-link{
-    border: none;
-    background: none;
-    padding: 0;
-    margin: 0;
-    font: inherit;
-    color: inherit;
-    cursor: pointer;
-    text-decoration: underline;
-}
-
-.quick-start-save-link:hover{
-    text-decoration: none;
-}
-
 /* Add/edit blocklist modal — slightly wider than the default 400px so the
    apps tag list, override-difficulty row and colour/emoji pickers have room
    to breathe. Matches the 500px blocklist-card width for visual rhyme.
@@ -12768,30 +10793,6 @@ body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-content{
     margin: 0;
     min-width: 0;
     flex: 1 1 auto;
-}
-
-.blocklist-modal-heading{
-    margin: 0 0 12px;
-}
-
-.blocklist-modal-title-row{
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin: 0;
-}
-
-.blocklist-modal-mode-desc{
-    margin: 6px 0 0;
-    font-size: 13px;
-    line-height: 1.45;
-    color: var(--text-muted);
-}
-
-.blocklist-modal-mode-desc strong{
-    color: var(--text-primary);
-    font-weight: 650;
 }
 
 .allowlist-scope-hint{
@@ -12854,45 +10855,7 @@ body.dark-mode .allowlist-scope-hint--empty strong{
     color: #4ade80;
 }
 
-.blocklist-create-kind-tabs{
-    display: inline-flex;
-    flex: 0 0 auto;
-    align-items: center;
-    gap: 2px;
-    padding: 3px;
-    border-radius: 8px;
-    background: var(--redd-warm-grey);
-}
-
-.blocklist-create-kind-tab{
-    flex: 0 0 auto;
-    padding: 6px 12px;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 600;
-    line-height: 1.2;
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
-}
-
-.blocklist-create-kind-tab.active{
-    background: var(--primary-btn-bg);
-    color: var(--primary-btn-text);
-}
-
-.blocklist-create-kind-tabs.hidden{
-    display: none;
-}
-
-.blocklist-quick-start-options.hidden{
-    display: none;
-}
-
-#blocklist-modal .form-group > label{
+#focus-space-editor .form-group > label{
     padding-top: 4px;
 }
 
@@ -12908,11 +10871,6 @@ body.dark-mode .allowlist-scope-hint--empty strong{
 }
 
 /* Word count fits in 3 digits (max 500); keep the stepper compact on iOS. */
-body.ios #blocklist-modal .override-count-input {
-    width: 3.25rem;
-    min-width: 3.25rem;
-    max-width: 3.25rem;
-}
 
 #settings-modal .modal-content{
     display: flex;
@@ -12998,24 +10956,14 @@ body.ios:not(.handset-device) #blocklist-modal{
     padding-top: env(safe-area-inset-top, 8px);
 }
 
-body.handset-device #blocklist-modal.mobile-fullscreen-modal .mobile-modal-header,
-body.handset-device #quick-start-modal.mobile-fullscreen-modal .mobile-modal-header{
+body.handset-device #blocklist-modal.mobile-fullscreen-modal .mobile-modal-header{
     padding-top: calc(env(safe-area-inset-top, 0px) + 4px);
     padding-bottom: 8px;
 }
 
-body.handset-device #blocklist-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
-body.handset-device #quick-start-modal.mobile-fullscreen-modal .mobile-modal-scroll-body{
+body.handset-device #blocklist-modal.mobile-fullscreen-modal .mobile-modal-scroll-body{
     padding-top: 12px;
     padding-bottom: 16px;
-}
-
-/* Flatten quick-start's desktop-only header/scroll wrappers so handset uses
-   the same .mobile-modal-header + .mobile-modal-scroll-body chrome as
-   add/edit focus space. Title text is synced into the mobile header. */
-body.handset-device #quick-start-modal.mobile-fullscreen-modal .quick-start-header,
-body.handset-device #quick-start-modal.mobile-fullscreen-modal .quick-start-modal-scroll-body{
-    display: contents;
 }
 
 .modal-content h3{
@@ -13124,33 +11072,6 @@ body:not(.handset-device) .start-confirm-modal{
 }
 
 /* Desktop popup: scroll body when content exceeds viewport (matches blocklist modal). */
-body:not(.handset-device) #start-schedule-confirm-modal .modal-content,
-body:not(.handset-device) #start-block-confirm-modal .modal-content{
-    display: flex;
-    flex-direction: column;
-    max-height: 95vh;
-    overflow: hidden;
-}
-
-body:not(.handset-device) #start-schedule-confirm-modal .mobile-modal-scroll-body,
-body:not(.handset-device) #start-block-confirm-modal .mobile-modal-scroll-body{
-    flex: 1;
-    min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-    margin-right: -28px;
-    padding-right: 28px;
-    box-sizing: border-box;
-}
-
-body:not(.handset-device) #start-schedule-confirm-modal .start-confirm-actions,
-body:not(.handset-device) #start-block-confirm-modal .start-confirm-actions{
-    flex-shrink: 0;
-    margin-top: 0;
-    padding-top: 12px;
-}
 
 .start-confirm-modal{
     padding: 28px;
@@ -13360,64 +11281,9 @@ body:not(.handset-device) #start-block-confirm-modal .start-confirm-actions{
     white-space: nowrap;
 }
 
-.start-confirm-segment-days{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-}
-
-.start-confirm-segment-days .segment-day-toggle{
-    pointer-events: none;
-    cursor: default;
-    min-width: 34px;
-    height: 28px;
-    padding: 0 6px;
-    font-size: 13px;
-    border-radius: 6px;
-}
-
 /* iOS has a broader `.segment-day-toggle` upsize rule for the editable
    schedule builder. In the read-only schedule-start confirmation, place the
    weekday pills underneath the time so they never collide on narrower screens. */
-body.ios #start-schedule-confirm-modal .start-confirm-time-slot-row {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
-}
-
-body.ios #start-schedule-confirm-modal .start-confirm-segment-days {
-    width: 100%;
-    justify-content: flex-start;
-    gap: 2px;
-}
-
-body.ios #start-schedule-confirm-modal .start-confirm-segment-days .segment-day-toggle {
-    min-width: 22px;
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    font-size: 10px;
-}
-
-.start-confirm-segment-days.compact-day-labels .segment-day-toggle {
-    min-width: 28px;
-    padding: 0 4px;
-}
-
-body.ios .start-confirm-segment-days .segment-day-toggle {
-    min-width: 34px;
-    height: 28px;
-    padding: 0 6px;
-    font-size: 13px;
-}
-
-body.ios .start-confirm-segment-days.compact-day-labels .segment-day-toggle {
-    min-width: 28px;
-    padding: 0 4px;
-}
 
 .start-confirm-overlay-row .start-confirm-row-label {
     padding-top: 11px;
@@ -13508,31 +11374,6 @@ body.ios .start-confirm-segment-days.compact-day-labels .segment-day-toggle {
     color: var(--redd-navy);
 }
 
-body.handset-device #start-block-confirm-modal .mobile-modal-header,
-body.handset-device #start-schedule-confirm-modal .mobile-modal-header{
-    align-items: center;
-}
-
-body.handset-device #start-block-confirm-modal .mobile-modal-back-btn,
-body.handset-device #start-schedule-confirm-modal .mobile-modal-back-btn{
-    align-self: flex-start;
-    margin-top: 2px;
-}
-
-body.handset-device #start-block-confirm-modal .start-confirm-header-room,
-body.handset-device #start-schedule-confirm-modal .start-confirm-header-room{
-    margin-bottom: 0;
-    min-width: 0;
-    flex: 1 1 auto;
-    gap: 8px 10px;
-}
-
-body.handset-device #start-block-confirm-modal .start-confirm-header-room h3,
-body.handset-device #start-schedule-confirm-modal .start-confirm-header-room h3{
-    font-size: 1.45rem;
-    color: var(--text-primary);
-}
-
 .start-confirm-room-chip{
     display: inline-flex;
     align-items: center;
@@ -13600,29 +11441,6 @@ body.handset-device #start-schedule-confirm-modal .start-confirm-header-room h3{
     font-weight: 600;
 }
 
-#start-block-confirm-modal .start-confirm-warning.override-info-box,
-#start-schedule-confirm-modal .start-confirm-warning.override-info-box{
-    background: var(--redd-teal-soft);
-    border: 1px solid var(--redd-teal-soft-border);
-}
-
-#start-block-confirm-modal .start-confirm-warning .override-info-header,
-#start-schedule-confirm-modal .start-confirm-warning .override-info-header{
-    color: var(--redd-navy);
-}
-
-#start-block-confirm-modal .start-confirm-warning-icon,
-#start-block-confirm-modal .start-confirm-warning .override-info-header svg,
-#start-schedule-confirm-modal .start-confirm-warning-icon,
-#start-schedule-confirm-modal .start-confirm-warning .override-info-header svg{
-    color: var(--redd-teal);
-}
-
-#start-block-confirm-modal .start-confirm-warning.override-info-box p,
-#start-schedule-confirm-modal .start-confirm-warning.override-info-box p{
-    color: var(--text-muted);
-}
-
 .start-confirm-warning .override-info-header{
     align-items: flex-start;
 }
@@ -13666,26 +11484,6 @@ svg.start-confirm-primary-icon{
 img.start-confirm-primary-icon,
 svg.start-confirm-primary-icon{
     display: block;
-}
-
-.start-confirm-modal.schedule-confirm-edit-layout .start-confirm-subtitle,
-.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-status-row,
-.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-blocking-row,
-.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-blocking-divider,
-.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-times-divider,
-.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-repeat-row,
-.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-repeat-divider,
-.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-strictness-row,
-.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-strictness-divider,
-.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-overlay-row{
-    display: none;
-}
-
-.edit-schedule-notice{
-    margin-bottom: 10px;
-    font-size: 14px;
-    line-height: 1.45;
-    color: var(--text-secondary);
 }
 
 body.dark-mode .start-confirm-modal h3,
@@ -14509,9 +12307,6 @@ body.dark-mode .modal-btn.black-btn:hover{
     color: var(--text-secondary);
 }
 
-.start-confirm-modal.override-challenge.pause-modal .override-challenge-instruction{
-    margin-top: 0;
-}
 
 /* #override-all-modal's content lacks .start-confirm-modal, so without the
    second selector it alone fell through to the 16px in the shared block below —
@@ -15092,6 +12887,172 @@ body.dark-mode .language-picker-dropdown{
     display: none;
 }
 
+/* App-styled dropdowns (custom-select.js): every <select> gets the language
+   picker's trigger and menu. The native select stays in the DOM, hidden. */
+.custom-select{
+    position: relative;
+    display: block;
+    width: 100%;
+    min-width: 0;
+}
+
+.custom-select.hidden{
+    display: none;
+}
+
+.custom-select-native{
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    pointer-events: none;
+}
+
+.custom-select-trigger{
+    display: flex;
+    width: 100%;
+    box-sizing: border-box;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color-medium);
+    border-radius: 8px;
+    background: var(--modal-bg);
+    color: var(--text-primary);
+    font-size: 15px;
+    font-family: inherit;
+    line-height: 1.25;
+    text-align: left;
+    cursor: pointer;
+    min-width: 0;
+    transition: border-color 0.15s ease;
+}
+
+.custom-select-trigger:hover{
+    border-color: var(--border-color-strong, var(--border-color-medium));
+}
+
+.custom-select-trigger[aria-expanded="true"],
+.custom-select-trigger:focus-visible{
+    border-color: var(--accent-color);
+    outline: none;
+}
+
+.custom-select-value{
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.custom-select-chevron{
+    flex-shrink: 0;
+    color: var(--text-muted);
+}
+
+.custom-select-trigger[aria-expanded="true"] .custom-select-chevron{
+    color: var(--icon-btn-hover-color);
+}
+
+.custom-select-trigger:disabled{
+    opacity: 0.55;
+    cursor: default;
+}
+
+/* The editor's locked state while a space is running. */
+.custom-select-trigger--locked{
+    opacity: 0.55;
+    cursor: default;
+    pointer-events: none;
+}
+
+.custom-select-menu{
+    position: fixed;
+    z-index: 3000;
+    box-sizing: border-box;
+    min-width: 140px;
+    max-width: min(22rem, calc(100vw - 16px));
+    padding: 6px;
+    overflow-y: auto;
+    background: var(--modal-bg);
+    border: 1px solid var(--border-color-light);
+    border-radius: 12px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+    text-align: left;
+}
+
+body.dark-mode .custom-select-menu{
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.custom-select-menu.hidden{
+    display: none;
+}
+
+.custom-select-option{
+    display: flex;
+    align-items: center;
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 400;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.custom-select-option:hover,
+.custom-select-option:focus-visible{
+    background: var(--border-color-light);
+    outline: none;
+}
+
+.custom-select-option--selected{
+    background: var(--border-color-light);
+    font-weight: 500;
+}
+
+.custom-select-option:disabled{
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* Where the dropdowns sit: keep each spot's old footprint. */
+#focus-space-editor .exit-difficulty-row-control .custom-select{
+    width: auto;
+    min-width: 140px;
+}
+
+.start-confirm-overlay-controls .custom-select{
+    flex: 1;
+    width: auto;
+}
+
+.start-confirm-overlay-controls .custom-select-trigger{
+    height: 100%;
+    min-height: 42px;
+    padding: 0 12px 0 16px;
+    font-weight: 500;
+}
+
+.settings-blocking-method-rows .custom-select-trigger{
+    padding: 7px 10px;
+    font-size: 13px;
+}
+
 .settings-modal-header{
     display: flex;
     align-items: baseline;
@@ -15297,42 +13258,8 @@ body.android #settings-latest-version-wrap {
 }
 
 /* Blocklist Modal Advanced Options Toggle */
-.blocklist-advanced-toggle{
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 0 12px;
-    cursor: pointer;
-    font-size: 15px;
-    color: var(--text-muted);
-    transition: color 0.2s ease;
-    margin-top: 0;
-}
 
 /* Gap above Advanced options (emoji/color form-groups sit above). */
-#blocklist-modal .form-group:has(+ .blocklist-advanced-toggle){
-    margin-bottom: 12px;
-}
-
-.blocklist-advanced-toggle:hover{
-    color: var(--text-primary);
-}
-
-.blocklist-advanced-toggle .chevron-icon{
-    transition: transform 0.2s ease;
-}
-
-.blocklist-advanced-toggle.expanded .chevron-icon{
-    transform: rotate(180deg);
-}
-
-.blocklist-advanced-content{
-    padding-bottom: 8px;
-}
-
-.blocklist-advanced-content.hidden{
-    display: none;
-}
 
 #blocklist-modal .modal-buttons{
     flex-shrink: 0;
@@ -15380,25 +13307,141 @@ body.dark-mode.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-bu
 }
 
 /* Override type row: dropdown + max difficulty checkbox */
-#blocklist-modal .exit-difficulty-panel + #custom-override-text:not(.hidden){
+#focus-space-editor .exit-difficulty-panel + #custom-override-text:not(.hidden){
     margin-top: 8px;
 }
 
-#blocklist-modal .exit-difficulty-panel{
+#focus-space-editor .exit-difficulty-panel{
     margin-top: 8px;
     overflow: hidden;
 }
 
-#blocklist-modal .exit-difficulty-preview{
-    background: var(--modal-bg);
-    border-radius: 0 0 11px 11px;
-}
-
-#blocklist-modal .exit-difficulty-row-label{
+#focus-space-editor .exit-difficulty-row-label{
     font-weight: 600;
 }
 
-#blocklist-modal .exit-difficulty-row-control .override-type-select{
+/* Auto-start after stop: what "stop" does to this space (Android's
+   "auto re-enable"). Label + hint stack on the left, the menu sits right. */
+#focus-space-editor .unlock-duration-row{
+    align-items: start;
+}
+
+#focus-space-editor .unlock-duration-row .settings-row-hint{
+    max-width: 34ch;
+}
+
+#focus-space-editor .exit-difficulty-row-control .unlock-duration-select{
+    min-width: 128px;
+    max-width: 100%;
+}
+
+#focus-space-editor .unlock-duration-select.form-select-disabled{
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+/* Start confirmation (switch on). Desktop popup: scroll body when content
+   exceeds the viewport; handset: room-style header like the stop modal. */
+body:not(.handset-device) #start-block-confirm-modal .modal-content{
+    display: flex;
+    flex-direction: column;
+    max-height: 95vh;
+    overflow: hidden;
+}
+
+body:not(.handset-device) #start-block-confirm-modal .mobile-modal-scroll-body{
+    flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+body:not(.handset-device) #start-block-confirm-modal .start-confirm-actions{
+    flex-shrink: 0;
+    margin-top: 0;
+    padding-top: 12px;
+}
+
+body.handset-device #start-block-confirm-modal .mobile-modal-header{
+    align-items: center;
+}
+
+body.handset-device #start-block-confirm-modal .mobile-modal-back-btn{
+    align-self: flex-start;
+    margin-top: 2px;
+}
+
+body.handset-device #start-block-confirm-modal .start-confirm-header-room{
+    margin-bottom: 0;
+    min-width: 0;
+    flex: 1 1 auto;
+    gap: 8px 10px;
+}
+
+body.handset-device #start-block-confirm-modal .start-confirm-header-room h3{
+    font-size: 1.45rem;
+    color: var(--text-primary);
+}
+
+#start-block-confirm-modal .start-confirm-warning.override-info-box{
+    background: var(--redd-teal-soft);
+    border: 1px solid var(--redd-teal-soft-border);
+}
+
+#start-block-confirm-modal .start-confirm-warning .override-info-header{
+    color: var(--redd-navy);
+}
+
+#start-block-confirm-modal .start-confirm-warning-icon,
+#start-block-confirm-modal .start-confirm-warning .override-info-header svg{
+    color: var(--redd-teal);
+}
+
+#start-block-confirm-modal .start-confirm-warning.override-info-box p{
+    color: var(--text-muted);
+}
+
+/* Editor panel footer: always there, stuck to the bottom of the scrolling
+   page (or sheet) so Save is reachable however tall the form is. While
+   nothing changed only a disabled Save shows. */
+#editor-panel-footer{
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    margin: 0 -16px -16px;
+    padding: 8px 16px 12px;
+    background: var(--panel-bg);
+    border-radius: 0 0 12px 12px;
+}
+
+.schedule-pending-bar.is-clean{
+    justify-content: flex-end;
+    border-color: transparent;
+    background: transparent;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.schedule-pending-bar.is-clean .schedule-pending-label,
+.schedule-pending-bar.is-clean .schedule-pending-discard{
+    display: none;
+}
+
+.schedule-pending-save:disabled{
+    opacity: 0.45;
+    cursor: default;
+}
+
+/* A Flexible schedule between its blocks stops without typing: the controller
+   hides the challenge inputs, this hides the instruction and progress bar. */
+#override-modal.override-frictionless .override-challenge-instruction,
+#override-modal.override-frictionless .challenge-progress{
+    display: none;
+}
+
+#focus-space-editor .exit-difficulty-row-control .override-type-select{
     min-width: 140px;
     width: auto;
     padding-top: 8px;
@@ -15407,30 +13450,23 @@ body.dark-mode.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-bu
 
 /* Off-state track uses --toggle-bg globally; on the settings-panel surface
    give the switch a white inset like the adjacent select/stepper. */
-#blocklist-modal .exit-difficulty-panel .toggle-slider{
+#focus-space-editor .exit-difficulty-panel .toggle-slider{
     background-color: var(--modal-bg);
     border: 1px solid var(--input-border);
     box-sizing: border-box;
 }
 
-#blocklist-modal .exit-difficulty-panel .toggle-slider:before{
+#focus-space-editor .exit-difficulty-panel .toggle-slider:before{
     background-color: var(--scrollbar-thumb-hover);
 }
 
-#blocklist-modal .exit-difficulty-panel .toggle-switch input:checked + .toggle-slider{
+#focus-space-editor .exit-difficulty-panel .toggle-switch input:checked + .toggle-slider{
     background-color: var(--primary-btn-bg);
     border-color: var(--primary-btn-bg);
 }
 
-#blocklist-modal .exit-difficulty-panel .toggle-switch input:checked + .toggle-slider:before{
+#focus-space-editor .exit-difficulty-panel .toggle-switch input:checked + .toggle-slider:before{
     background-color: #ffffff;
-}
-
-.exit-difficulty-count-control{
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: nowrap;
 }
 
 .exit-difficulty-time-estimate{
@@ -15440,133 +13476,21 @@ body.dark-mode.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-bu
     flex-shrink: 0;
 }
 
-.override-count-stepper{
-    display: inline-flex;
-    align-items: stretch;
-    border: 1px solid var(--input-border);
-    border-radius: 8px;
-    overflow: hidden;
-    background: var(--input-bg);
-}
-
-.override-count-step-btn{
-    border: none;
-    background: transparent;
-    padding: 0 10px;
-    font-size: 18px;
-    line-height: 1;
-    color: var(--text-secondary);
-    cursor: pointer;
-    min-width: 36px;
-}
-
-.override-count-step-btn:hover:not(:disabled){
-    background: var(--element-hover-bg);
-    color: var(--text-primary);
-}
-
-.override-count-step-btn:disabled{
-    opacity: 0.45;
-    cursor: default;
-}
-
-.override-count-input{
-    width: 2.75rem;
-    min-width: 2.75rem;
-    max-width: 2.75rem;
-    margin: 0;
-    padding: 7px 4px;
-    border: none;
-    border-left: 1px solid var(--input-border);
-    border-right: 1px solid var(--input-border);
-    border-radius: 0;
-    text-align: center;
-    font-size: 15px;
-    box-shadow: none;
-    -moz-appearance: textfield;
-    appearance: textfield;
-}
-
-.override-count-input:focus{
-    box-shadow: none;
-}
-
-.override-count-input::-webkit-outer-spin-button,
-.override-count-input::-webkit-inner-spin-button{
-    -webkit-appearance: none;
-    margin: 0;
-}
-
-.exit-difficulty-preview{
-    padding: 10px 14px 12px;
-    border-top: 1px solid var(--border-color-medium);
-}
-
-.exit-difficulty-preview-label{
-    display: block;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-muted);
-    margin-bottom: 4px;
-}
-
 /* Count stepper non-interactive when max difficulty is on */
-.override-count-max-mode,
-.override-count-max-mode .override-count-input{
-    pointer-events: none;
-}
-
-.override-count-max-mode .override-count-input.form-input-disabled{
-    border-left-color: var(--input-border);
-    border-right-color: var(--input-border);
-    opacity: 0.65;
-}
 
 .exit-difficulty-time-estimate.time-estimate-disabled{
     opacity: 0.65;
 }
 
-#override-max-difficulty-wrap.max-difficulty-disabled{
-    pointer-events: none;
-    opacity: 0.7;
-    cursor: default;
-}
-
 /* When blocklist has active block or schedule: grey out override panel rows */
 #override-method-row.blocklist-active-locked,
-#override-count-wrapper.blocklist-active-locked,
-#override-max-difficulty-wrap.blocklist-active-locked,
-#override-preview-block.blocklist-active-locked{
+#override-count-wrapper.blocklist-active-locked{
     pointer-events: none;
     opacity: 0.7;
 }
 
-#override-count-wrapper.blocklist-active-locked .override-count-input,
 #override-count-wrapper.blocklist-active-locked .exit-difficulty-time-estimate{
     cursor: default;
-}
-
-/* Override difficulty: preview text (truncate with ...) */
-.exit-difficulty-preview .override-preview-text{
-    margin-top: 0;
-    width: 100%;
-    background: transparent;
-    padding: 0;
-    border-radius: 0;
-}
-
-.override-preview-text{
-    width: 100%;
-    box-sizing: border-box;
-    color: var(--text-primary);
-    font-family: monospace;
-    font-size: 15px;
-    line-height: 1.4;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    user-select: none;
-    -webkit-user-select: none;
 }
 
 /* Platform-specific uninstall UI in Settings → Manage.
@@ -16190,19 +14114,34 @@ body.dark-mode #mac-automation-intro-modal .modal-btn.cancel-btn:hover{
 
 /* Start alert confirmation modals (discard + delete) */
 #schedule-overlay-discard-modal,
-#schedule-overlay-delete-modal{
+#schedule-overlay-delete-modal,
+#editor-discard-modal{
     z-index: 220;
 }
 
 #schedule-overlay-discard-modal .modal-content,
-#schedule-overlay-delete-modal .modal-content{
+#schedule-overlay-delete-modal .modal-content,
+#editor-discard-modal .modal-content{
     max-width: 520px;
     padding: 28px 28px 24px;
     box-shadow: 0 16px 48px rgba(30, 45, 62, 0.14);
 }
 
+#editor-discard-modal .modal-content{
+    max-width: 440px;
+}
+
+/* The focus-space editor's "Discard changes?" body line. */
+#editor-discard-modal .editor-discard-body{
+    margin: 0 0 20px;
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
 #schedule-overlay-discard-modal h3,
-#schedule-overlay-delete-modal h3{
+#schedule-overlay-delete-modal h3,
+#editor-discard-modal h3{
     font-family: var(--font-heading);
     font-size: 24px;
     font-weight: 700;
@@ -16217,32 +14156,37 @@ body.dark-mode #mac-automation-intro-modal .modal-btn.cancel-btn:hover{
 }
 
 #schedule-overlay-discard-modal .modal-buttons,
-#schedule-overlay-delete-modal .modal-buttons{
+#schedule-overlay-delete-modal .modal-buttons,
+#editor-discard-modal .modal-buttons{
     gap: 12px;
     margin-top: 0;
 }
 
 #schedule-overlay-discard-modal .modal-btn,
-#schedule-overlay-delete-modal .modal-btn{
+#schedule-overlay-delete-modal .modal-btn,
+#editor-discard-modal .modal-btn{
     padding: 12px 16px;
     border-radius: 10px;
     font-size: 15px;
 }
 
 #schedule-overlay-discard-modal .modal-btn.cancel-btn,
-#schedule-overlay-delete-modal .modal-btn.cancel-btn{
+#schedule-overlay-delete-modal .modal-btn.cancel-btn,
+#editor-discard-modal .modal-btn.cancel-btn{
     background: #ffffff;
     border: 1px solid var(--border-color-medium);
     color: var(--text-secondary);
 }
 
 #schedule-overlay-discard-modal .modal-btn.cancel-btn:hover,
-#schedule-overlay-delete-modal .modal-btn.cancel-btn:hover{
+#schedule-overlay-delete-modal .modal-btn.cancel-btn:hover,
+#editor-discard-modal .modal-btn.cancel-btn:hover{
     background: var(--redd-warm-grey);
 }
 
 #schedule-overlay-discard-modal .modal-btn.danger-btn:hover:not(:disabled),
-#schedule-overlay-delete-modal .modal-btn.danger-btn:hover:not(:disabled){
+#schedule-overlay-delete-modal .modal-btn.danger-btn:hover:not(:disabled),
+#editor-discard-modal .modal-btn.danger-btn:hover:not(:disabled){
     filter: brightness(0.95);
 }
 
@@ -16252,14 +14196,16 @@ body.dark-mode #schedule-overlay-delete-modal h3{
 }
 
 body.dark-mode #schedule-overlay-discard-modal .modal-btn.cancel-btn,
-body.dark-mode #schedule-overlay-delete-modal .modal-btn.cancel-btn{
+body.dark-mode #schedule-overlay-delete-modal .modal-btn.cancel-btn,
+body.dark-mode #editor-discard-modal .modal-btn.cancel-btn{
     background: var(--surface-secondary);
     border-color: var(--border-color);
     color: var(--text-secondary);
 }
 
 body.dark-mode #schedule-overlay-discard-modal .modal-btn.cancel-btn:hover,
-body.dark-mode #schedule-overlay-delete-modal .modal-btn.cancel-btn:hover{
+body.dark-mode #schedule-overlay-delete-modal .modal-btn.cancel-btn:hover,
+body.dark-mode #editor-discard-modal .modal-btn.cancel-btn:hover{
     background: rgba(255, 255, 255, 0.06);
 }
 
@@ -16533,7 +14479,7 @@ body.handset-device:not(.ios-phone):not(.mobile-phone-home) .main-content .segme
     padding: 0 2px;
 }
 
-body.handset-device .main-content .schedule-block-panel .segment-days{
+body.handset-device .main-content .when-times .segment-days{
     min-height: 34px;
 }
 
@@ -16597,9 +14543,8 @@ body.handset-device .main-content .time-part{
     box-sizing: border-box;
 }
 
-body.handset-device .main-content #end-time-display input.time-part.time-popover-anchor,
-body.handset-device .main-content .schedule-block-panel .schedule-start-display input.time-part,
-body.handset-device .main-content .schedule-block-panel .schedule-end-display input.time-part{
+body.handset-device .main-content .when-times .schedule-start-display input.time-part,
+body.handset-device .main-content .when-times .schedule-end-display input.time-part{
     min-width: 44px;
     max-width: 56px;
 }
@@ -16612,14 +14557,11 @@ body.handset-device .main-content .now-btn{
     box-sizing: border-box;
 }
 
-body.handset-device .main-content #timed-controls .duration-input-wrapper,
-body.handset-device .main-content #timed-controls .time-picker-row,
-body.handset-device .main-content .schedule-block-panel .time-picker-row{
+body.handset-device .main-content .when-times .time-picker-row{
     min-height: 44px;
 }
 
-body.handset-device .main-content #timed-controls .time-separator,
-body.handset-device .main-content .schedule-block-panel .time-separator{
+body.handset-device .main-content .when-times .time-separator{
     align-self: flex-end;
     display: inline-flex;
     align-items: center;
@@ -16629,8 +14571,7 @@ body.handset-device .main-content .schedule-block-panel .time-separator{
     line-height: 0;
 }
 
-body.handset-device .main-content #timed-controls .time-separator svg,
-body.handset-device .main-content .schedule-block-panel .time-separator svg{
+body.handset-device .main-content .when-times .time-separator svg{
     width: 20px;
     height: 20px;
 }
@@ -16671,24 +14612,6 @@ body.handset-device .main-content .repeat-option{
     min-height: 44px;
 }
 
-body.handset-device .now-blocking-chip-menu{
-    min-width: 160px;
-    padding: 6px;
-    border-radius: 10px;
-}
-
-body.handset-device .now-blocking-chip-menu-item{
-    padding: 12px 14px;
-    font-size: 16px;
-    min-height: 44px;
-    gap: 10px;
-    border-radius: 8px;
-}
-
-body.handset-device .now-blocking-chip-menu-item svg{
-    width: 18px;
-    height: 18px;
-}
 
 body.handset-device .modal-overlay .websites-import-menu{
     min-width: 220px;
@@ -18275,4 +16198,545 @@ body.dark-mode .app-blocking-warning-card{
 
 .app-picker-actions .confirm-btn:hover{
     filter: brightness(1.1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Focus-space editor — one form for create (modal) and edit (panel / sheet).
+   Sections follow the Android app: a summary card per section that expands
+   in place; Daily / Weekly / Manual and Until are segmented controls.
+   ═══════════════════════════════════════════════════════════════════════ */
+.editor-panel-header{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    /* Pull "Focus space name" up: the container's 16px gap is too airy under
+       a header that is already 34px tall for its icon buttons. */
+    margin-bottom: -8px;
+}
+
+.editor-panel-title{
+    margin: 0;
+    font-family: var(--font-section-label);
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--text-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.focus-space-editor{
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+.focus-space-editor > .form-group{
+    margin: 0;
+}
+
+.editor-section{
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--container-bg);
+    min-width: 0;
+}
+
+.editor-section-header{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 14px;
+    border: none;
+    border-radius: 12px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.editor-section-header:hover{
+    background: color-mix(in srgb, var(--text-muted) 7%, transparent);
+}
+
+.editor-section-open > .editor-section-header{
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.editor-section-copy{
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.editor-section-title{
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--text-primary);
+}
+
+.editor-section-summary{
+    font-size: 13px;
+    line-height: 1.3;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.editor-section-summary:empty{
+    display: none;
+}
+
+.editor-section-icon{
+    position: relative;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    color: var(--text-muted);
+}
+
+.editor-section-icon::before,
+.editor-section-icon::after{
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 12px;
+    height: 2px;
+    background: currentColor;
+    border-radius: 1px;
+    transform: translate(-50%, -50%);
+}
+
+.editor-section-icon::after{
+    transform: translate(-50%, -50%) rotate(90deg);
+    transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.editor-section-open .editor-section-icon::after{
+    transform: translate(-50%, -50%) rotate(0deg);
+    opacity: 0;
+}
+
+.editor-section-body{
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 2px 14px 14px;
+}
+
+.editor-section-body.hidden{
+    display: none;
+}
+
+.editor-section-body > .form-group{
+    margin: 0;
+}
+
+.editor-segmented{
+    display: flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 10px;
+    background: var(--redd-warm-grey);
+}
+
+.editor-segmented-btn{
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.editor-segmented-btn:hover:not(.active):not(:disabled){
+    color: var(--text-primary);
+}
+
+.editor-segmented-btn.active{
+    background: var(--primary-btn-bg);
+    color: var(--primary-btn-text);
+    box-shadow: 0 1px 3px rgba(30, 45, 62, 0.18);
+}
+
+.editor-segmented-btn:disabled{
+    cursor: default;
+}
+
+.editor-segmented--locked{
+    opacity: 0.6;
+}
+
+.editor-segmented--compact{
+    flex: 0 1 auto;
+}
+
+.editor-segmented--compact .editor-segmented-btn{
+    flex: 0 0 auto;
+    padding: 6px 12px;
+    font-size: 13px;
+}
+
+.editor-hint{
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--text-muted);
+}
+
+.when-times{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+}
+
+.when-times.hidden{
+    display: none;
+}
+
+.when-until{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding-top: 2px;
+}
+
+.editor-inline-label{
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.editor-advanced-schedule{
+    padding-top: 4px;
+}
+
+.editor-advanced-schedule.hidden{
+    display: none;
+}
+
+.editor-panel-footer{
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.schedule-segment.segment-locked{
+    opacity: 0.65;
+}
+
+#focus-space-editor .checkbox-option{
+    margin: 0;
+}
+
+.blocklist-modal-editor-slot{
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/* Advanced options reads as a plain row: no fill and no outline until it is
+   hovered, focused or opened. The border stays (transparent) so nothing shifts. */
+#editor-section-advanced:not(.editor-section-open){
+    background: transparent;
+    border-color: transparent;
+}
+
+#editor-section-advanced:not(.editor-section-open):hover,
+#editor-section-advanced:not(.editor-section-open):focus-within{
+    border-color: var(--border-color);
+}
+
+#editor-section-advanced .editor-section-title{
+    font-weight: 600;
+}
+
+/* Room under the last section before the modal's Cancel / Save bar. */
+.blocklist-modal-editor-slot{
+    padding-bottom: 16px;
+}
+
+/* What to block: app chips as plain rows, then one full-width Add App button. */
+#blocklist-apps-group{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+#blocklist-apps-group .apps-tags:empty{
+    display: none;
+}
+
+.add-app-btn{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 46px;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 12px;
+    background: var(--primary-btn-bg);
+    color: var(--primary-btn-text);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.add-app-btn:hover{
+    background: var(--primary-btn-bg-hover);
+}
+
+.add-app-btn svg{
+    flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Card switch (start / stop), right-click menu, editor header actions
+   ═══════════════════════════════════════════════════════════════════════ */
+.blocklist-actions{
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.blocklist-switch{
+    position: relative;
+    width: 44px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--text-muted) 38%, var(--container-bg));
+    cursor: pointer;
+    transition: background 0.18s ease;
+    flex-shrink: 0;
+}
+
+.blocklist-switch:hover{
+    background: color-mix(in srgb, var(--text-muted) 50%, var(--container-bg));
+}
+
+.blocklist-switch.on{
+    background: var(--accent-color);
+}
+
+.blocklist-switch.on:hover{
+    background: var(--accent-hover);
+}
+
+.blocklist-switch:focus-visible{
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+}
+
+.blocklist-switch-knob{
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    transition: transform 0.18s ease;
+}
+
+.blocklist-switch.on .blocklist-switch-knob{
+    transform: translateX(18px);
+}
+
+.blocklist-context-menu{
+    position: fixed;
+    z-index: 1000;
+}
+
+.blocklist-context-menu.hidden{
+    display: none;
+}
+
+.editor-panel-actions{
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.editor-panel-action-btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.editor-panel-action-btn:hover{
+    background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+    color: var(--text-primary);
+}
+
+.editor-panel-action-btn--delete:hover{
+    color: hsl(0, 70%, 50%);
+    background: hsl(0, 80%, 96%);
+}
+
+body.dark-mode .editor-panel-action-btn--delete:hover{
+    background: rgba(255, 80, 80, 0.14);
+}
+
+/* In the phone / narrow sheet the sheet header already carries the title:
+   keep only the Duplicate / Delete actions, right-aligned. */
+#enter-scheduler-modal .editor-panel-header{
+    display: flex;
+    justify-content: flex-end;
+}
+
+#enter-scheduler-modal .editor-panel-title{
+    display: none;
+}
+
+.editor-panel-title-group{
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+}
+
+.editor-panel-back-btn{
+    display: none;
+}
+
+/* Desktop single-column sheet: same title row as the two-column panel, with a
+   back chevron in front. Phones keep their native sheet header (above). */
+body:not(.handset-device) #enter-scheduler-modal .editor-panel-header{
+    justify-content: space-between;
+}
+
+body:not(.handset-device) #enter-scheduler-modal .editor-panel-title{
+    display: block;
+}
+
+body:not(.handset-device) #enter-scheduler-modal .editor-panel-back-btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin-left: -6px;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-subtle);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+body:not(.handset-device) #enter-scheduler-modal .editor-panel-back-btn:hover{
+    background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+    color: var(--text-primary);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   To stop early: words slider
+   ═══════════════════════════════════════════════════════════════════════ */
+.override-slider-row{
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+}
+
+.override-slider-header{
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.override-slider-header .exit-difficulty-time-estimate{
+    font-weight: 600;
+    color: var(--accent-color);
+}
+
+.editor-slider{
+    width: 100%;
+    appearance: none;
+    -webkit-appearance: none;
+    height: 6px;
+    margin: 4px 0 2px;
+    border-radius: 999px;
+    background: linear-gradient(
+        to right,
+        var(--accent-color) 0%,
+        var(--accent-color) var(--slider-pct, 0%),
+        var(--redd-border) var(--slider-pct, 0%),
+        var(--redd-border) 100%
+    );
+    outline: none;
+    cursor: pointer;
+}
+
+.editor-slider:disabled{
+    opacity: 0.5;
+    cursor: default;
+}
+
+.editor-slider::-webkit-slider-thumb{
+    appearance: none;
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 2px solid var(--accent-color);
+    box-shadow: 0 1px 3px rgba(30, 45, 62, 0.18);
+    cursor: pointer;
+}
+
+.editor-slider::-moz-range-thumb{
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 2px solid var(--accent-color);
+    box-shadow: 0 1px 3px rgba(30, 45, 62, 0.18);
+    cursor: pointer;
+}
+
+.editor-slider:focus-visible{
+    outline: 2px solid var(--accent-color);
+    outline-offset: 4px;
 }

@@ -57,4 +57,89 @@ export const singleSchedule = {
     settings: {},
 };
 
-export const fixtures = { crowdedWeek, singleSchedule };
+/** A Manual space that is running (always-on block) — the editor's Manual state, locked. */
+export const manualRunning = {
+    blocklists: [
+        { id: 'bl-manual', name: 'No Twitter', emoji: '🎯', color: '#B8D1DE', websites: ['twitter.invalid', 'x.invalid'], apps: ['Slack'] },
+    ],
+    activeBlocks: [
+        { id: 'b1', blocklistId: 'bl-manual', startTime: Date.now() - 60_000, endTime: 253402300799999, isAlwaysOn: true },
+    ],
+    schedules: [],
+    startOverlays: [],
+    settings: {},
+};
+
+/**
+ * Schedules with several time ranges. The card shows every range when the line
+ * has room and falls back to "first range +N" when it does not: the short one
+ * should fit at desktop width, the long one should not.
+ */
+export const multiRangeSchedules = {
+    blocklists: [
+        { id: 'bl-weekend', name: 'Weekends', emoji: '🌤', color: '#6BAF92', websites: ['weekend.invalid'], apps: [] },
+        { id: 'bl-workday', name: 'Workday', emoji: '💼', color: '#4A90D9', websites: ['work.invalid'], apps: [] },
+    ],
+    activeBlocks: [],
+    schedules: [
+        { id: 's1', blocklistId: 'bl-weekend', repeatType: 'forever', segments: [seg(9, 0, 12, 0, [SAT, SUN]), seg(18, 0, 22, 0, [SAT, SUN])] },
+        {
+            id: 's2', blocklistId: 'bl-workday', repeatType: 'forever', segments: [
+                seg(0, 0, 7, 0, [MON, TUE, WED, THU, FRI]),
+                seg(9, 0, 12, 30, [MON, TUE, WED, THU, FRI]),
+                seg(14, 0, 17, 0, [MON, TUE, WED, THU, FRI]),
+            ],
+        },
+    ],
+    startOverlays: [],
+    settings: {},
+};
+
+/** Every switch state at once: manual on, manual paused, schedule on, schedule off, idle. */
+export const cardStates = {
+    blocklists: [
+        { id: 'bl-on', name: 'Manual on', emoji: '🎯', color: '#B8D1DE', websites: ['a.invalid'], apps: [] },
+        { id: 'bl-paused', name: 'Manual paused', emoji: '💪', color: '#B3D2C8', websites: ['b.invalid'], apps: [] },
+        { id: 'bl-sched', name: 'Scheduled', emoji: '📚', color: '#BCD9B6', websites: ['c.invalid'], apps: [] },
+        { id: 'bl-sched-off', name: 'Scheduled off', emoji: '📱', color: '#EBDCB6', websites: ['d.invalid'], apps: [] },
+        { id: 'bl-idle', name: 'Idle', emoji: '🌳', color: '#EECAAD', websites: ['e.invalid'], apps: [] },
+    ],
+    activeBlocks: [
+        { id: 'b-on', blocklistId: 'bl-on', startTime: Date.now() - 60_000, endTime: 253402300799999, isAlwaysOn: true },
+        { id: 'b-paused', blocklistId: 'bl-paused', startTime: Date.now() - 60_000, endTime: 253402300799999, isAlwaysOn: true, isPaused: true, pauseEndTime: Date.now() + 25 * 60_000 },
+    ],
+    schedules: [
+        { id: 's-on', blocklistId: 'bl-sched', repeatType: 'forever', segments: [seg(9, 0, 17, 0, [MON, TUE, WED, THU, FRI])] },
+        { id: 's-off', blocklistId: 'bl-sched-off', repeatType: 'forever', isPaused: true, segments: [seg(20, 0, 22, 0, [SAT, SUN])] },
+    ],
+    startOverlays: [],
+    settings: {},
+};
+
+/**
+ * A Flexible (allowEditsBetweenBlocks) schedule whose only segment is one minute
+ * at 03:00, so at any sane capture time it is *between* blocks: stopping it
+ * must open the stop modal without a typing challenge.
+ */
+export const flexibleBetweenBlocks = {
+    blocklists: [
+        { id: 'bl-flex', name: 'Night owl', emoji: '🦉', color: '#B3D2C8', websites: ['owl.invalid'], apps: [], unlockMinutes: 30 },
+    ],
+    activeBlocks: [],
+    schedules: [
+        { id: 's-flex', blocklistId: 'bl-flex', repeatType: 'forever', allowEditsBetweenBlocks: true, segments: [seg(3, 0, 3, 1, [MON, TUE, WED, THU, FRI, SAT, SUN])] },
+    ],
+    startOverlays: [],
+    settings: {},
+};
+
+/** A fresh install: no focus spaces at all (there is no default one). */
+export const emptyInstall = {
+    blocklists: [],
+    activeBlocks: [],
+    schedules: [],
+    startOverlays: [],
+    settings: {},
+};
+
+export const fixtures = { crowdedWeek, singleSchedule, manualRunning, cardStates, flexibleBetweenBlocks, multiRangeSchedules, emptyInstall };

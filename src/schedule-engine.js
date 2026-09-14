@@ -7,7 +7,6 @@ import { tSettings } from './i18n.js';
 import { getBlocklistIOSPayload, isAllowlistBlocklist } from './blocklist-utils.js';
 import { formatDateForDisplay, isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { formatTime } from './app.js';
-import { getDefaultPauseMinutes } from './pause-default.js';
 
 let hasShownIOSScheduleSyncError = false;
 
@@ -471,9 +470,10 @@ export async function syncSchedulesToHelper() {
         try {
             const flatEntries = buildAndroidScheduleEntries();
             console.log('[syncSchedulesToHelper] Android: Sending', flatEntries.length, 'segment entries to plugin');
-            // Mirrored into Kotlin prefs on every sync so the native friction
-            // gate prefills the user's configured pause length.
-            const result = await tauriAPI.androidSetSchedules(flatEntries, getDefaultPauseMinutes());
+            // The native friction gate (UnlockActivity) has its own pause-length
+            // prefill in Kotlin prefs; nothing on the webview side sets it any
+            // more (per-space unlock durations live on the blocklist record).
+            const result = await tauriAPI.androidSetSchedules(flatEntries);
             if (!result.success) {
                 console.warn('[syncSchedulesToHelper] Android plugin failed:', result.error);
             }

@@ -28,7 +28,7 @@ Tier 0 and Tier 1 overlap in kind but not in reach. Tier 1 owns the
 *composed* question — schedule windows, overlaps, allowlist resolution — and
 runs the real runner inside a page. Tier 0 exists for the leaf functions that
 composition is built out of, which previously had no home above Tier 2: things
-like `clampDefaultPauseMinutes`, `androidFrictionChallengeFields` or
+like `normalizeUnlockMinutes`, `androidFrictionChallengeFields` or
 `isProtectedApp` are pure, are asserted in milliseconds, and do not need a
 browser to be meaningful. When a case fits both, prefer Tier 1 — it is the
 layer closer to observed behavior.
@@ -145,9 +145,10 @@ cases belong — boundary values, malformed input, "exact match, not substring".
 
 | File | Module under test |
 | --- | --- |
-| `blocklist-utils.test.js` | protected apps/domains, always-on detection, iOS Screen Time selection normalization, quick-start healing, focus-space colours |
+| `blocklist-utils.test.js` | protected apps/domains, always-on detection, iOS Screen Time selection normalization, legacy quick-start cleanup, focus-space colours |
 | `schedule-engine.test.js` | Android payload mapping (day names, friction fields), repeat classification, one-off enforcement windows, pause state, weekday indexing |
-| `pause-and-time-inputs.test.js` | default pause clamp (mirrors Kotlin `coerceDefaultPauseMinutes`), end-time field parsing |
+| `time-inputs.test.js` | end-time field parsing |
+| `unlock-duration.test.js` | the temporary unlock menu (0 = Never … 1440), fallback to the 24 h default, what a confirmed stop does to a block or schedule in memory |
 
 ### Notes on the environment
 

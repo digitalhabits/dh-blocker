@@ -39,11 +39,11 @@ import {
     ensureIOSBlocklistSelectionReady,
     normalizeBlocklist,
     collectActiveIOSManualBlockPayload,
-    isQuickStartBlocklist,
-    QUICK_START_EMOJI,
 } from './blocklist-utils.js';
 import { openInstalledAppsPicker } from './apps-picker.js';
-import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndTimeAsDate, getStartTimeAsDate, handleDurationInputChange, handleDurationQuickBtn, handlePopoverOutsideClick, handleTimePartClick, initializeTimeInputs, pad, parseEndTimeBoundedInt, scrollElementWithinContainer, scrollPopoverOptionIntoView, setupEndTimeDirectInputs, updateDurationQuickBtns, updateTimeDisplay } from './time-inputs.js';
+import { handlePopoverOutsideClick } from './time-inputs.js';
+import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
+import { applyEditorScheduleForBlocklist, applyFocusSpaceEditorLanguage, confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, isEditorInCreateModal, populateFocusSpaceEditor, setupFocusSpaceEditor } from './focus-space-editor.js';
 import { loadData, saveData, updateHostsFile } from './persistence.js';
 import { cleanDomainInput, isValidDomain, processWebsiteInput, setupWebsitesImportMenu, resetWebsitesImportMenuPosition } from './website-input.js';
 import { updateBlockedApps, acceptEula, appBlockingWarningSnoozedUntilMs, checkAndroidPermissions, checkHelperStatus, checkScreentimeAuth, collectManualBlockedApps, collectScheduleBlockedApps, detectPlatform, displayNameForBlockedApp, ensureInstalledAppsCache, initializeAndroidBlockingState, initializeIOSBlockingState, listenForAndroidFrictionGate, onAndroidResumed, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAndroidBackButtonHandling, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility, openExternal, updateWindowHeight, isHelperInstallCancelled, isHelperConnectionError, joinAppListWithLimit, findResponsibleBlocklistForWarningApps, getActiveAppBlockingSnoozeBlocklistId, formatAppBlockingSnoozeStartsIn, APP_BLOCKING_SNOOZE_ICON_IMG_12 } from './blocking-platform.js';
@@ -78,47 +78,36 @@ import {
     wireEnforcementToggle,
 } from './enforcement.js';
 import {
-    addScheduleSegment, discardSchedulePendingChanges, getCommittedScheduleSegmentCount,
-    getDefaultScheduleSegments, getInitialExpandedScheduleSegmentIndex, handleRepeatDateChange,
-    handleRepeatOptionClick, handleSegmentDayToggle, handleUndoToastClick, pendingSegmentDelete,
+    addScheduleSegment,
+    getDefaultScheduleSegments, handleRepeatDateChange,
+    handleUndoToastClick, pendingSegmentDelete,
     rebuildScheduleSegments,
-    saveSchedulePendingChanges, setAlwaysOnMode, setScheduleMode, setupAllowEditsBetweenBlocksToggle,
-    startSchedule, toggleRepeatDropdown, updateScheduleButtonState, isScheduleSegmentActiveNow,
-    formatDateForDisplay,
+    setupAllowEditsBetweenBlocksToggle,
 } from './schedule-editor.js';
 import {
     SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE, applyScheduleStartOverlayPresentation,
-    getEffectiveScheduleStartOverlayId, getScheduleStartOverlayForWarningApps,
+    getScheduleStartOverlayForWarningApps,
     handleSchedulePanelOverlayOptionClick, isScheduleOverlayCustomiseModalOpen,
     playAppBlockingLetsGoVoice, populateScheduleOverlayCustomiseSelector,
-    rememberLastScheduleStartOverlayId, setupScheduleOverlayCustomiseModal,
-    syncScheduleConfirmOverlaySummary, syncScheduleOverlayCustomiseDirtyState,
+    setupScheduleOverlayCustomiseModal,
+    syncScheduleOverlayCustomiseDirtyState,
     syncScheduleOverlayCustomiseEditorState, syncScheduleOverlayCustomiseTitle,
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
-import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closePauseModal, closeScheduleConfirmModal, closeStartBlockConfirmModal, deselectBlocklist, handleBlocklistSelect, handlePauseBlockButtonClick, openBlocklistModal, openPauseModal, openResumeConfirmation, proceedWithBlock, proceedWithPause, proceedWithSchedule, proceedWithScheduleEdit, refreshSelectedBlocklistUi, renderScheduleConfirmSegments, setBtnActionLabel, setOverrideCountMaxMode, setStartBlockBtnLeadingIcon, setStartConfirmPrimaryLabel, startBlock, syncAllStopBtnLabelFits, syncOverrideCountUi, syncPauseDurationRowLayout, updateOverridePreview, updatePauseRestartTime, openOverrideModal, openScheduleOverrideModal, showScheduleConfirmModal, showScheduleEditConfirmModal, syncStopBtnLabelFit, setStartBtnBlocklistInfo } from './confirm-modals.js';
-import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, deleteBlocklist, clearPendingScheduleDraft, isBlocklistEditFrictionRequired, pendingDelete, saveBlocklistOrderFromDOM, getBlocklistScheduleDraft, saveBlocklistScheduleDraft, setUndoToastMessage } from './blocklists.js';
+import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, openBlocklistModal, refreshSelectedBlocklistUi, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncOverrideCountUi, updateOverridePreview, openOverrideModal } from './confirm-modals.js';
+import { enhanceNativeSelects } from './custom-select.js';
+import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, deleteBlocklist, isBlocklistEditFrictionRequired, pendingDelete, saveBlocklistOrderFromDOM, setUndoToastMessage } from './blocklists.js';
 import {
     getSelectedBlocklistModalMode,
-    getBlocklistCreateKind,
-    setBlocklistCreateKind,
-    syncBlocklistCreateKindUi,
+    syncBlocklistCreateUi,
     syncModalAppPlaceholder,
     syncModalWebsitePlaceholder,
     updateAllowlistScopeHints,
     updateBlocklistModalModeLabels,
 } from './list-mode.js';
 import { countIOSScreenTimeSelectionItems } from './list-presentation.js';
-import {
-    setupQuickStart,
-    applyQuickStartLanguage,
-    armPendingQuickStart,
-    getQuickStartOverrideCount,
-    applyQuickStartDurationToSchedulerState,
-    resetEmbeddedQuickStartControls,
-} from './quick-start.js';
-import { render, kickClockNow, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderNowBlockingRow, renderScheduleAlwaysOnRow, renderScheduleVisibilityChips, renderWeekBlocks, renderBlocklistSelector, getCalendarSegmentLayout, layoutOverlappingBlocks } from './render.js';
-import { formatTitleBarScheduleStartWhen, hasAnyEnforcedBlocks, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow, pickEarliestUpcomingScheduledBlock, refreshDesktopHelperStatus, resolveOneShotOccurrences, scheduleHasFutureSingleOccurrence, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
+import { render, kickClockNow, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderScheduleAlwaysOnRow, renderScheduleVisibilityChips, renderWeekBlocks, renderBlocklistSelector, getCalendarSegmentLayout, layoutOverlappingBlocks } from './render.js';
+import { hasAnyEnforcedBlocks, isAndroidAllowlistUnsupported, isNonRepeatingSchedule, isOneOffBlockEnforced, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
 import {
     refreshUninstallButtonState,
@@ -127,12 +116,13 @@ import {
     syncUninstallConfirmModal, updateCleanHostsBtnState, updateHelperStatusIndicator,
     updateManageSectionVisibility, updateOverrideAllButtonVisibility,
 } from './settings.js';
-import { setupDefaultPauseSetting, syncDefaultPauseSettingUi } from './pause-default.js';
-import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, scheduleSelectionPromptLayout, getEffectiveViewportWidth, bindUiZoomLayoutObserver } from './theme.js';
+import { normalizeUnlockMinutes } from './unlock-duration.js';
+import { turnFocusSpaceOn } from './focus-space-switch.js';
+import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, getEffectiveViewportWidth, bindUiZoomLayoutObserver } from './theme.js';
 import { checkForAppUpdate, getLatestVersionPlatformKey, isVersionHigher, resolveMicrosoftStorePackage, updateBannerWhatsNewButtonHtml } from './update-banner.js';
 import { updateDownloadInProgress } from './update-banner.js';
 import { getChallengeController } from './challenge-controller.js';
-import { getWordList5, getIOSRandomWordsCharCount, generateRandomWordsByCount, generateRandomWords, generateGibberish, normalizeOverrideCount, normalizeCustomOverrideText, getTypingCharsPerMinuteForType, getMaxOverrideCharsForType, getOverrideGeneratedCharCount, getDifficultyTypingCharCount, getOverridePreviewText, getOverrideEstimatedMinutes, formatOverrideMaxDifficultyHint, usesMobileWordCountForOverrideType, isMobileOverrideChallengePlatform, formatIOSGibberishChallenge, MIN_OVERRIDE_CHARS, DEFAULT_OVERRIDE_COUNT, TARGET_MAX_OVERRIDE_MINUTES, MAX_IOS_OVERRIDE_WORD_COUNT, OVERRIDE_PREVIEW_TRUNCATE_AT } from './override-challenge.js';
+import { getMaxOverrideCountForType, getOverrideEstimatedMinutes, getTypingCharsPerMinuteForType, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
 import { escapeHtml, cleanUrlForDisplay, parseRgbFromColorString, rgbToHex, rgbToHsl, hslToRgb, getRelativeLuminance, getEnteringChipColor, getContrastTextColor } from './utils.js';
 import { SETTINGS_TRANSLATIONS, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List, tSettings, tSettingsFmt, LANGUAGE_FLAG_SVG, LANGUAGE_NATIVE_LABELS, languageNativeLabel, SUPPORTED_LANGUAGE_CODES } from './i18n.js';
 /** Windows Settings → Apps → Installed apps (Apps & features). */
@@ -154,7 +144,6 @@ let startupInitializationPromise = null; // Prevent duplicate post-onboarding st
 /** Max length for blocklist display name (add/edit modal + persisted saves). */
 export const BLOCKLIST_NAME_MAX_LENGTH = 60;
 /** Past this length the card title row usually ellipsizes; use "in 11h" instead of "starts in 11h". */
-export const BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS = 26;
 /** Collapse stop-button emoji+name this many px before measured overflow (iOS flex overlap). */
 export const IOS_STOP_BTN_META_COLLAPSE_SLACK_PX = 24;
 
@@ -165,6 +154,9 @@ state.scheduleSegments = getDefaultScheduleSegments(); // Array of time segments
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     detectPlatform(); // Before loadData so first-launch defaults can differ on iOS
+    // App-styled dropdowns over every <select>. Before loadData so the first
+    // paint never shows an OS menu; the native selects stay the source of truth.
+    enhanceNativeSelects();
     await loadData();
     await resetDevOnlyEulaAcceptance();
 
@@ -196,7 +188,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         listenForAndroidFrictionGate();
         setupAndroidBackButtonHandling();
     }
-    setupNowBlockingChipScroll();
     setupEventListeners();
     setupAppBlockingWarningOverlay();
     initWelcomeDemoControls();
@@ -208,7 +199,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupBlocklistsImportExportButtons();
     setupAppForegroundRefresh();
     setupOverrideAll();
-    setupDefaultPauseSetting();
     setupInAppUninstall();
     setupWindowsUninstallGuidance();
     setupMacAutomationIntroModal();
@@ -233,78 +223,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
 });
-
-function setupNowBlockingChipScroll() {
-    const chipsEl = document.getElementById('now-blocking-chips');
-    if (!chipsEl) return;
-
-    let isPointerDown = false;
-    let isDragging = false;
-    let suppressClick = false;
-    let startX = 0;
-    let startScrollLeft = 0;
-
-    window.addEventListener('resize', () => syncNowBlockingChipsScrollability(), { passive: true });
-
-    chipsEl.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        if (e.target.closest('.now-blocking-chip-menu-btn')) return;
-        if (!chipsEl.classList.contains('can-horizontal-scroll')) return;
-
-        isPointerDown = true;
-        isDragging = false;
-        suppressClick = false;
-        startX = e.clientX;
-        startScrollLeft = chipsEl.scrollLeft;
-        chipsEl.classList.add('is-dragging');
-        e.preventDefault();
-    });
-
-    const stopDragging = () => {
-        suppressClick = isDragging;
-        isPointerDown = false;
-        isDragging = false;
-        chipsEl.classList.remove('is-dragging');
-    };
-
-    document.addEventListener('mousemove', (e) => {
-        if (!isPointerDown) return;
-        const deltaX = e.clientX - startX;
-        if (Math.abs(deltaX) > 3) {
-            isDragging = true;
-        }
-        chipsEl.scrollLeft = startScrollLeft - deltaX;
-        e.preventDefault();
-    });
-
-    document.addEventListener('mouseup', stopDragging);
-    chipsEl.addEventListener('mouseleave', () => {
-        if (!isPointerDown) return;
-        stopDragging();
-    });
-
-    chipsEl.addEventListener('click', (e) => {
-        if (!suppressClick) return;
-        if (e.target.closest('.now-blocking-chip-menu-btn')) {
-            suppressClick = false;
-            return;
-        }
-        suppressClick = false;
-        e.preventDefault();
-        e.stopPropagation();
-    }, true);
-}
-
-export function syncNowBlockingChipsScrollability() {
-    const chipsEl = document.getElementById('now-blocking-chips');
-    const row = document.getElementById('now-blocking-row');
-    if (!chipsEl || !row || row.classList.contains('hidden')) return;
-    if (row.classList.contains('idle')) {
-        chipsEl.classList.remove('can-horizontal-scroll');
-        return;
-    }
-    chipsEl.classList.toggle('can-horizontal-scroll', chipsEl.scrollWidth > chipsEl.clientWidth + 1);
-}
 
 export async function runPostAcceptanceStartup() {
     if (state.startupInitializationComplete) return;
@@ -576,13 +494,7 @@ function setupEventListeners() {
     // Windows custom title bar: sync maximize/restore icon from window events (no polling).
     void setupMaximizeButtonSync();
 
-    // Time pickers — instant end uses compact `input.time-part time-popover-anchor` (click opens list + caret);
-    // schedule uses its own overlays; pause modal uses button anchors.
-    document.querySelectorAll('.time-popover-anchor').forEach(el => {
-        el.addEventListener('click', handleTimePartClick);
-    });
-
-    // Close popovers on outside click
+    // Close the schedule editor's time popovers on outside click.
     document.addEventListener('click', handlePopoverOutsideClick);
 
     // Click on background to deselect blocklists
@@ -606,9 +518,10 @@ function setupEventListeners() {
             return;
         }
 
-        // Deselect blocklist if one is selected
+        // Deselect blocklist if one is selected (asks first when there are unsaved edits)
         if (state.selectedBlocklistId) {
-            deselectBlocklist();
+            if (!editorHasUnsavedEdits()) deselectBlocklist();
+            else void confirmDiscardEditorEdits().then((ok) => { if (ok) deselectBlocklist(); });
         }
     });
 
@@ -637,8 +550,8 @@ function setupEventListeners() {
     // Rule: clear pending (unsaved) text in website/app fields before undoing stack actions. Prefer clearing
     // the focused field first, then clear any other field that still has pending text, then pop stack.
     document.addEventListener('keydown', (e) => {
-        const blocklistModal = document.getElementById('blocklist-modal');
-        if (!blocklistModal || blocklistModal.classList.contains('hidden')) return;
+        const editorHost = document.getElementById('focus-space-editor')?.closest('#blocklist-modal, #time-picker-container');
+        if (!editorHost || editorHost.classList.contains('hidden')) return;
         const isUndo = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey;
         if (!isUndo) return;
 
@@ -692,65 +605,22 @@ function setupEventListeners() {
         }
     }, true);
 
-    // Duration picker - input change
-    const durationInput = document.getElementById('duration-minutes-input');
-    if (durationInput) {
-        durationInput.addEventListener('input', (e) => {
-            // Enforce max 5 digits visually
-            if (durationInput.value.length > 5) {
-                durationInput.value = durationInput.value.slice(0, 5);
-            }
-            handleDurationInputChange();
-        });
-        durationInput.addEventListener('blur', () => {
-            let mins = parseInt(durationInput.value);
-            if (isNaN(mins) || mins < 1) mins = 60;
-            if (mins > 99999) mins = 99999;
-            durationInput.value = mins;
-            handleDurationInputChange();
-        });
-    }
-
-    // Quick-select buttons: timed durations + until-I-stop option (scheduler only)
-    document.querySelectorAll('#instant-block-panel .duration-quick-btn').forEach(btn => {
-        btn.addEventListener('click', handleDurationQuickBtn);
-    });
-
-    // Initialize time picker with defaults
-    initializeTimeInputs();
-    setupEndTimeDirectInputs();
-
     // Blocklist selector
     document.getElementById('blocklist-select').addEventListener('change', handleBlocklistSelect);
 
-    // Start block button
-    document.getElementById('start-block-btn').addEventListener('click', startBlock);
-
     // Add blocklist / allow-only buttons (mode chosen by entry point, not in-dialog)
-    document.getElementById('add-blocklist-btn').addEventListener('click', () => openBlocklistModal());
-    document.getElementById('allow-only-blocklist-btn')?.addEventListener('click', () => {
+    // The create modal borrows the editor node, so unsaved edits on the
+    // selected space would be lost — ask first.
+    document.getElementById('add-blocklist-btn').addEventListener('click', async () => {
+        if (!(await confirmDiscardEditorEdits())) return;
+        openBlocklistModal();
+    });
+    document.getElementById('allow-only-blocklist-btn')?.addEventListener('click', async () => {
+        if (!(await confirmDiscardEditorEdits())) return;
         openBlocklistModal(null, { mode: 'allowlist' });
     });
 
-    document.querySelectorAll('#blocklist-create-kind-tabs .blocklist-create-kind-tab').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            const kind = btn.dataset.kind;
-            setBlocklistCreateKind(kind);
-            if (kind === 'quick-start' && !state.editingBlocklistId) {
-                resetEmbeddedQuickStartControls();
-            }
-            syncBlocklistCreateKindUi({ isCreate: !state.editingBlocklistId });
-            if (kind !== 'quick-start') {
-                const type = document.getElementById('override-type')?.value || 'random-words';
-                applyOverrideTypeUi(type);
-            }
-        });
-    });
-
-    setupQuickStart();
-
-    // Onboarding
-    // Onboarding removed — default blocklist created in loadData()
+    // Onboarding removed. A fresh install starts with no focus spaces.
 
     // Modal listeners
     setupModalListeners();
@@ -764,67 +634,16 @@ function setupEventListeners() {
         handleUndoToastClick();
     });
 
-    // Start block confirmation modal buttons
-    document.getElementById('cancel-start-confirm-btn')?.addEventListener('click', closeStartBlockConfirmModal);
-    document.getElementById('proceed-start-confirm-btn')?.addEventListener('click', proceedWithBlock);
-    document.getElementById('start-block-confirm-modal')?.addEventListener('click', (e) => {
-        if (e.target.classList.contains('modal-overlay')) {
-            closeStartBlockConfirmModal();
-        }
-    });
-
-    // Schedule confirmation modal buttons.
-    // The proceed button routes between the start-flow and edit-flow handlers via
-    // window.editScheduleData (set by showScheduleEditConfirmModal). A single
-    // dispatch listener avoids a previous bug where both addEventListener and a
-    // per-flow .onclick fired, causing proceedWithSchedule to add a duplicate
-    // schedule after an edit-flow save.
-    document.getElementById('cancel-schedule-confirm-btn')?.addEventListener('click', closeScheduleConfirmModal);
-    document.getElementById('proceed-schedule-confirm-btn')?.addEventListener('click', () => {
-        if (window.editScheduleData) {
-            proceedWithScheduleEdit();
-        } else {
-            proceedWithSchedule();
-        }
-    });
-    document.getElementById('start-schedule-confirm-modal')?.addEventListener('click', (e) => {
-        if (e.target.classList.contains('modal-overlay')) {
-            closeScheduleConfirmModal();
-        }
-    });
-
     setupScheduleOverlayCustomiseModal();
 
-    // Schedule mode tabs
-    document.getElementById('instant-mode-tab')?.addEventListener('click', () => setScheduleMode(false));
-    document.getElementById('schedule-mode-tab')?.addEventListener('click', () => setScheduleMode(true));
-
-    // Add segment button
+    // Focus-space editor: create modal + edit panel share one form.
+    setupFocusSpaceEditor({ onSave: saveFocusSpaceEditor });
     document.getElementById('add-segment-btn')?.addEventListener('click', addScheduleSegment);
     setupAllowEditsBetweenBlocksToggle();
 
-    // Start schedule button
-    document.getElementById('start-schedule-btn')?.addEventListener('click', startSchedule);
-    document.getElementById('schedule-pending-save')?.addEventListener('click', saveSchedulePendingChanges);
-    document.getElementById('schedule-pending-discard')?.addEventListener('click', discardSchedulePendingChanges);
-
-    // Repeat dropdown (renamed from Until)
-    document.getElementById('repeat-dropdown-btn')?.addEventListener('click', toggleRepeatDropdown);
     document.getElementById('schedule-panel-overlay-dropdown-btn')?.addEventListener('click', toggleSchedulePanelOverlayDropdown);
     document.getElementById('schedule-panel-overlay-dropdown-menu')?.addEventListener('click', handleSchedulePanelOverlayOptionClick);
-    document.querySelectorAll('.repeat-option').forEach(opt => {
-        opt.addEventListener('click', handleRepeatOptionClick);
-    });
     document.getElementById('repeat-date-input')?.addEventListener('change', handleRepeatDateChange);
-
-    // Initialize first segment day toggles
-    document.querySelectorAll('.segment-day-toggle').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const segmentIndex = parseInt(btn.closest('.segment-days').dataset.segmentIndex);
-            const dayIndex = parseInt(btn.dataset.day);
-            handleSegmentDayToggle(segmentIndex, dayIndex, btn);
-        });
-    });
 
     // Listen for blocks updated from main process
     tauriAPI.onBlocksUpdated(async () => {
@@ -835,6 +654,12 @@ function setupEventListeners() {
 
 
 
+
+/** Set inside setupModalListeners, which owns the form's closure state. */
+let saveFocusSpaceEditorImpl = null;
+export async function saveFocusSpaceEditor() {
+    if (saveFocusSpaceEditorImpl) await saveFocusSpaceEditorImpl();
+}
 
 // Modal listeners
 function setupModalListeners() {
@@ -1385,46 +1210,8 @@ function setupModalListeners() {
         const overrideCountInput = document.getElementById('override-count');
         applyOverrideTypeUi(type);
 
-        // Clamp to the new type-specific max when switching types.
         overrideCountInput.value = normalizeOverrideCount(overrideCountInput.value, type);
         state.lastOverrideTypeValue = overrideTypeSelect.value;
-
-        const maxDifficultyCb = document.getElementById('override-max-difficulty-checkbox');
-        if (maxDifficultyCb && maxDifficultyCb.checked && type !== 'custom') {
-            const maxCount = getMaxOverrideCharsForType(type);
-            overrideCountInput.value = String(maxCount);
-            overrideCountInput.max = String(maxCount);
-            state.lastOverrideCountValue = overrideCountInput.value;
-            setOverrideCountMaxMode(true);
-        }
-    });
-    document.getElementById('override-max-difficulty-checkbox').addEventListener('change', (e) => {
-        const checked = e.target.checked;
-        const overrideTypeSelect = document.getElementById('override-type');
-        const overrideCountInput = document.getElementById('override-count');
-        if (checked) {
-            state.lastOverrideTypeValueBeforeMaxDifficulty = overrideTypeSelect.value;
-            state.lastOverrideCountValueBeforeMaxDifficulty = overrideCountInput.value.trim() || state.lastOverrideCountValueBeforeMaxDifficulty;
-            const type = overrideTypeSelect.value;
-            applyOverrideTypeUi(type);
-            const maxCount = getMaxOverrideCharsForType(type);
-            overrideCountInput.value = String(maxCount);
-            overrideCountInput.max = String(maxCount);
-            state.lastOverrideCountValue = overrideCountInput.value;
-            setOverrideCountMaxMode(true);
-            updateOverridePreview(); // preview must reflect max count (set just above)
-        } else {
-            const typeToRestore = state.lastOverrideTypeValueBeforeMaxDifficulty;
-            overrideTypeSelect.value = typeToRestore;
-            applyOverrideTypeUi(typeToRestore);
-            const maxChars = getMaxOverrideCharsForType(typeToRestore);
-            overrideCountInput.max = String(maxChars);
-            overrideCountInput.value = normalizeOverrideCount(String(state.lastOverrideCountValueBeforeMaxDifficulty), typeToRestore);
-            state.lastOverrideCountValue = overrideCountInput.value;
-            state.lastOverrideCountValueBeforeMaxDifficulty = overrideCountInput.value;
-            setOverrideCountMaxMode(false);
-            updateOverridePreview(); // preview must reflect restored count (set just above)
-        }
     });
     document.getElementById('custom-override-text').addEventListener('input', (e) => {
         const customTextArea = e.target;
@@ -1437,7 +1224,7 @@ function setupModalListeners() {
             customTextArea.classList.remove('input-error');
             document.getElementById('custom-override-text-error')?.classList.add('hidden');
             const warningEl = document.getElementById('override-count-warning');
-            const maxChars = getMaxOverrideCharsForType('custom');
+            const maxChars = getMaxOverrideCountForType('custom');
             if (previous.length >= maxChars) {
                 const charsPerMinute = getTypingCharsPerMinuteForType('custom');
                 const estimatedMinutes = Math.ceil(maxChars / charsPerMinute);
@@ -1450,7 +1237,7 @@ function setupModalListeners() {
         });
 
         const warningEl = document.getElementById('override-count-warning');
-        const maxChars = getMaxOverrideCharsForType('custom');
+        const maxChars = getMaxOverrideCountForType('custom');
         const charsPerMinute = getTypingCharsPerMinuteForType('custom');
         const estimatedMinutes = Math.ceil(maxChars / charsPerMinute);
         e.target.maxLength = maxChars;
@@ -1470,12 +1257,7 @@ function setupModalListeners() {
         updateOverridePreview();
     });
 
-    // Override count blur on enter
-    document.getElementById('override-count').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.target.blur();
-        }
-    });
+    // Words slider
     document.getElementById('override-count').addEventListener('input', (e) => {
         const overrideCountInput = e.target;
         const previous = state.lastOverrideCountValue;
@@ -1484,54 +1266,12 @@ function setupModalListeners() {
             pushModalUndo('override-count', () => {
                 overrideCountInput.value = previous;
                 state.lastOverrideCountValue = previous;
+                updateOverridePreview();
             });
         }
-
-        const warningEl = document.getElementById('override-count-warning');
-        const overrideType = document.getElementById('override-type')?.value || 'random-words';
-        const maxChars = getMaxOverrideCharsForType(overrideType);
-        const unitLabel = usesMobileWordCountForOverrideType(overrideType) ? 'words' : 'characters';
-        e.target.max = String(maxChars);
-        const rawValue = e.target.value.trim();
-        if (rawValue === '') {
-            warningEl.classList.add('hidden');
-            warningEl.textContent = '';
-            state.lastOverrideCountValue = e.target.value;
-            updateOverridePreview();
-            return;
-        }
-
-        const parsed = parseInt(rawValue, 10);
-        if (Number.isFinite(parsed) && parsed > maxChars) {
-            const estimatedMinutes = getOverrideEstimatedMinutes(overrideType, maxChars, '');
-            e.target.value = maxChars;
-            warningEl.textContent = `Max is ${maxChars} ${unitLabel} so it's still possible to override in case of emergency (takes you ~${estimatedMinutes} minutes to type).`;
-            warningEl.classList.remove('hidden');
-        } else {
-            warningEl.classList.add('hidden');
-            warningEl.textContent = '';
-        }
-        state.lastOverrideCountValue = e.target.value;
+        state.lastOverrideCountValue = current;
         updateOverridePreview();
     });
-    document.getElementById('override-count').addEventListener('blur', (e) => {
-        const overrideType = document.getElementById('override-type')?.value || 'random-words';
-        e.target.value = normalizeOverrideCount(e.target.value, overrideType);
-        updateOverridePreview();
-    });
-
-    const adjustOverrideCount = (delta) => {
-        const overrideCountInput = document.getElementById('override-count');
-        const maxDifficultyCb = document.getElementById('override-max-difficulty-checkbox');
-        if (!overrideCountInput || maxDifficultyCb?.checked) return;
-        const overrideType = document.getElementById('override-type')?.value || 'random-words';
-        const parsed = Number.parseInt(overrideCountInput.value, 10);
-        const current = Number.isFinite(parsed) ? parsed : DEFAULT_OVERRIDE_COUNT;
-        overrideCountInput.value = normalizeOverrideCount(String(current + delta), overrideType);
-        overrideCountInput.dispatchEvent(new Event('input', { bubbles: true }));
-    };
-    document.getElementById('override-count-minus')?.addEventListener('click', () => adjustOverrideCount(-1));
-    document.getElementById('override-count-plus')?.addEventListener('click', () => adjustOverrideCount(1));
 
     document.querySelectorAll('.color-swatch').forEach(swatch => {
         swatch.addEventListener('click', () => {
@@ -1671,36 +1411,16 @@ function setupModalListeners() {
         });
     }
 
-    // Blocklist modal advanced options toggle
-    const blocklistAdvancedToggle = document.getElementById('blocklist-advanced-toggle');
-    const blocklistAdvancedContent = document.getElementById('blocklist-advanced-content');
-    if (blocklistAdvancedToggle && blocklistAdvancedContent) {
-        blocklistAdvancedToggle.addEventListener('click', () => {
-            const willExpand = blocklistAdvancedContent.classList.contains('hidden');
-            blocklistAdvancedToggle.classList.toggle('expanded');
-            blocklistAdvancedContent.classList.toggle('hidden');
-            if (willExpand) {
-                requestAnimationFrame(() => {
-                    const scrollBody = blocklistAdvancedContent.closest('.mobile-modal-scroll-body');
-                    scrollElementWithinContainer(scrollBody, blocklistAdvancedContent);
-                });
-            }
-        });
-    }
-
     // Cancel button
     document.getElementById('cancel-blocklist-btn').addEventListener('click', () => {
         closeBlocklistModal();
     });
 
-    // Save / Quick-start primary button
-    document.getElementById('save-blocklist-btn').addEventListener('click', async () => {
-        const isQuickCreate = !state.editingBlocklistId && getBlocklistCreateKind() === 'quick-start';
+    // Save (create modal's Save button and the panel's Save changes both land here).
+    saveFocusSpaceEditorImpl = async () => {
         const nameInput = document.getElementById('blocklist-name');
-        const name = isQuickCreate
-            ? tSettings('quickStartDefaultName')
-            : truncateBlocklistName(nameInput.value.trim());
-        const nameEmpty = !isQuickCreate && !name;
+        const name = truncateBlocklistName(nameInput.value.trim());
+        const nameEmpty = !name;
         if (nameEmpty) {
             nameInput.classList.add('input-error');
         } else {
@@ -1716,13 +1436,11 @@ function setupModalListeners() {
             if (result?.websiteInvalid) websiteInvalid = true;
         }
 
-        const overrideType = isQuickCreate
-            ? 'random-words'
-            : document.getElementById('override-type').value;
+        const overrideType = document.getElementById('override-type').value;
         const customTextArea = document.getElementById('custom-override-text');
-        const customText = isQuickCreate ? '' : normalizeCustomOverrideText(customTextArea.value);
-        if (!isQuickCreate) customTextArea.value = customText;
-        const customEmpty = !isQuickCreate && overrideType === 'custom' && !customText;
+        const customText = normalizeCustomOverrideText(customTextArea.value);
+        customTextArea.value = customText;
+        const customEmpty = overrideType === 'custom' && !customText;
         const customErrorEl = document.getElementById('custom-override-text-error');
         if (customEmpty) {
             customTextArea.classList.add('input-error');
@@ -1737,7 +1455,7 @@ function setupModalListeners() {
 
         if (nameEmpty || websiteInvalid || customEmpty) return;
 
-        if (!isQuickCreate) nameInput.value = name;
+        nameInput.value = name;
 
         const pendingApp = modalAppInput.value.trim();
         if (pendingApp && !isProtectedApp(pendingApp) && !modalApps.includes(pendingApp)) {
@@ -1753,33 +1471,14 @@ function setupModalListeners() {
             modalAppInput.value = '';
         }
 
-        if (isQuickCreate
-            && modalWebsites.length === 0
-            && modalApps.length === 0
-            && !modalIOSScreenTimeSelection) {
-            alert(tSettings('quickStartNeedItems'));
-            return;
-        }
-
         const mode = getSelectedBlocklistModalMode();
         const overrideCountInput = document.getElementById('override-count');
-        const maxDifficultyChecked = isQuickCreate
-            ? false
-            : document.getElementById('override-max-difficulty-checkbox').checked;
-        const overrideCount = isQuickCreate
-            ? getQuickStartOverrideCount()
-            : (maxDifficultyChecked
-                ? getMaxOverrideCharsForType(overrideType)
-                : normalizeOverrideCount(overrideCountInput.value, overrideType));
-        if (!isQuickCreate) overrideCountInput.value = overrideCount;
+        const overrideCount = normalizeOverrideCount(overrideCountInput.value, 'random-words');
+        overrideCountInput.value = overrideCount;
         const selectedSwatch = document.querySelector('.color-swatch.selected');
-        const color = isQuickCreate
-            ? '#B8D1DE'
-            : (selectedSwatch ? selectedSwatch.dataset.color : null);
+        const color = selectedSwatch ? selectedSwatch.dataset.color : null;
         const selectedEmoji = document.querySelector('.emoji-swatch.selected');
-        const emoji = isQuickCreate
-            ? QUICK_START_EMOJI
-            : (selectedEmoji ? selectedEmoji.dataset.emoji : '📱');
+        const emoji = selectedEmoji ? selectedEmoji.dataset.emoji : '📱';
 
         const showItemDetails = document.getElementById('show-item-details-checkbox').checked;
         // Preserve the blocklist's existing schedule visibility (toggled via the chips above the
@@ -1787,23 +1486,13 @@ function setupModalListeners() {
         const existingBlocklistForSave = state.editingBlocklistId
             ? state.appData.blocklists.find(bl => bl.id === state.editingBlocklistId)
             : null;
-        const alwaysShowInSchedule = isQuickCreate
-            ? false
-            : (existingBlocklistForSave?.alwaysShowInSchedule !== false);
+        const alwaysShowInSchedule = existingBlocklistForSave?.alwaysShowInSchedule !== false;
 
         const overrideDifficultyPayload = {
-            type: overrideType,
+            type: normalizeOverrideType(overrideType),
             count: overrideCount,
-            maxDifficulty: maxDifficultyChecked,
             customText: customText
         };
-        if (maxDifficultyChecked) {
-            overrideDifficultyPayload.countBeforeMax = normalizeOverrideCount(
-                String(state.lastOverrideCountValueBeforeMaxDifficulty),
-                state.lastOverrideTypeValueBeforeMaxDifficulty
-            );
-            overrideDifficultyPayload.typeBeforeMax = state.lastOverrideTypeValueBeforeMaxDifficulty;
-        }
 
         // Save is the authoritative enforcement boundary. The picker and undo
         // can leave a candidate that was valid while paused or between schedule
@@ -1833,14 +1522,17 @@ function setupModalListeners() {
             showItemDetails,
             alwaysShowInSchedule,
             overrideDifficulty: overrideDifficultyPayload,
+            unlockMinutes: normalizeUnlockMinutes(document.getElementById('unlock-duration-select')?.value),
         };
-        // Preserve Quick start / promoted-ordinary flag across edit saves.
-        if (isQuickCreate) {
-            blocklist.isQuickStart = true;
-        } else if (existingBlocklistForSave?.isQuickStart === false) {
-            blocklist.isQuickStart = false;
-        } else if (isQuickStartBlocklist(existingBlocklistForSave)) {
-            blocklist.isQuickStart = true;
+        // Daily / Weekly spaces activate on save, so the same platform checks
+        // that used to guard "Start schedule" apply here.
+        if (getWhenToBlockKind() !== 'manual') {
+            if (isAndroidAllowlistUnsupported(blocklist)) {
+                alert(tSettings('androidAllowlistUnsupported'));
+                return;
+            }
+            if (!ensureIOSBlocklistSelectionReady(blocklist, 'saving this schedule')) return;
+            if (!await ensureIOSAllowlistStartable(blocklist)) return;
         }
 
         if (state.editingBlocklistId) {
@@ -1852,6 +1544,8 @@ function setupModalListeners() {
             // New spaces go to the top of the focus list.
             state.appData.blocklists.unshift(blocklist);
         }
+
+        applyEditorScheduleForBlocklist(blocklist.id);
 
         await saveData();
 
@@ -1877,24 +1571,17 @@ function setupModalListeners() {
         // Keep live preview while editing, but don't revert after a confirmed save.
         state.blocklistModalPreviewSnapshot = null;
         const wasNewBlocklist = !state.editingBlocklistId;
-        // Arm before re-render so orphan Quick-start prune keeps the draft.
-        if (isQuickCreate) {
-            armPendingQuickStart(blocklist.id);
-            applyQuickStartDurationToSchedulerState();
+        if (isEditorInCreateModal()) {
+            closeBlocklistModal();
+        } else {
+            populateFocusSpaceEditor(blocklist);
         }
-        closeBlocklistModal();
 
         // Only update blocklist display without resetting schedule segments
         renderBlocklists();
         renderBlocklistSelector();
         renderWeekBlocks(); // Refresh calendar so colour / emoji / name changes propagate
-        renderNowBlockingRow(); // Title-bar chips read emoji/name from freshly saved blocklist
         renderScheduleAlwaysOnRow();
-
-        if (isQuickCreate) {
-            startBlock();
-            return;
-        }
 
         if (wasNewBlocklist) {
             // New focus space: land on enter (sheet on iOS iPhone, inline elsewhere).
@@ -1912,12 +1599,17 @@ function setupModalListeners() {
                 handleBlocklistSelect({ target: dropdown });
             }
         }
+    };
+    document.getElementById('save-blocklist-btn').addEventListener('click', () => {
+        void saveFocusSpaceEditorImpl();
     });
 
     // Store references for modal functions. Keep both the refactor-era getter
     // and the original direct array bridge so extracted modules like the app
     // picker still share the same mutable selection state.
     window.getModalApps = () => modalApps;
+    window.getModalWebsites = () => modalWebsites;
+    window.getModalIOSScreenTimeSelection = () => modalIOSScreenTimeSelection;
     window.lockedWebsites = [];
     window.lockedApps = [];
     window.clearModalTagSelections = () => {
@@ -2046,62 +1738,32 @@ function setupOverrideModalListeners() {
     // Typing, progress, paste-blocking and Enter now live in the shared
     // controller (challenge-controller.js); it wires its own listeners on first
     // use. What stays here is the override modal's confirm action, which is what
-    // actually distinguishes it from pause and stop-all.
+    // actually distinguishes it from stop-all.
     getChallengeController('override');
 
     document.getElementById('cancel-override-btn').addEventListener('click', () => {
         closeOverrideModal();
     });
 
-    // Pause block button
-    document.getElementById('pause-block-btn').addEventListener('click', () => {
-        handlePauseBlockButtonClick();
+    document.getElementById('cancel-enter-scheduler-btn')?.addEventListener('click', async () => {
+        if (await confirmDiscardEditorEdits()) deselectBlocklist();
+    });
+    // The desktop sheet's back chevron lives in the card's title row.
+    document.getElementById('editor-back-btn')?.addEventListener('click', () => {
+        document.getElementById('cancel-enter-scheduler-btn')?.click();
     });
 
-    document.getElementById('cancel-enter-scheduler-btn')?.addEventListener('click', deselectBlocklist);
-
-    // Pause modal event listeners
-    document.getElementById('cancel-pause-btn').addEventListener('click', closePauseModal);
-    document.getElementById('pause-modal').addEventListener('click', (e) => {
-        if (e.target === e.currentTarget) closePauseModal();
+    // Start confirmation (switch on): Cancel / overlay close it, Start proceeds.
+    document.getElementById('cancel-start-confirm-btn')?.addEventListener('click', closeStartConfirmModal);
+    document.getElementById('start-block-confirm-modal')?.addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeStartConfirmModal();
+    });
+    document.getElementById('proceed-start-confirm-btn')?.addEventListener('click', async () => {
+        const blocklistId = state.pendingStartBlocklistId;
+        closeStartConfirmModal();
+        if (blocklistId) await turnFocusSpaceOn(blocklistId);
     });
 
-    document.getElementById('confirm-pause-btn').addEventListener('click', async () => {
-        await proceedWithPause();
-    });
-
-    // Pause duration inputs — update restart time display
-    document.getElementById('pause-days').addEventListener('input', updatePauseRestartTime);
-    document.getElementById('pause-hours').addEventListener('input', function () {
-        let val = parseInt(this.value);
-        if (val > 23) { this.value = 23; }
-        if (val < 0) { this.value = 0; }
-        updatePauseRestartTime();
-    });
-    document.getElementById('pause-minutes').addEventListener('input', function () {
-        let val = parseInt(this.value);
-        if (val > 59) { this.value = 59; }
-        if (val < 0) { this.value = 0; }
-        updatePauseRestartTime();
-    });
-
-    // Pause shares the same engine; its confirm action (proceedWithPause) lives
-    // in confirm-modals.js alongside the duration controls.
-    getChallengeController('pause');
-
-    const pauseDurationSection = document.querySelector('#pause-modal .pause-duration-section');
-    if (pauseDurationSection && typeof ResizeObserver !== 'undefined') {
-        const pauseDurationRo = new ResizeObserver(() => syncPauseDurationRowLayout());
-        pauseDurationRo.observe(pauseDurationSection);
-    }
-    window.addEventListener('resize', () => syncPauseDurationRowLayout());
-
-    const blockActionButtons = document.getElementById('block-action-buttons');
-    if (blockActionButtons && typeof ResizeObserver !== 'undefined') {
-        const stopButtonFitRo = new ResizeObserver(() => syncAllStopBtnLabelFits());
-        stopButtonFitRo.observe(blockActionButtons);
-    }
-    window.addEventListener('resize', () => syncAllStopBtnLabelFits());
     window.addEventListener('resize', () => syncMobileScheduleDayLabelsViewportMode());
     window.visualViewport?.addEventListener('resize', syncMobileScheduleDayLabelsViewportMode);
     window.addEventListener('orientationchange', () => syncMobileScheduleDayLabelsViewportMode());
@@ -2111,97 +1773,32 @@ function setupOverrideModalListeners() {
         // A correct but non-final word: the controller already advanced the UI.
         if (result.status !== 'ok') return;
 
-        // Stop a running block, or tear down a schedule.
-        if (state.overrideBlockId || window.overrideScheduleId) {
-            if (state.overrideBlockId) {
-                const overriddenBlock = state.appData.activeBlocks.find(b => b.id === state.overrideBlockId);
-                const blocklistIdToClear = state.overrideBlocklistIdForHelper ?? (overriddenBlock ? overriddenBlock.blocklistId : null);
-                state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== state.overrideBlockId);
-                await saveData();
+        // Stop a running Manual block or a Daily / Weekly schedule. What "stop"
+        // does is the space's temporary unlock duration: a timed pause it comes
+        // back from on its own, or with Never the block is removed / the
+        // schedule switched off open-ended (stopFocusSpaceTarget).
+        const block = state.overrideBlockId
+            ? state.appData.activeBlocks.find(b => b.id === state.overrideBlockId) || null
+            : null;
+        const scheduleId = window.overrideScheduleId;
+        const schedule = !block && scheduleId
+            ? state.appData.schedules.find(s => s.id === scheduleId || s.blocklistId === scheduleId) || null
+            : null;
+        if (!block && !schedule) return;
 
-                if (state.isIOS) {
-                    await tauriAPI.screentimeClearBlock();
-                    state.lastBlockedDomains = new Set();
-                    await updateHostsFile();
-                    await syncSchedulesToHelper();
-                } else if (state.isAndroid) {
-                    try {
-                        await tauriAPI.androidStopManualBlock(state.overrideBlockId);
-                    } catch (err) {
-                        console.error('androidStopManualBlock failed:', err);
-                    }
-                    await syncSchedulesToHelper();
-                } else {
-                    const status = await refreshDesktopHelperStatus();
-                    if (status.helperReady) {
-                        if (blocklistIdToClear != null) {
-                            await tauriAPI.clearBlockViaHelper(blocklistIdToClear);
-                        } else {
-                            console.error('[override] No blocklist id for single-block override; not touching helper state');
-                        }
-                    } else {
-                        await updateHostsFile();
-                    }
-                }
+        await stopFocusSpaceTarget({ block, schedule });
+        state.overrideBlocklistIdForHelper = null;
+        delete window.overrideScheduleId;
 
-                state.overrideBlocklistIdForHelper = null;
-                // Update blocked apps (will stop watcher if no apps to block, including schedules)
-                await updateBlockedApps();
-            } else if (window.overrideScheduleId) {
-                // Schedules behave like one-off blocks now: stopping always tears down the
-                // entire schedule (no per-instance skip). Segments are re-loaded into the
-                // editor so the user can re-start them later without re-typing them.
-                const scheduleId = window.overrideScheduleId;
-                const scheduleToStop = state.appData.schedules.find(s =>
-                    s.id === scheduleId || s.blocklistId === scheduleId
-                );
+        const keepSelectedId = state.selectedBlocklistId;
+        render();
 
-                if (scheduleToStop) {
-                    state.scheduleSegments = scheduleToStop.segments.map(seg => ({ ...seg }));
-                    state.activeScheduleSegmentCount = 0; // No segments are locked anymore
+        // Keep the focus space selected so the scheduler panel stays open; only
+        // its lock state is resynced, so in-flight edits survive the stop.
+        refreshSelectedBlocklistUi(keepSelectedId);
+        await refreshOpenHelperUi();
 
-                    // Save these segments as pending so they persist when clicking off/on
-                    if (!state.appData.settings) state.appData.settings = {};
-                    if (!state.appData.settings.pendingScheduleSegments) state.appData.settings.pendingScheduleSegments = {};
-                    state.appData.settings.pendingScheduleSegments[scheduleToStop.blocklistId] = state.scheduleSegments.map(seg => ({ ...seg }));
-
-                    state.appData.schedules = state.appData.schedules.filter(s =>
-                        s.id !== scheduleId && s.blocklistId !== scheduleId
-                    );
-
-                    // Rebuild UI to show all segments as editable if we're viewing this blocklist
-                    if (state.selectedBlocklistId === scheduleToStop.blocklistId && state.isScheduleMode) {
-                        rebuildScheduleSegments();
-                        disableScheduleControls(false);
-                    }
-                } else {
-                    state.activeScheduleSegmentCount = 0;
-                }
-
-                // On iOS, clear both Screen Time stores so the overridden schedule's blocks are removed
-                // immediately; updateHostsFile and syncSchedulesToHelper will then re-apply correct state.
-                if (state.isIOS) {
-                    await tauriAPI.screentimeClearBlock();
-                    state.lastBlockedDomains = new Set();
-                }
-
-                await saveData();
-                await updateHostsFile();
-                await syncSchedulesToHelper();
-                await updateBlockedApps();
-
-                delete window.overrideScheduleId;
-            }
-
-            const keepSelectedId = state.selectedBlocklistId;
-            render();
-
-            // Keep the focus space selected so the scheduler panel stays open.
-            refreshSelectedBlocklistUi(keepSelectedId);
-            await refreshOpenHelperUi();
-
-            closeOverrideModal();
-        }
+        closeOverrideModal();
     });
 
     // Click outside to close
@@ -2366,14 +1963,10 @@ export function syncMobileScheduleDayLabelsViewportMode() {
     state.mobileCompactScheduleDayLabelsActive = nextCompact;
 
     const schedulePanel = document.getElementById('schedule-block-panel');
-    if (state.isScheduleMode && schedulePanel && !schedulePanel.classList.contains('hidden')) {
+    if (getWhenToBlockKind() !== 'manual') {
         rebuildScheduleSegments();
     }
 
-    const scheduleConfirmModal = document.getElementById('start-schedule-confirm-modal');
-    if (scheduleConfirmModal && !scheduleConfirmModal.classList.contains('hidden')) {
-        renderScheduleConfirmSegments(document.getElementById('schedule-confirm-segments'), state.scheduleSegments);
-    }
 }
 
 
@@ -2535,35 +2128,18 @@ export function setupLanguagePicker() {
 }
 
 /** Confirmation modals — describe typing challenge count + time estimate */
-export function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, resumeShortGibberish = false, customText = '' }) {
+export function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, customText = '' }) {
     const minutes = estimatedMinutes;
     const lang = getSettingsLanguage();
-    const charUnitDa = 'tegn';
-    const charUnitEn = count === 1 ? 'character' : 'characters';
-    const charUnitZh = '字符';
-    const charUnit = lang === 'zh-CN' ? charUnitZh : (lang === 'da' ? charUnitDa : charUnitEn);
-    const wordUnitDa = count === 1 ? 'ord' : 'ord';
     const wordUnitEn = count === 1 ? 'word' : 'words';
-    const wordUnitZh = '词';
-    const wordUnit = lang === 'zh-CN' ? wordUnitZh : (lang === 'da' ? wordUnitDa : wordUnitEn);
+    const wordUnit = lang === 'zh-CN' ? '词' : (lang === 'da' ? 'ord' : wordUnitEn);
 
-    if (type === 'custom') {
+    if (normalizeOverrideType(type) === 'custom') {
         return tSettingsFmt('confirmOverrideCustomPhraseFmt', {
             customText: escapeHtml(typeof customText === 'string' ? customText : '')
         });
     }
-    if (type === 'gibberish') {
-        if (usesMobileWordCountForOverrideType(type)) {
-            return tSettingsFmt('confirmOverrideGibberishWordsFmt', { count, wordUnit, minutes });
-        }
-        if (resumeShortGibberish) {
-            return tSettingsFmt('confirmOverrideGibberishShortFmt', { count, minutes });
-        }
-        return tSettingsFmt('confirmOverrideGibberishLettersFmt', { count, charUnit, minutes });
-    }
-    return usesMobileWordCountForOverrideType(type)
-        ? tSettingsFmt('confirmOverrideRandomWordsIosFmt', { count, wordUnit, minutes })
-        : tSettingsFmt('confirmOverrideRandomWordsFmt', { count, charUnit, minutes });
+    return tSettingsFmt('confirmOverrideRandomWordsIosFmt', { count, wordUnit, minutes });
 }
 
 /** Static copy on the migration / extension-setup overlay — call when language changes. */
@@ -3083,10 +2659,8 @@ export function applySettingsLanguage() {
     if (behaviourDismissBtn) {
         behaviourDismissBtn.title = tSettings('setupBrowsersBannerDismissTitle');
     }
-    setText('main-start-block-title', tSettings('mainStartBlockTitle'));
     setText('instant-mode-tab-label', tSettings('modeTimer'));
     setText('schedule-mode-tab-label', tSettings('modeSchedule'));
-    setText('selection-prompt-label', tSettings('selectionPrompt'));
     const blocklistSelect = document.getElementById('blocklist-select');
     if (blocklistSelect && blocklistSelect.options.length > 0) {
         blocklistSelect.options[0].textContent = tSettings('selectionPromptOption');
@@ -3101,14 +2675,9 @@ export function applySettingsLanguage() {
         allowOnlyBtn.title = tSettings('allowOnlyBtn');
         allowOnlyBtn.setAttribute('aria-label', tSettings('allowOnlyBtn'));
     }
-    setText('blocklist-kind-new-list', tSettings('createKindNewList'));
-    setText('blocklist-kind-quick-start', tSettings('createKindQuickStart'));
-    const createKindTabs = document.getElementById('blocklist-create-kind-tabs');
-    if (createKindTabs) createKindTabs.setAttribute('aria-label', tSettings('createKindTabsAria'));
-    syncBlocklistCreateKindUi({ isCreate: !state.editingBlocklistId });
+    syncBlocklistCreateUi({ isCreate: !state.editingBlocklistId });
     const createActions = document.querySelector('.blocklists-create-actions');
     if (createActions) createActions.setAttribute('aria-label', tSettings('blocklistsCreateActionsAria'));
-    applyQuickStartLanguage();
     setText('main-schedule-title', tSettings('scheduleTitle'));
     setText('no-active-blocks-label', tSettings('noActiveBlocks'));
     setText('always-on-row-label-lead', tSettings('alwaysOnRowLead'));
@@ -3116,60 +2685,13 @@ export function applySettingsLanguage() {
         'always-on-row-label-hint',
         ` (${tSettings('alwaysOnRowTimelineHint')}):`
     );
-    setText('now-blocking-label-text', tSettings('nowBlockingLabel'));
     setText('schedule-footer-hint', tSettings('scheduleFooterHint'));
-    setText('duration-quick-btn-15', tSettings('durationQuick15m'));
-    setText('duration-quick-btn-30', tSettings('durationQuick30m'));
-    setText('duration-quick-btn-45', tSettings('durationQuick45m'));
-    setText('duration-quick-btn-60', tSettings('durationQuick1Hour'));
-    setText('duration-quick-btn-120', tSettings('durationQuick2Hours'));
-    setText('duration-quick-btn-always-label', tSettings('durationQuickAlways'));
-    setText('always-on-message-text', tSettings('alwaysOnMessage'));
-    setText('duration-label', tSettings('duration'));
-    setText('duration-unit-label', tSettings('durationUnitMin'));
-    setText('end-label', tSettings('end'));
-    setText('quick-select-label', tSettings('quickSelect'));
-    setText('schedule-start-label', tSettings('start'));
-    setText('schedule-end-label', tSettings('end'));
-    setText('schedule-days-label', tSettings('days'));
-    setText('add-segment-label', tSettings('add'));
     setText('schedule-strictness-label', `${tSettings('scheduleStrictnessLabel')}${tSettings('stopScheduleMetaColon')}`);
     setText('strictness-option-committed-title', tSettings('allowEditsStrictLabel'));
     setText('strictness-option-committed-desc', tSettings('allowEditsStrictDesc'));
     setText('strictness-option-flexible-title', tSettings('allowEditsFlexibleLabel'));
     setText('strictness-option-flexible-desc', tSettings('allowEditsFlexibleDesc'));
-    setText('schedule-segments-heading', tSettings('scheduleWhenHeading'));
-    setText('repeat-label', tSettings('repeat'));
     setText('schedule-panel-overlay-label', tSettings('scheduleActiveOverlayLabel'));
-    const repeatNo = document.querySelector('.repeat-option[data-value="no"]');
-    const repeatForever = document.querySelector('.repeat-option[data-value="forever"]');
-    const repeatDate = document.querySelector('.repeat-option[data-value="date"]');
-    if (repeatNo) repeatNo.textContent = tSettings('repeatNo');
-    if (repeatForever) repeatForever.textContent = tSettings('repeatForever');
-    if (repeatDate) repeatDate.textContent = tSettings('repeatUntilDate');
-    const repeatDropdownText = document.getElementById('repeat-dropdown-text');
-    if (repeatDropdownText) {
-        if (state.scheduleRepeatType === 'forever') repeatDropdownText.textContent = tSettings('repeatForever');
-        else if (state.scheduleRepeatType === 'date') repeatDropdownText.textContent = tSettings('repeatUntilDate');
-        else repeatDropdownText.textContent = tSettings('repeatNo');
-    }
-    setText('pause-btn-label', tSettings('pause'));
-    setBtnActionLabel(document.getElementById('start-block-btn-label'), tSettings('startBlockButton'), { simple: true });
-    const startBlockBtn = document.getElementById('start-block-btn');
-    if (startBlockBtn) {
-        setStartBlockBtnLeadingIcon(
-            startBlockBtn,
-            startBlockBtn.classList.contains('stop-block') ? 'stop' : 'enter',
-        );
-    }
-    setBtnActionLabel(document.getElementById('start-schedule-btn-label'), tSettings('startScheduleButton'));
-    const startScheduleBtn = document.getElementById('start-schedule-btn');
-    if (startScheduleBtn) {
-        setStartBlockBtnLeadingIcon(
-            startScheduleBtn,
-            startScheduleBtn.classList.contains('stop-schedule') ? 'stop' : 'enter',
-        );
-    }
     setText('footer-made-with', tSettings('madeWith'));
     setText('footer-by', tSettings('by'));
     const footerOrgLink = document.getElementById('footer-org-link');
@@ -3185,42 +2707,20 @@ export function applySettingsLanguage() {
     syncModalAppPlaceholder();
     syncModalWebsitePlaceholder();
     setPlaceholder('challenge-input', tSettings('typeHere'));
-    setPlaceholder('pause-challenge-input', tSettings('typeHere'));
     setPlaceholder('override-all-challenge-input', tSettings('typeHere'));
-    setPlaceholder('pause-default-challenge-input', tSettings('typeHere'));
     setText('website-input-error', tSettings('invalidDomainMsg'));
     setText('custom-override-text-error', tSettings('customOverrideEmptyError'));
 
-    // Blocklist modal
-    const modalTitle = document.getElementById('modal-title');
-    if (modalTitle) {
-        if (state.editingBlocklistId) {
-            modalTitle.textContent = tSettings('editBlocklist');
-        } else {
-            modalTitle.textContent = tSettings(
-                getSelectedBlocklistModalMode() === 'allowlist'
-                    ? 'createAllowlist'
-                    : 'createBlocklist',
-            );
-        }
-    }
-    setText('active-blocklist-warning-text', tSettings('activeBlocklistWarning'));
-    setText('active-blocklist-pause-btn', tSettings('pause'));
-    setText('blocklist-name-label', tSettings('name'));
+    // Focus-space editor
+    applyFocusSpaceEditorLanguage();
     updateBlocklistModalModeLabels(getSelectedBlocklistModalMode());
-    setText('override-difficulty-label', tSettings('overrideDifficulty'));
     setText('override-method-label', tSettings('overrideMethod'));
     setText('override-option-random-words', tSettings('overrideRandomWords'));
-    setText('override-option-gibberish', tSettings('overrideGibberish'));
     setText('override-option-custom', tSettings('overrideCustomText'));
-    setText('override-max-difficulty-label', tSettings('overrideMaxDifficulty'));
-    setText('override-preview-label', tSettings('overridePreviewLooksLike'));
-    const overrideType = document.getElementById('override-type')?.value || 'random-words';
-    syncOverrideCountUi(overrideType);
+    syncOverrideCountUi();
     updateOverridePreview();
     setText('blocklist-emoji-label', tSettings('emoji'));
     setText('blocklist-color-label', tSettings('color'));
-    setText('blocklist-advanced-options-label', tSettings('advancedOptions'));
     setText('websites-import-menu-text-file-label', tSettings('importWebsitesFromFile'));
     setText('websites-import-menu-section-label', tSettings('importWebsitesPreMadeList'));
     setText('websites-import-menu-email', tSettings('importPresetEmail'));
@@ -3239,11 +2739,8 @@ export function applySettingsLanguage() {
     setText('modal-browse-apps-caption', tSettings('modalBrowseAppsCaption'));
     const modalBrowseAppsBtn = document.getElementById('modal-browse-apps-btn');
     if (modalBrowseAppsBtn) {
-        const browseTitle = document.body.classList.contains('ios')
-            ? tSettings('modalBrowseAppsTitleIos')
-            : tSettings('browseApplicationsTitle');
-        modalBrowseAppsBtn.title = browseTitle;
-        modalBrowseAppsBtn.setAttribute('aria-label', browseTitle);
+        modalBrowseAppsBtn.title = tSettings('modalBrowseAppsCaption');
+        modalBrowseAppsBtn.setAttribute('aria-label', tSettings('modalBrowseAppsCaption'));
     }
     setText('cancel-blocklist-btn', tSettings('cancel'));
     setText('save-blocklist-btn', tSettings('save'));
@@ -3255,41 +2752,17 @@ export function applySettingsLanguage() {
     setText('override-modal-instruction', tSettings('overrideInstruction'));
     setText('cancel-override-btn', tSettings('cancel'));
     setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
-    setText('pause-modal-title', tSettings('pauseFocusSpaceTitle'));
-    setText('pause-confirm-blocking-label', tSettings('startConfirmBlockingLabel'));
-    setText('pause-confirm-show-all-blocking', tSettings('showAll'));
-    setText('pause-modal-instruction', tSettings('pauseInstruction'));
-    setText('pause-for-label', tSettings('pauseFor'));
-    setText('pause-restarts-at-label', tSettings('restartsAt'));
-    setText('cancel-pause-btn', tSettings('cancel'));
-    setStartConfirmPrimaryLabel('confirm-pause-btn', tSettings('pauseBlock'));
+    setText('confirm-override-header', tSettings('startBlockHoldHeader'));
     setText('start-block-confirm-title', tSettings('startThisBlock'));
     setText('start-confirm-blocking-label', tSettings('startConfirmBlockingLabel'));
-    setText('start-confirm-duration-label', tSettings('startConfirmDurationLabel'));
     setText('start-confirm-show-all-blocking', tSettings('showAll'));
-    setText('confirm-override-header', tSettings('startBlockHoldHeader'));
+    setText('start-confirm-unlock-label', tSettings('startConfirmUnlockLabel'));
     setText('cancel-start-confirm-btn', tSettings('cancel'));
     setStartConfirmPrimaryLabel('proceed-start-confirm-btn', tSettings('startBlock'));
-    setText('start-schedule-confirm-title', tSettings('startThisSchedule'));
-    setText('schedule-confirm-blocking-label', tSettings('startConfirmBlockingLabel'));
-    setText('schedule-confirm-show-all-blocking', tSettings('showAll'));
-    setText('schedule-confirm-times-label', tSettings('startConfirmTimesLabel'));
-    setText('schedule-confirm-repeat-label', tSettings('startConfirmRepeatsLabel'));
-    setText('schedule-confirm-strictness-label', tSettings('scheduleStrictnessLabel'));
-    setText('schedule-confirm-overlay-label', tSettings('scheduleConfirmOverlayLabel'));
-    const confirmOverlayCustomiseBtn = document.getElementById('schedule-confirm-overlay-customise-btn');
-    if (confirmOverlayCustomiseBtn) {
-        confirmOverlayCustomiseBtn.title = tSettings('scheduleOverlayCustomiseBtn');
-        confirmOverlayCustomiseBtn.setAttribute('aria-label', tSettings('scheduleOverlayCustomiseBtn'));
-    }
     const panelOverlayCustomiseBtn = document.getElementById('schedule-panel-overlay-customise-btn');
     if (panelOverlayCustomiseBtn) {
         panelOverlayCustomiseBtn.title = tSettings('scheduleOverlayCustomiseBtn');
         panelOverlayCustomiseBtn.setAttribute('aria-label', tSettings('scheduleOverlayCustomiseBtn'));
-    }
-    const overlayDescEl = document.getElementById('schedule-confirm-overlay-desc');
-    if (overlayDescEl && !overlayDescEl.textContent) {
-        overlayDescEl.textContent = tSettings('scheduleConfirmOverlayDefaultDesc');
     }
     syncScheduleOverlayCustomiseTitle();
     setText('schedule-overlay-select-label', tSettings('scheduleOverlaySelectLabel'));
@@ -3338,9 +2811,6 @@ export function applySettingsLanguage() {
     setText('schedule-overlay-reset-button-btn', tSettings('scheduleOverlaySectionReset'));
     setText('schedule-overlay-reset-image-btn', tSettings('scheduleOverlaySectionReset'));
     setText('schedule-overlay-reset-voice-btn', tSettings('scheduleOverlaySectionReset'));
-    setText('schedule-confirm-override-header', tSettings('startScheduleHoldHeader'));
-    setText('cancel-schedule-confirm-btn', tSettings('cancel'));
-    setStartConfirmPrimaryLabel('proceed-schedule-confirm-btn', tSettings('startSchedule'));
     setText('undo-toast-btn-label', tSettings('undo'));
     if (pendingDelete?.blocklist) {
         setUndoToastMessage(
@@ -3361,7 +2831,6 @@ export function applySettingsLanguage() {
     setText('cancel-override-all-btn', tSettings('cancel'));
     setText('confirm-override-all-btn', tSettings('overrideAll'));
     setText('next-day-indicator', `+1 ${tSettings('nextDay')}`);
-    setText('pause-next-day-indicator', `+1 ${tSettings('nextDay')}`);
 
     setText('settings-modal-title', tSettings('settingsTitle'));
     setText('settings-general-heading', tSettings('settingsGeneralHeading'));
@@ -3376,19 +2845,6 @@ export function applySettingsLanguage() {
     setText('settings-override-all-label', tSettings('settingsOverrideAllLabel'));
     setText('settings-override-all-hint', tSettings('settingsOverrideAllHint'));
     setText('settings-override-all-btn-label', tSettings('settingsOverrideAllBtn'));
-    setText('settings-pause-default-label', tSettings('settingsPauseDefaultLabel'));
-    setText('settings-pause-default-hint', tSettings('settingsPauseDefaultHint'));
-    setText('pause-default-title', tSettings('pauseDefaultTitle'));
-    // Android additionally prefills its native block screen from this setting,
-    // so it gets a subtitle that says so.
-    setText('pause-default-subtitle',
-        tSettings(state.isAndroid ? 'pauseDefaultSubtitleAndroid' : 'pauseDefaultSubtitle'));
-    setText('pause-default-instruction', tSettings('pauseDefaultInstruction'));
-    setText('pause-default-hours-unit', tSettings('pauseDefaultUnitHours'));
-    setText('pause-default-minutes-unit', tSettings('pauseDefaultUnitMinutes'));
-    setText('cancel-pause-default-btn', tSettings('cancel'));
-    setText('confirm-pause-default-btn', tSettings('pauseDefaultSave'));
-    syncDefaultPauseSettingUi();
     setText('settings-uninstall-label', tSettings('uninstallApp'));
     setText('settings-uninstall-hint', tSettings('settingsUninstallHint'));
     setText('settings-uninstall-btn-label', tSettings('uninstallAppBtn'));
@@ -3499,10 +2955,8 @@ export function applySettingsLanguage() {
     renderAppBlockingClosedownBanner();
     renderBlocklists();
     if (document.getElementById('blocklist-select')) renderBlocklistSelector();
-    if (typeof updateScheduleButtonState === 'function') updateScheduleButtonState();
     if (typeof syncSelectedControlState === 'function') syncSelectedControlState();
     if (typeof updateWeekCalendar === 'function') updateWeekCalendar();
     if (typeof rebuildScheduleSegments === 'function') rebuildScheduleSegments();
-    renderNowBlockingRow();
     if (typeof updateOverridePreview === 'function') updateOverridePreview();
 }

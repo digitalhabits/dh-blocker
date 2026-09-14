@@ -1,6 +1,6 @@
 // The single typing-challenge engine behind every friction gate in the app:
-// stopping a block (#override-modal), pausing one (#pause-modal), stopping
-// everything (#override-all-modal), and confirming an edit that loosens a
+// stopping a block or schedule (#override-modal), stopping everything
+// (#override-all-modal), and confirming an edit that loosens a
 // running focus space (also #override-modal, see openBlocklistUnlockChallenge).
 //
 // Previously this was implemented three times, in three files, with three id
@@ -326,16 +326,6 @@ const CHALLENGE_ELEMENT_IDS = {
         confirmBtnEl: 'confirm-override-btn',
         modalContentSelector: '#override-modal .modal-content',
     },
-    pause: {
-        textEl: 'pause-challenge-text',
-        inputEl: 'pause-challenge-input',
-        wordInputEl: 'pause-challenge-word-input',
-        wordProgressEl: 'pause-word-progress',
-        currentWordEl: 'pause-current-word',
-        progressBarEl: 'pause-challenge-progress-bar',
-        confirmBtnEl: 'confirm-pause-btn',
-        modalContentSelector: '#pause-modal .modal-content',
-    },
     overrideAll: {
         textEl: 'override-all-challenge-text',
         inputEl: 'override-all-challenge-input',
@@ -358,7 +348,7 @@ const controllerRegistry = {};
  * modules (app.js, confirm-modals.js, settings.js) share one instance without a
  * cross-module `let` — see the module conventions in AGENTS.md.
  *
- * @param {'override'|'pause'|'overrideAll'} key
+ * @param {'override'|'overrideAll'} key
  */
 export function getChallengeController(key) {
     if (!controllerRegistry[key]) {

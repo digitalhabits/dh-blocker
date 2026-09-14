@@ -7,7 +7,8 @@
 import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { PROTECTED_APP_NAMES, PROTECTED_DOMAINS, isAllowlistBlocklist, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
-import { buildAndroidScheduleEntries, buildIOSScheduleEntries, isAndroidAllowlistUnsupported } from './schedule-engine.js';
+import { buildAndroidScheduleEntries, buildIOSScheduleEntries, isAndroidAllowlistUnsupported, isSchedulePausedNow } from './schedule-engine.js';
+import { isFocusSpaceOn, setFocusSpaceEnabled, turnFocusSpaceOn } from './focus-space-switch.js';
 import {
     buildWordChallengeState,
     getCompletedChallengeText,
@@ -29,7 +30,7 @@ import {
 import { CURRENT_EULA_REVISION } from './onboarding.js';
 import { render, isClockTickRunning } from './render.js';
 import { duplicateBlocklist, getNextCopyName, isBlocklistEditFrictionRequired } from './blocklists.js';
-import { getMaxOverrideCharsForType } from './override-challenge.js';
+import { getMaxOverrideCountForType, getMaxOverrideWords } from './override-challenge.js';
 import {
     deriveIOSEffectiveWebsitePolicy,
     deriveIOSEffectiveAppPolicy,
@@ -37,11 +38,14 @@ import {
     IOS_ALLOWLIST_EXCEPTION_LIMIT,
 } from './allowlist-ios.js';
 import {
-    getDefaultPauseMinutes,
-    clampDefaultPauseMinutes,
-    FALLBACK_DEFAULT_PAUSE_MINUTES,
-    MAX_DEFAULT_PAUSE_MINUTES,
-} from './pause-default.js';
+    DEFAULT_UNLOCK_MINUTES,
+    UNLOCK_MINUTE_OPTIONS,
+    applyStopToTarget,
+    normalizeUnlockMinutes,
+} from './unlock-duration.js';
+import { closeBlocklistModal, closeStartConfirmModal, openBlocklistModal, openScheduleOverrideModal } from './confirm-modals.js';
+import { setupFocusSpaceEditor, showEditorDiscardConfirmModal } from './focus-space-editor.js';
+import { enhanceNativeSelects, enhanceSelect } from './custom-select.js';
 
 // Expose for integration tests (dev mode only)
 window.__REDDBLOCK_INTERNALS__ = {
@@ -59,10 +63,14 @@ window.__REDDBLOCK_INTERNALS__ = {
     isBlocklistEditFrictionRequired,
     duplicateBlocklist,
     getNextCopyName,
-    getMaxOverrideCharsForType,
+    getMaxOverrideCountForType,
+    getMaxOverrideWords,
     buildAndroidScheduleEntries,
     isAndroidAllowlistUnsupported,
     buildIOSScheduleEntries,
+    isSchedulePausedNow,
+    isFocusSpaceOn,
+    setFocusSpaceEnabled,
     // Challenge-engine primitives (characterization tests / controller suite)
     normalizeChallengeComparableText,
     sanitizeChallengeTypedInput,
@@ -97,10 +105,24 @@ window.__REDDBLOCK_INTERNALS__ = {
     setupAndroidBackButtonHandling,
     appBlockingWarningRows,
     updateBlockedApps,
-    getDefaultPauseMinutes,
-    clampDefaultPauseMinutes,
-    FALLBACK_DEFAULT_PAUSE_MINUTES,
-    MAX_DEFAULT_PAUSE_MINUTES,
+    DEFAULT_UNLOCK_MINUTES,
+    UNLOCK_MINUTE_OPTIONS,
+    applyStopToTarget,
+    normalizeUnlockMinutes,
+    openScheduleOverrideModal,
+    closeStartConfirmModal,
+    turnFocusSpaceOn,
+    // The create form (new-space defaults) and the editor's discard dialog.
+    openBlocklistModal,
+    closeBlocklistModal,
+    showEditorDiscardConfirmModal,
+    // Idempotent. The headless Tier 1 page has no Tauri transport, so app
+    // startup stops at loadData() before wiring the editor's listeners; tests
+    // that drive the editor call this first.
+    setupFocusSpaceEditor,
+    // App-styled dropdowns over native selects.
+    enhanceSelect,
+    enhanceNativeSelects,
 };
 
 // ========================================

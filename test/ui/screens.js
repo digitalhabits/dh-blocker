@@ -113,4 +113,283 @@ export const screens = [
         viewport: DESKTOP,
         clip: '.week-calendar-section',
     },
+
+    // ---- Home with nothing selected: the scheduler column is simply empty ----
+    {
+        name: 'home-idle-desktop',
+        fixture: fixtures.cardStates,
+        platform: 'mac',
+        viewport: DESKTOP,
+    },
+
+    // ---- A fresh install: no default focus space ----------------------------
+    {
+        name: 'home-empty-desktop',
+        fixture: fixtures.emptyInstall,
+        platform: 'mac',
+        viewport: DESKTOP,
+    },
+    {
+        name: 'home-empty-iphone',
+        fixture: fixtures.emptyInstall,
+        platform: 'iphone',
+        viewport: IPHONE,
+    },
+
+    // ---- Focus-space cards: switch on / off / paused --------------------------
+    {
+        name: 'cards-desktop',
+        fixture: fixtures.cardStates,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#blocklists-container',
+    },
+    {
+        // Full schedule when it fits ("09:00 – 12:00, 18:00 – 22:00"), "+N" when not.
+        name: 'cards-schedule-ranges',
+        fixture: fixtures.multiRangeSchedules,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#blocklists-container',
+    },
+    {
+        name: 'cards-schedule-ranges-one-column',
+        fixture: fixtures.multiRangeSchedules,
+        platform: 'mac',
+        viewport: { width: 700, height: 900 },
+        clip: '#blocklists-container',
+    },
+    {
+        name: 'cards-iphone',
+        fixture: fixtures.cardStates,
+        platform: 'iphone',
+        viewport: IPHONE,
+    },
+
+    // ---- Turning a space on: what will be blocked, the way out, the unlock ----
+    {
+        name: 'start-confirm-modal',
+        fixture: fixtures.cardStates,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#start-block-confirm-modal .modal-content',
+        prepare: async (page) => {
+            await page.click('.blocklist-card[data-id="bl-sched-off"] .blocklist-switch');
+            await page.waitForSelector('#start-block-confirm-modal:not(.hidden)');
+        },
+    },
+    {
+        name: 'editor-edit-dirty',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#time-picker-container',
+        prepare: async (page) => {
+            await page.fill('#blocklist-name', 'Deep Work (renamed)');
+            await page.dispatchEvent('#blocklist-name', 'input');
+        },
+    },
+    {
+        // The editor's own "Discard changes?" dialog (it used to be the OS one).
+        name: 'editor-discard-dialog',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#editor-discard-modal .modal-content',
+        prepare: async (page) => {
+            await page.evaluate(() => { void window.__REDDBLOCK_INTERNALS__.showEditorDiscardConfirmModal(); });
+            await page.waitForSelector('#editor-discard-modal:not(.hidden)');
+        },
+    },
+    {
+        name: 'editor-discard-dialog-dark',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        theme: 'dark',
+        viewport: DESKTOP,
+        clip: '#editor-discard-modal .modal-content',
+        prepare: async (page) => {
+            await page.evaluate(() => { void window.__REDDBLOCK_INTERNALS__.showEditorDiscardConfirmModal(); });
+            await page.waitForSelector('#editor-discard-modal:not(.hidden)');
+        },
+    },
+
+    // ---- Stopping a space: the challenge modal + unlock outcome line -------
+    {
+        name: 'stop-modal-manual',
+        fixture: fixtures.manualRunning,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#override-modal .modal-content',
+        prepare: async (page) => {
+            await page.click('.blocklist-card[data-id="bl-manual"] .blocklist-switch');
+            await page.waitForSelector('#override-modal:not(.hidden)');
+        },
+    },
+    {
+        name: 'stop-modal-flexible',
+        fixture: fixtures.flexibleBetweenBlocks,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#override-modal .modal-content',
+        prepare: async (page) => {
+            await page.click('.blocklist-card[data-id="bl-flex"] .blocklist-switch');
+            await page.waitForSelector('#override-modal.override-frictionless:not(.hidden)');
+        },
+    },
+
+    // ---- The focus-space editor -------------------------------------------
+    // One form for create (modal) and edit (panel; sheet on phones). The sole
+    // space in the fixture is auto-selected, so the panel shows its editor.
+    {
+        name: 'editor-edit-weekly',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#time-picker-container',
+        prepare: async (page) => {
+            await page.click('#editor-section-when-header');
+        },
+    },
+    {
+        name: 'editor-edit-stop-early',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#time-picker-container',
+        prepare: async (page) => {
+            await page.click('#editor-section-stop-header');
+        },
+    },
+    {
+        name: 'editor-create',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#blocklist-modal .modal-content',
+        prepare: async (page) => {
+            // A fresh space opens on What to block; type a website and pick nothing else.
+            await page.click('#add-blocklist-btn');
+            await page.fill('#modal-website-input', 'reddit.com');
+            await page.keyboard.press('Enter');
+        },
+    },
+    {
+        name: 'editor-edit-weekly-dark',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        theme: 'dark',
+        viewport: DESKTOP,
+        clip: '#time-picker-container',
+        prepare: async (page) => {
+            await page.click('#editor-section-when-header');
+        },
+    },
+    {
+        name: 'editor-edit-what',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#time-picker-container',
+        prepare: async (page) => {
+            await page.click('#editor-section-what-header');
+        },
+    },
+    {
+        // App-styled dropdown menu (not the OS one), opened in the create form.
+        // The create form, not the edit panel: singleSchedule's space is running
+        // on weekday mornings, and a running space locks To stop early.
+        name: 'dropdown-unlock-open',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        viewport: DESKTOP,
+        prepare: async (page) => {
+            await page.click('#add-blocklist-btn');
+            await page.click('#editor-section-stop-header');
+            await page.click('#unlock-duration-select-trigger');
+            await page.waitForSelector('#unlock-duration-select-menu:not(.hidden)');
+        },
+    },
+    {
+        name: 'dropdown-unlock-open-dark',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        theme: 'dark',
+        viewport: DESKTOP,
+        prepare: async (page) => {
+            await page.click('#add-blocklist-btn');
+            await page.click('#editor-section-stop-header');
+            await page.click('#unlock-duration-select-trigger');
+            await page.waitForSelector('#unlock-duration-select-menu:not(.hidden)');
+        },
+    },
+    {
+        name: 'dropdown-settings-theme-open',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#settings-modal .modal-content',
+        prepare: async (page) => {
+            await page.click('#settings-btn');
+            await page.waitForSelector('#settings-modal:not(.hidden)');
+            await page.click('#theme-select-trigger');
+            await page.waitForSelector('#theme-select-menu:not(.hidden)');
+        },
+    },
+    {
+        name: 'editor-edit-advanced',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#time-picker-container',
+        prepare: async (page) => {
+            await page.click('#editor-section-advanced-header');
+        },
+    },
+    {
+        name: 'editor-create-daily',
+        fixture: fixtures.singleSchedule,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#blocklist-modal .modal-content',
+        prepare: async (page) => {
+            await page.click('#add-blocklist-btn');
+            await page.click('#editor-section-when-header');
+            await page.click('#when-kind-daily');
+            await page.click('#until-date');
+        },
+    },
+    {
+        name: 'editor-edit-manual',
+        fixture: fixtures.manualRunning,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#time-picker-container',
+        prepare: async (page) => {
+            // Locked space with websites and an app: chips render as locked.
+            await page.click('#editor-section-what-header');
+        },
+    },
+    {
+        // Desktop single-column (≤718px): the editor opens as a sheet, and its
+        // title row should match the two-column panel's, back chevron in front.
+        name: 'editor-edit-narrow-desktop',
+        fixture: fixtures.cardStates,
+        platform: 'mac',
+        viewport: { width: 600, height: 900 },
+        prepare: async (page) => {
+            await page.click('.blocklist-card[data-id="bl-on"]', { position: { x: 30, y: 20 } });
+            await page.waitForSelector('body.enter-scheduler-modal-open');
+        },
+    },
+    {
+        name: 'editor-edit-iphone',
+        fixture: fixtures.singleSchedule,
+        platform: 'iphone',
+        viewport: IPHONE,
+        prepare: async (page) => {
+            await page.click('.blocklist-card');
+            await page.click('#editor-section-when-header');
+        },
+    },
 ];

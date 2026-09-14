@@ -10,15 +10,15 @@ import { escapeHtml } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
 import { isProtectedApp, ALWAYS_ON_END_TIME } from './blocklist-utils.js';
 import { isSchedulePausedNow, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncSchedulesToHelper } from './schedule-engine.js';
-import { saveData, updateHostsFile, createDefaultBlocklist } from './persistence.js';
+import { saveData, updateHostsFile } from './persistence.js';
 import { render } from './render.js';
 import { renderBlocklists } from './blocklists.js';
-import { canEditScheduleBetweenBlocks, isScheduleSegmentActiveNow } from './schedule-editor.js';
+import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { applyScheduleStartOverlayPresentation, getScheduleStartOverlayForWarningApps, playAppBlockingLetsGoVoice } from './schedule-overlay.js';
-import { closeBlocklistModal, closeOverrideModal, closePauseModal, closeScheduleConfirmModal, closeStartBlockConfirmModal, initializeOverrideModalChallenge, openPauseModal, populateOverrideConfirmModalContent } from './confirm-modals.js';
+import { closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, initializeOverrideModalChallenge, openScheduleOverrideModal, populateOverrideConfirmModalContent } from './confirm-modals.js';
 import { isModalVisible } from './modal-manager.js';
 import { updateManageSectionVisibility, closeOverrideAllModal } from './settings.js';
-import { closeDefaultPauseModal } from './pause-default.js';
+import { closeEditorDiscardConfirmModal } from './focus-space-editor.js';
 import { CURRENT_EULA_REVISION, getAcceptedEulaRevision, hasAcceptedEula, isFirstRunOnboardingInProgress } from './onboarding.js';
 import { generateId, runPostAcceptanceStartup } from './app.js';
 
@@ -1024,11 +1024,8 @@ export async function migrateAndroidNativeSchedules() {
 
         if (!state.appData.settings) state.appData.settings = {};
         state.appData.settings.androidMigrationDone = true;
-        // No legacy data to import (genuinely fresh Android install) — create
-        // the default space here, since loadData deferred it pending migration.
-        if (state.appData.blocklists.length === 0) {
-            createDefaultBlocklist();
-        }
+        // No legacy data to import leaves a fresh install empty, as on every
+        // other platform: there is no default focus space.
         await saveData();
 
         // Restore Kotlin sessions for carried-over always-on blocks: the sync
@@ -1107,11 +1104,11 @@ export async function onAndroidResumed() {
 export const ANDROID_MODAL_CLOSE_FNS = {
     'blocklist-modal': closeBlocklistModal,
     'override-modal': closeOverrideModal,
-    'pause-modal': closePauseModal,
-    'pause-default-modal': closeDefaultPauseModal,
-    'start-block-confirm-modal': closeStartBlockConfirmModal,
-    'start-schedule-confirm-modal': closeScheduleConfirmModal,
+    'start-block-confirm-modal': closeStartConfirmModal,
     'override-all-modal': closeOverrideAllModal,
+    // An arrow, so the binding is read at back-press time, not while this
+    // module is still evaluating (focus-space-editor.js imports back into it).
+    'editor-discard-modal': () => closeEditorDiscardConfirmModal(false),
 };
 
 // Tauri's generated WryActivity.onKeyDown only calls webView.goBack() on
@@ -1216,24 +1213,22 @@ export function openAndroidFrictionGateModal(event) {
     // Newest gate wins. A friction gate only makes sense for the app the
     // user is trying to open right now, so a gate that is still open for a
     // *different* target (user hopped between blocked apps) must be closed
-    // before opening the new one: override-modal and pause-modal share
-    // z-index 200, so DOM order — not open order — decides which paints on
-    // top, and the close functions are also what clears the other gate's
-    // backing state. If the incoming event matches the gate already showing,
-    // keep it instead so a half-typed challenge survives re-interception.
+    // before opening the new one, because closing is also what clears the
+    // gate's backing state (state.overrideBlockId / window.overrideScheduleId).
+    // If the incoming event matches the gate already showing, keep it instead
+    // so a half-typed challenge survives re-interception.
     if (target.type === 'block'
         && isModalVisible('override-modal')
         && state.overrideBlockId === target.block.id) {
         return;
     }
     if (target.type === 'schedule'
-        && isModalVisible('pause-modal')
-        && !state.pauseBlockId
-        && state.pauseScheduleData?.blocklistId === target.schedule.blocklistId) {
+        && isModalVisible('override-modal')
+        && !state.overrideBlockId
+        && window.overrideScheduleId === (target.schedule.id || target.schedule.blocklistId)) {
         return;
     }
     closeOverrideModal();
-    closePauseModal();
 
     if (target.type === 'block') {
         state.overrideBlockId = target.block.id;
@@ -1249,18 +1244,10 @@ export function openAndroidFrictionGateModal(event) {
         return;
     }
 
-    const scheduleBlocklist = state.appData.blocklists.find(bl => bl.id === target.schedule.blocklistId);
-    if (!scheduleBlocklist) {
-        console.error('[friction-gate] No matching blocklist for schedule:', target.schedule.blocklistId);
-        return;
-    }
-
-    state.pauseScheduleData = {
-        blocklistId: target.schedule.blocklistId,
-        isActiveNow: isScheduleSegmentActiveNow(target.schedule),
-        frictionless: canEditScheduleBetweenBlocks(target.schedule),
-    };
-    openPauseModal(null);
+    // A schedule target goes through the same stop modal as the card switch:
+    // the challenge (waived for a Flexible schedule between blocks), then the
+    // space's temporary unlock duration.
+    openScheduleOverrideModal(target.schedule);
 }
 
 export async function initializeIOSBlockingState() {
@@ -1306,12 +1293,6 @@ export function updateOnboardingVisibility() {
     main?.classList.toggle('hidden', blockMainUi);
     if (showAndroidPermissions) {
         document.getElementById('android-accessibility-status')?.classList.toggle('hidden', state.androidPermissionsGranted);
-    }
-
-    // Hide the BLOCKING NOW title-bar row on onboarding screens
-    const nowBlockingRow = document.getElementById('now-blocking-row');
-    if (nowBlockingRow) {
-        nowBlockingRow.classList.toggle('hidden', blockMainUi);
     }
 
 }
@@ -1497,14 +1478,10 @@ export function attachModalScrollResetOnShow(modalEl) {
 export function setupHandsetModalScreens() {
     const modalIds = [
         'blocklist-modal',
-        'quick-start-modal',
         'override-modal',
-        'pause-modal',
         'start-block-confirm-modal',
-        'start-schedule-confirm-modal',
         'settings-modal',
         'override-all-modal',
-        'pause-default-modal',
         // Desktop single-column reuses this sheet; wrap chrome on every platform.
         'enter-scheduler-modal',
     ];
@@ -1618,7 +1595,7 @@ export function setupHandsetModalScreens() {
 function configureMobileBlocklistFields() {
     // Mobile apps are selected from the platform picker. Keep the text fields
     // out of the UI and the tab order so app names cannot be entered manually.
-    ['app-input', 'modal-app-input', 'quick-start-app-input'].forEach((id) => {
+    ['app-input', 'modal-app-input'].forEach((id) => {
         const input = document.getElementById(id);
         if (!input) return;
         input.style.display = 'none';
@@ -1627,12 +1604,11 @@ function configureMobileBlocklistFields() {
         input.tabIndex = -1;
     });
 
-    // Keep desktop's website-first layout, but put apps first in both mobile
-    // entry points. Moving the nodes also keeps accessibility/tab order in
-    // sync with what is shown on screen.
+    // Keep desktop's website-first layout, but put apps first on mobile.
+    // Moving the nodes also keeps accessibility/tab order in sync with what
+    // is shown on screen.
     [
         ['blocklist-apps-group', 'blocklist-websites-group'],
-        ['quick-start-apps-group', 'quick-start-websites-group'],
     ].forEach(([appsId, websitesId]) => {
         const appsGroup = document.getElementById(appsId);
         const websitesGroup = document.getElementById(websitesId);
@@ -1640,20 +1616,6 @@ function configureMobileBlocklistFields() {
         websitesGroup.parentElement.insertBefore(appsGroup, websitesGroup);
     });
 
-    // On handset-sized screens, keep the primary blocking choices together
-    // before the less frequent appearance controls. Desktop keeps the
-    // existing name → emoji → color ordering.
-    const emojiGroup = document.getElementById('blocklist-emoji-group');
-    const colorGroup = document.getElementById('blocklist-color-group');
-    const overrideGroup = document.getElementById('blocklist-override-group');
-    const advancedToggle = document.getElementById('blocklist-advanced-toggle');
-    if (emojiGroup && colorGroup && overrideGroup && advancedToggle
-        && emojiGroup.parentElement === overrideGroup.parentElement
-        && advancedToggle.parentElement === overrideGroup.parentElement) {
-        const parent = overrideGroup.parentElement;
-        parent.insertBefore(emojiGroup, advancedToggle);
-        parent.insertBefore(colorGroup, advancedToggle);
-    }
 }
 
 // Detect platform for window controls and iOS
