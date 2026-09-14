@@ -41,10 +41,12 @@ fi
 
 # Update src-tauri/Cargo.toml
 echo "  Updating src-tauri/Cargo.toml..."
+# Only the [package] section: `[dependencies.*]` tables below carry their own
+# `version = ` lines and must not be touched.
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' "s/^version = \"[^\"]*\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/src-tauri/Cargo.toml"
+    sed -i '' "/^\[package\]/,/^\[/ s/^version = \"[^\"]*\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/src-tauri/Cargo.toml"
 else
-    sed -i "s/^version = \"[^\"]*\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/src-tauri/Cargo.toml"
+    sed -i "/^\[package\]/,/^\[/ s/^version = \"[^\"]*\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/src-tauri/Cargo.toml"
 fi
 
 # Update iOS project files (tauri.ios.conf.json, gen/apple project + Info.plists)
