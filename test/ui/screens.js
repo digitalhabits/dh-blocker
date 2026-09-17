@@ -451,6 +451,32 @@ export const screens = [
         },
     },
     {
+        // "Editing" dropdown open on a block space: stricter means adding.
+        name: 'editor-editing-options-block',
+        fixture: fixtures.blockScheduleOff,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#time-picker-container',
+        prepare: async (page) => {
+            await page.click('#editor-section-advanced-header');
+            await page.click('#schedule-strictness-dropdown-btn');
+            await page.waitForSelector('#schedule-strictness-dropdown-menu:not(.hidden)');
+        },
+    },
+    {
+        // …and on an allow-only space, where stricter means allowing less.
+        name: 'editor-editing-options-allow',
+        fixture: fixtures.allowScheduleOff,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#time-picker-container',
+        prepare: async (page) => {
+            await page.click('#editor-section-advanced-header');
+            await page.click('#schedule-strictness-dropdown-btn');
+            await page.waitForSelector('#schedule-strictness-dropdown-menu:not(.hidden)');
+        },
+    },
+    {
         // A long Start alert name must truncate, keeping the pencil in the panel.
         name: 'editor-advanced-long-alert',
         fixture: fixtures.longStartAlertName,

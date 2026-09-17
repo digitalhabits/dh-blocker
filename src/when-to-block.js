@@ -59,7 +59,7 @@ export function segmentsForKind(kind, segments, getDefaults) {
 }
 
 /**
- * "Until" offers only "When I stop it" (`forever`) and "Date". Older data can
+ * "Until" offers only "I stop it" (`forever`) and "Date". Older data can
  * carry `repeatType: 'no'` (one-shot: each segment fires once), or no
  * repeatType at all, which the engine also reads as one-shot. Map that onto a
  * date so the schedule still ends when it was going to; with nothing left

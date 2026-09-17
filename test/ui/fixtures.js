@@ -217,4 +217,25 @@ export const longStartAlertName = {
     settings: {},
 };
 
-export const fixtures = { crowdedWeek, singleSchedule, weeklyOffPeak, longStartAlertName, manualRunning, cardStates, flexibleBetweenBlocks, multiRangeSchedules, emptyInstall, cardNamesShown, cardNamesHidden, highWordMaximum, loweredWordMaximum };
+/**
+ * Scheduled spaces that are switched off, so the "Editing" dropdown is unlocked
+ * and can be opened — one block space and one allow-only space, whose options
+ * have to describe opposite directions.
+ */
+const switchedOffSchedule = (blocklist) => ({
+    blocklists: [blocklist],
+    activeBlocks: [],
+    schedules: [
+        { id: 's1', blocklistId: blocklist.id, repeatType: 'forever', isPaused: true, segments: [seg(9, 0, 12, 30, [MON, TUE, WED, THU, FRI])] },
+    ],
+    startOverlays: [],
+    settings: {},
+});
+export const blockScheduleOff = switchedOffSchedule(
+    { id: 'bl-focus', name: 'Deep Work', emoji: '🎯', color: '#4A90D9', websites: ['distract.invalid'], apps: [] },
+);
+export const allowScheduleOff = switchedOffSchedule(
+    { id: 'bl-focus', name: 'Writing', emoji: '📚', color: '#BCD9B6', mode: 'allowlist', websites: ['docs.invalid'], apps: [] },
+);
+
+export const fixtures = { crowdedWeek, singleSchedule, weeklyOffPeak, longStartAlertName, manualRunning, cardStates, flexibleBetweenBlocks, multiRangeSchedules, emptyInstall, cardNamesShown, cardNamesHidden, highWordMaximum, loweredWordMaximum, blockScheduleOff, allowScheduleOff };

@@ -99,7 +99,7 @@ describe('segmentsForKind', () => {
 });
 
 describe('migrateLegacyRepeatType', () => {
-    // "Until" only offers "When I stop it" (forever) and "Date". The old
+    // "Until" only offers "I stop it" (forever) and "Date". The old
     // one-shot "No" option is mapped onto a date so an existing one-shot
     // schedule still ends when it was going to.
     test('forever and date are left alone', () => {
