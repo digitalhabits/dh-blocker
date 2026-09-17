@@ -15,13 +15,39 @@ function metaText(blocklist) {
 }
 
 describe('focus-space card summary honours "show what it blocks on the card"', () => {
-    test('a short list shows its names when the option is on', () => {
+    test('a short list shows its names, with nothing to expand', () => {
+        // The line already names both, so an expand affordance would only
+        // repeat itself.
         const bl = { websites: ['twitter.com', 'x.com'], apps: [], showItemDetails: true };
         const { text, button } = metaText(bl);
         expect(text).toContain('twitter.com');
         expect(text).toContain('x.com');
-        expect(button).not.toBeNull();
-        expect(blocklistCardHasExpandableSummary(bl)).toBe(true);
+        expect(button).toBeNull();
+        expect(blocklistCardHasExpandableSummary(bl)).toBe(false);
+    });
+
+    test('three items still fit as names; the fourth tips it into a count', () => {
+        const three = { websites: ['a.com', 'b.com', 'c.com'], apps: [], showItemDetails: true };
+        expect(metaText(three).button).toBeNull();
+        expect(blocklistCardHasExpandableSummary(three)).toBe(false);
+
+        const four = { websites: ['a.com', 'b.com', 'c.com', 'd.com'], apps: [], showItemDetails: true };
+        expect(metaText(four).button).not.toBeNull();
+        expect(blocklistCardHasExpandableSummary(four)).toBe(true);
+    });
+
+    test('one label standing for many items stays expandable', () => {
+        // The iOS Screen Time picker yields a single summary label, so the line
+        // cannot name each item and the expansion has something to add.
+        const bl = {
+            websites: [],
+            apps: [],
+            iosScreenTimeSelection: { applicationCount: 5, categoryCount: 0, webDomainCount: 0 },
+            showItemDetails: true,
+        };
+        if (blocklistCardHasExpandableSummary(bl)) {
+            expect(metaText(bl).button).not.toBeNull();
+        }
     });
 
     test('the option defaults to on for spaces saved without it', () => {

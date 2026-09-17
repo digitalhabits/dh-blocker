@@ -101,15 +101,39 @@ function blocklistCardShowsItemNames(blocklist) {
 // Up to this many items the card line lists names; beyond it, counts.
 const CARD_INLINE_NAMES_MAX = 3;
 
+/** The names the card can list, in the order the meta line shows them. */
+function blocklistCardItemNames(blocklist) {
+    return [
+        // Keep the full domain for websites (not the registrable short label).
+        ...(blocklist?.websites || []).map(cleanUrlForDisplay),
+        ...getBlocklistDisplayApps(blocklist),
+    ];
+}
+
 /**
- * Expandable only when there is more than one item to inspect — and never
- * when names are hidden, or the expansion would reveal exactly what the
- * option is there to keep off the overview.
+ * Does the meta line already name every item? A short list is shown as names,
+ * so expanding it would repeat the line word for word. The iOS Screen Time
+ * picker contributes one label for many items, which is why the name count has
+ * to match the item count rather than being assumed.
+ */
+function cardLineNamesEveryItem(blocklist, total) {
+    if (total === 1) return true;
+    const names = blocklistCardItemNames(blocklist);
+    return total <= CARD_INLINE_NAMES_MAX && names.length === total;
+}
+
+/**
+ * Expandable only when the expansion would show something the line does not.
+ * Never when names are hidden (the expansion would reveal exactly what that
+ * option is there to keep off the card), and never when the line already lists
+ * every name — an affordance that repeats itself is worse than none.
  */
 export function blocklistCardHasExpandableSummary(blocklist) {
     if (!blocklistCardShowsItemNames(blocklist)) return false;
     const { siteCount, appCount } = getBlocklistCardItemCounts(blocklist);
-    return siteCount + appCount > 1;
+    const total = siteCount + appCount;
+    if (total <= 1) return false;
+    return !cardLineNamesEveryItem(blocklist, total);
 }
 
 /** Short label from a blocked domain, e.g. instagram.com → instagram. */
@@ -167,25 +191,18 @@ export function buildBlocklistCardMetaHtml(blocklist) {
         return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix">${prefix}</span><span class="blocklist-meta-sep">·</span><span class="blocklist-meta-items">${escapeHtml(counts)}</span></span>`;
     }
 
-    // Keep the full domain for websites (not the registrable short label).
-    const names = [
-        ...(blocklist?.websites || []).map(cleanUrlForDisplay),
-        ...getBlocklistDisplayApps(blocklist),
-    ];
+    const names = blocklistCardItemNames(blocklist);
 
-    // Single site/app: show its name directly — no "1 site" expandable.
-    if (total === 1) {
-        return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix">${prefix}</span><span class="blocklist-meta-sep">·</span><span class="blocklist-meta-items">${escapeHtml(names[0] || '')}</span></span>`;
+    // The line names every item (one of them, or a short list): plain text, no
+    // expand affordance — opening it would only repeat what is already there.
+    if (cardLineNamesEveryItem(blocklist, total)) {
+        const shown = total === 1 ? (names[0] || '') : names.join(', ');
+        return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix">${prefix}</span><span class="blocklist-meta-sep">·</span><span class="blocklist-meta-items">${escapeHtml(shown)}</span></span>`;
     }
 
-    // A short list reads better as names; a long one would only be cut off by
-    // the line's ellipsis, so it stays a count. Either way it expands. The
-    // iOS Screen Time picker contributes one label for many items, so names
-    // only stand in for the count when there is one name per item.
-    const summary = total <= CARD_INLINE_NAMES_MAX && names.length === total
-        ? names.join(', ')
-        : counts;
-    return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix">${prefix}</span><span class="blocklist-meta-sep">·</span><button type="button" class="blocklist-meta-items-btn" aria-expanded="false">${escapeHtml(summary)}</button></span>`;
+    // A long list would only be cut off by the line's ellipsis, so it stays a
+    // count — and there the expansion earns its place.
+    return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix">${prefix}</span><span class="blocklist-meta-sep">·</span><button type="button" class="blocklist-meta-items-btn" aria-expanded="false">${escapeHtml(counts)}</button></span>`;
 }
 
 /** Expandable Sites / Apps detail sections with item pills. */
