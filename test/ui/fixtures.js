@@ -199,4 +199,22 @@ export const weeklyOffPeak = {
     settings: {},
 };
 
-export const fixtures = { crowdedWeek, singleSchedule, weeklyOffPeak, manualRunning, cardStates, flexibleBetweenBlocks, multiRangeSchedules, emptyInstall, cardNamesShown, cardNamesHidden, highWordMaximum, loweredWordMaximum };
+/**
+ * Advanced options with a long Start alert name — the case that used to push
+ * the customise pencil out of the panel.
+ */
+export const longStartAlertName = {
+    blocklists: [
+        { id: 'bl-alert', name: 'Deep Work', emoji: '🎯', color: '#4A90D9', websites: ['distract.invalid'], apps: [], unlockMinutes: 60 },
+    ],
+    activeBlocks: [],
+    schedules: [
+        { id: 's-alert', blocklistId: 'bl-alert', repeatType: 'forever', allowEditsBetweenBlocks: true, startOverlayId: 'ov-long', segments: [seg(3, 0, 3, 1, [MON, TUE, WED, THU, FRI])] },
+    ],
+    startOverlays: [
+        { id: 'ov-long', name: 'Denmark Matters (ReDD Front!)', message: 'Back to it.', durationSeconds: 5 },
+    ],
+    settings: {},
+};
+
+export const fixtures = { crowdedWeek, singleSchedule, weeklyOffPeak, longStartAlertName, manualRunning, cardStates, flexibleBetweenBlocks, multiRangeSchedules, emptyInstall, cardNamesShown, cardNamesHidden, highWordMaximum, loweredWordMaximum };

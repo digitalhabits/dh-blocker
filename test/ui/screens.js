@@ -451,6 +451,17 @@ export const screens = [
         },
     },
     {
+        // A long Start alert name must truncate, keeping the pencil in the panel.
+        name: 'editor-advanced-long-alert',
+        fixture: fixtures.longStartAlertName,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#time-picker-container',
+        prepare: async (page) => {
+            await page.click('#editor-section-advanced-header');
+        },
+    },
+    {
         name: 'editor-create-daily',
         fixture: fixtures.singleSchedule,
         platform: 'mac',

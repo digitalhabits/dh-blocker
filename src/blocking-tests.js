@@ -23,6 +23,7 @@
  * - T196-T199: Schedule time lists: arrow keys walk the options, Enter commits
  * - T200-T202: Strictness only locks while the space is on (off = fully editable)
  * - T203-T204: Custom Text sits under Method and wraps rather than scrolling
+ * - T205: a long Start alert name keeps the customise pencil inside the panel
  */
 
 (function () {
@@ -2882,6 +2883,50 @@
                     typeSelect.value = 'random-words';
                     internals.applyOverrideTypeUi('random-words');
                     assert(row.classList.contains('hidden'), 'T203: Random Words hides the field again');
+                }
+            } finally {
+                internals.closeBlocklistModal();
+            }
+        }
+
+        // T205: a long Start alert name truncates inside its dropdown; the
+        // customise pencil stays within the panel. Measured, not class-checked:
+        // the column used to be sized max-content, which ignores the width
+        // available and pushed the pencil out of view.
+        if (typeof internals.openBlocklistModal === 'function' && typeof internals.setupFocusSpaceEditor === 'function') {
+            // Without this the editor has no listeners in the headless page, so
+            // the clicks below open nothing and everything measures 0.
+            internals.setupFocusSpaceEditor();
+            internals.openBlocklistModal();
+            try {
+                document.getElementById('when-kind-weekly')?.click();
+                // Advanced options holds the row, and a collapsed section measures
+                // 0x0 — which would make every geometry assert below pass blind.
+                if (document.getElementById('editor-section-advanced-header')?.getAttribute('aria-expanded') !== 'true') {
+                    document.getElementById('editor-section-advanced-header')?.click();
+                }
+                const grid = document.querySelector('#focus-space-editor .schedule-repeat-section');
+                const label = document.getElementById('schedule-panel-overlay-dropdown-text');
+                const pencil = document.getElementById('schedule-panel-overlay-customise-btn');
+                if (!grid || !label || !pencil) {
+                    assert(false, 'T205: the Start alert row is in Advanced options');
+                } else {
+                    const previous = label.textContent;
+                    const previousWidth = grid.style.width;
+                    // Pin a panel-ish width: the headless page is wide enough that
+                    // even a long name fits, and then nothing is being measured.
+                    grid.style.width = '360px';
+                    label.textContent = 'An extremely long start alert name that would once have pushed the pencil off the panel';
+                    const gridRect = grid.getBoundingClientRect();
+                    const pencilRect = pencil.getBoundingClientRect();
+                    assert(gridRect.width > 0 && pencilRect.width > 0,
+                        'T205: the Start alert row is laid out (a collapsed section measures 0 and proves nothing)');
+                    const gridRight = gridRect.right;
+                    const pencilRight = pencilRect.right;
+                    assert(pencilRight <= gridRight + 1,
+                        `T205: the customise pencil stays inside the panel (pencil ${Math.round(pencilRight)} > panel ${Math.round(gridRight)})`);
+                    grid.style.width = previousWidth;
+                    label.textContent = previous;
                 }
             } finally {
                 internals.closeBlocklistModal();
