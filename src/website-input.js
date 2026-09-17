@@ -4,7 +4,7 @@ import { state } from './state.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { readTextFile } from '@tauri-apps/plugin-fs';
 import { tSettings } from './i18n.js';
-import { isProtectedDomain } from './blocklist-utils.js';
+import { isProtectedDomain, stripLeadingWww } from './blocklist-utils.js';
 
 // Pre-made website lists offered by the Edit Blocklist "Import" menu. Each
 // list is intentionally small/curated — a starting point users can prune or
@@ -64,9 +64,11 @@ export function isValidDomain(str) {
     return /^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i.test(domain);
 }
 
-// Clean a user input string into a domain
+// Clean a user input string into a domain. A leading `www.` is dropped so the
+// entry covers the whole site — see `stripLeadingWww`.
 export function cleanDomainInput(str) {
-    return str.replace(/^https?:\/\//i, '').split('/')[0].split('?')[0].split('#')[0].toLowerCase().trim();
+    const host = str.trim().replace(/^https?:\/\//i, '').split('/')[0].split('?')[0].split('#')[0].toLowerCase().trim();
+    return stripLeadingWww(host);
 }
 
 // Parse input that may contain multiple domains (space, newline, or comma separated)

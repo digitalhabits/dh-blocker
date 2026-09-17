@@ -2,7 +2,7 @@
 // website sync. Extracted verbatim from app.js.
 import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
-import { normalizeBlocklist, isProtectedDomain, collectActiveIOSManualBlockPayload, healFocusSpaceColors, migrateLegacyQuickStartBlocklists } from './blocklist-utils.js';
+import { normalizeBlocklist, isProtectedDomain, collectActiveIOSManualBlockPayload, healFocusSpaceColors, healWwwWebsiteEntries, migrateLegacyQuickStartBlocklists } from './blocklist-utils.js';
 import { isSchedulePausedNow, syncActiveBlocksToHelper, syncSchedulesToHelper, buildPersistedAppData } from './schedule-engine.js';
 import { updateBlockedApps } from './blocking-platform.js';
 import { normalizeLoadedEulaState } from './onboarding.js';
@@ -101,6 +101,9 @@ export async function loadData() {
         shouldSave = true;
     }
     if (healFocusSpaceColors(state.appData.blocklists)) {
+        shouldSave = true;
+    }
+    if (healWwwWebsiteEntries(state.appData.blocklists)) {
         shouldSave = true;
     }
     if (migrateBlocklistStartOverlaysToGlobal()) {

@@ -337,7 +337,7 @@ pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInf
                     .and_then(|v| v.as_array())
                     .map(|a| {
                         a.iter()
-                            .filter_map(|v| v.as_str().map(|s| s.to_lowercase()))
+                            .filter_map(|v| v.as_str().map(normalize_website_entry))
                             .collect()
                     })
                     .unwrap_or_default();
@@ -921,6 +921,22 @@ fn log_to_file(msg: &str) {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DerivedBlocklist {
     pub domains: Vec<String>,
+}
+
+/// Canonical form of a stored website entry: lowercased, without a leading
+/// `www.` label. Matching is "host == entry or a subdomain of entry", so an
+/// entry kept as `www.example.com` would never match `example.com` and the
+/// block would silently miss the bare domain. The input field strips `www.`
+/// too (`cleanDomainInput` in `src/website-input.js`); this covers data saved
+/// before it did, imports, and hand-edited files. Deliberately widens the
+/// entry to the whole site — for a blocklist that errs toward blocking, which
+/// is what someone typing `www.` meant. `www.com` itself is left alone.
+fn normalize_website_entry(entry: &str) -> String {
+    let lower = entry.trim().to_lowercase();
+    match lower.strip_prefix("www.") {
+        Some(rest) if rest.contains('.') => rest.to_string(),
+        _ => lower,
+    }
 }
 
 #[cfg(test)]

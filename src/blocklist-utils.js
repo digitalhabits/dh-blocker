@@ -276,6 +276,42 @@ export const FOCUS_SPACE_COLOR_PALETTE = [
     '#C8B9D6',
 ];
 
+// Drop a leading `www.` label from a lowercased host. Enforcement matches
+// "host == entry or a subdomain of entry", so a stored `www.example.com` would
+// never match `example.com` and the site would stay reachable at its bare
+// domain. `www.com` is a real domain and is kept. Mirrored on desktop by
+// `normalize_website_entry` in src-tauri/src/native_host.rs.
+export function stripLeadingWww(host) {
+    const bare = host.replace(/^www\./, '');
+    return bare.includes('.') ? bare : host;
+}
+
+/**
+ * Rewrite website entries saved before the input field stripped `www.`.
+ * Desktop enforcement normalizes on read, but iOS hands the stored strings to
+ * Screen Time as-is and every platform displays them, so the stored data is
+ * healed too. Entries that collapse onto an existing one are dropped.
+ */
+export function healWwwWebsiteEntries(blocklists) {
+    let changed = false;
+    for (const bl of blocklists || []) {
+        if (!Array.isArray(bl.websites)) continue;
+        const seen = new Set();
+        const healed = [];
+        for (const entry of bl.websites) {
+            const next = typeof entry === 'string' ? stripLeadingWww(entry.trim().toLowerCase()) : entry;
+            if (seen.has(next)) continue;
+            seen.add(next);
+            healed.push(next);
+        }
+        if (healed.length !== bl.websites.length || healed.some((w, i) => w !== bl.websites[i])) {
+            bl.websites = healed;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
 /**
  * If saved colors collapsed to one shared value (or are missing), reassign
  * spaces in palette order so the list reads as distinct again.

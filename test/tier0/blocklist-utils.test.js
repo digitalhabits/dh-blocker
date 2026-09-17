@@ -3,6 +3,7 @@ import {
     ALWAYS_ON_END_TIME,
     FOCUS_SPACE_COLOR_PALETTE,
     healFocusSpaceColors,
+    healWwwWebsiteEntries,
     hasUsableIOSScreenTimeSelection,
     isBlockAlwaysOn,
     isProtectedApp,
@@ -397,5 +398,26 @@ describe('Screen Time selection at the save boundary', () => {
         );
 
         expect(resolved.applicationTokens).toEqual(['tok-tiktok']);
+    });
+});
+
+describe('healWwwWebsiteEntries', () => {
+    test('stored www. entries are rewritten to the bare domain', () => {
+        const lists = [{ id: 'a', websites: ['WWW.UlrikLyngs.com', 'reddit.com'] }];
+        expect(healWwwWebsiteEntries(lists)).toBe(true);
+        expect(lists[0].websites).toEqual(['ulriklyngs.com', 'reddit.com']);
+    });
+
+    test('an entry that collapses onto an existing one is dropped', () => {
+        const lists = [{ id: 'a', websites: ['reddit.com', 'www.reddit.com'] }];
+        expect(healWwwWebsiteEntries(lists)).toBe(true);
+        expect(lists[0].websites).toEqual(['reddit.com']);
+    });
+
+    test('clean data is left alone and reports no change', () => {
+        const websites = ['reddit.com', 'www2.example.com', 'www.com'];
+        const lists = [{ id: 'a', websites }, { id: 'b' }];
+        expect(healWwwWebsiteEntries(lists)).toBe(false);
+        expect(lists[0].websites).toBe(websites);
     });
 });

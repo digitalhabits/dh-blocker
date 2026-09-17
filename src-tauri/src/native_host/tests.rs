@@ -318,6 +318,69 @@ fn derive_payload_keeps_legacy_flat_blocklist_for_blocklist_mode_only() {
 }
 
 #[test]
+fn derive_payload_strips_leading_www_from_stored_websites() {
+    // Data saved before the input field normalized `www.` still carries it.
+    // Matching is "host == entry or a subdomain of entry", so an entry kept
+    // as `www.example.com` would never match `example.com` — the block would
+    // silently not apply to the bare domain.
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let path = write_temp_json(
+        "www-website-payload",
+        &json!({
+            "blocklists": [
+                {
+                    "id": "bl-block",
+                    "name": "Block",
+                    "websites": ["WWW.UlrikLyngs.com", "www2.example.com", "www.com"],
+                    "apps": []
+                },
+                {
+                    "id": "bl-allow",
+                    "name": "Allow",
+                    "mode": "allowlist",
+                    "websites": ["www.github.com"],
+                    "apps": []
+                }
+            ],
+            "activeBlocks": [
+                {
+                    "blocklistId": "bl-block",
+                    "startTime": now.saturating_sub(60_000),
+                    "endTime": now + 60_000
+                },
+                {
+                    "blocklistId": "bl-allow",
+                    "startTime": now.saturating_sub(30_000),
+                    "endTime": now + 60_000
+                }
+            ],
+            "schedules": [],
+            "settings": {}
+        }),
+    );
+
+    let (domains, blocks) = derive_payload(&path);
+    let _ = fs::remove_file(&path);
+
+    assert_eq!(
+        domains,
+        vec![
+            "ulriklyngs.com".to_string(),
+            "www.com".to_string(),
+            "www2.example.com".to_string()
+        ]
+    );
+    let allow = blocks
+        .iter()
+        .find(|b| b.blocklist_id == "bl-allow")
+        .unwrap();
+    assert_eq!(allow.domains, vec!["github.com".to_string()]);
+}
+
+#[test]
 fn current_payload_serializes_empty_legacy_blocklist_with_additive_allowlist_blocks() {
     #[derive(Serialize)]
     struct Msg<'a> {
