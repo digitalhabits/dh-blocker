@@ -2136,7 +2136,7 @@ body.ios:not(.ios-phone) .main-content .when-times .schedule-end-display input.t
     }
 
     body.ios:not(.ios-phone) .main-content .schedule-segment-expanded{
-        padding: var(--schedule-segment-pad-x, 14px);
+        padding: var(--schedule-segment-pad-y, 6px) var(--schedule-segment-pad-x, 14px);
         border-radius: 12px;
     }
 
@@ -4692,7 +4692,10 @@ body.ios:not(.ios-phone) .main-content .when-times{
 }
 
 .schedule-segment-expanded{
-    padding: var(--schedule-segment-pad-x, 14px);
+    /* Tighter above and below than at the sides: the section header already
+       gives the row air, the side inset is what Add times lines up with. */
+    --schedule-segment-pad-y: 6px;
+    padding: var(--schedule-segment-pad-y, 6px) var(--schedule-segment-pad-x, 14px);
     border: none;
     border-radius: 12px;
     background: var(--app-bg);
@@ -4820,7 +4823,7 @@ body:not(.ios) .schedule-segment{
 }
 
 .schedule-segment .time-pickers-row{
-    gap: 12px;
+    gap: 28px;
 }
 
 /* Center the start→end arrow on the time input row (labels sit above). */

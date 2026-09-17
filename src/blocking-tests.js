@@ -21,6 +21,7 @@
  * - T169-T172: Single-column (≤718px) desktop focus-space cards open the enter sheet on tap; the switch does not
  * - T173-T178: Card switch state (isFocusSpaceOn) for manual blocks and schedules; switching on asks first
  * - T196-T199: Schedule time lists: arrow keys walk the options, Enter commits
+ * - T200-T202: Strictness only locks while the space is on (off = fully editable)
  */
 
 (function () {
@@ -1870,6 +1871,32 @@
                 const bl = createMockBlocklist({});
                 withData([bl], { schedules: [createMockSchedule(bl.id, [allDaySeg], { isPaused: true, pauseEndTime: now - 1 })] });
                 assert(required(bl.id, now) === true, 'T168: an expired schedule pause gates editing again');
+            })();
+
+            // T200-T202: Strictness itself. "Committed" is a promise about a
+            // running space; once the space is off, every setting is editable
+            // again, including this one — even though it will auto-start.
+            (function T200() {
+                const canEnable = window.__REDDBLOCK_INTERNALS__.canEnableAllowEditsBetweenBlocks;
+                if (typeof canEnable !== 'function') {
+                    assert(false, 'T200: canEnableAllowEditsBetweenBlocks is exposed to tests');
+                    return;
+                }
+                const bl = createMockBlocklist({});
+                const live = createMockSchedule(bl.id, [allDaySeg]);
+                withData([bl], { schedules: [live] });
+                assert(canEnable(live) === false, 'T200: a running schedule cannot be loosened to Flexible');
+
+                const offForNow = createMockSchedule(bl.id, [allDaySeg], { isPaused: true, pauseEndTime: now + 60 * 60 * 1000 });
+                assert(canEnable(offForNow) === true,
+                    'T201: a space inside a temporary unlock can be loosened, auto-start or not');
+
+                const off = createMockSchedule(bl.id, [allDaySeg], { isPaused: true });
+                assert(canEnable(off) === true, 'T201: a switched-off schedule can be loosened');
+
+                const expired = createMockSchedule(bl.id, [allDaySeg], { isPaused: true, pauseEndTime: now - 1 });
+                assert(canEnable(expired) === false, 'T202: an expired unlock is running again, so it locks again');
+                assert(canEnable(null) === true, 'T202: a space with no schedule yet can be loosened');
             })();
 
         } finally {

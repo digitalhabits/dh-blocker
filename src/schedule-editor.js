@@ -89,12 +89,14 @@ export function isAllowEditsBetweenBlocksOn() {
 }
 
 /**
- * Turning the opt-in ON is only allowed before the schedule is started, or after
- * it is fully stopped. Pausing is not enough. Turning OFF is always allowed
- * (including mid-enforcement).
+ * Committed is a promise about a *running* space: while it is on, you cannot
+ * loosen it, not even between its blocks. A space that is switched off — or
+ * inside a temporary unlock, even though it will turn itself back on — is fully
+ * editable, this setting included. Turning the opt-in OFF is always allowed.
  */
 export function canEnableAllowEditsBetweenBlocks(schedule = getSelectedSchedule()) {
-    return !schedule;
+    if (!schedule) return true;
+    return isSchedulePausedNow(schedule);
 }
 
 /**
