@@ -116,6 +116,10 @@
     --icon-btn-hover-color: var(--redd-navy);
     --timeline-message: #8a8a96;
     --separator-color: var(--redd-border);
+    /* Dim behind every modal. Dark needs far more than light: a translucent
+       navy over an already-navy page barely registers, and the stop challenge
+       in particular has to stand clear of what is behind it. */
+    --modal-scrim: rgba(30, 45, 62, 0.5);
     --popover-bg: var(--redd-card);
     --popover-border: var(--redd-border);
     --button-bg: var(--primary-btn-bg);
@@ -200,6 +204,7 @@ body.dark-mode{
     --icon-btn-hover-color: var(--redd-navy);
     --timeline-message: rgba(245, 240, 232, 0.45);
     --separator-color: rgba(255, 255, 255, 0.10);
+    --modal-scrim: rgba(4, 9, 16, 0.72);
     --popover-bg: var(--redd-card);
     --popover-border: var(--redd-border);
     --button-bg: var(--primary-btn-bg);
@@ -10072,7 +10077,7 @@ body.ios #focus-space-editor .tags-input-container .browse-btn-caption {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(30, 45, 62, 0.35);
+    background: var(--modal-scrim);
     display: flex;
     align-items: center;
     justify-content: center;

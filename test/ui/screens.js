@@ -244,6 +244,29 @@ export const screens = [
         },
     },
     {
+        // Whole window, not just the dialog: the point is how far the page
+        // behind the stop challenge is dimmed.
+        name: 'stop-modal-scrim',
+        fixture: fixtures.manualRunning,
+        platform: 'mac',
+        viewport: DESKTOP,
+        prepare: async (page) => {
+            await page.click('.blocklist-card[data-id="bl-manual"] .blocklist-switch');
+            await page.waitForSelector('#override-modal:not(.hidden)');
+        },
+    },
+    {
+        name: 'stop-modal-scrim-dark',
+        fixture: fixtures.manualRunning,
+        platform: 'mac',
+        theme: 'dark',
+        viewport: DESKTOP,
+        prepare: async (page) => {
+            await page.click('.blocklist-card[data-id="bl-manual"] .blocklist-switch');
+            await page.waitForSelector('#override-modal:not(.hidden)');
+        },
+    },
+    {
         name: 'stop-modal-flexible',
         fixture: fixtures.flexibleBetweenBlocks,
         platform: 'mac',
