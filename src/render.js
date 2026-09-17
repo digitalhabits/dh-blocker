@@ -1,47 +1,33 @@
-// Main render cycle: week calendar, now-blocking chips, blocklist selector
+// Main render cycle: week calendar, blocklist selector
 // sync, and the 1s tick loop. Extracted verbatim from app.js.
 import { state } from './state.js';
 import { getCalendarLanePresentation } from './calendar-layout.js';
 import { escapeHtml, getContrastTextColor } from './utils.js';
 import { tSettings, weekdayAbbrevMon0List } from './i18n.js';
-import { isBlockAlwaysOn, isQuickStartBlocklist, QUICK_START_EMOJI } from './blocklist-utils.js';
-import { isNonRepeatingSchedule, isSchedulePausedNow, pickEarliestUpcomingScheduledBlock, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper, formatTitleBarScheduleStartWhen } from './schedule-engine.js';
+import { isBlockAlwaysOn } from './blocklist-utils.js';
+import { isNonRepeatingSchedule, isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
-import { disableTimeControls, updateTimeDisplay } from './time-inputs.js';
-import { isScheduleSegmentActiveNow, updateScheduleButtonState } from './schedule-editor.js';
-import { autoSelectSoleBlocklist, renderBlocklists, saveQuickStartAsFocusSpace } from './blocklists.js';
+import { isScheduleSegmentActiveNow } from './schedule-editor.js';
+import { autoSelectSoleBlocklist, renderBlocklists } from './blocklists.js';
 import { updateBlockedApps, updateOnboardingVisibility, updateWindowHeight } from './blocking-platform.js';
-import { handleBlocklistSelect, isMobilePhoneDevice, openBlocklistModal, openOverrideModal, openPauseModal, openScheduleOverrideModal, setBtnActionLabel, setStartBlockBtnLeadingIcon, setStartBtnBlocklistInfo, syncPauseButtonForSelectedBlocklist, syncSchedulerChromeVisibility, syncStopBtnLabelFit, openScheduledBlockEdit, refreshCalendarPreviews, handleTimeChange } from './confirm-modals.js';
-import { scheduleSelectionPromptLayout } from './theme.js';
+import { handleBlocklistSelect, openOverrideModal, syncSchedulerChromeVisibility, refreshCalendarPreviews, handleTimeChange } from './confirm-modals.js';
+import { confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, syncEditorFooter } from './focus-space-editor.js';
 import { updateCleanHostsBtnState, updateOverrideAllButtonVisibility } from './settings.js';
-import {
-    formatBlockTimeRemainingShort, formatDuration, formatTime,
-    syncNowBlockingChipsScrollability,
-} from './app.js';
+import { formatDuration, formatTime } from './app.js';
 
 export function render() {
     updateOnboardingVisibility();
 
-    renderNowBlockingRow();
     updateWeekCalendar();
     renderBlocklistSelector();
 
-    const now = Date.now();
-    const visibleBlocklists = [
-        ...state.appData.blocklists.filter((bl) => isQuickStartBlocklist(bl) && state.appData.activeBlocks.some(
-            (b) => b.blocklistId === bl.id && b.startTime <= now && b.endTime > now,
-        )),
-        ...state.appData.blocklists.filter((bl) => !isQuickStartBlocklist(bl)),
-    ];
+    const savedFocusSpaces = state.appData.blocklists;
     // Auto-select when the choice is unambiguous, but respect a user
     // deselect so they can return to the empty "Select a blocklist"
     // state if they want.
     //   - Exactly one blocklist exists → default-select it.
     //   - Otherwise, if nothing is selected, fall back to selecting
     //     the lone non-active blocklist if there's exactly one.
-    // Count only saved focus spaces for "sole space" auto-select so a
-    // running Quick start doesn't steal selection from an empty library.
-    const savedFocusSpaces = visibleBlocklists.filter((bl) => !isQuickStartBlocklist(bl));
     if (savedFocusSpaces.length === 1) {
         autoSelectSoleBlocklist();
     } else if (!state.selectedBlocklistId && !state.userExplicitlyDeselected) {
@@ -57,68 +43,14 @@ export function render() {
     renderBlocklists();
     syncSelectedControlState();
 
-    // Hide "Select a blocklist" prompt if there are no blocklists
-    const selectionPrompt = document.getElementById('selection-prompt');
-    if (selectionPrompt) {
-        if (savedFocusSpaces.length === 0 || isMobilePhoneDevice()) {
-            selectionPrompt.classList.add('hidden');
-        } else if (!state.selectedBlocklistId) {
-            // Only show prompt if there are blocklists but none selected
-            selectionPrompt.classList.remove('hidden');
-        }
-    }
-
     syncSchedulerChromeVisibility();
-
-    scheduleSelectionPromptLayout();
 
     // Adjust window height to fit content
     updateWindowHeight();
 }
 
 export function syncSelectedControlState() {
-    if (!state.selectedBlocklistId) {
-        updateOverrideAllButtonVisibility();
-        updateCleanHostsBtnState();
-        return;
-    }
-    if (state.isScheduleMode) {
-        updateScheduleButtonState();
-        updateOverrideAllButtonVisibility();
-        updateCleanHostsBtnState();
-        return;
-    }
-    const startBlockBtn = document.getElementById('start-block-btn');
-    if (!startBlockBtn) {
-        updateOverrideAllButtonVisibility();
-        updateCleanHostsBtnState();
-        return;
-    }
-    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-    const now = Date.now();
-    const activeBlock = state.appData.activeBlocks.find(b => b.blocklistId === state.selectedBlocklistId && b.startTime <= now && b.endTime > now);
-    const btnLabel = startBlockBtn.querySelector('.btn-label');
-    const alwaysOnMsg = document.getElementById('always-on-message');
-    delete startBlockBtn.dataset.activeBlockId;
-    startBlockBtn.classList.remove('stop-block');
-    if (activeBlock) {
-        startBlockBtn.classList.add('stop-block');
-        setBtnActionLabel(btnLabel, tSettings('stopBlock'));
-        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
-        startBlockBtn.dataset.activeBlockId = activeBlock.id;
-        setStartBlockBtnLeadingIcon(startBlockBtn, 'stop');
-        disableTimeControls(true);
-        if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
-    } else {
-                setBtnActionLabel(btnLabel, tSettings('startBlockButton'), { simple: true });
-                setStartBtnBlocklistInfo(startBlockBtn, blocklist);
-        setStartBlockBtnLeadingIcon(startBlockBtn, 'enter');
-        disableTimeControls(false);
-        if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !state.isAlwaysOnMode);
-    }
-    syncPauseButtonForSelectedBlocklist(now);
-    startBlockBtn.disabled = !state.selectedBlocklistId;
-    syncStopBtnLabelFit(startBlockBtn);
+    syncEditorFooter();
     updateOverrideAllButtonVisibility();
     updateCleanHostsBtnState();
 }
@@ -174,7 +106,7 @@ export function updateWeekCalendar() {
 
         const track = document.createElement('div');
         track.className = 'day-track';
-        if (state.isScheduleMode) track.classList.add('schedule-mode');
+        if (getWhenToBlockKind() !== 'manual') track.classList.add('schedule-mode');
         track.dataset.dayIndex = dayIndex;
 
         if (isToday) {
@@ -357,7 +289,7 @@ export function renderManualBlockOnWeekdays(block, blocklist, isRunning) {
 
 // Compute when the schedule's currently-active segment ends, returning a Date.
 // Returns null if no segment is active right now. Handles repeating, overnight, and
-// non-repeating schedules. Used by the "BLOCKING NOW" row to show "until HH:MM".
+// non-repeating schedules.
 export function getScheduleCurrentSegmentEnd(schedule, nowDate = new Date()) {
     if (!isScheduleSegmentActiveNow(schedule, nowDate)) return null;
 
@@ -407,399 +339,17 @@ export function getScheduleCurrentSegmentEnd(schedule, nowDate = new Date()) {
     return null;
 }
 
-// Build the list of items to show in the "BLOCKING NOW" row: every one-off block that's
-// currently running (and not paused) plus every schedule whose segment is active now.
-export function collectNowBlockingEntries(now = Date.now()) {
-    const nowDate = new Date(now);
-    const entries = [];
-
-    for (const block of state.appData.activeBlocks || []) {
-        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
-        const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
-        if (!blocklist) continue;
-        entries.push({
-            kind: 'block',
-            id: block.id,
-            blocklistId: block.blocklistId,
-            blocklist,
-            until: isBlockAlwaysOn(block) ? null : new Date(block.endTime),
-            isAlwaysOn: isBlockAlwaysOn(block)
-        });
-    }
-
-    for (const schedule of state.appData.schedules || []) {
-        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
-        const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-        if (!blocklist) continue;
-        // A schedule and a one-off for the same blocklist could both be active; keep both
-        // (they're independent rules) so the user can act on whichever they intend.
-        entries.push({
-            kind: 'schedule',
-            id: schedule.id || schedule.blocklistId,
-            blocklistId: schedule.blocklistId,
-            blocklist,
-            schedule,
-            until: getScheduleCurrentSegmentEnd(schedule, nowDate),
-            isAlwaysOn: false
-        });
-    }
-
-    // Sort to match the visual order of the "My Blocklists" section, which iterates
-    // `state.appData.blocklists` in array order. Entries whose blocklist isn't found in that
-    // array (shouldn't happen, but be safe) sort to the end. Within a single blocklist,
-    // one-off blocks come before schedules so explicit user-started actions read first.
-    const order = new Map(state.appData.blocklists.map((bl, i) => [bl.id, i]));
-    const kindRank = { block: 0, schedule: 1 };
-    entries.sort((a, b) => {
-        const ai = order.has(a.blocklistId) ? order.get(a.blocklistId) : Number.MAX_SAFE_INTEGER;
-        const bi = order.has(b.blocklistId) ? order.get(b.blocklistId) : Number.MAX_SAFE_INTEGER;
-        if (ai !== bi) return ai - bi;
-        return (kindRank[a.kind] ?? 9) - (kindRank[b.kind] ?? 9);
-    });
-
-    return entries;
-}
-
-// Close any currently-open chip menu popover. Called from outside-click handlers and
-// before opening a new menu (so only one is ever visible).
-export function closeNowBlockingChipMenus() {
-    document.querySelectorAll('.now-blocking-chip-menu-btn[aria-expanded="true"]').forEach(btn => {
-        if (btn._chipMenuOutsideClick) {
-            document.removeEventListener('click', btn._chipMenuOutsideClick, true);
-            delete btn._chipMenuOutsideClick;
-        }
-        btn.setAttribute('aria-expanded', 'false');
-    });
-    document.querySelectorAll('.now-blocking-chip-menu').forEach(el => el.remove());
-}
-
-// Open a small Edit / Pause / Stop popover anchored to `triggerBtn` for the given entry.
-export function openNowBlockingChipMenu(triggerBtn, entry) {
-    closeNowBlockingChipMenus();
-
-    const menu = document.createElement('div');
-    menu.className = 'now-blocking-chip-menu';
-    menu.setAttribute('role', 'menu');
-
-    // square = Stop focus space button (matches the Lucide icon on the main action button).
-    const saveIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>';
-    const editIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>';
-    const pauseIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
-    const stopIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>';
-
-    const items = [];
-    if (isQuickStartBlocklist(entry.blocklist)) {
-        items.push({
-            label: tSettings('quickStartSaveAsLink'),
-            icon: saveIcon,
-            action: () => saveQuickStartAsFocusSpace(entry.blocklistId),
-        });
-    }
-    items.push(
-        { label: tSettings('nowBlockingMenuEdit'), icon: editIcon, action: () => handleNowBlockingEdit(entry) },
-        { label: tSettings('nowBlockingMenuPause'), icon: pauseIcon, action: () => handleNowBlockingPause(entry) },
-        { label: tSettings('nowBlockingMenuStop'), icon: stopIcon, action: () => handleNowBlockingStop(entry), danger: true },
-    );
-
-    items.forEach(item => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'now-blocking-chip-menu-item' + (item.danger ? ' danger' : '');
-        btn.setAttribute('role', 'menuitem');
-        btn.innerHTML = `${item.icon}<span>${escapeHtml(item.label)}</span>`;
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            closeNowBlockingChipMenus();
-            item.action();
-        });
-        menu.appendChild(btn);
-    });
-
-    document.body.appendChild(menu);
-
-    // Position the menu just below the trigger, keeping it on-screen horizontally.
-    const rect = triggerBtn.getBoundingClientRect();
-    const menuRect = menu.getBoundingClientRect();
-    let left = rect.right - menuRect.width;
-    if (left < 8) left = 8;
-    const maxLeft = window.innerWidth - menuRect.width - 8;
-    if (left > maxLeft) left = maxLeft;
-    menu.style.left = `${left + window.scrollX}px`;
-    menu.style.top = `${rect.bottom + window.scrollY + 4}px`;
-
-    triggerBtn.setAttribute('aria-expanded', 'true');
-
-    // Outside-click closes the menu. Escape is handled by dismissTopmostEscapeLayer()
-    // (chip menu is checked first). Delay so the opening click doesn't close immediately.
-    setTimeout(() => {
-        const onDocClick = (e) => {
-            if (!menu.contains(e.target) && !triggerBtn.contains(e.target)) {
-                closeNowBlockingChipMenus();
-                document.removeEventListener('click', onDocClick, true);
-                delete triggerBtn._chipMenuOutsideClick;
-            }
-        };
-        triggerBtn._chipMenuOutsideClick = onDocClick;
-        document.addEventListener('click', onDocClick, true);
-    }, 0);
-}
-
-// Edit action: select the chip's blocklist and open the blocklist edit dialog.
-export function handleNowBlockingEdit(entry) {
-    const blocklist = entry.blocklist;
-    if (!blocklist) return;
+/** Select a focus space and open its editor (sheet on phones / narrow desktop). */
+export async function selectFocusSpaceForEditing(blocklistId) {
+    if (blocklistId !== state.selectedBlocklistId && editorHasUnsavedEdits() && !(await confirmDiscardEditorEdits())) return;
     const dropdown = document.getElementById('blocklist-select');
     if (dropdown) {
-        dropdown.value = blocklist.id;
-        handleBlocklistSelect({ target: dropdown });
+        dropdown.value = blocklistId;
+        handleBlocklistSelect({ target: dropdown }, { openEnterUi: true });
     } else {
-        state.selectedBlocklistId = blocklist.id;
-    }
-    openBlocklistModal(blocklist);
-}
-
-// Pause action: open the pause modal for the corresponding block or schedule.
-export function handleNowBlockingPause(entry) {
-    if (entry.kind === 'block') {
-        state.pauseScheduleData = null;
-        openPauseModal(entry.id);
-        return;
-    }
-    if (entry.kind === 'schedule') {
-        state.pauseScheduleData = {
-            blocklistId: entry.blocklistId,
-            isActiveNow: true,
-            // Now-blocking chip only appears while enforcing — keep friction.
-            frictionless: false,
-        };
-        openPauseModal(null);
+        state.selectedBlocklistId = blocklistId;
     }
 }
-
-// Stop action: open the override modal so the user has to type the challenge to stop.
-export function handleNowBlockingStop(entry) {
-    if (entry.kind === 'block') {
-        openOverrideModal(entry.id);
-        return;
-    }
-    if (entry.kind === 'schedule' && entry.schedule) {
-        openScheduleOverrideModal(entry.schedule);
-    }
-}
-
-export function buildNowBlockingIdleMessage(nowMs = Date.now()) {
-    const upcoming = pickEarliestUpcomingScheduledBlock(nowMs);
-    if (!upcoming) {
-        return null;
-    }
-    const whenPhrase = formatTitleBarScheduleStartWhen(new Date(upcoming.startMs), nowMs);
-    const emojiRaw = upcoming.blocklist.emoji != null ? String(upcoming.blocklist.emoji).trim() : '';
-    const emoji = emojiRaw || '🚫';
-    return tSettings('titleBarNextScheduleStarts')
-        .replace('{emoji}', emoji)
-        .replace('{name}', upcoming.blocklist.name || '')
-        .replace('{when}', whenPhrase);
-}
-
-/** True when the idle title-bar row already shows `idleMessage` with the expected DOM shape. */
-export function isNowBlockingIdleDisplayCurrent(row, chipsEl, idleMessage) {
-    if (!row?.classList.contains('idle')) return false;
-    const existingIdle = document.getElementById('now-blocking-idle-msg');
-    if (!existingIdle || existingIdle.parentElement !== chipsEl) return false;
-    if (chipsEl.childElementCount !== 1) return false;
-    if (existingIdle.textContent !== idleMessage) return false;
-    if (row.getAttribute('aria-labelledby') !== 'now-blocking-idle-msg') return false;
-    return true;
-}
-
-export function buildNowBlockingUntilText(entry, nowMs = Date.now()) {
-    if (entry.isAlwaysOn) {
-        return tSettings('nowBlockingAlways');
-    }
-    if (!entry.until) return '';
-    const remainMs = entry.until - nowMs;
-    if (remainMs <= 0) return '';
-    const totalMins = Math.ceil(remainMs / 60000);
-    return formatBlockTimeRemainingShort(totalMins);
-}
-
-/** True when active chips already match `entries` in order, shape, and static labels. */
-export function isNowBlockingActiveChipsCurrent(row, chipsEl, entries) {
-    if (row.classList.contains('idle')) return false;
-    if (row.getAttribute('aria-labelledby') !== 'now-blocking-label-text') return false;
-    const manyActive = entries.length > 2;
-    if (row.classList.contains('many-active-chips') !== manyActive) return false;
-    const chips = chipsEl.querySelectorAll('.now-blocking-chip');
-    if (chips.length !== entries.length) return false;
-
-    for (let i = 0; i < entries.length; i++) {
-        const entry = entries[i];
-        const chip = chips[i];
-        if (chip.dataset.kind !== entry.kind || chip.dataset.id !== String(entry.id)) {
-            return false;
-        }
-        const emojiEl = chip.querySelector('.now-blocking-chip-emoji');
-        const nameEl = chip.querySelector('.now-blocking-chip-name');
-        const menuBtn = chip.querySelector('.now-blocking-chip-menu-btn');
-        if (!emojiEl || !nameEl || !menuBtn) return false;
-        const emoji = isQuickStartBlocklist(entry.blocklist)
-            ? QUICK_START_EMOJI
-            : (entry.blocklist.emoji || '🚫');
-        const name = entry.blocklist.name || '';
-        if (emojiEl.textContent !== emoji || nameEl.textContent !== name) return false;
-    }
-    return true;
-}
-
-/** Patch countdown copy on existing chips — skips DOM rebuild and menu listener churn. */
-export function updateNowBlockingActiveChipTexts(chipsEl, entries, nowMs = Date.now()) {
-    const chips = chipsEl.querySelectorAll('.now-blocking-chip');
-    const manyActive = entries.length > 2;
-    chips.forEach((chip, i) => {
-        const entry = entries[i];
-        const untilText = buildNowBlockingUntilText(entry, nowMs);
-        let untilEl = chip.querySelector('.now-blocking-chip-until');
-        if (untilText) {
-            if (!untilEl) {
-                untilEl = document.createElement('span');
-                untilEl.className = 'now-blocking-chip-until';
-                const menuBtn = chip.querySelector('.now-blocking-chip-menu-btn');
-                chip.insertBefore(untilEl, menuBtn);
-            }
-            if (untilEl.textContent !== untilText) {
-                untilEl.textContent = untilText;
-            }
-        } else if (untilEl) {
-            untilEl.remove();
-        }
-
-        if (manyActive) {
-            const name = entry.blocklist.name || '';
-            const emoji = entry.blocklist.emoji || '🚫';
-            const namePart = String(name || '').trim() || emoji;
-            const labelBits = untilText ? [namePart, untilText] : [namePart];
-            const nextLabel = labelBits.join('. ');
-            if (chip.getAttribute('aria-label') !== nextLabel) {
-                chip.setAttribute('aria-label', nextLabel);
-            }
-        } else {
-            chip.removeAttribute('aria-label');
-        }
-    });
-}
-
-export const NOW_BLOCKING_CHIP_MENU_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
-
-export function appendNowBlockingChip(chipsEl, entry, entries, nowMs) {
-    const chip = document.createElement('div');
-    chip.className = 'now-blocking-chip';
-    chip.dataset.kind = entry.kind;
-    chip.dataset.id = String(entry.id);
-
-    const emoji = isQuickStartBlocklist(entry.blocklist)
-        ? QUICK_START_EMOJI
-        : (entry.blocklist.emoji || '🚫');
-    const name = entry.blocklist.name || '';
-    const untilText = buildNowBlockingUntilText(entry, nowMs);
-
-    chip.innerHTML = `
-        <span class="now-blocking-chip-emoji">${emoji}</span>
-        <span class="now-blocking-chip-name">${escapeHtml(name)}</span>
-        ${untilText ? `<span class="now-blocking-chip-until">${escapeHtml(untilText)}</span>` : ''}
-    `;
-
-    if (entries.length > 2) {
-        const namePart = String(name || '').trim() || emoji;
-        const labelBits = untilText ? [namePart, untilText] : [namePart];
-        chip.setAttribute('aria-label', labelBits.join('. '));
-    }
-
-    const menuBtn = document.createElement('button');
-    menuBtn.type = 'button';
-    menuBtn.className = 'now-blocking-chip-menu-btn';
-    menuBtn.setAttribute('aria-haspopup', 'menu');
-    menuBtn.setAttribute('aria-expanded', 'false');
-    menuBtn.setAttribute('aria-label', tSettings('nowBlockingMenuAria'));
-    menuBtn.title = tSettings('nowBlockingMenuAria');
-    menuBtn.innerHTML = NOW_BLOCKING_CHIP_MENU_ICON;
-    menuBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const isOpen = menuBtn.getAttribute('aria-expanded') === 'true';
-        if (isOpen) {
-            closeNowBlockingChipMenus();
-        } else {
-            openNowBlockingChipMenu(menuBtn, entry);
-        }
-    });
-    chip.appendChild(menuBtn);
-
-    chipsEl.appendChild(chip);
-}
-
-// Render the title-bar status row: active chips — or idle copy showing the next scheduled start when applicable.
-export function renderNowBlockingRow(nowMs = Date.now()) {
-    const row = document.getElementById('now-blocking-row');
-    const chipsEl = document.getElementById('now-blocking-chips');
-    if (!row || !chipsEl) return;
-
-    const entries = collectNowBlockingEntries(nowMs);
-
-    if (entries.length === 0) {
-        const idleMessage = buildNowBlockingIdleMessage(nowMs);
-        if (!idleMessage) {
-            // Nothing active and nothing upcoming — leave the title bar empty.
-            if (row.classList.contains('hidden') && row.classList.contains('idle') && chipsEl.childElementCount === 0) {
-                return;
-            }
-            closeNowBlockingChipMenus();
-            chipsEl.innerHTML = '';
-            row.classList.add('idle', 'hidden');
-            row.classList.remove('many-active-chips');
-            row.removeAttribute('aria-labelledby');
-            return;
-        }
-
-        // Idle copy is day-granular ("today", "tomorrow", or a date) — not a per-second
-        // countdown — so skip clearing/rebuilding the row when nothing changed.
-        if (isNowBlockingIdleDisplayCurrent(row, chipsEl, idleMessage)) {
-            return;
-        }
-
-        closeNowBlockingChipMenus();
-        row.classList.remove('hidden');
-        row.classList.add('idle');
-        row.classList.remove('many-active-chips');
-        row.setAttribute('aria-labelledby', 'now-blocking-idle-msg');
-
-        chipsEl.innerHTML = '';
-        const idleSpan = document.createElement('span');
-        idleSpan.id = 'now-blocking-idle-msg';
-        idleSpan.className = 'now-blocking-idle-msg';
-        idleSpan.setAttribute('data-tauri-drag-region', '');
-        idleSpan.textContent = idleMessage;
-
-        chipsEl.appendChild(idleSpan);
-        requestAnimationFrame(() => syncNowBlockingChipsScrollability());
-        return;
-    }
-
-    row.classList.remove('hidden');
-    row.classList.remove('idle');
-    row.classList.toggle('many-active-chips', entries.length > 2);
-    row.setAttribute('aria-labelledby', 'now-blocking-label-text');
-
-    // Countdown text is minute-granular — patch existing chips when structure is unchanged.
-    if (isNowBlockingActiveChipsCurrent(row, chipsEl, entries)) {
-        updateNowBlockingActiveChipTexts(chipsEl, entries, nowMs);
-        return;
-    }
-
-    closeNowBlockingChipMenus();
-    chipsEl.innerHTML = '';
-    entries.forEach((entry) => appendNowBlockingChip(chipsEl, entry, entries, nowMs));
-    requestAnimationFrame(() => syncNowBlockingChipsScrollability());
-}
-
 
 /// Render the "Always on (not shown in timeline): <chip> <chip>" row above the calendar.
 /// Always-on active blocks aren't drawn as bars in the timeline because they would cover
@@ -811,22 +361,7 @@ export function renderScheduleAlwaysOnRow() {
 
     const alwaysOnBlocks = (state.appData.activeBlocks || []).filter(b => isBlockAlwaysOn(b));
 
-    // When the user has the "always" tab selected and picked a blocklist that isn't already
-    // running, show a faded preview chip alongside the real ones. This replaces the timeline
-    // preview bar that always-on mode used to draw across every day.
-    let previewBlocklist = null;
-    if (state.isAlwaysOnMode && !state.isScheduleMode && state.selectedBlocklistId) {
-        const candidate = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-        const now = Date.now();
-        const alreadyActive = (state.appData.activeBlocks || []).some(b =>
-            b.blocklistId === state.selectedBlocklistId && b.startTime <= now && b.endTime > now
-        );
-        if (candidate && !alreadyActive) {
-            previewBlocklist = candidate;
-        }
-    }
-
-    if (alwaysOnBlocks.length === 0 && !previewBlocklist) {
+    if (alwaysOnBlocks.length === 0) {
         row.classList.add('hidden');
         chips.innerHTML = '';
         return;
@@ -858,19 +393,6 @@ export function renderScheduleAlwaysOnRow() {
 
         chips.appendChild(chip);
     });
-
-    if (previewBlocklist) {
-        const chip = document.createElement('div');
-        chip.className = 'always-on-chip preview';
-        chip.title = previewBlocklist.name;
-
-        const emoji = previewBlocklist.emoji
-            ? `<span class="always-on-chip-emoji">${escapeHtml(previewBlocklist.emoji)}</span>`
-            : '';
-
-        chip.innerHTML = `${emoji}<span class="always-on-chip-name">${escapeHtml(previewBlocklist.name)}</span>`;
-        chips.appendChild(chip);
-    }
 
     row.classList.remove('hidden');
 }
@@ -1162,7 +684,7 @@ export function renderScheduleSegmentOnWeekday(schedule, segment, segmentIdx, da
 
         el.addEventListener('click', (e) => {
             e.stopPropagation();
-            openScheduledBlockEdit(schedule);
+            void selectFocusSpaceForEditing(schedule.blocklistId);
         });
 
         return el;
@@ -1197,30 +719,14 @@ export function renderBlocklistSelector() {
 
     const newHTML = `
     <option value="">${tSettings('selectionPromptOption')}</option>
-    ${(() => {
-        const now = Date.now();
-        const ordered = [
-            ...state.appData.blocklists.filter((bl) => isQuickStartBlocklist(bl) && state.appData.activeBlocks.some(
-                (b) => b.blocklistId === bl.id && b.startTime <= now && b.endTime > now,
-            )),
-            ...state.appData.blocklists.filter((bl) => !isQuickStartBlocklist(bl)),
-        ];
-        return ordered.map((bl) => {
-            const isActive = activeIds.includes(bl.id);
-            const activeLabel = isActive ? tSettings('runningSuffix') : '';
-            return `<option value="${bl.id}">${escapeHtml(bl.name)}${activeLabel}</option>`;
-        }).join('');
-    })()}
+    ${state.appData.blocklists.map((bl) => {
+        const isActive = activeIds.includes(bl.id);
+        const activeLabel = isActive ? tSettings('runningSuffix') : '';
+        return `<option value="${bl.id}">${escapeHtml(bl.name)}${activeLabel}</option>`;
+    }).join('')}
   `;
 
-    const validSelectedId = selectedId && state.appData.blocklists.some((bl) => {
-        if (bl.id !== selectedId) return false;
-        if (!isQuickStartBlocklist(bl)) return true;
-        const now = Date.now();
-        return state.appData.activeBlocks.some(
-            (b) => b.blocklistId === bl.id && b.startTime <= now && b.endTime > now,
-        );
-    })
+    const validSelectedId = selectedId && state.appData.blocklists.some((bl) => bl.id === selectedId)
         ? selectedId
         : '';
 
@@ -1460,10 +966,6 @@ export function startTickInterval() {
             }
         }
 
-        if (collectNowBlockingEntries(now).length === 0) {
-            renderNowBlockingRow(now);
-        }
-
         // Update remaining times in UI
         document.querySelectorAll('.entry-remaining').forEach((el, idx) => {
             const block = state.appData.activeBlocks[idx];
@@ -1480,14 +982,6 @@ export function startTickInterval() {
             }
         });
 
-        // Auto-update end time if user hasn't manually edited it (skip in always-on mode)
-        if (state.selectedBlocklistId && !state.userEditedEndTime && !state.isAlwaysOnMode) {
-            const newEndTime = new Date(now + state.targetDurationMinutes * 60 * 1000);
-            state.selectedEndHour = newEndTime.getHours();
-            state.selectedEndMinute = newEndTime.getMinutes();
-            updateTimeDisplay();
-            // Don't call handleTimeChange here to avoid circular updates
-        }
     };
     startTickInterval._intervalId = setInterval(startTickInterval._tickFn, 1000);
 }

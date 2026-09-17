@@ -5,18 +5,17 @@ import { getChallengeController } from './challenge-controller.js';
 import { startHelperUiRefreshLoop, stopHelperUiRefreshLoop, isModalVisible } from './modal-manager.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render } from './render.js';
-import { handleBlocklistSelect } from './confirm-modals.js';
+import { handleBlocklistSelect, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
 import { updateBlockedApps, openExternal, isHelperInstallCancelled, checkHelperStatus, requestScreentimeAuth } from './blocking-platform.js';
 import { attachCopyChipHandlers, extensionsUrlChipHtml, restartOnboardingFromSettings, BROWSER_STORE_LINKS, MAC_BLOCKING_METHOD_KEYS, browserBlockingMethod, browserIconUrl, browserUsesAutomation, lastOnboardingState, openExtensionSetupOverlay, updateGraceSettingLock } from './enforcement.js';
 import { hasAnyBlockingStateToClear, hasAnyEnforcedBlocks, isOneOffBlockStillActive, refreshDesktopHelperStatus, scheduleCanStillBecomeActive } from './schedule-engine.js';
 import { tauriAPI, openUrl } from './tauri-api.js';
-import { syncDefaultPauseSettingUi } from './pause-default.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage } from './i18n.js';
 import { invoke } from '@tauri-apps/api/core';
 import { ask, message } from '@tauri-apps/plugin-dialog';
 import logoReddFocusUrl from './images/logo-reddfocus.svg';
 import { escapeHtml } from './utils.js';
-import { getDifficultyTypingCharCount, getMaxOverrideCharsForType } from './override-challenge.js';
+import { DEFAULT_OVERRIDE_WORDS, MAX_OVERRIDE_WORDS_DESKTOP, MAX_OVERRIDE_WORDS_SETTING_STEP, MIN_MAX_OVERRIDE_WORDS_SETTING, getDifficultyTypingCharCount, getMaxOverrideWords, getOverrideEstimatedMinutes, normalizeMaxOverrideWordsSetting, normalizeOverrideCount } from './override-challenge.js';
 import {
     setLanguagePickerOpen,
     WINDOWS_APPS_SETTINGS_URI,
@@ -907,8 +906,6 @@ export function updateOverrideAllButtonVisibility() {
     updateManageSectionVisibility();
     updateGraceSettingLock();
     // Cheap, and catches app-data changes that bypass the language pass
-    // (importing a backup rewrites settings.defaultPauseMinutes).
-    syncDefaultPauseSettingUi();
 }
 
 // Show challenge for removing helper when blocks are active
@@ -975,6 +972,56 @@ export function setupGraceSetting() {
             showError(msg);
             input.value = lastGood;
         }
+    });
+}
+
+// Settings → Enforcement → "Maximum words to stop early". Desktop only (the
+// panel is hidden on phones, whose native gate caps the count itself).
+//
+// Not locked during an active block, unlike the grace period next to it: the
+// setting only decides how far each space's "How many words" slider reaches and
+// never clamps a stored count (see getOverrideWordsSliderMax), so lowering it
+// mid-block makes nothing easier to stop.
+export function syncMaxOverrideWordsSetting() {
+    const input = document.getElementById('settings-max-words-input');
+    const valueEl = document.getElementById('settings-max-words-value');
+    if (!input) return;
+    const max = normalizeMaxOverrideWordsSetting(state.appData?.settings?.maxOverrideWords);
+    input.min = String(MIN_MAX_OVERRIDE_WORDS_SETTING);
+    input.max = String(MAX_OVERRIDE_WORDS_DESKTOP);
+    input.step = String(MAX_OVERRIDE_WORDS_SETTING_STEP);
+    input.value = String(max);
+    renderMaxOverrideWordsValue(input, valueEl, max);
+}
+
+function renderMaxOverrideWordsValue(input, valueEl, max) {
+    if (valueEl) {
+        valueEl.textContent = tSettingsFmt('overrideWordsEstimateFmt', {
+            count: String(max),
+            minutes: String(getOverrideEstimatedMinutes('random-words', max, '')),
+        });
+    }
+    const lo = MIN_MAX_OVERRIDE_WORDS_SETTING;
+    const pct = ((max - lo) / (MAX_OVERRIDE_WORDS_DESKTOP - lo)) * 100;
+    input.style.setProperty('--slider-pct', `${Math.max(0, Math.min(100, pct))}%`);
+}
+
+export function setupMaxOverrideWordsSetting() {
+    const input = document.getElementById('settings-max-words-input');
+    const valueEl = document.getElementById('settings-max-words-value');
+    if (!input) return;
+    syncMaxOverrideWordsSetting();
+    input.addEventListener('input', () => {
+        renderMaxOverrideWordsValue(input, valueEl, normalizeMaxOverrideWordsSetting(input.value));
+    });
+    input.addEventListener('change', async () => {
+        const max = normalizeMaxOverrideWordsSetting(input.value);
+        if (!state.appData.settings) state.appData.settings = {};
+        state.appData.settings.maxOverrideWords = max;
+        await saveData();
+        // An open editor picks the new reach up straight away.
+        syncOverrideCountUi();
+        updateOverridePreview();
     });
 }
 
@@ -1301,15 +1348,15 @@ export function findHardestChallenge() {
         }
     }
 
-    if (!hardestDifficulty) return { type: 'random-words', count: 50 };
+    if (!hardestDifficulty) return { type: 'random-words', count: DEFAULT_OVERRIDE_WORDS };
+    return withEffectiveCount(hardestDifficulty);
+}
 
-    // Resolve effective count for maxDifficulty (handles single-block case
-    // where compareDifficulties was never called)
-    if (hardestDifficulty.maxDifficulty === true && hardestDifficulty.count === undefined) {
-        const effectiveCount = getMaxOverrideCharsForType(hardestDifficulty.type);
-        return { ...hardestDifficulty, count: effectiveCount };
-    }
-    return hardestDifficulty;
+/** A copy whose `count` is the clamped word count actually generated. */
+function withEffectiveCount(difficulty) {
+    if (difficulty.type === 'custom') return difficulty;
+    const effective = normalizeOverrideCount(difficulty.count, 'random-words', getMaxOverrideWords());
+    return difficulty.count === effective ? difficulty : { ...difficulty, count: effective };
 }
 
 // Compare two difficulties and return the harder one
@@ -1318,8 +1365,7 @@ export function compareDifficulties(a, b) {
     if (!b) return a;
 
     const getTypeRank = (difficulty) => {
-        if (difficulty.type === 'custom') return 3;
-        if (difficulty.type === 'gibberish') return 2;
+        if (difficulty.type === 'custom') return 2;
         if (difficulty.type === 'random-words') return 1;
         return 0;
     };
@@ -1331,7 +1377,7 @@ export function compareDifficulties(a, b) {
     if (bCount > aCount) winner = b;
     else if (aCount > bCount) winner = a;
     else {
-        // Same character count: custom > gibberish > random-words
+        // Same letter count: custom > random-words
         const aRank = getTypeRank(a);
         const bRank = getTypeRank(b);
         if (bRank > aRank) winner = b;
@@ -1339,14 +1385,7 @@ export function compareDifficulties(a, b) {
         else winner = a; // Equal, return a
     }
 
-    // Resolve stored count for generation when maxDifficulty (keep word counts on iOS)
-    if (winner.maxDifficulty === true) {
-        const genCount = getMaxOverrideCharsForType(winner.type);
-        if (winner.count !== genCount) {
-            return { ...winner, count: genCount };
-        }
-    }
-    return winner;
+    return withEffectiveCount(winner);
 }
 
 // Perform the actual override-all operation

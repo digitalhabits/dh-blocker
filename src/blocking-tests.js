@@ -12,13 +12,20 @@
  * - T18-T21: Override behavior
  * - T22-T25: App blocking (manual only - requires system interaction)
  * - T26-T32: Override All feature
- * - T38c-T38e: Max difficulty (effective count)
+ * - T38c-T38e: Word counts above the platform maximum are clamped
  * - T43-T47: Self-Block Prevention
  * - T48-T50: Protected Domain Prevention
- * - T51-T54, T51da: Blocklist duplication (schedules copy as pending drafts; DA uses "kopi")
+ * - T51-T54, T51da: Blocklist duplication (schedules copy switched off; DA uses "kopi")
  * - T55-T62: iOS allowlist effective-policy resolvers (pure helpers)
- * - T63-T65: Default pause length setting (fallback, configured value, clamping)
- * - T169-T172: Single-column (≤718px) desktop focus-space cards open the enter sheet on tap
+ * - T63-T68: Stop = temporary unlock (timed pause the switch reads as off, Never removes / switches off, Flexible skips the challenge)
+ * - T169-T172: Single-column (≤718px) desktop focus-space cards open the enter sheet on tap; the switch does not
+ * - T173-T178: Card switch state (isFocusSpaceOn) for manual blocks and schedules; switching on asks first
+ * - T196-T199: Schedule time lists: arrow keys walk the options, Enter commits
+ * - T200-T202: Strictness only locks while the space is on (off = fully editable)
+ * - T203-T204: Custom Text sits under Method and wraps rather than scrolling
+ * - T205: a long Start alert name keeps the customise pencil inside the panel
+ * - T206: app chrome is not text-selectable; inputs are
+ * - T207: colour-swatch tick / + are inked against the swatch's own colour
  */
 
 (function () {
@@ -711,13 +718,13 @@
             assertEqual(hardest.count, 100, 'T29: Highest count (100) selected');
         })();
 
-        // T30: Gibberish vs random-words at same count
+        // T30: Custom text beats random words when the typed letters tie (50 words = 250 letters)
         (function T30() {
             const blocklist1 = createMockBlocklist({
                 overrideDifficulty: { type: 'random-words', count: 50 }
             });
             const blocklist2 = createMockBlocklist({
-                overrideDifficulty: { type: 'gibberish', count: 50 }
+                overrideDifficulty: { type: 'custom', customText: 'x'.repeat(250) }
             });
 
             const now = Date.now();
@@ -730,13 +737,13 @@
             });
 
             const hardest = getHardestChallenge(appData, now);
-            assertEqual(hardest.type, 'gibberish', 'T30: Gibberish selected as harder at same count');
+            assertEqual(hardest.type, 'custom', 'T30: Custom text selected as harder at equal letter count');
         })();
 
-        // T31: Custom text challenge
+        // T31: Custom text challenge (5 words = 25 letters, shorter than the text)
         (function T31() {
             const blocklist1 = createMockBlocklist({
-                overrideDifficulty: { type: 'random-words', count: 50 }
+                overrideDifficulty: { type: 'random-words', count: 5 }
             });
             const blocklist2 = createMockBlocklist({
                 overrideDifficulty: { type: 'custom', customText: 'This is a very long custom override text that is hard to type' }
@@ -752,16 +759,16 @@
             });
 
             const hardest = getHardestChallenge(appData, now);
-            assertEqual(hardest.type, 'custom', 'T31: Custom text selected (longer than 50)');
+            assertEqual(hardest.type, 'custom', 'T31: Custom text selected (longer than 25 letters)');
         })();
 
-        // T31b: Lower-than-50 active difficulties should not lose to default baseline
+        // T31b: Active difficulties below the default should not lose to the default baseline
         (function T31b() {
             const blocklist1 = createMockBlocklist({
-                overrideDifficulty: { type: 'random-words', count: 20 }
+                overrideDifficulty: { type: 'random-words', count: 3 }
             });
             const blocklist2 = createMockBlocklist({
-                overrideDifficulty: { type: 'gibberish', count: 30 }
+                overrideDifficulty: { type: 'random-words', count: 8 }
             });
 
             const now = Date.now();
@@ -774,17 +781,17 @@
             });
 
             const hardest = getHardestChallenge(appData, now);
-            assertEqual(hardest.type, 'gibberish', 'T31b: Active 30-char gibberish selected over baseline default');
-            assertEqual(hardest.count, 30, 'T31b: Selected count reflects active block, not default 50');
+            assertEqual(hardest.type, 'random-words', 'T31b: Active 8-word space selected over baseline default');
+            assertEqual(hardest.count, 8, 'T31b: Selected count reflects active block, not default 15');
         })();
 
-        // T31c: Equal character count tie should prefer custom over gibberish/random-words
+        // T31c: Equal letter count tie should prefer custom over random-words (10 words = 50 letters)
         (function T31c() {
             const blocklist1 = createMockBlocklist({
-                overrideDifficulty: { type: 'random-words', count: 50 }
+                overrideDifficulty: { type: 'random-words', count: 10 }
             });
             const blocklist2 = createMockBlocklist({
-                overrideDifficulty: { type: 'gibberish', count: 50 }
+                overrideDifficulty: { type: 'random-words', count: 10 }
             });
             const blocklist3 = createMockBlocklist({
                 overrideDifficulty: { type: 'custom', customText: 'x'.repeat(50) }
@@ -801,7 +808,7 @@
             });
 
             const hardest = getHardestChallenge(appData, now);
-            assertEqual(hardest.type, 'custom', 'T31c: Custom wins tie at equal character count');
+            assertEqual(hardest.type, 'custom', 'T31c: Custom wins tie at equal letter count');
             assertEqual(hardest.customText.length, 50, 'T31c: Custom count participates in equality tie');
         })();
 
@@ -919,7 +926,7 @@
         // T36: Only schedule active (no one-off) — should use schedule's blocklist difficulty
         (function T36() {
             const blocklist = createMockBlocklist({
-                overrideDifficulty: { type: 'gibberish', count: 80 }
+                overrideDifficulty: { type: 'random-words', count: 80 }
             });
             const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
             const schedule = createMockSchedule(blocklist.id, [segment]);
@@ -929,14 +936,14 @@
                 schedules: [schedule]
             });
             const hardest = findHardestChallengeAtTime(appData, now);
-            assertEqual(hardest.type, 'gibberish', 'T36: Schedule-only → uses schedule difficulty type');
+            assertEqual(hardest.type, 'random-words', 'T36: Schedule-only → uses schedule difficulty type');
             assertEqual(hardest.count, 80, 'T36: Schedule-only → uses schedule difficulty count');
         })();
 
-        // T37: Mixed active: gibberish 50 vs custom text (long) — custom wins
+        // T37: Mixed active: 5 random words (25 letters) vs longer custom text — custom wins
         (function T37() {
             const blocklist1 = createMockBlocklist({
-                overrideDifficulty: { type: 'gibberish', count: 50 }
+                overrideDifficulty: { type: 'random-words', count: 5 }
             });
             const blocklist2 = createMockBlocklist({
                 overrideDifficulty: { type: 'custom', customText: 'I really need to focus right now and should not be browsing' }
@@ -950,7 +957,7 @@
                 ]
             });
             const hardest = findHardestChallengeAtTime(appData, now);
-            assertEqual(hardest.type, 'custom', 'T37: Custom text (longer) wins over gibberish');
+            assertEqual(hardest.type, 'custom', 'T37: Custom text (longer) wins over random words');
         })();
 
         // T38: No active blocks at all → returns default
@@ -959,13 +966,13 @@
             const appData = createMockAppData();
             const hardest = findHardestChallengeAtTime(appData, now);
             assertEqual(hardest.type, 'random-words', 'T38: No blocks → default type');
-            assertEqual(hardest.count, 50, 'T38: No blocks → default count 50');
+            assertEqual(hardest.count, 15, 'T38: No blocks → default count 15');
         })();
 
         // T38b: Inactive schedule should not affect hardest challenge selection
         (function T38b() {
             const blocklist = createMockBlocklist({
-                overrideDifficulty: { type: 'gibberish', count: 200 }
+                overrideDifficulty: { type: 'random-words', count: 200 }
             });
             const now = Date.now();
             const nowDate = new Date(now);
@@ -978,13 +985,13 @@
             });
             const hardest = findHardestChallengeAtTime(appData, now);
             assertEqual(hardest.type, 'random-words', 'T38b: Inactive schedule does not override default');
-            assertEqual(hardest.count, 50, 'T38b: Inactive schedule does not contribute challenge count');
+            assertEqual(hardest.count, 15, 'T38b: Inactive schedule does not contribute challenge count');
         })();
 
-        // T38c: Max difficulty (random-words) → effective count 7500
+        // T38c: A stored count above the desktop maximum is clamped to 1000 words
         (function T38c() {
             const blocklist = createMockBlocklist({
-                overrideDifficulty: { type: 'random-words', maxDifficulty: true, countBeforeMax: 20 }
+                overrideDifficulty: { type: 'random-words', count: 4000 }
             });
             const now = Date.now();
             const appData = createMockAppData({
@@ -992,32 +999,17 @@
                 activeBlocks: [createMockBlock(blocklist.id, now - 60000, now + 60000)]
             });
             const hardest = findHardestChallengeAtTime(appData, now);
-            assertEqual(hardest.type, 'random-words', 'T38c: Max difficulty random-words → type');
-            assertEqual(hardest.count, 7500, 'T38c: Max difficulty random-words → effective count 7500');
+            assertEqual(hardest.type, 'random-words', 'T38c: Over-max random-words → type');
+            assertEqual(hardest.count, 1000, 'T38c: Over-max random-words → clamped to 1000 words');
         })();
 
-        // T38d: Max difficulty (gibberish) → effective count 5000
-        (function T38d() {
-            const blocklist = createMockBlocklist({
-                overrideDifficulty: { type: 'gibberish', maxDifficulty: true }
-            });
-            const now = Date.now();
-            const appData = createMockAppData({
-                blocklists: [blocklist],
-                activeBlocks: [createMockBlock(blocklist.id, now - 60000, now + 60000)]
-            });
-            const hardest = findHardestChallengeAtTime(appData, now);
-            assertEqual(hardest.type, 'gibberish', 'T38d: Max difficulty gibberish → type');
-            assertEqual(hardest.count, 5000, 'T38d: Max difficulty gibberish → effective count 5000');
-        })();
-
-        // T38e: Two active blocks — max difficulty (random-words) wins over fixed count 100
+        // T38e: Two active blocks — the larger word count wins
         (function T38e() {
             const blocklist1 = createMockBlocklist({
                 overrideDifficulty: { type: 'random-words', count: 100 }
             });
             const blocklist2 = createMockBlocklist({
-                overrideDifficulty: { type: 'random-words', maxDifficulty: true, countBeforeMax: 50 }
+                overrideDifficulty: { type: 'random-words', count: 250 }
             });
             const now = Date.now();
             const appData = createMockAppData({
@@ -1028,8 +1020,7 @@
                 ]
             });
             const hardest = findHardestChallengeAtTime(appData, now);
-            assertEqual(hardest.type, 'random-words', 'T38e: Max difficulty block selected');
-            assertEqual(hardest.count, 7500, 'T38e: Max difficulty (7500) wins over 100');
+            assertEqual(hardest.count, 250, 'T38e: 250 words wins over 100');
         })();
 
         // T38f: Paused one-off does not affect hardest challenge selection
@@ -1038,7 +1029,7 @@
                 overrideDifficulty: { type: 'random-words', count: 80 }
             });
             const pausedBlocklist = createMockBlocklist({
-                overrideDifficulty: { type: 'gibberish', count: 200 }
+                overrideDifficulty: { type: 'random-words', count: 200 }
             });
             const now = Date.now();
             const appData = createMockAppData({
@@ -1062,7 +1053,7 @@
                 overrideDifficulty: { type: 'random-words', count: 70 }
             });
             const pausedBlocklist = createMockBlocklist({
-                overrideDifficulty: { type: 'gibberish', count: 250 }
+                overrideDifficulty: { type: 'random-words', count: 250 }
             });
             const now = Date.now();
             const appData = createMockAppData({
@@ -1217,13 +1208,7 @@
             const blocklist = createMockBlocklist({
                 name: 'DupTest',
                 websites: ['example.com'],
-                overrideDifficulty: {
-                    type: 'gibberish',
-                    count: 40,
-                    maxDifficulty: true,
-                    countBeforeMax: 40,
-                    typeBeforeMax: 'gibberish'
-                }
+                overrideDifficulty: { type: 'random-words', count: 40 }
             });
             const mockData = duplicationTestAppData({ blocklists: [blocklist], activeBlocks: [], schedules: [] });
             withIsolatedAppData(mockData, function() {
@@ -1233,10 +1218,8 @@
                 assert(dup !== undefined, 'T51: Duplicate blocklist present');
                 assert(dup.id !== blocklist.id, 'T51: Duplicate has new id');
                 assert(dup.name === 'DupTest copy', 'T51: Name is "DupTest copy"');
-                assert(dup.overrideDifficulty && dup.overrideDifficulty.maxDifficulty === true, 'T51: maxDifficulty copied');
-                assertEqual(dup.overrideDifficulty.countBeforeMax, 40, 'T51: countBeforeMax copied');
-                assertEqual(dup.overrideDifficulty.typeBeforeMax, 'gibberish', 'T51: typeBeforeMax copied');
-                assertEqual(dup.overrideDifficulty.type, 'gibberish', 'T51: type copied');
+                assertEqual(dup.overrideDifficulty.count, 40, 'T51: word count copied');
+                assertEqual(dup.overrideDifficulty.type, 'random-words', 'T51: type copied');
                 assertEqual(mockData.activeBlocks.length, 0, 'T51: Duplicate is not in activeBlocks');
             });
         })();
@@ -1253,7 +1236,7 @@
             });
         })();
 
-        // T52: Duplicate copies source schedule as pending draft only (not committed / not enforcing)
+        // T52: Duplicate copies the source schedule switched off (present, paused open-ended, never enforcing)
         (function T52() {
             const blocklist = createMockBlocklist({ name: 'DupSched', websites: ['a.com'] });
             const now = new Date();
@@ -1271,17 +1254,18 @@
                 assert(dup !== undefined, 'T52: Duplicate blocklist present');
                 if (!dup) return;
                 const dupSchedule = (mockData.schedules || []).find(function(s) { return s.blocklistId === dup.id; });
-                assert(dupSchedule === undefined, 'T52: Duplicate has no committed schedule');
-                const pending = mockData.settings.pendingScheduleSegments[dup.id];
-                assert(pending && pending.length === 1, 'T52: Pending segments copied for duplicate');
-                assertEqual(JSON.stringify(pending[0]), JSON.stringify(segment), 'T52: Segment fields match');
-                const repeat = mockData.settings.pendingScheduleRepeatOptions[dup.id];
-                assert(repeat && repeat.repeatType === 'forever', 'T52: Repeat options copied as draft');
-                assertEqual(mockData.schedules.length, 1, 'T52: Original schedule list unchanged');
+                assert(dupSchedule !== undefined, 'T52: Duplicate has its own schedule record');
+                if (!dupSchedule) return;
+                assert(dupSchedule.id !== schedule.id, 'T52: Duplicate schedule has a new id');
+                assertEqual(dupSchedule.segments.length, 1, 'T52: Segments copied for duplicate');
+                assertEqual(JSON.stringify(dupSchedule.segments[0]), JSON.stringify(segment), 'T52: Segment fields match');
+                assertEqual(dupSchedule.repeatType, 'forever', 'T52: Repeat options copied');
+                assert(dupSchedule.isPaused === true && dupSchedule.pauseEndTime === undefined, 'T52: Duplicate schedule is switched off');
+                assertEqual(mockData.schedules.length, 2, 'T52: Original schedule untouched, copy added');
             });
         })();
 
-        // T53: Duplicate with active schedule still copies draft only (never auto-enforcing)
+        // T53: Duplicate of an actively-enforcing schedule is still switched off (never auto-enforcing)
         (function T53() {
             const blocklist = createMockBlocklist({ name: 'DupSchedActive', websites: ['active.com'] });
             const now = new Date();
@@ -1302,15 +1286,15 @@
                 assert(dup !== undefined, 'T53: Duplicate blocklist present');
                 if (!dup) return;
                 const dupSchedule = (mockData.schedules || []).find(function(s) { return s.blocklistId === dup.id; });
-                assert(dupSchedule === undefined, 'T53: No committed schedule on duplicate');
-                const pending = mockData.settings.pendingScheduleSegments[dup.id];
-                assert(pending && pending.length === 1, 'T53: Active source schedule copied as pending draft');
-                assertEqual(JSON.stringify(pending[0]), JSON.stringify(segment), 'T53: Segment fields match');
-                assertEqual(mockData.schedules.length, 1, 'T53: Only original remains committed');
+                assert(dupSchedule !== undefined, 'T53: Active source schedule copied onto duplicate');
+                if (!dupSchedule) return;
+                assertEqual(JSON.stringify(dupSchedule.segments[0]), JSON.stringify(segment), 'T53: Segment fields match');
+                assert(internals.isSchedulePausedNow(dupSchedule), 'T53: Duplicate is switched off, not enforcing');
+                assert(!internals.isSchedulePausedNow(schedule), 'T53: Original keeps enforcing');
             });
         })();
 
-        // T53b: Duplicate with paused schedule copies draft only (pause does not carry over)
+        // T53b: Duplicate of a timed-paused schedule is switched off open-ended (the timed pause does not carry over)
         (function T53b() {
             const blocklist = createMockBlocklist({ name: 'DupSchedPaused', websites: ['pause.com'] });
             const now = new Date();
@@ -1334,11 +1318,10 @@
                 assert(dup !== undefined, 'T53b: Duplicate blocklist present');
                 if (!dup) return;
                 const dupSchedule = (mockData.schedules || []).find(function(s) { return s.blocklistId === dup.id; });
-                assert(dupSchedule === undefined, 'T53b: No committed schedule on duplicate');
-                const pending = mockData.settings.pendingScheduleSegments[dup.id];
-                assert(pending && pending.length === 1, 'T53b: Paused source schedule copied as pending draft');
-                assertEqual(JSON.stringify(pending[0]), JSON.stringify(segment), 'T53b: Segment fields match');
-                assertEqual(mockData.schedules.length, 1, 'T53b: Only original remains committed');
+                assert(dupSchedule !== undefined, 'T53b: Paused source schedule copied onto duplicate');
+                if (!dupSchedule) return;
+                assertEqual(JSON.stringify(dupSchedule.segments[0]), JSON.stringify(segment), 'T53b: Segment fields match');
+                assert(dupSchedule.isPaused === true && dupSchedule.pauseEndTime === undefined, 'T53b: Copy is switched off open-ended, not for the source\'s timed pause');
             });
         })();
 
@@ -1894,68 +1877,155 @@
                 assert(required(bl.id, now) === true, 'T168: an expired schedule pause gates editing again');
             })();
 
+            // T200-T202: Strictness itself. "Committed" is a promise about a
+            // running space; once the space is off, every setting is editable
+            // again, including this one — even though it will auto-start.
+            (function T200() {
+                const canEnable = window.__REDDBLOCK_INTERNALS__.canEnableAllowEditsBetweenBlocks;
+                if (typeof canEnable !== 'function') {
+                    assert(false, 'T200: canEnableAllowEditsBetweenBlocks is exposed to tests');
+                    return;
+                }
+                const bl = createMockBlocklist({});
+                const live = createMockSchedule(bl.id, [allDaySeg]);
+                withData([bl], { schedules: [live] });
+                assert(canEnable(live) === false, 'T200: a running schedule cannot be loosened to Flexible');
+
+                const offForNow = createMockSchedule(bl.id, [allDaySeg], { isPaused: true, pauseEndTime: now + 60 * 60 * 1000 });
+                assert(canEnable(offForNow) === true,
+                    'T201: a space inside a temporary unlock can be loosened, auto-start or not');
+
+                const off = createMockSchedule(bl.id, [allDaySeg], { isPaused: true });
+                assert(canEnable(off) === true, 'T201: a switched-off schedule can be loosened');
+
+                const expired = createMockSchedule(bl.id, [allDaySeg], { isPaused: true, pauseEndTime: now - 1 });
+                assert(canEnable(expired) === false, 'T202: an expired unlock is running again, so it locks again');
+                assert(canEnable(null) === true, 'T202: a space with no schedule yet can be loosened');
+            })();
+
         } finally {
             window.__REDDBLOCK_INTERNALS__.appData = saved;
         }
     }
 
-    // CATEGORY 15: DEFAULT PAUSE LENGTH (T63-T65)
+    // CATEGORY 15: STOP = TEMPORARY UNLOCK (T63-T68)
     // ========================================
 
-    // The configurable prefill duration behind the "Stop all"-style gate
-    // (Settings → Default pause length; all platforms). Pure helpers over
-    // appData.settings.defaultPauseMinutes.
-    function runDefaultPauseLengthTests() {
-        console.log('\n⏸️  Category 15: Default Pause Length');
+    // Stopping a running space applies its unlock duration. These compose the
+    // pure applyStopToTarget with what the card switch and the enforcement
+    // predicates read back, and check the Flexible-schedule waiver in the modal.
+    function runTemporaryUnlockTests() {
+        console.log('\n🔓 Category 15: Stop = temporary unlock');
         console.log('------------------------------------');
 
-        const {
-            getDefaultPauseMinutes,
-            clampDefaultPauseMinutes,
-            FALLBACK_DEFAULT_PAUSE_MINUTES,
-            MAX_DEFAULT_PAUSE_MINUTES
-        } = window.__REDDBLOCK_INTERNALS__;
-
-        const originalAppData = window.__REDDBLOCK_INTERNALS__.appData;
-        const withSetting = (value) => {
-            window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({
-                settings: value === undefined ? {} : { defaultPauseMinutes: value }
-            });
-        };
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        const savedAppData = internals.appData;
+        const now = Date.now();
+        const allDays = [0, 1, 2, 3, 4, 5, 6];
+        const seg = createMockSegment(0, 0, 23, 59, allDays);
 
         try {
-            // T63: unset / invalid values fall back to 15 minutes
+            // T63: a Manual block stopped with a 10-minute unlock is paused, still present, and the switch reads off
             (function T63() {
-                withSetting(undefined);
-                assertEqual(getDefaultPauseMinutes(), FALLBACK_DEFAULT_PAUSE_MINUTES,
-                    'T63: unset setting falls back to 10 minutes');
-                withSetting(0);
-                assertEqual(getDefaultPauseMinutes(), FALLBACK_DEFAULT_PAUSE_MINUTES,
-                    'T63: zero falls back to 10 minutes');
-                withSetting('not a number');
-                assertEqual(getDefaultPauseMinutes(), FALLBACK_DEFAULT_PAUSE_MINUTES,
-                    'T63: non-numeric falls back to 10 minutes');
+                const bl = createMockBlocklist({ id: 'bl-unlock-manual', unlockMinutes: 10, websites: ['unlock-manual.com'] });
+                const block = createMockBlock(bl.id, now - 60000, now + 3600000);
+                internals.appData = createMockAppData({ blocklists: [bl], activeBlocks: [block], schedules: [] });
+                const out = internals.applyStopToTarget(internals.appData, { block }, bl.unlockMinutes, now);
+                assertEqual(out?.kind, 'unlocked', 'T63: timed unlock outcome');
+                assertEqual(internals.appData.activeBlocks.length, 1, 'T63: block is kept, not removed');
+                assertEqual(block.pauseEndTime, now + 10 * 60000, 'T63: pause ends after the unlock duration');
+                assert(internals.isFocusSpaceOn(bl.id, now) === false, 'T63: switch reads off while unlocked');
+                assertSetEmpty(getBlockedDomains(internals.appData, now), 'T63: nothing enforced while unlocked');
+                assert(internals.isFocusSpaceOn(bl.id, now + 10 * 60000) === true, 'T63: switch reads on again once the unlock has expired');
             })();
 
-            // T64: a configured value is used verbatim
+            // T64: a Manual block stopped with Never is removed outright
             (function T64() {
-                withSetting(45);
-                assertEqual(getDefaultPauseMinutes(), 45, 'T64: configured 45 minutes is used');
-                withSetting(90);
-                assertEqual(getDefaultPauseMinutes(), 90, 'T64: values over an hour survive');
+                const bl = createMockBlocklist({ id: 'bl-unlock-never', unlockMinutes: 0 });
+                const block = createMockBlock(bl.id, now - 60000, now + 3600000);
+                internals.appData = createMockAppData({ blocklists: [bl], activeBlocks: [block], schedules: [] });
+                const out = internals.applyStopToTarget(internals.appData, { block }, bl.unlockMinutes, now);
+                assertEqual(out?.kind, 'removed', 'T64: Never removes the block');
+                assertEqual(internals.appData.activeBlocks.length, 0, 'T64: no block left');
+                assert(internals.isFocusSpaceOn(bl.id, now) === false, 'T64: switch reads off');
             })();
 
-            // T65: out-of-range values clamp to [1, one day]
+            // T65: a schedule stopped with a 1-hour unlock is paused until then; the engine skips it, then honours it again
             (function T65() {
-                assertEqual(clampDefaultPauseMinutes(-5), 1, 'T65: negatives clamp to 1 minute');
-                assertEqual(clampDefaultPauseMinutes(MAX_DEFAULT_PAUSE_MINUTES + 1),
-                    MAX_DEFAULT_PAUSE_MINUTES, 'T65: over a day clamps to a day');
-                withSetting(MAX_DEFAULT_PAUSE_MINUTES * 10);
-                assertEqual(getDefaultPauseMinutes(), MAX_DEFAULT_PAUSE_MINUTES,
-                    'T65: stored oversize value reads back clamped');
+                const bl = createMockBlocklist({ id: 'bl-unlock-sched', unlockMinutes: 60, websites: ['unlock-sched.com'] });
+                const schedule = createMockSchedule(bl.id, [seg]);
+                internals.appData = createMockAppData({ blocklists: [bl], activeBlocks: [], schedules: [schedule] });
+                const out = internals.applyStopToTarget(internals.appData, { schedule }, bl.unlockMinutes, now);
+                assertEqual(out?.kind, 'unlocked', 'T65: timed unlock outcome');
+                assert(internals.isSchedulePausedNow(schedule, now), 'T65: schedule paused now');
+                assert(!internals.isSchedulePausedNow(schedule, now + 60 * 60000), 'T65: schedule no longer paused after the unlock');
+                assert(internals.isFocusSpaceOn(bl.id, now) === false, 'T65: switch reads off');
+                assert(internals.isFocusSpaceOn(bl.id, now + 60 * 60000) === true, 'T65: switch reads on after the unlock');
+            })();
+
+            // T66: a schedule stopped with Never is switched off open-ended and stays that way
+            (function T66() {
+                const bl = createMockBlocklist({ id: 'bl-unlock-sched-never', unlockMinutes: 0 });
+                const schedule = createMockSchedule(bl.id, [seg], { isPaused: true, pauseEndTime: now + 5000 });
+                internals.appData = createMockAppData({ blocklists: [bl], activeBlocks: [], schedules: [schedule] });
+                const out = internals.applyStopToTarget(internals.appData, { schedule }, bl.unlockMinutes, now);
+                assertEqual(out?.kind, 'off', 'T66: Never switches the schedule off');
+                assertEqual(internals.appData.schedules.length, 1, 'T66: schedule record kept');
+                assert(schedule.isPaused === true && schedule.pauseEndTime === undefined, 'T66: open-ended pause');
+                assert(internals.isFocusSpaceOn(bl.id, now + 365 * 24 * 3600000) === false, 'T66: still off a year later');
+            })();
+
+            // T67: a space saved before the field existed stops with the 24-hour default, never permanently
+            (function T67() {
+                const bl = createMockBlocklist({ id: 'bl-unlock-legacy' });
+                delete bl.unlockMinutes;
+                const block = createMockBlock(bl.id, now - 60000, now + 7 * 24 * 3600000);
+                internals.appData = createMockAppData({ blocklists: [bl], activeBlocks: [block], schedules: [] });
+                const out = internals.applyStopToTarget(internals.appData, { block }, bl.unlockMinutes, now);
+                assertEqual(out?.kind, 'unlocked', 'T67: legacy record gets a timed unlock');
+                assertEqual(block.pauseEndTime, now + internals.DEFAULT_UNLOCK_MINUTES * 60000, 'T67: 24-hour default');
+            })();
+
+            // T68: the stop modal waives the challenge only for a Flexible schedule between its blocks
+            (function T68() {
+                const modal = document.getElementById('override-modal');
+                const confirmBtn = document.getElementById('confirm-override-btn');
+                if (!modal || !confirmBtn) {
+                    console.log('   ⏭️  T68 skipped: override modal not in DOM');
+                    return;
+                }
+                // A segment that is never active now: one minute long, on the day two days from today.
+                const nowDate = new Date(now);
+                const mon0 = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
+                const farDay = (mon0 + 2) % 7;
+                const inactiveSeg = createMockSegment(3, 0, 3, 1, [farDay]);
+
+                const flexible = createMockBlocklist({ id: 'bl-flex', name: 'Flexible' });
+                const committed = createMockBlocklist({ id: 'bl-committed', name: 'Committed' });
+                const flexSchedule = createMockSchedule(flexible.id, [inactiveSeg], { allowEditsBetweenBlocks: true });
+                const strictSchedule = createMockSchedule(committed.id, [inactiveSeg], { allowEditsBetweenBlocks: false });
+                internals.appData = createMockAppData({
+                    blocklists: [flexible, committed],
+                    activeBlocks: [],
+                    schedules: [flexSchedule, strictSchedule],
+                });
+
+                internals.openScheduleOverrideModal(flexSchedule);
+                assert(!modal.classList.contains('hidden'), 'T68: stop modal opens for the Flexible schedule');
+                assert(modal.classList.contains('override-frictionless'), 'T68: Flexible schedule between blocks is frictionless');
+                assert(document.getElementById('challenge-text')?.classList.contains('hidden'), 'T68: challenge text hidden when frictionless');
+                assert(confirmBtn.disabled === false, 'T68: confirm enabled without typing');
+                modal.classList.add('hidden');
+
+                internals.openScheduleOverrideModal(strictSchedule);
+                assert(!modal.classList.contains('override-frictionless'), 'T68: Committed schedule keeps the challenge');
+                assert(!document.getElementById('challenge-text')?.classList.contains('hidden'), 'T68: challenge text shown for Committed');
+                modal.classList.add('hidden');
+                modal.classList.remove('override-frictionless');
+                delete window.overrideScheduleId;
             })();
         } finally {
-            window.__REDDBLOCK_INTERNALS__.appData = originalAppData;
+            internals.appData = savedAppData;
         }
     }
 
@@ -2586,16 +2656,18 @@
                 };
             };
 
-            // Two spaces so render() does not auto-select the sole one.
+            // Two spaces so render() does not auto-select the sole one. B is running
+            // so its switch is on and flipping it opens the stop challenge.
             const spaceA = createMockBlocklist({ id: 'bl-compact-tap-a', name: 'Compact Tap A' });
             const spaceB = createMockBlocklist({ id: 'bl-compact-tap-b', name: 'Compact Tap B' });
-            internals.appData = createMockAppData({ blocklists: [spaceA, spaceB] });
+            const blockB = createMockBlock(spaceB.id, Date.now() - 60000, Date.now() + 3600000);
+            internals.appData = createMockAppData({ blocklists: [spaceA, spaceB], activeBlocks: [blockB] });
             internals.render();
 
             const cardA = document.querySelector(`.blocklist-card[data-id="${spaceA.id}"]`);
             assert(!!cardA, 'T169: compact card renders');
-            assert(cardA?.classList.contains('blocklist-card-menu-only'), 'T169: ≤718px desktop renders enter-sheet (menu-only) cards');
-            assert(!cardA?.querySelector('.edit-btn'), 'T169: enter-sheet card has no inline edit button');
+            assert(!cardA?.querySelector('.edit-btn') && !cardA?.querySelector('.blocklist-menu-btn'), 'T169: card has no edit button and no overflow menu');
+            assert(!!cardA?.querySelector('.blocklist-switch'), 'T169: card has a switch');
             assert(!sheetOpen(), 'T169: enter sheet starts closed');
 
             // T170: tapping the card body opens the full-screen enter sheet for that space.
@@ -2607,12 +2679,15 @@
             document.querySelector(`.blocklist-card[data-id="${spaceA.id}"] .blocklist-title-text`)?.click();
             assert(!sheetOpen(), 'T171: clicking the selected card again closes the enter sheet');
 
-            // T172: the overflow button is still an action control, not a card tap.
-            const menuBtn = document.querySelector(`.blocklist-card[data-id="${spaceB.id}"] .blocklist-menu-btn`);
-            assert(!!menuBtn, 'T172: enter-sheet card keeps its overflow menu button');
-            menuBtn?.click();
-            assert(!sheetOpen(), 'T172: clicking the overflow button does not open the enter sheet');
-            document.body.click(); // close the menu via the outside-click handler
+            // T172: the switch is an action control, not a card tap. B is running, so
+            // flipping it off opens the stop challenge rather than the sheet.
+            const switchB = document.querySelector(`.blocklist-card[data-id="${spaceB.id}"] .blocklist-switch`);
+            assert(!!switchB, 'T172: card keeps its switch');
+            assertEqual(switchB?.getAttribute('aria-checked'), 'true', 'T172: running space renders its switch on');
+            switchB?.click();
+            assert(!sheetOpen(), 'T172: clicking the switch does not open the enter sheet');
+            assert(!document.getElementById('override-modal')?.classList.contains('hidden'), 'T172: switching a running space off opens the stop challenge');
+            document.getElementById('cancel-override-btn')?.click();
         } finally {
             cancelEnterBtn.click();
             window.matchMedia = realMatchMedia;
@@ -2624,6 +2699,497 @@
                 dropdown.value = prevSelectedId;
                 dropdown.dispatchEvent(new Event('change', { bubbles: true }));
             }
+        }
+    }
+
+    // ========================================
+    // CATEGORY: CARD SWITCH STATE (T173-T177)
+    // ========================================
+    function runFocusSpaceSwitchTests() {
+        console.log('\n🔀 Card switch state');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        const savedAppData = internals.appData;
+        const now = Date.now();
+        try {
+            const manual = createMockBlocklist({ id: 'bl-sw-manual', name: 'Manual' });
+            const pausedManual = createMockBlocklist({ id: 'bl-sw-manual-paused', name: 'Manual paused' });
+            const sched = createMockBlocklist({ id: 'bl-sw-sched', name: 'Scheduled' });
+            const schedOff = createMockBlocklist({ id: 'bl-sw-sched-off', name: 'Scheduled off' });
+            const schedTimed = createMockBlocklist({ id: 'bl-sw-sched-timed', name: 'Scheduled timed' });
+            const idle = createMockBlocklist({ id: 'bl-sw-idle', name: 'Idle' });
+            const seg = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            internals.appData = createMockAppData({
+                blocklists: [manual, pausedManual, sched, schedOff, schedTimed, idle],
+                activeBlocks: [
+                    createMockBlock(manual.id, now - 60000, now + 3600000),
+                    Object.assign(createMockBlock(pausedManual.id, now - 60000, now + 3600000), { isPaused: true, pauseEndTime: now + 600000 }),
+                ],
+                schedules: [
+                    createMockSchedule(sched.id, [seg]),
+                    createMockSchedule(schedOff.id, [seg], { isPaused: true }),
+                    createMockSchedule(schedTimed.id, [seg], { isPaused: true, pauseEndTime: now + 600000 }),
+                ],
+            });
+            assert(internals.isFocusSpaceOn(manual.id, now) === true, 'T173: running manual block → switch on');
+            assert(internals.isFocusSpaceOn(pausedManual.id, now) === false, 'T174: paused manual block → switch off');
+            assert(internals.isFocusSpaceOn(sched.id, now) === true, 'T175: live schedule → switch on');
+            assert(internals.isFocusSpaceOn(schedOff.id, now) === false, 'T176: open-ended paused schedule → switch off');
+            assert(internals.isFocusSpaceOn(schedTimed.id, now) === false, 'T176b: timed-paused schedule → switch off');
+            assert(internals.isFocusSpaceOn(idle.id, now) === false, 'T177: no block, no schedule → switch off');
+
+            // T178: switching ON asks first — the start confirmation opens and nothing changes until it is confirmed
+            (function T178() {
+                const modal = document.getElementById('start-block-confirm-modal');
+                if (!modal) {
+                    console.log('   ⏭️  T178 skipped: start confirmation modal not in DOM');
+                    return;
+                }
+                const beforeOff = internals.appData.schedules.find(s => s.blocklistId === schedOff.id);
+                void internals.setFocusSpaceEnabled(schedOff.id, true, now);
+                assert(!modal.classList.contains('hidden'), 'T178: switching on opens the start confirmation');
+                assert(beforeOff.isPaused === true, 'T178: the schedule stays off until confirmed');
+                assert(internals.isFocusSpaceOn(schedOff.id, now) === false, 'T178: switch still reads off');
+                const unlockLine = document.getElementById('start-confirm-unlock')?.textContent || '';
+                assert(unlockLine.length > 0, 'T178: the confirmation says what turning it off does');
+                internals.closeStartConfirmModal();
+                assert(modal.classList.contains('hidden'), 'T178: cancel closes it');
+                assert(beforeOff.isPaused === true, 'T178: cancelling leaves the schedule off');
+            })();
+        } finally {
+            internals.appData = savedAppData;
+        }
+    }
+
+    // ========================================
+    // CATEGORY: CARD RENDER STABILITY (T179-T180)
+    // ========================================
+    // Window focus (onAppForeground → kickClockNow → render) and the minute
+    // clock tick both call render(). If that swaps the card elements out between
+    // mousedown and mouseup, the browser sends the click to the list container
+    // instead of the card and the tap is lost — the "first click on an unfocused
+    // window does nothing" bug. A render with nothing changed must keep them.
+    function runCardRenderStabilityTests() {
+        console.log('\n🧷 Card render stability');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        const savedAppData = internals.appData;
+        try {
+            // Two spaces so render() does not auto-select the sole one.
+            const spaceA = createMockBlocklist({ id: 'bl-stable-a', name: 'Stable A' });
+            const spaceB = createMockBlocklist({ id: 'bl-stable-b', name: 'Stable B' });
+            internals.appData = createMockAppData({ blocklists: [spaceA, spaceB] });
+            internals.render();
+
+            const cardBefore = document.querySelector(`.blocklist-card[data-id="${spaceA.id}"]`);
+            assert(!!cardBefore, 'T179: card renders');
+            internals.render();
+            const cardAfter = document.querySelector(`.blocklist-card[data-id="${spaceA.id}"]`);
+            assert(
+                !!cardBefore && cardAfter === cardBefore && cardBefore.isConnected,
+                'T179: re-rendering unchanged data keeps the same card element (a click straddling a focus re-render must still land)',
+            );
+
+            // T180: a real change still re-renders.
+            internals.appData.blocklists[1].name = 'Stable B renamed';
+            internals.render();
+            const titleB = document.querySelector(`.blocklist-card[data-id="${spaceB.id}"] .blocklist-title-text`)?.textContent;
+            assertEqual(titleB, 'Stable B renamed', 'T180: a changed space still re-renders');
+        } finally {
+            internals.appData = savedAppData;
+            internals.render();
+        }
+    }
+
+    // ========================================
+    // CATEGORY: SCHEDULED CARD COUNTDOWN (T181-T182)
+    // ========================================
+    // A scheduled space that is on but between blocks says how long until it
+    // starts ("Starts in 12h 40m"), like "Paused until 19:23" for a paused one.
+    // That text changes every minute, so a re-render must update it without
+    // replacing the card (see T179).
+    function runScheduledCardCountdownTests() {
+        console.log('\n⏳ Scheduled card countdown');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        const savedAppData = internals.appData;
+        const statusText = (id) => document.querySelector(`.blocklist-card[data-id="${id}"] .blocklist-status-line`)?.textContent || '';
+        try {
+            const mon0Today = (new Date().getDay() + 6) % 7;
+            const tomorrow = (mon0Today + 1) % 7;
+            const upcoming = createMockBlocklist({ id: 'bl-countdown-upcoming', name: 'Upcoming' });
+            const other = createMockBlocklist({ id: 'bl-countdown-other', name: 'Other' });
+            // Tomorrow only, so it is never running now and always ahead.
+            const schedule = createMockSchedule(upcoming.id, [createMockSegment(12, 0, 13, 0, [tomorrow])]);
+            internals.appData = createMockAppData({ blocklists: [upcoming, other], schedules: [schedule] });
+            internals.render();
+
+            assert(/^Starts in \d/.test(statusText(upcoming.id)), `T181: a scheduled space between blocks says when it starts (got "${statusText(upcoming.id)}")`);
+
+            // T182: change only what the status line shows; the card must survive.
+            const cardBefore = document.querySelector(`.blocklist-card[data-id="${upcoming.id}"]`);
+            internals.appData.schedules[0].segments[0].startHour = 11;
+            internals.render();
+            const cardAfter = document.querySelector(`.blocklist-card[data-id="${upcoming.id}"]`);
+            assert(!!cardBefore && cardAfter === cardBefore, 'T182: a status-line-only change keeps the card element');
+            assert(statusText(upcoming.id).includes('11:00'), `T182: the status line still shows the new time (got "${statusText(upcoming.id)}")`);
+        } finally {
+            internals.appData = savedAppData;
+            internals.render();
+        }
+    }
+
+    // ========================================
+    // CATEGORY: EDITOR DEFAULTS AND DIALOGS (T183-T186)
+    // ========================================
+    function runEditorDefaultsAndDialogTests() {
+        console.log('\n🧩 Editor defaults and dialogs');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+
+        // T183: auto-start after stop is opt-in, so a new space starts on Never.
+        if (typeof internals.openBlocklistModal !== 'function') {
+            assert(false, 'T183: openBlocklistModal is exposed to tests');
+        } else {
+            internals.openBlocklistModal();
+            try {
+                assertEqual(document.getElementById('unlock-duration-select')?.value, '0', 'T183: a new focus space starts on Never');
+            } finally {
+                internals.closeBlocklistModal();
+            }
+        }
+
+        // T203/T204: Custom Text sits directly under Method, and the field wraps
+        // rather than scrolling sideways (WKWebView does not wrap a long
+        // placeholder, so this is not hypothetical).
+        if (typeof internals.openBlocklistModal === 'function') {
+            internals.openBlocklistModal();
+            try {
+                const typeSelect = document.getElementById('override-type');
+                const row = document.getElementById('override-custom-text-row');
+                const area = document.getElementById('custom-override-text');
+                if (!typeSelect || !row || !area || typeof internals.applyOverrideTypeUi !== 'function') {
+                    assert(false, 'T203: the custom text row and applyOverrideTypeUi are available');
+                } else {
+                    // The `change` listener lives in setupModalListeners, which the
+                    // headless page never reaches; call what it calls.
+                    typeSelect.value = 'custom';
+                    internals.applyOverrideTypeUi('custom');
+                    assert(!row.classList.contains('hidden'), 'T203: choosing Custom Text shows the field');
+
+                    const methodRow = document.getElementById('override-method-row');
+                    assert(methodRow?.nextElementSibling === row,
+                        'T203: the field sits directly under Method');
+
+                    area.value = 'a motivational statement that runs on and on and on without stopping anywhere near soon';
+                    assert(area.scrollWidth <= area.clientWidth + 1,
+                        `T204: long text wraps instead of scrolling sideways (scrollWidth ${area.scrollWidth} > clientWidth ${area.clientWidth})`);
+                    area.value = '';
+
+                    typeSelect.value = 'random-words';
+                    internals.applyOverrideTypeUi('random-words');
+                    assert(row.classList.contains('hidden'), 'T203: Random Words hides the field again');
+                }
+            } finally {
+                internals.closeBlocklistModal();
+            }
+        }
+
+        // T205: a long Start alert name truncates inside its dropdown; the
+        // customise pencil stays within the panel. Measured, not class-checked:
+        // the column used to be sized max-content, which ignores the width
+        // available and pushed the pencil out of view.
+        if (typeof internals.openBlocklistModal === 'function' && typeof internals.setupFocusSpaceEditor === 'function') {
+            // Without this the editor has no listeners in the headless page, so
+            // the clicks below open nothing and everything measures 0.
+            internals.setupFocusSpaceEditor();
+            internals.openBlocklistModal();
+            try {
+                document.getElementById('when-kind-weekly')?.click();
+                // Advanced options holds the row, and a collapsed section measures
+                // 0x0 — which would make every geometry assert below pass blind.
+                if (document.getElementById('editor-section-advanced-header')?.getAttribute('aria-expanded') !== 'true') {
+                    document.getElementById('editor-section-advanced-header')?.click();
+                }
+                const grid = document.querySelector('#focus-space-editor .schedule-repeat-section');
+                const label = document.getElementById('schedule-panel-overlay-dropdown-text');
+                const pencil = document.getElementById('schedule-panel-overlay-customise-btn');
+                if (!grid || !label || !pencil) {
+                    assert(false, 'T205: the Start alert row is in Advanced options');
+                } else {
+                    const previous = label.textContent;
+                    const previousWidth = grid.style.width;
+                    // Pin a panel-ish width: the headless page is wide enough that
+                    // even a long name fits, and then nothing is being measured.
+                    grid.style.width = '360px';
+                    label.textContent = 'An extremely long start alert name that would once have pushed the pencil off the panel';
+                    const gridRect = grid.getBoundingClientRect();
+                    const pencilRect = pencil.getBoundingClientRect();
+                    assert(gridRect.width > 0 && pencilRect.width > 0,
+                        'T205: the Start alert row is laid out (a collapsed section measures 0 and proves nothing)');
+                    const gridRight = gridRect.right;
+                    const pencilRight = pencilRect.right;
+                    assert(pencilRight <= gridRight + 1,
+                        `T205: the customise pencil stays inside the panel (pencil ${Math.round(pencilRight)} > panel ${Math.round(gridRight)})`);
+                    grid.style.width = previousWidth;
+                    label.textContent = previous;
+                }
+            } finally {
+                internals.closeBlocklistModal();
+            }
+        }
+
+        // T206: the app is chrome, not a document. A double-click on the title
+        // bar (the macOS zoom gesture) used to sweep a text selection across
+        // everything behind it. Asserted as computed style rather than by
+        // dispatching dblclick: a synthetic one creates no selection, so that
+        // test would pass whatever the CSS said.
+        {
+            const editorLabel = document.getElementById('blocklist-name-label');
+            const nameInput = document.getElementById('blocklist-name');
+            assertEqual(getComputedStyle(document.body).webkitUserSelect, 'none',
+                'T206: app text is not selectable');
+            if (editorLabel) {
+                assertEqual(getComputedStyle(editorLabel).webkitUserSelect, 'none',
+                    'T206: editor labels inherit it');
+            }
+            if (nameInput) {
+                assertEqual(getComputedStyle(nameInput).webkitUserSelect, 'text',
+                    'T206: text fields stay selectable');
+            }
+        }
+
+        // T207: the tick and + are inked against each swatch's own colour. The
+        // palette is pale in both themes, so a white glyph vanished into it —
+        // and the ink cannot be a theme token, because --redd-navy flips to
+        // near-white in dark mode while the swatches do not change at all.
+        if (typeof internals.openBlocklistModal === 'function') {
+            internals.openBlocklistModal();
+            try {
+                const swatches = [...document.querySelectorAll('.color-swatch')];
+                const pale = document.querySelector('.color-swatch[data-color="#B8D1DE"]');
+                const custom = document.getElementById('custom-color-swatch');
+                if (swatches.length === 0 || !pale || !custom) {
+                    assert(false, 'T207: the colour swatches are in the editor');
+                } else {
+                    assert(swatches.every((sw) => sw.style.getPropertyValue('--swatch-ink').trim() !== ''),
+                        'T207: every swatch carries its own ink');
+                    assertEqual(pale.style.getPropertyValue('--swatch-ink').trim(), '#1e2d3e',
+                        'T207: a pale swatch gets dark ink');
+                    assert(custom.style.getPropertyValue('--swatch-ink').trim() !== '',
+                        'T207: the custom (+) swatch is inked too, despite data-color="custom"');
+                }
+            } finally {
+                internals.closeBlocklistModal();
+            }
+        }
+
+        // T184: the setting's label.
+        assertEqual(document.getElementById('unlock-duration-label')?.textContent, 'Turn back on after', 'T184: the unlock row is called "Turn back on after"');
+        assertEqual(document.getElementById('override-method-label')?.textContent, 'What to type', 'T184b: the method row asks "What to type"');
+        assertEqual(document.getElementById('override-count-label')?.textContent, 'How many words', 'T184c: the slider row asks "How many words"');
+
+        // T185: the "Looks like" preview is gone from To stop early.
+        assert(!document.getElementById('override-preview-block'), 'T185: no "Looks like" preview in the editor');
+
+        // T186: discarding edits asks in an in-app dialog, not a native one.
+        if (typeof internals.showEditorDiscardConfirmModal !== 'function') {
+            assert(false, 'T186: showEditorDiscardConfirmModal is exposed to tests');
+        } else {
+            void internals.showEditorDiscardConfirmModal();
+            const modal = document.getElementById('editor-discard-modal');
+            assert(!!modal && !modal.classList.contains('hidden'), 'T186: the discard dialog opens in the app');
+            assert((modal?.querySelector('h3')?.textContent || '').length > 0, 'T186: it has a title');
+            document.getElementById('cancel-editor-discard-btn')?.click();
+            assert(!!modal && modal.classList.contains('hidden'), 'T186: Keep editing closes it');
+        }
+    }
+
+    // ========================================
+    // CATEGORY: CARD TIMING TEXT AND SECTION KEYBOARD (T187-T190)
+    // ========================================
+    function runCardTimingAndSectionKeyboardTests() {
+        console.log('\n⌨️ Card timing text and section keyboard');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        const savedAppData = internals.appData;
+        const statusText = (id) => document.querySelector(`.blocklist-card[data-id="${id}"] .blocklist-status-line`)?.textContent || '';
+        try {
+            const now = Date.now();
+            const FOREVER = 253402300799999;
+            // A Manual space that has been started and auto-starts again after a stop.
+            const autoStart = createMockBlocklist({ id: 'bl-timing-auto', name: 'Auto', unlockMinutes: 60 });
+            // A Manual space running with Never: turning it back on stays up to the user.
+            const never = createMockBlocklist({ id: 'bl-timing-never', name: 'Never', unlockMinutes: 0 });
+            internals.appData = createMockAppData({
+                blocklists: [autoStart, never],
+                activeBlocks: [
+                    createMockBlock(autoStart.id, now - 60000, FOREVER, { isAlwaysOn: true, isPaused: true, pauseEndTime: now + 30 * 60000 }),
+                    createMockBlock(never.id, now - 60000, FOREVER, { isAlwaysOn: true }),
+                ],
+            });
+            internals.render();
+            const autoText = statusText(autoStart.id);
+            assert(autoText.startsWith('Paused until') && !autoText.includes('starts when enabled'),
+                `T187: a stopped Manual space that auto-starts drops "starts when enabled" (got "${autoText}")`);
+            assert(statusText(never.id).includes('starts when enabled'),
+                `T188: a Manual space set to Never keeps "starts when enabled" (got "${statusText(never.id)}")`);
+        } finally {
+            internals.appData = savedAppData;
+            internals.render();
+        }
+
+        // T189/T190: tabbing onto a section header opens it, like a click; a
+        // mouse press (which also focuses) leaves opening to the click itself.
+        if (typeof internals.openBlocklistModal !== 'function' || typeof internals.setupFocusSpaceEditor !== 'function') {
+            assert(false, 'T189: openBlocklistModal and setupFocusSpaceEditor are exposed to tests');
+            return;
+        }
+        // Without this the editor has no listeners here (startup never gets past
+        // loadData in the headless page), and T190 would pass for no reason.
+        internals.setupFocusSpaceEditor();
+        internals.openBlocklistModal();
+        try {
+            // The focus event is dispatched rather than produced by .focus():
+            // the headless runner's window has no OS focus, and then .focus()
+            // moves activeElement without firing `focus` at all. In a focused
+            // window a real Tab fires the same event (checked in Chromium).
+            const focusHeader = (el) => el?.dispatchEvent(new FocusEvent('focus'));
+            const whenHeader = document.getElementById('editor-section-when-header');
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+            focusHeader(whenHeader);
+            assertEqual(whenHeader?.getAttribute('aria-expanded'), 'true', 'T189: tabbing to When to block opens it');
+
+            const stopHeader = document.getElementById('editor-section-stop-header');
+            stopHeader?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+            focusHeader(stopHeader);
+            assertEqual(stopHeader?.getAttribute('aria-expanded'), 'false', 'T190: a mouse press alone does not open a section');
+        } finally {
+            document.activeElement?.blur?.();
+            internals.closeBlocklistModal();
+        }
+    }
+
+    // ========================================
+    // CATEGORY: SCHEDULE TIME LIST KEYBOARD (T196-T199)
+    // ========================================
+    // Clicking an hour / minute opens a list of options; the arrow keys walk it
+    // and Enter takes the highlighted one, so the field is usable without a mouse.
+    function runScheduleTimeKeyboardTests() {
+        console.log('\n⌨️  Schedule time list keyboard');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        if (typeof internals.openBlocklistModal !== 'function' || typeof internals.setupFocusSpaceEditor !== 'function') {
+            assert(false, 'T196: openBlocklistModal and setupFocusSpaceEditor are exposed to tests');
+            return;
+        }
+        const press = (el, key) => el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+        const options = () => [...document.querySelectorAll('.schedule-time-popover .popover-option')];
+        const activeIndex = () => options().findIndex((o) => o.classList.contains('key-active'));
+        const optionText = () => document.querySelector('.schedule-time-popover .popover-option.key-active')?.textContent ?? null;
+
+        internals.setupFocusSpaceEditor();
+        internals.openBlocklistModal();
+        try {
+            document.getElementById('when-kind-weekly')?.click();
+            const hour = document.querySelector('.schedule-start-display input.time-part[data-type="hour"]');
+            if (!hour) {
+                assert(false, 'T196: the Weekly editor renders an hour field');
+                return;
+            }
+
+            // T196: clicking the field opens the list, with the current value marked.
+            hour.click();
+            const popover = document.querySelector('.schedule-time-popover');
+            assert(!!popover, 'T196: clicking an hour opens the option list');
+            const selected = popover?.querySelector('.popover-option.selected');
+            assertEqual(selected?.textContent, hour.value, 'T196: the list marks the field\'s current value');
+
+            // T197: the walk starts from the current value rather than the top of
+            // the list, and stops at the ends (no wrap from 23 back to 00).
+            const selectedIndex = options().findIndex((o) => o.classList.contains('selected'));
+            const lastIndex = options().length - 1;
+            const stepDown = selectedIndex < lastIndex ? 'ArrowDown' : 'ArrowUp';
+            const stepUp = stepDown === 'ArrowDown' ? 'ArrowUp' : 'ArrowDown';
+            const delta = stepDown === 'ArrowDown' ? 1 : -1;
+
+            press(hour, stepDown);
+            assertEqual(activeIndex(), selectedIndex + delta,
+                'T197: the first press moves one option from the current value');
+            press(hour, stepDown);
+            assertEqual(activeIndex(), selectedIndex + 2 * delta,
+                'T197: pressing again keeps walking the list');
+            press(hour, stepUp);
+            assertEqual(activeIndex(), selectedIndex + delta,
+                'T197: the opposite arrow walks back');
+
+            // The end of the list is a stop, not a wrap.
+            for (let i = 0; i < options().length + 2; i++) press(hour, stepUp);
+            assertEqual(activeIndex(), delta > 0 ? 0 : lastIndex,
+                'T197: the highlight stops at the end of the list');
+            press(hour, stepDown);
+
+            // T198: Enter takes the highlighted option and closes the list.
+            const expected = optionText();
+            press(hour, 'Enter');
+            assertEqual(hour.value, expected, 'T198: Enter commits the highlighted option');
+            assert(!document.querySelector('.schedule-time-popover'), 'T198: Enter closes the list');
+
+            // T199: Down with no list open opens one; Escape closes it, value untouched.
+            const beforeEscape = hour.value;
+            press(hour, 'ArrowDown');
+            assert(!!document.querySelector('.schedule-time-popover'), 'T199: Down opens the list when it is closed');
+            press(hour, 'Escape');
+            assert(!document.querySelector('.schedule-time-popover'), 'T199: Escape closes the list');
+            assertEqual(hour.value, beforeEscape, 'T199: Escape leaves the value alone');
+        } finally {
+            document.querySelectorAll('.schedule-time-popover').forEach((el) => el.remove());
+            document.activeElement?.blur?.();
+            internals.closeBlocklistModal();
+        }
+    }
+
+    // ========================================
+    // CATEGORY: APP-STYLED DROPDOWNS (T191-T195)
+    // ========================================
+    // Native <select>s get the Settings language picker's look; the native
+    // element stays the source of truth for .value, .disabled and `change`.
+    function runCustomSelectTests() {
+        console.log('\n🔽 App-styled dropdowns');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        if (typeof internals.enhanceSelect !== 'function' || typeof internals.enhanceNativeSelects !== 'function') {
+            assert(false, 'T191: enhanceSelect and enhanceNativeSelects are exposed to tests');
+            return;
+        }
+        const host = document.createElement('div');
+        document.body.appendChild(host);
+        let menu = null;
+        try {
+            host.innerHTML = '<select id="custom-select-test"><option value="a">Alpha</option><option value="b">Beta</option></select>';
+            const select = host.querySelector('select');
+            internals.enhanceSelect(select);
+            const trigger = host.querySelector('.custom-select-trigger');
+            assert(!!trigger, 'T191: a native select gets an app-styled trigger');
+            assertEqual(trigger?.textContent.trim(), 'Alpha', 'T191: the trigger shows the selected option');
+
+            select.value = 'b';
+            assertEqual(trigger?.textContent.trim(), 'Beta', 'T192: setting .value in code updates the trigger');
+
+            let changes = 0;
+            select.addEventListener('change', () => { changes += 1; });
+            trigger?.click();
+            menu = document.getElementById(trigger?.getAttribute('aria-controls') || '');
+            assert(!!menu && !menu.classList.contains('hidden'), 'T193: clicking the trigger opens the menu');
+            menu?.querySelector('[data-value="a"]')?.click();
+            assertEqual(select.value, 'a', 'T193: choosing an option sets the native value');
+            assertEqual(changes, 1, 'T193: choosing an option fires change once');
+            assert(!!menu && menu.classList.contains('hidden'), 'T193: choosing an option closes the menu');
+
+            select.disabled = true;
+            assert(!!trigger?.disabled, 'T194: disabling the select disables the trigger');
+
+            internals.enhanceNativeSelects();
+            const missed = [...document.querySelectorAll('select')]
+                .filter((el) => el.id !== 'blocklist-select' && el.dataset.customSelectBound !== '1')
+                .map((el) => el.id || '(no id)');
+            assertEqual(missed.join(', '), '', 'T195: every app dropdown except the hidden blocklist select is app-styled');
+        } finally {
+            host.remove();
+            menu?.remove();
         }
     }
 
@@ -2654,8 +3220,15 @@
             runEditFrictionGateTests();
             runChallengePrimitiveTests();
             runChallengeControllerTests();
-            runDefaultPauseLengthTests();
+            runTemporaryUnlockTests();
             runCompactDesktopCardTapTests();
+            runFocusSpaceSwitchTests();
+            runCardRenderStabilityTests();
+            runScheduledCardCountdownTests();
+            runEditorDefaultsAndDialogTests();
+            runCardTimingAndSectionKeyboardTests();
+            runCustomSelectTests();
+            runScheduleTimeKeyboardTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
         }
@@ -2684,7 +3257,7 @@
         runEditFrictionGateTests,
         runChallengePrimitiveTests,
         runChallengeControllerTests,
-        runDefaultPauseLengthTests,
+        runTemporaryUnlockTests,
         runCompactDesktopCardTapTests
     };
 
