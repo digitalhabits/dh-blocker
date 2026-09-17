@@ -231,3 +231,86 @@ fn an_allow_mode_sighting_gets_the_polite_quit_so_work_can_be_saved() {
         SightingQuit::Polite
     );
 }
+
+// ---- allow mode: things that must never be closed -----------------
+
+#[test]
+fn the_shared_windows_app_frame_is_never_a_target() {
+    // Every Store-style app's window (Settings, Calculator, Photos…) belongs
+    // to this one host process. Killing it closes all of them at once,
+    // allowed apps included.
+    assert!(is_protected_app_name("ApplicationFrameHost.exe"));
+    assert!(is_protected_app_name("applicationframehost"));
+}
+
+#[test]
+fn allow_mode_never_closes_an_installer_or_a_disk_operation() {
+    use std::path::Path;
+    // Interrupting these half-way can leave an install or a disk broken —
+    // a cost out of all proportion to a focus block.
+    let mac = [
+        ("Installer", "/System/Library/CoreServices/Installer.app/Contents/MacOS/Installer"),
+        ("Disk Utility", "/System/Applications/Utilities/Disk Utility.app/Contents/MacOS/Disk Utility"),
+        (
+            "Migration Assistant",
+            "/System/Applications/Utilities/Migration Assistant.app/Contents/MacOS/Migration Assistant",
+        ),
+    ];
+    for (name, exe) in mac {
+        assert!(
+            is_allow_mode_exempt(name, Some(Path::new(exe))),
+            "{name} must be exempt"
+        );
+    }
+    for name in ["msiexec.exe", "MSIEXEC.EXE", "wusa.exe"] {
+        assert!(is_allow_mode_exempt(name, None), "{name} must be exempt");
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn the_installer_is_exempt_under_a_localised_name() {
+    use std::path::Path;
+    // NSRunningApplication reports the *localised* name — "Installer" is
+    // "Installationsprogram" in Danish — so the bundle path has to decide.
+    assert!(is_allow_mode_exempt(
+        "Installationsprogram",
+        Some(Path::new("/System/Library/CoreServices/Installer.app")),
+    ));
+}
+
+#[test]
+fn allow_mode_exemption_does_not_swallow_ordinary_apps() {
+    use std::path::Path;
+    // Over-broad exemption is a silent hole in the block.
+    for (name, exe) in [
+        ("Safari", "/Applications/Safari.app/Contents/MacOS/Safari"),
+        ("Slack", "/Applications/Slack.app/Contents/MacOS/Slack"),
+        (
+            "chrome.exe",
+            "C:\\Program Files\\Google\\Chrome\\chrome.exe",
+        ),
+        (
+            "Disk Utility Pro",
+            "/Applications/Disk Utility Pro.app/Contents/MacOS/x",
+        ),
+    ] {
+        assert!(
+            !is_allow_mode_exempt(name, Some(Path::new(exe))),
+            "{name} must not be exempt"
+        );
+    }
+}
+
+#[test]
+fn the_exe_suffix_is_dropped_whatever_its_case() {
+    assert_eq!(strip_exe_suffix("notepad.exe"), "notepad");
+    assert_eq!(strip_exe_suffix("NOTEPAD.EXE"), "NOTEPAD");
+    assert_eq!(strip_exe_suffix("Safari"), "Safari");
+    assert_eq!(strip_exe_suffix(".exe"), "");
+    assert_eq!(strip_exe_suffix("exe"), "exe");
+    // Multi-byte names must not be split inside a character.
+    assert_eq!(strip_exe_suffix("日本語"), "日本語");
+    // A user's label matches the process however Windows cases it.
+    assert!(process_matches_app_label("notepad", "NOTEPAD.EXE", None));
+}

@@ -203,9 +203,46 @@ const PROTECTED: &[&str] = &[
     "dwm.exe",
     "winlogon.exe",
     "svchost.exe",
+    // Hosts the window of every Store-style app (Settings, Calculator,
+    // Photos…). A window's PID resolves to this, never to the app itself, so
+    // killing it closes all of them at once — allowed apps included. The
+    // failure this picks: allow mode does not close Store-style apps at all
+    // until the real app behind the frame is resolved.
+    "ApplicationFrameHost.exe",
     "Taskmgr",
     "Task Manager",
 ];
+
+/// Apps allow mode leaves alone even though they are not on the allowed
+/// list: interrupting an install or a disk operation half-way can leave the
+/// machine broken, a cost out of all proportion to a focus block.
+///
+/// Deliberately NOT part of `PROTECTED`: that list also stops a name being
+/// blocked at all, and someone may have good reason to block one of these in
+/// blocklist mode. It is also deliberately short — every entry is a hole in
+/// an allow-only block, so an app belongs here only when killing it
+/// mid-operation does damage, not merely because it is a system app. System
+/// Settings is left out on purpose: it is where Automation gets switched
+/// off, which is exactly the way round the blocker.
+///
+/// Matched like a user's own app label — by process name, and on macOS also
+/// by bundle path, because `NSRunningApplication` reports the *localised*
+/// name ("Installer" is "Installationsprogram" in Danish).
+const ALLOW_MODE_NEVER_CLOSE: &[&str] = &[
+    // macOS
+    "Installer",
+    "Disk Utility",
+    "Migration Assistant",
+    // Windows
+    "msiexec",
+    "wusa",
+];
+
+fn is_allow_mode_exempt(proc_name: &str, proc_exe: Option<&std::path::Path>) -> bool {
+    ALLOW_MODE_NEVER_CLOSE
+        .iter()
+        .any(|label| process_matches_app_label(label, proc_name, proc_exe))
+}
 
 fn is_protected(name: &str) -> bool {
     is_protected_app_name(name)
@@ -219,12 +256,24 @@ fn is_protected_process(name: &str, pid: sysinfo::Pid) -> bool {
     is_self_pid(pid) || is_protected(name)
 }
 
-/// Whether an app label must never be killed by the watcher.
+/// `name` without a trailing `.exe`, whatever its case — Windows reports
+/// `NOTEPAD.EXE` as readily as `notepad.exe`.
+fn strip_exe_suffix(name: &str) -> &str {
+    let split = name.len().saturating_sub(4);
+    match name.get(split..) {
+        Some(tail) if tail.eq_ignore_ascii_case(".exe") => &name[..split],
+        _ => name,
+    }
+}
+
+/// Whether an app label must never be killed by the watcher. The suffix is
+/// dropped from both sides, so a listed `explorer.exe` covers a bare
+/// `explorer` and a listed `Taskmgr` covers `Taskmgr.exe`.
 pub fn is_protected_app_name(name: &str) -> bool {
-    let stem = name.strip_suffix(".exe").unwrap_or(name);
+    let stem = strip_exe_suffix(name);
     PROTECTED
         .iter()
-        .any(|p| name.eq_ignore_ascii_case(p) || stem.eq_ignore_ascii_case(p))
+        .any(|p| stem.eq_ignore_ascii_case(strip_exe_suffix(p)))
 }
 
 /// Match a running process against a user-facing app label.
@@ -238,7 +287,7 @@ fn process_matches_app_label(
     proc_name: &str,
     proc_exe: Option<&std::path::Path>,
 ) -> bool {
-    let stem = proc_name.strip_suffix(".exe").unwrap_or(proc_name);
+    let stem = strip_exe_suffix(proc_name);
     if label.eq_ignore_ascii_case(proc_name) || label.eq_ignore_ascii_case(stem) {
         return true;
     }
@@ -1209,6 +1258,12 @@ fn sweep_allowlist(
             .process(pid)
             .and_then(|p| p.exe().map(|p| p.to_path_buf()));
         if process_is_allowed(allowed, &proc_name, proc_exe.as_deref()) {
+            continue;
+        }
+        if is_allow_mode_exempt(&proc_name, proc_exe.as_deref()) {
+            log::debug!(
+                "app_watcher: allowlist skip pid={pid} name='{proc_name}' — never closed by allow mode"
+            );
             continue;
         }
         let Some(proc_) = sys.process(pid) else {
