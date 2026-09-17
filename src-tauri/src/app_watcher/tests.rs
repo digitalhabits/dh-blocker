@@ -206,3 +206,28 @@ fn grace_windows_are_long_enough_to_be_usable() {
     assert!(PREQUIT_DURATION >= Duration::from_secs(10));
     assert!(POSTQUIT_GRACE >= Duration::from_secs(5));
 }
+
+// ---- mid-block sightings ----------------------------------------
+
+#[test]
+fn a_blocked_app_opened_mid_block_is_quit_without_ceremony() {
+    // Blocklist mode: the user was warned when the block started and has
+    // now deliberately launched something on the list.
+    assert_eq!(
+        mid_block_sighting_quit(EntryOrigin::Blocklist),
+        SightingQuit::Silent
+    );
+}
+
+#[test]
+fn an_allow_mode_sighting_gets_the_polite_quit_so_work_can_be_saved() {
+    // Allow mode: the trigger is any non-allowed app coming to the front —
+    // one that was hidden when the block started, or one that raised itself.
+    // Nobody chose to open it, and it may hold unsaved work, so it must get
+    // the quit that runs the app's own "save changes?" path, never a signal
+    // that skips it.
+    assert_eq!(
+        mid_block_sighting_quit(EntryOrigin::Allowlist),
+        SightingQuit::Polite
+    );
+}

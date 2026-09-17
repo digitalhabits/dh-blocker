@@ -612,6 +612,33 @@ enum EntryOrigin {
     Allowlist,
 }
 
+/// How a PID first seen in the middle of a block is asked to quit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SightingQuit {
+    /// A signal straight to the process: no activation flash, no Apple
+    /// Event round-trip — and no "save changes?" prompt.
+    Silent,
+    /// The platform's Cmd-Q equivalent, which runs the app's own terminate
+    /// path, unsaved-work prompts included.
+    Polite,
+}
+
+/// Blocklist mode: the user was warned when the block started and has now
+/// deliberately launched something on the list, so it is quit without
+/// ceremony. Allow mode is a different situation wearing the same code path:
+/// the trigger is *any* non-allowed app coming to the front — one that was
+/// hidden when the block started (and so never got the warning), or one that
+/// raised itself. Nobody chose to open it and it may hold unsaved work, so it
+/// gets the polite quit. The failure this picks: an app that ignores the
+/// polite quit stays usable for `POSTQUIT_GRACE` before the hard kill, rather
+/// than a document being destroyed without a prompt.
+fn mid_block_sighting_quit(origin: EntryOrigin) -> SightingQuit {
+    match origin {
+        EntryOrigin::Blocklist => SightingQuit::Silent,
+        EntryOrigin::Allowlist => SightingQuit::Polite,
+    }
+}
+
 /// One tick of the per-PID quit state machine, decided purely from the
 /// current phase and the clock.
 ///
@@ -921,7 +948,12 @@ fn sweep(
                     log::info!(
                         "app_watcher: mid-block sighting pid={pid} name='{name}'; SIGTERM (no warning)"
                     );
-                    request_silent_quit(*pid, &name, proc_);
+                    // Same decision the allow-mode sweep uses, so the two
+                    // paths cannot drift apart unnoticed.
+                    match mid_block_sighting_quit(EntryOrigin::Blocklist) {
+                        SightingQuit::Silent => request_silent_quit(*pid, &name, proc_),
+                        SightingQuit::Polite => request_graceful_quit(*pid, &name, proc_),
+                    }
                     slot.insert(PidEntry {
                         matched_name,
                         phase: PidPhase::PostQuit {
@@ -1204,10 +1236,20 @@ fn sweep_allowlist(
                         intention_only: false,
                     });
                 } else {
-                    log::info!(
-                        "app_watcher: allowlist sighting pid={pid} name='{proc_name}'; silent quit"
-                    );
-                    request_silent_quit(pid, &proc_name, proc_);
+                    match mid_block_sighting_quit(EntryOrigin::Allowlist) {
+                        SightingQuit::Polite => {
+                            log::info!(
+                                "app_watcher: allowlist sighting pid={pid} name='{proc_name}'; polite quit"
+                            );
+                            request_graceful_quit(pid, &proc_name, proc_);
+                        }
+                        SightingQuit::Silent => {
+                            log::info!(
+                                "app_watcher: allowlist sighting pid={pid} name='{proc_name}'; silent quit"
+                            );
+                            request_silent_quit(pid, &proc_name, proc_);
+                        }
+                    }
                     slot.insert(PidEntry {
                         matched_name: display_name,
                         phase: PidPhase::PostQuit {
