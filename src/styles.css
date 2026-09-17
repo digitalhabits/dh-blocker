@@ -14651,10 +14651,11 @@ body.ios.handset-device .modal-overlay .websites-import-menu-section-label{
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    color: white;
+    /* Ink picked against this swatch's own colour (syncColorSwatchInk); the
+       palette is pale, so white left the tick barely visible. */
+    color: var(--swatch-ink, #1e2d3e);
     font-size: 13px;
     font-weight: bold;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .custom-color-input{
@@ -14677,8 +14678,7 @@ body.ios.handset-device .modal-overlay .websites-import-menu-section-label{
     font-size: 15px;
     font-weight: bold;
     line-height: 1;
-    color: white;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    color: var(--swatch-ink, #1e2d3e);
     pointer-events: none;
 }
 

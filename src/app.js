@@ -94,7 +94,7 @@ import {
     syncScheduleOverlayCustomiseEditorState, syncScheduleOverlayCustomiseTitle,
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
-import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, openBlocklistModal, refreshSelectedBlocklistUi, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncOverrideCountUi, updateOverridePreview, openOverrideModal } from './confirm-modals.js';
+import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, openBlocklistModal, openOverrideModal, refreshSelectedBlocklistUi, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncColorSwatchInk, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
 import { enhanceNativeSelects } from './custom-select.js';
 import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, deleteBlocklist, isBlocklistEditFrictionRequired, pendingDelete, saveBlocklistOrderFromDOM, setUndoToastMessage } from './blocklists.js';
 import {
@@ -1288,6 +1288,7 @@ function setupModalListeners() {
         customSwatch.dataset.color = color;
         document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
         customSwatch.classList.add('selected');
+        syncColorSwatchInk();
         applyModalBlocklistTint(color);
     });
 

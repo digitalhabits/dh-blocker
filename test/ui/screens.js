@@ -477,6 +477,18 @@ export const screens = [
         },
     },
     {
+        // Dark mode: the tick and + must read against their pale swatches.
+        name: 'editor-advanced-dark',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'mac',
+        theme: 'dark',
+        viewport: DESKTOP,
+        clip: '#time-picker-container',
+        prepare: async (page) => {
+            await page.click('#editor-section-advanced-header');
+        },
+    },
+    {
         // A long Start alert name must truncate, keeping the pencil in the panel.
         name: 'editor-advanced-long-alert',
         fixture: fixtures.longStartAlertName,

@@ -1369,6 +1369,10 @@ export function populateBlocklistFormFields(blocklist) {
         }
     }
 
+    // After the custom swatch has taken its colour: the ink is read off the
+    // rendered background, so stamping earlier would use the previous one.
+    syncColorSwatchInk();
+
     applyModalBlocklistTint(colorToSelect);
 
     // Restore emoji swatch selection
@@ -1700,6 +1704,25 @@ export function syncOverrideCountUi() {
         // Never below the count already on the slider — see getOverrideWordsSliderMax.
         countInput.max = String(getOverrideWordsSliderMax({ currentCount: countInput.value }));
     }
+}
+
+/**
+ * The tick on the selected colour and the + on the custom one are drawn in ink
+ * chosen against that swatch's own colour. Every palette colour is pale, so a
+ * white glyph disappeared into it — worst in dark mode, where there is no
+ * bright surround to read it against.
+ */
+export function syncColorSwatchInk() {
+    document.querySelectorAll('.color-swatch').forEach((swatch) => {
+        // The rendered background, not data-color: the custom swatch carries
+        // the literal string "custom" there, which parses to nothing and used
+        // to fall back to white ink on its pale blue.
+        const color = getComputedStyle(swatch).backgroundColor;
+        const onDark = getContrastTextColor(color) === '#ffffff';
+        // A literal, not --redd-navy: that token flips to near-white in dark
+        // mode, while these swatches stay the same pastel in both themes.
+        swatch.style.setProperty('--swatch-ink', onDark ? '#ffffff' : '#1e2d3e');
+    });
 }
 
 export function applyOverrideTypeUi(type) {

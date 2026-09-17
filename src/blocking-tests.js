@@ -25,6 +25,7 @@
  * - T203-T204: Custom Text sits under Method and wraps rather than scrolling
  * - T205: a long Start alert name keeps the customise pencil inside the panel
  * - T206: app chrome is not text-selectable; inputs are
+ * - T207: colour-swatch tick / + are inked against the swatch's own colour
  */
 
 (function () {
@@ -2951,6 +2952,31 @@
             if (nameInput) {
                 assertEqual(getComputedStyle(nameInput).webkitUserSelect, 'text',
                     'T206: text fields stay selectable');
+            }
+        }
+
+        // T207: the tick and + are inked against each swatch's own colour. The
+        // palette is pale in both themes, so a white glyph vanished into it —
+        // and the ink cannot be a theme token, because --redd-navy flips to
+        // near-white in dark mode while the swatches do not change at all.
+        if (typeof internals.openBlocklistModal === 'function') {
+            internals.openBlocklistModal();
+            try {
+                const swatches = [...document.querySelectorAll('.color-swatch')];
+                const pale = document.querySelector('.color-swatch[data-color="#B8D1DE"]');
+                const custom = document.getElementById('custom-color-swatch');
+                if (swatches.length === 0 || !pale || !custom) {
+                    assert(false, 'T207: the colour swatches are in the editor');
+                } else {
+                    assert(swatches.every((sw) => sw.style.getPropertyValue('--swatch-ink').trim() !== ''),
+                        'T207: every swatch carries its own ink');
+                    assertEqual(pale.style.getPropertyValue('--swatch-ink').trim(), '#1e2d3e',
+                        'T207: a pale swatch gets dark ink');
+                    assert(custom.style.getPropertyValue('--swatch-ink').trim() !== '',
+                        'T207: the custom (+) swatch is inked too, despite data-color="custom"');
+                }
+            } finally {
+                internals.closeBlocklistModal();
             }
         }
 
