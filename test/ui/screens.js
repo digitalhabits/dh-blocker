@@ -145,6 +145,23 @@ export const screens = [
         clip: '#blocklists-container',
     },
     {
+        // "Show names … in the overview" on: a lone item and a short list show
+        // names, a long list shows counts; both lists expand.
+        name: 'cards-names-shown',
+        fixture: fixtures.cardNamesShown,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#blocklists-container',
+    },
+    {
+        // …and off: counts only, with no dashed underline — nothing expands.
+        name: 'cards-names-hidden',
+        fixture: fixtures.cardNamesHidden,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#blocklists-container',
+    },
+    {
         // Full schedule when it fits ("09:00 – 12:00, 18:00 – 22:00"), "+N" when not.
         name: 'cards-schedule-ranges',
         fixture: fixtures.multiRangeSchedules,

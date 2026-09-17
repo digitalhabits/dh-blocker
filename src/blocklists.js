@@ -904,8 +904,10 @@ export function renderBlocklists() {
     const statusLinesById = new Map();
     const cardsHtml = visibleBlocklists.map(bl => {
         const metaHtml = buildBlocklistCardMetaHtml(bl);
-        const isExpanded = expandedBlocklistCardIds.has(bl.id);
         const showDetails = blocklistCardHasExpandableSummary(bl);
+        // A card expanded before its names were hidden must not keep the
+        // expanded styling around an empty details area.
+        const isExpanded = showDetails && expandedBlocklistCardIds.has(bl.id);
         const detailsHtml = showDetails ? buildBlocklistCardDetailsHtml(bl, { expanded: isExpanded }) : '';
 
         // Get color for left border

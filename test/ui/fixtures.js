@@ -142,4 +142,23 @@ export const emptyInstall = {
     settings: {},
 };
 
-export const fixtures = { crowdedWeek, singleSchedule, manualRunning, cardStates, flexibleBetweenBlocks, multiRangeSchedules, emptyInstall };
+/**
+ * "Show names … in the overview" against one item, a short list and a long
+ * list — every shape the card's summary line can take. Two fixtures because
+ * the card list scrolls: six cards would push half of them out of the shot.
+ */
+const nameVisibilityCards = (extra) => ({
+    blocklists: [
+        { id: 'bl-one', name: 'One item', emoji: '🎯', color: '#B8D1DE', websites: ['a.invalid'], apps: [], ...extra },
+        { id: 'bl-few', name: 'Few items', emoji: '📚', color: '#BCD9B6', websites: ['twitter.invalid', 'x.invalid'], apps: ['Slack'], ...extra },
+        { id: 'bl-many', name: 'Many items', emoji: '🌳', color: '#EECAAD', websites: ['a.invalid', 'b.invalid', 'c.invalid', 'd.invalid'], apps: ['Slack', 'Mail'], ...extra },
+    ],
+    activeBlocks: [],
+    schedules: [],
+    startOverlays: [],
+    settings: {},
+});
+export const cardNamesShown = nameVisibilityCards({});
+export const cardNamesHidden = nameVisibilityCards({ showItemDetails: false });
+
+export const fixtures = { crowdedWeek, singleSchedule, manualRunning, cardStates, flexibleBetweenBlocks, multiRangeSchedules, emptyInstall, cardNamesShown, cardNamesHidden };
