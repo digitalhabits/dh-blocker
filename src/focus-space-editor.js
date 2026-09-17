@@ -613,7 +613,7 @@ export function applyFocusSpaceEditorLanguage() {
         if (el) el.textContent = text;
     };
     setText('blocklist-name-label', tSettings('focusSpaceName'));
-    setText('editor-section-what-title', tSettings('whatToBlock'));
+    // 'editor-section-what-title' is mode-aware: updateBlocklistModalModeLabels sets it.
     setText('editor-section-when-title', tSettings('whenToBlock'));
     setText('editor-section-stop-title', tSettings('toStopEarly'));
     setText('editor-section-advanced-title', tSettings('advancedOptions'));

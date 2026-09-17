@@ -4873,9 +4873,10 @@ body.ios .schedule-segment .remove-segment-btn {
     flex-shrink: 0;
 }
 
-/* Start time / End time / Days: smaller and denser than the rest of the form,
-   like the Android app's field labels. */
-.when-times .time-label{
+/* Start time / End time / Days / Until: smaller and denser than the rest of
+   the form, like the Android app's field labels. */
+.when-times .time-label,
+.when-times .editor-inline-label{
     font-size: var(--schedule-segment-label-size, 12px);
     font-weight: 600;
     line-height: var(--schedule-segment-label-line-height, 1.25);
@@ -16341,12 +16342,22 @@ body.dark-mode .app-blocking-warning-card{
     display: none;
 }
 
+/* "Until" is a heading over its buttons, like Start time / End time, with a
+   clear break from the times above it. */
 .when-until{
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px 10px;
     flex-wrap: wrap;
-    padding-top: 2px;
+    padding-top: 12px;
+    /* Same inset as the segment's own content, so "Until" lines up with
+       "Start time" rather than sitting proud of it. */
+    padding-left: var(--schedule-segment-pad-x, 14px);
+    padding-right: var(--schedule-segment-pad-x, 14px);
+}
+
+.when-until > .editor-inline-label{
+    flex: 0 0 100%;
 }
 
 .editor-inline-label{

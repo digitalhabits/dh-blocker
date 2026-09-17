@@ -2651,10 +2651,7 @@ export function applySettingsLanguage() {
     );
     setText('schedule-footer-hint', tSettings('scheduleFooterHint'));
     setText('schedule-strictness-label', `${tSettings('scheduleStrictnessLabel')}${tSettings('stopScheduleMetaColon')}`);
-    setText('strictness-option-committed-title', tSettings('allowEditsStrictLabel'));
-    setText('strictness-option-committed-desc', tSettings('allowEditsStrictDesc'));
-    setText('strictness-option-flexible-title', tSettings('allowEditsFlexibleLabel'));
-    setText('strictness-option-flexible-desc', tSettings('allowEditsFlexibleDesc'));
+    // The option titles and descriptions are mode-aware: updateBlocklistModalModeLabels below.
     setText('schedule-panel-overlay-label', tSettings('scheduleActiveOverlayLabel'));
     setText('footer-made-with', tSettings('madeWith'));
     setText('footer-by', tSettings('by'));

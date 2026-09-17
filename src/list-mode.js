@@ -96,6 +96,9 @@ export function updateBlocklistModalModeLabels(mode) {
         const el = document.getElementById(id);
         if (el) el.textContent = text;
     };
+    // Only the "What" heading flips. "When to block" holds in both modes: an
+    // allow-only space still blocks at those times — everything but its list.
+    assignText('editor-section-what-title', tSettings(isAllow ? 'whatToAllow' : 'whatToBlock'));
     assignText('blocklist-websites-label', tSettings(isAllow ? 'websitesAllow' : 'websites'));
     assignText('blocklist-apps-label', tSettings(isAllow ? 'appsAllow' : 'apps'));
     assignText(
@@ -109,6 +112,19 @@ export function updateBlocklistModalModeLabels(mode) {
     assignText(
         'show-item-details-label',
         tSettings(isAllow ? 'listAllowedOnCard' : 'listBlockedOnCard'),
+    );
+    // "Editing": the titles name the outcome and hold in both modes, but what
+    // counts as stricter does not mirror cleanly — allowing fewer things is
+    // stricter, while adding a time still is — so each mode spells it out.
+    assignText('strictness-option-committed-title', tSettings('allowEditsStrictLabel'));
+    assignText('strictness-option-flexible-title', tSettings('allowEditsFlexibleLabel'));
+    assignText(
+        'strictness-option-committed-desc',
+        tSettings(isAllow ? 'allowEditsStrictDescAllow' : 'allowEditsStrictDesc'),
+    );
+    assignText(
+        'strictness-option-flexible-desc',
+        tSettings(isAllow ? 'allowEditsFlexibleDescAllow' : 'allowEditsFlexibleDesc'),
     );
     const modeDesc = document.getElementById('blocklist-modal-mode-desc');
     if (modeDesc) {
