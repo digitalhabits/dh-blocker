@@ -1,7 +1,7 @@
 // Shared list display/meta helpers for blocklist and allowlist focus spaces.
 // Extracted from app.js during allowlist-refactoring phase 1.
 import { escapeHtml, cleanUrlForDisplay } from './utils.js';
-import { getSettingsLanguage, tSettings } from './i18n.js';
+import { getSettingsLanguage, tSettings, tSettingsFmt } from './i18n.js';
 import {
     normalizeIOSScreenTimeSelection,
     getBlocklistRegularApps,
@@ -40,6 +40,17 @@ export function websiteWord(count) {
         return count === 1 ? 'hjemmeside' : 'hjemmesider';
     }
     return count === 1 ? 'website' : 'websites';
+}
+
+/** Editor "What to block" summary, e.g. "1 website · 0 apps" — singular when there is one. */
+export function formatEditorItemCounts({ websites = 0, apps = 0 } = {}) {
+    const part = (count, oneKey, manyKey) => (count === 1
+        ? tSettings(oneKey)
+        : tSettingsFmt(manyKey, { count: String(count) }));
+    return tSettingsFmt('whatToBlockSummaryFmt', {
+        websites: part(websites, 'countWebsiteOne', 'countWebsitesFmt'),
+        apps: part(apps, 'countAppOne', 'countAppsFmt'),
+    });
 }
 
 function siteWord(count) {

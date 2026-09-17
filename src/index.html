@@ -812,7 +812,7 @@
                             <div class="exit-difficulty-row settings-row" id="override-method-row">
                                 <div class="exit-difficulty-row-copy settings-row-copy">
                                     <span class="exit-difficulty-row-label settings-row-label"
-                                        id="override-method-label">Method</span>
+                                        id="override-method-label">What to type</span>
                                 </div>
                                 <div class="exit-difficulty-row-control settings-row-control">
                                     <select id="override-type" class="form-select override-type-select">
@@ -829,15 +829,15 @@
                             </div>
                             <div class="exit-difficulty-row settings-row override-slider-row" id="override-count-wrapper">
                                 <div class="override-slider-header">
-                                    <span class="exit-difficulty-row-label settings-row-label" id="override-count-label">Words to type</span>
+                                    <span class="exit-difficulty-row-label settings-row-label" id="override-count-label">How many words</span>
                                     <span class="exit-difficulty-time-estimate" id="override-count-time-estimate">15 words · ~1 min</span>
                                 </div>
                                 <input type="range" id="override-count" class="editor-slider override-words-slider" min="1" max="300" value="15" step="1" aria-labelledby="override-count-label">
                             </div>
                             <div class="exit-difficulty-row settings-row unlock-duration-row" id="unlock-duration-row">
                                 <div class="exit-difficulty-row-copy settings-row-copy">
-                                    <span class="exit-difficulty-row-label settings-row-label" id="unlock-duration-label">Auto-start after stop</span>
-                                    <span class="settings-row-hint" id="unlock-duration-hint">When you stop this focus space, it turns itself back on after this long. Never keeps it off until you turn it on again.</span>
+                                    <span class="exit-difficulty-row-label settings-row-label" id="unlock-duration-label">Turn back on after</span>
+                                    <span class="settings-row-hint" id="unlock-duration-hint">If you stop this focus space early, it switches itself back on after this long. Choose "Never" to keep it off until you turn it on yourself.</span>
                                 </div>
                                 <div class="exit-difficulty-row-control settings-row-control">
                                     <select id="unlock-duration-select" class="form-select unlock-duration-select">
@@ -1870,7 +1870,7 @@
                                     <span id="settings-max-words-label" class="settings-row-label">Maximum words to stop early</span>
                                     <span id="settings-max-words-value" class="exit-difficulty-time-estimate">300 words · ~11 min</span>
                                 </div>
-                                <span id="settings-max-words-hint" class="settings-row-hint">How far the "Words to type" slider goes in each focus space. Lowering it never shortens a challenge you have already set.</span>
+                                <span id="settings-max-words-hint" class="settings-row-hint">How far the "How many words" slider goes in each focus space. Lowering it never shortens a challenge you have already set.</span>
                                 <input type="range" id="settings-max-words-input" class="editor-slider" min="50" max="1000" value="300" step="50" aria-labelledby="settings-max-words-label" aria-describedby="settings-max-words-hint">
                             </div>
 

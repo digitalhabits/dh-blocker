@@ -120,6 +120,7 @@
        navy over an already-navy page barely registers, and the stop challenge
        in particular has to stand clear of what is behind it. */
     --modal-scrim: rgba(30, 45, 62, 0.5);
+    --segmented-quiet-active-bg: var(--redd-card);
     --popover-bg: var(--redd-card);
     --popover-border: var(--redd-border);
     --button-bg: var(--primary-btn-bg);
@@ -205,6 +206,8 @@ body.dark-mode{
     --timeline-message: rgba(245, 240, 232, 0.45);
     --separator-color: rgba(255, 255, 255, 0.10);
     --modal-scrim: rgba(4, 9, 16, 0.72);
+    /* The card colour is nearly the track colour in dark mode; lift it instead. */
+    --segmented-quiet-active-bg: rgba(255, 255, 255, 0.12);
     --popover-bg: var(--redd-card);
     --popover-border: var(--redd-border);
     --button-bg: var(--primary-btn-bg);
@@ -13376,17 +13379,19 @@ body.handset-device #start-block-confirm-modal .start-confirm-header-room h3{
     bottom: 0;
     z-index: 3;
     margin: 0 -16px -16px;
-    padding: 8px 16px 12px;
+    padding: 4px 16px 12px;
     background: var(--panel-bg);
     border-radius: 0 0 12px 12px;
 }
 
+/* Clean: no bar, just the Save button — so drop the padding and margin that
+   exist to give the "Unsaved changes" bar its box. */
 .schedule-pending-bar.is-clean{
     justify-content: flex-end;
     border-color: transparent;
     background: transparent;
-    padding-left: 0;
-    padding-right: 0;
+    margin-top: 0;
+    padding: 0;
 }
 
 .schedule-pending-bar.is-clean .schedule-pending-label,
@@ -16322,6 +16327,15 @@ body.dark-mode .app-blocking-warning-card{
     flex: 0 0 auto;
     padding: 6px 12px;
     font-size: 13px;
+}
+
+/* The compact toggle is a detail inside a section ("Until"), not the section's
+   main choice. Its selected state is a neutral raised pill so it sits a step
+   below the accent-filled Daily / Weekly / Manual tabs above it. */
+.editor-segmented--compact .editor-segmented-btn.active{
+    background: var(--segmented-quiet-active-bg);
+    color: var(--text-primary);
+    box-shadow: 0 1px 2px rgba(30, 45, 62, 0.12), inset 0 0 0 1px var(--redd-border);
 }
 
 .editor-hint{

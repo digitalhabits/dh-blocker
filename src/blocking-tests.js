@@ -2934,7 +2934,9 @@
         }
 
         // T184: the setting's label.
-        assertEqual(document.getElementById('unlock-duration-label')?.textContent, 'Auto-start after stop', 'T184: the unlock row is called "Auto-start after stop"');
+        assertEqual(document.getElementById('unlock-duration-label')?.textContent, 'Turn back on after', 'T184: the unlock row is called "Turn back on after"');
+        assertEqual(document.getElementById('override-method-label')?.textContent, 'What to type', 'T184b: the method row asks "What to type"');
+        assertEqual(document.getElementById('override-count-label')?.textContent, 'How many words', 'T184c: the slider row asks "How many words"');
 
         // T185: the "Looks like" preview is gone from To stop early.
         assert(!document.getElementById('override-preview-block'), 'T185: no "Looks like" preview in the editor');

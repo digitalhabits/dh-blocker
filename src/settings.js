@@ -979,7 +979,7 @@ export function setupGraceSetting() {
 // panel is hidden on phones, whose native gate caps the count itself).
 //
 // Not locked during an active block, unlike the grace period next to it: the
-// setting only decides how far each space's "Words to type" slider reaches and
+// setting only decides how far each space's "How many words" slider reaches and
 // never clamps a stored count (see getOverrideWordsSliderMax), so lowering it
 // mid-block makes nothing easier to stop.
 export function syncMaxOverrideWordsSetting() {

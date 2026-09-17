@@ -265,7 +265,7 @@ export function normalizeMaxOverrideWordsSetting(value) {
 }
 
 /**
- * Top of the "Words to type" slider. The setting decides how far the slider
+ * Top of the "How many words" slider. The setting decides how far the slider
  * reaches and nothing else: stored counts are clamped to the platform ceiling
  * only, so lowering the setting cannot make an existing space easier to stop.
  * A space already above the setting gets a slider long enough to hold its

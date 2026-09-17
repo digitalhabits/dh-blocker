@@ -11,6 +11,7 @@
 // this file imports them back; every cross-module call is made at runtime.
 import { state } from './state.js';
 import { tSettings, tSettingsFmt, weekdayAbbrevMon0List } from './i18n.js';
+import { formatEditorItemCounts } from './list-presentation.js';
 import {
     WHEN_TO_BLOCK_KINDS,
     deriveWhenToBlockKind,
@@ -390,7 +391,7 @@ function currentItemCounts() {
 
 export function updateEditorSummaries() {
     const counts = currentItemCounts();
-    setSummary('what', tSettingsFmt('whatToBlockSummaryFmt', counts));
+    setSummary('what', formatEditorItemCounts(counts));
 
     const kind = getWhenToBlockKind();
     let whenText = formatScheduleWhenSummary(kind, { segments: state.scheduleSegments });
@@ -483,7 +484,7 @@ export function formatUnlockDurationLabel(minutes) {
     return tSettings(`unlock_${normalizeUnlockMinutes(minutes)}`);
 }
 
-// "Type 15 words · auto-start after 24 hours" / "… · no auto-start", like
+// "Type 15 words · back on after 24 hours" / "… · stays off", like
 // Android's stop_early_summary.
 function formatStopEarlySummary() {
     const type = normalizeOverrideType(document.getElementById('override-type')?.value);
