@@ -242,6 +242,21 @@ body{
     background: var(--container-bg);
     color: var(--text-primary);
     overflow: hidden;
+    /* App chrome, not a document: labels and card text are not selectable.
+       `.title-bar` already said as much, but WebKit still starts a selection
+       from a double-click on it (the macOS zoom gesture) and sweeps it across
+       everything behind. Text entry and deliberately copyable strings opt back
+       in below. */
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+input,
+textarea,
+select,
+[contenteditable="true"]{
+    -webkit-user-select: text;
+    user-select: text;
 }
 
 /* Display headings use the editorial serif from the brand.

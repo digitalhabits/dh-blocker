@@ -24,6 +24,7 @@
  * - T200-T202: Strictness only locks while the space is on (off = fully editable)
  * - T203-T204: Custom Text sits under Method and wraps rather than scrolling
  * - T205: a long Start alert name keeps the customise pencil inside the panel
+ * - T206: app chrome is not text-selectable; inputs are
  */
 
 (function () {
@@ -2930,6 +2931,26 @@
                 }
             } finally {
                 internals.closeBlocklistModal();
+            }
+        }
+
+        // T206: the app is chrome, not a document. A double-click on the title
+        // bar (the macOS zoom gesture) used to sweep a text selection across
+        // everything behind it. Asserted as computed style rather than by
+        // dispatching dblclick: a synthetic one creates no selection, so that
+        // test would pass whatever the CSS said.
+        {
+            const editorLabel = document.getElementById('blocklist-name-label');
+            const nameInput = document.getElementById('blocklist-name');
+            assertEqual(getComputedStyle(document.body).webkitUserSelect, 'none',
+                'T206: app text is not selectable');
+            if (editorLabel) {
+                assertEqual(getComputedStyle(editorLabel).webkitUserSelect, 'none',
+                    'T206: editor labels inherit it');
+            }
+            if (nameInput) {
+                assertEqual(getComputedStyle(nameInput).webkitUserSelect, 'text',
+                    'T206: text fields stay selectable');
             }
         }
 
