@@ -699,6 +699,54 @@ export function parseScheduleTimeTarget(target) {
     };
 }
 
+/** The option list open for this time field, if any. */
+function getScheduleTimePopoverFor(field) {
+    return field.parentElement?.querySelector('.schedule-time-popover') || null;
+}
+
+/** Open the option list for a time field from the keyboard (same list the click opens). */
+function openScheduleTimePopoverFor(field) {
+    const type = field.dataset.type;
+    const target = field.dataset.target;
+    if (!type || !target) return false;
+    const { isStart, segmentIndex } = parseScheduleTimeTarget(target);
+    if (isScheduleSegmentMutationBlocked(segmentIndex)) return false;
+    if (!state.scheduleSegments[segmentIndex]) return false;
+    showScheduleTimePopover(field, type, isStart, segmentIndex);
+    return true;
+}
+
+/**
+ * Move the arrow-key highlight within an open list. The highlight starts from
+ * the field's current value (`.selected`) so the first Down lands on the next
+ * option, not the top of the list. Returns false when no list is open.
+ */
+function moveScheduleTimePopoverHighlight(field, delta) {
+    const popover = getScheduleTimePopoverFor(field);
+    if (!popover) return false;
+    const options = [...popover.querySelectorAll('.popover-option')];
+    if (options.length === 0) return false;
+
+    let from = options.findIndex((o) => o.classList.contains('key-active'));
+    if (from < 0) from = options.findIndex((o) => o.classList.contains('selected'));
+    const next = from < 0
+        ? (delta > 0 ? 0 : options.length - 1)
+        : Math.min(options.length - 1, Math.max(0, from + delta));
+
+    options.forEach((o) => o.classList.remove('key-active'));
+    options[next].classList.add('key-active');
+    scrollPopoverOptionIntoView(popover.querySelector('.popover-scroll'), options[next]);
+    return true;
+}
+
+/** Commit whatever the arrow keys landed on. Returns false when nothing is highlighted. */
+function commitScheduleTimePopoverHighlight(field) {
+    const highlighted = getScheduleTimePopoverFor(field)?.querySelector('.popover-option.key-active');
+    if (!highlighted) return false;
+    highlighted.click();
+    return true;
+}
+
 /** Editable schedule HH:MM — same UX as instant end: click opens list; type to edit. */
 export function bindScheduleTimePartInput(el) {
     el.addEventListener('input', () => {
@@ -708,8 +756,25 @@ export function bindScheduleTimePartInput(el) {
     });
     el.addEventListener('blur', () => commitScheduleTimePart(el));
     el.addEventListener('keydown', (e) => {
+        // Down / Up walk the option list, opening it first if it is closed.
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (!getScheduleTimePopoverFor(el) && !openScheduleTimePopoverFor(el)) return;
+            moveScheduleTimePopoverHighlight(el, e.key === 'ArrowDown' ? 1 : -1);
+            return;
+        }
+        if (e.key === 'Escape') {
+            const popover = getScheduleTimePopoverFor(el);
+            if (!popover) return;
+            e.preventDefault();
+            popover.remove();
+            return;
+        }
         if (e.key !== 'Enter') return;
         e.preventDefault();
+        // Enter takes the highlighted option when the list is open, then moves
+        // on exactly as it does when the time was typed.
+        commitScheduleTimePopoverHighlight(el);
         const type = el.dataset.type;
         const target = el.dataset.target;
         const segmentEl = el.closest('.schedule-segment');

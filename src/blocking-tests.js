@@ -20,6 +20,7 @@
  * - T63-T68: Stop = temporary unlock (timed pause the switch reads as off, Never removes / switches off, Flexible skips the challenge)
  * - T169-T172: Single-column (≤718px) desktop focus-space cards open the enter sheet on tap; the switch does not
  * - T173-T178: Card switch state (isFocusSpaceOn) for manual blocks and schedules; switching on asks first
+ * - T196-T199: Schedule time lists: arrow keys walk the options, Enter commits
  */
 
 (function () {
@@ -2907,6 +2908,84 @@
     }
 
     // ========================================
+    // CATEGORY: SCHEDULE TIME LIST KEYBOARD (T196-T199)
+    // ========================================
+    // Clicking an hour / minute opens a list of options; the arrow keys walk it
+    // and Enter takes the highlighted one, so the field is usable without a mouse.
+    function runScheduleTimeKeyboardTests() {
+        console.log('\n⌨️  Schedule time list keyboard');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        if (typeof internals.openBlocklistModal !== 'function' || typeof internals.setupFocusSpaceEditor !== 'function') {
+            assert(false, 'T196: openBlocklistModal and setupFocusSpaceEditor are exposed to tests');
+            return;
+        }
+        const press = (el, key) => el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+        const options = () => [...document.querySelectorAll('.schedule-time-popover .popover-option')];
+        const activeIndex = () => options().findIndex((o) => o.classList.contains('key-active'));
+        const optionText = () => document.querySelector('.schedule-time-popover .popover-option.key-active')?.textContent ?? null;
+
+        internals.setupFocusSpaceEditor();
+        internals.openBlocklistModal();
+        try {
+            document.getElementById('when-kind-weekly')?.click();
+            const hour = document.querySelector('.schedule-start-display input.time-part[data-type="hour"]');
+            if (!hour) {
+                assert(false, 'T196: the Weekly editor renders an hour field');
+                return;
+            }
+
+            // T196: clicking the field opens the list, with the current value marked.
+            hour.click();
+            const popover = document.querySelector('.schedule-time-popover');
+            assert(!!popover, 'T196: clicking an hour opens the option list');
+            const selected = popover?.querySelector('.popover-option.selected');
+            assertEqual(selected?.textContent, hour.value, 'T196: the list marks the field\'s current value');
+
+            // T197: the walk starts from the current value rather than the top of
+            // the list, and stops at the ends (no wrap from 23 back to 00).
+            const selectedIndex = options().findIndex((o) => o.classList.contains('selected'));
+            const lastIndex = options().length - 1;
+            const stepDown = selectedIndex < lastIndex ? 'ArrowDown' : 'ArrowUp';
+            const stepUp = stepDown === 'ArrowDown' ? 'ArrowUp' : 'ArrowDown';
+            const delta = stepDown === 'ArrowDown' ? 1 : -1;
+
+            press(hour, stepDown);
+            assertEqual(activeIndex(), selectedIndex + delta,
+                'T197: the first press moves one option from the current value');
+            press(hour, stepDown);
+            assertEqual(activeIndex(), selectedIndex + 2 * delta,
+                'T197: pressing again keeps walking the list');
+            press(hour, stepUp);
+            assertEqual(activeIndex(), selectedIndex + delta,
+                'T197: the opposite arrow walks back');
+
+            // The end of the list is a stop, not a wrap.
+            for (let i = 0; i < options().length + 2; i++) press(hour, stepUp);
+            assertEqual(activeIndex(), delta > 0 ? 0 : lastIndex,
+                'T197: the highlight stops at the end of the list');
+            press(hour, stepDown);
+
+            // T198: Enter takes the highlighted option and closes the list.
+            const expected = optionText();
+            press(hour, 'Enter');
+            assertEqual(hour.value, expected, 'T198: Enter commits the highlighted option');
+            assert(!document.querySelector('.schedule-time-popover'), 'T198: Enter closes the list');
+
+            // T199: Down with no list open opens one; Escape closes it, value untouched.
+            const beforeEscape = hour.value;
+            press(hour, 'ArrowDown');
+            assert(!!document.querySelector('.schedule-time-popover'), 'T199: Down opens the list when it is closed');
+            press(hour, 'Escape');
+            assert(!document.querySelector('.schedule-time-popover'), 'T199: Escape closes the list');
+            assertEqual(hour.value, beforeEscape, 'T199: Escape leaves the value alone');
+        } finally {
+            document.querySelectorAll('.schedule-time-popover').forEach((el) => el.remove());
+            document.activeElement?.blur?.();
+            internals.closeBlocklistModal();
+        }
+    }
+
+    // ========================================
     // CATEGORY: APP-STYLED DROPDOWNS (T191-T195)
     // ========================================
     // Native <select>s get the Settings language picker's look; the native
@@ -2991,6 +3070,7 @@
             runEditorDefaultsAndDialogTests();
             runCardTimingAndSectionKeyboardTests();
             runCustomSelectTests();
+            runScheduleTimeKeyboardTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
         }

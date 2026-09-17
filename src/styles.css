@@ -2136,7 +2136,7 @@ body.ios:not(.ios-phone) .main-content .when-times .schedule-end-display input.t
     }
 
     body.ios:not(.ios-phone) .main-content .schedule-segment-expanded{
-        padding: 16px;
+        padding: var(--schedule-segment-pad-x, 14px);
         border-radius: 12px;
     }
 
@@ -2172,7 +2172,7 @@ body.ios:not(.ios-phone) .main-content .when-times .schedule-end-display input.t
         padding: 14px 18px;
         font-size: 16px;
         border-radius: 14px;
-        width: 100%;
+        width: auto;
     }
 
     body.ios:not(.ios-phone) .main-content .add-segment-btn svg{
@@ -4570,6 +4570,16 @@ body.dark-mode .time-part.active{
     color: white;
 }
 
+/* Where the arrow keys are, before Enter commits it. */
+.popover-option.key-active:not(.selected){
+    background: var(--element-hover-bg);
+    box-shadow: inset 0 0 0 2px var(--accent-color);
+}
+
+.popover-option.key-active.selected{
+    box-shadow: inset 0 0 0 2px var(--accent-color);
+}
+
 .time-separator{
     display: inline-flex;
     align-items: center;
@@ -4637,9 +4647,14 @@ matching the canonical brand
 
 /* Schedule Block Panel */
 .when-times{
+    --schedule-segment-pad-x: 14px;
     display: flex;
     flex-direction: column;
     gap: 12px;
+}
+
+body.ios:not(.ios-phone) .main-content .when-times{
+    --schedule-segment-pad-x: 16px;
 }
 
 .when-times.hidden{
@@ -4677,7 +4692,7 @@ matching the canonical brand
 }
 
 .schedule-segment-expanded{
-    padding: 14px;
+    padding: var(--schedule-segment-pad-x, 14px);
     border: none;
     border-radius: 12px;
     background: var(--app-bg);
@@ -4908,7 +4923,8 @@ body.ios .schedule-segment .remove-segment-btn {
     font-weight: 700;
     cursor: pointer;
     transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-    width: 100%;
+    width: auto;
+    margin: 0 var(--schedule-segment-pad-x, 14px) 8px;
     box-sizing: border-box;
 }
 
@@ -14379,7 +14395,7 @@ body.handset-device .main-content .add-segment-btn{
     font-size: 16px;
     min-height: 48px;
     border-radius: 14px;
-    width: 100%;
+    width: auto;
     box-sizing: border-box;
 }
 
