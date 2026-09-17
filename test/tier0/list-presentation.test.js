@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
     blocklistCardHasExpandableSummary,
     buildBlocklistCardMetaHtml,
+    formatEditorItemCounts,
 } from '../../src/list-presentation.js';
 
 function metaText(blocklist) {
@@ -49,5 +50,13 @@ describe('focus-space card summary honours "show names in the overview"', () => 
         expect(text).not.toContain('twitter');
         expect(button).toBeNull();
         expect(blocklistCardHasExpandableSummary(bl)).toBe(false);
+    });
+});
+
+describe('editor "What to block" summary', () => {
+    test('one of something is singular', () => {
+        expect(formatEditorItemCounts({ websites: 1, apps: 0 })).toBe('1 website · 0 apps');
+        expect(formatEditorItemCounts({ websites: 2, apps: 1 })).toBe('2 websites · 1 app');
+        expect(formatEditorItemCounts({ websites: 0, apps: 28 })).toBe('0 websites · 28 apps');
     });
 });
