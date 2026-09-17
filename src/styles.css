@@ -13238,9 +13238,21 @@ body.dark-mode.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-bu
     accent-color: var(--accent-color);
 }
 
-/* Override type row: dropdown + max difficulty checkbox */
-#focus-space-editor .exit-difficulty-panel + #custom-override-text:not(.hidden){
-    margin-top: 8px;
+/* Custom text sits in the panel directly under Method, full width. The
+   textarea can never scroll sideways: WKWebView does not wrap a long
+   placeholder the way Chromium does, and a sideways scroll in a text box is
+   always a bug, never a feature. */
+.override-custom-text-row{
+    display: block;
+}
+
+.override-custom-text-row .form-textarea{
+    margin-top: 0;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
 }
 
 #focus-space-editor .exit-difficulty-panel{

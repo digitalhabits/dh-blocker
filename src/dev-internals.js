@@ -44,7 +44,7 @@ import {
     applyStopToTarget,
     normalizeUnlockMinutes,
 } from './unlock-duration.js';
-import { closeBlocklistModal, closeStartConfirmModal, openBlocklistModal, openScheduleOverrideModal } from './confirm-modals.js';
+import { applyOverrideTypeUi, closeBlocklistModal, closeStartConfirmModal, openBlocklistModal, openScheduleOverrideModal } from './confirm-modals.js';
 import { setupFocusSpaceEditor, showEditorDiscardConfirmModal } from './focus-space-editor.js';
 import { enhanceNativeSelects, enhanceSelect } from './custom-select.js';
 
@@ -114,6 +114,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     closeStartConfirmModal,
     turnFocusSpaceOn,
     canEnableAllowEditsBetweenBlocks,
+    applyOverrideTypeUi,
     // The create form (new-space defaults) and the editor's discard dialog.
     openBlocklistModal,
     closeBlocklistModal,

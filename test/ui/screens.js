@@ -315,6 +315,19 @@ export const screens = [
         },
     },
     {
+        // Custom Text: the field sits directly under Method, inside the panel.
+        name: 'editor-stop-early-custom',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#editor-section-stop',
+        prepare: async (page) => {
+            await page.click('#editor-section-stop-header');
+            await page.selectOption('#override-type', 'custom');
+            await page.dispatchEvent('#override-type', 'change');
+        },
+    },
+    {
         name: 'editor-edit-stop-early',
         fixture: fixtures.singleSchedule,
         platform: 'mac',

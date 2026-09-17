@@ -22,6 +22,7 @@
  * - T173-T178: Card switch state (isFocusSpaceOn) for manual blocks and schedules; switching on asks first
  * - T196-T199: Schedule time lists: arrow keys walk the options, Enter commits
  * - T200-T202: Strictness only locks while the space is on (off = fully editable)
+ * - T203-T204: Custom Text sits under Method and wraps rather than scrolling
  */
 
 (function () {
@@ -2846,6 +2847,42 @@
             internals.openBlocklistModal();
             try {
                 assertEqual(document.getElementById('unlock-duration-select')?.value, '0', 'T183: a new focus space starts on Never');
+            } finally {
+                internals.closeBlocklistModal();
+            }
+        }
+
+        // T203/T204: Custom Text sits directly under Method, and the field wraps
+        // rather than scrolling sideways (WKWebView does not wrap a long
+        // placeholder, so this is not hypothetical).
+        if (typeof internals.openBlocklistModal === 'function') {
+            internals.openBlocklistModal();
+            try {
+                const typeSelect = document.getElementById('override-type');
+                const row = document.getElementById('override-custom-text-row');
+                const area = document.getElementById('custom-override-text');
+                if (!typeSelect || !row || !area || typeof internals.applyOverrideTypeUi !== 'function') {
+                    assert(false, 'T203: the custom text row and applyOverrideTypeUi are available');
+                } else {
+                    // The `change` listener lives in setupModalListeners, which the
+                    // headless page never reaches; call what it calls.
+                    typeSelect.value = 'custom';
+                    internals.applyOverrideTypeUi('custom');
+                    assert(!row.classList.contains('hidden'), 'T203: choosing Custom Text shows the field');
+
+                    const methodRow = document.getElementById('override-method-row');
+                    assert(methodRow?.nextElementSibling === row,
+                        'T203: the field sits directly under Method');
+
+                    area.value = 'a motivational statement that runs on and on and on without stopping anywhere near soon';
+                    assert(area.scrollWidth <= area.clientWidth + 1,
+                        `T204: long text wraps instead of scrolling sideways (scrollWidth ${area.scrollWidth} > clientWidth ${area.clientWidth})`);
+                    area.value = '';
+
+                    typeSelect.value = 'random-words';
+                    internals.applyOverrideTypeUi('random-words');
+                    assert(row.classList.contains('hidden'), 'T203: Random Words hides the field again');
+                }
             } finally {
                 internals.closeBlocklistModal();
             }

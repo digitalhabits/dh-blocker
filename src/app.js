@@ -2673,6 +2673,7 @@ export function applySettingsLanguage() {
     setPlaceholder('challenge-input', tSettings('typeHere'));
     setPlaceholder('override-all-challenge-input', tSettings('typeHere'));
     setText('website-input-error', tSettings('invalidDomainMsg'));
+    setPlaceholder('custom-override-text', tSettings('placeholderCustomOverride'));
     setText('custom-override-text-error', tSettings('customOverrideEmptyError'));
 
     // Focus-space editor

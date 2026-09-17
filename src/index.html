@@ -821,6 +821,12 @@
                                     </select>
                                 </div>
                             </div>
+                            <div class="exit-difficulty-row settings-row override-custom-text-row hidden" id="override-custom-text-row">
+                                <textarea id="custom-override-text" class="form-textarea"
+                                    placeholder="e.g., a motivational statement"
+                                    autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+                                <span id="custom-override-text-error" class="input-error-msg hidden">Custom message cannot be empty.</span>
+                            </div>
                             <div class="exit-difficulty-row settings-row override-slider-row" id="override-count-wrapper">
                                 <div class="override-slider-header">
                                     <span class="exit-difficulty-row-label settings-row-label" id="override-count-label">Words to type</span>
@@ -850,10 +856,6 @@
                             </div>
                         </div>
                     </div>
-                    <textarea id="custom-override-text" class="form-textarea hidden"
-                        placeholder="Enter your custom text (e.g., a motivational statement)"
-                        autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
-                    <span id="custom-override-text-error" class="input-error-msg hidden">Custom message cannot be empty.</span>
                     <span id="override-count-warning" class="form-hint warning hidden"></span>
                 </div>
     </div>

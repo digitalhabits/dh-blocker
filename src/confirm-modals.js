@@ -1704,6 +1704,7 @@ export function syncOverrideCountUi() {
 
 export function applyOverrideTypeUi(type) {
     const customTextArea = document.getElementById('custom-override-text');
+    const customTextRow = document.getElementById('override-custom-text-row');
     const customErrorEl = document.getElementById('custom-override-text-error');
     const overrideCountWrapper = document.getElementById('override-count-wrapper');
     const warningEl = document.getElementById('override-count-warning');
@@ -1714,14 +1715,14 @@ export function applyOverrideTypeUi(type) {
 
     if (normalizeOverrideType(type) === 'custom') {
         customTextArea.maxLength = getMaxOverrideCountForType('custom');
-        customTextArea.classList.remove('hidden');
+        customTextRow?.classList.remove('hidden');
         overrideCountWrapper.classList.add('hidden');
         warningEl.classList.add('hidden');
         warningEl.textContent = '';
         return;
     }
 
-    customTextArea.classList.add('hidden');
+    customTextRow?.classList.add('hidden');
     overrideCountWrapper.classList.remove('hidden');
     warningEl.classList.add('hidden');
     warningEl.textContent = '';
