@@ -111,7 +111,7 @@ import { hasAnyEnforcedBlocks, isAndroidAllowlistUnsupported, isNonRepeatingSche
 import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
 import {
     refreshUninstallButtonState,
-    setupGraceSetting, setupHelpMenuLinks, setupHelperSettings, setupInAppUninstall,
+    setupGraceSetting, setupMaxOverrideWordsSetting, syncMaxOverrideWordsSetting, setupHelpMenuLinks, setupHelperSettings, setupInAppUninstall,
     setupOverrideAll, setupSettingsHelpButtons, setupWindowsUninstallGuidance,
     syncUninstallConfirmModal, updateCleanHostsBtnState, updateHelperStatusIndicator,
     updateManageSectionVisibility, updateOverrideAllButtonVisibility,
@@ -203,6 +203,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupWindowsUninstallGuidance();
     setupMacAutomationIntroModal();
     setupGraceSetting();
+    setupMaxOverrideWordsSetting();
     setupSettingsEnforcementSection();
     if (!state.isIOS && !state.isAndroid) {
         void wireEnforcementToggle();
@@ -2908,6 +2909,9 @@ export function applySettingsLanguage() {
     setText('close-settings-btn', tSettings('settingsDone'));
     setText('grace-period-label-text', tSettings('gracePeriodLabel'));
     setText('grace-period-hint-text', tSettings('gracePeriodHint'));
+    setText('settings-max-words-label', tSettings('maxOverrideWordsLabel'));
+    setText('settings-max-words-hint', tSettings('maxOverrideWordsHint'));
+    syncMaxOverrideWordsSetting();
     setText('app-blocking-lets-go-btn-label', tSettings('appBlockingLetsGo'));
     setText('app-blocking-snooze-btn-label', tSettings('appBlockingSnoozeBtn'));
     setHtml('settings-feedback-footer-text', tSettings('settingsFeedbackFooterHtml'));

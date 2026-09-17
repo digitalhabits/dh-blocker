@@ -161,4 +161,24 @@ const nameVisibilityCards = (extra) => ({
 export const cardNamesShown = nameVisibilityCards({});
 export const cardNamesHidden = nameVisibilityCards({ showItemDetails: false });
 
-export const fixtures = { crowdedWeek, singleSchedule, manualRunning, cardStates, flexibleBetweenBlocks, multiRangeSchedules, emptyInstall, cardNamesShown, cardNamesHidden };
+/**
+ * "Maximum words to stop early" raised to 1000, with one space using it (800)
+ * and one at the default 15 — the editor slider has to hold both.
+ */
+export const highWordMaximum = {
+    blocklists: [
+        { id: 'bl-hard', name: 'Deep Work', emoji: '🎯', color: '#4A90D9', websites: ['distract.invalid'], apps: [], overrideDifficulty: { type: 'random-words', count: 800, customText: '' } },
+    ],
+    activeBlocks: [],
+    schedules: [],
+    startOverlays: [],
+    settings: { maxOverrideWords: 1000, overrideCountUnit: 'words' },
+};
+
+/** The same 800-word space after the setting was lowered to 50: the count must survive. */
+export const loweredWordMaximum = {
+    ...highWordMaximum,
+    settings: { maxOverrideWords: 50, overrideCountUnit: 'words' },
+};
+
+export const fixtures = { crowdedWeek, singleSchedule, manualRunning, cardStates, flexibleBetweenBlocks, multiRangeSchedules, emptyInstall, cardNamesShown, cardNamesHidden, highWordMaximum, loweredWordMaximum };

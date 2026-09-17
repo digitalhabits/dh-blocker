@@ -226,7 +226,7 @@ function resolveHardestChallengeFromAppData(appData, now, nowDate) {
     if (hardest.type !== 'custom') {
         const parsed = Number(hardest.count);
         const words = Number.isFinite(parsed) && parsed > 0 ? parsed : 15;
-        const clamped = Math.min(300, Math.max(1, Math.round(words)));
+        const clamped = Math.min(1000, Math.max(1, Math.round(words)));
         if (hardest.count !== clamped) return { ...hardest, count: clamped };
     }
     return hardest;
@@ -245,7 +245,7 @@ function compareDifficulties(a, b) {
     if (!a) return b;
     if (!b) return a;
 
-    const MAX_WORDS = 300;
+    const MAX_WORDS = 1000;
     const DEFAULT_WORDS = 15;
 
     const getEffectiveWords = (difficulty) => {

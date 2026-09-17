@@ -354,6 +354,34 @@ export const screens = [
         },
     },
     {
+        // Settings → Enforcement: the "Maximum words to stop early" slider.
+        name: 'settings-max-words',
+        fixture: fixtures.highWordMaximum,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#settings-enforcement-panel',
+        prepare: async (page) => {
+            await page.click('#settings-btn');
+            await page.waitForSelector('#settings-modal:not(.hidden)');
+            if (await page.getAttribute('#settings-enforcement-section-toggle', 'aria-expanded') !== 'true') {
+                await page.click('#settings-enforcement-section-toggle');
+            }
+            await page.locator('#settings-max-words-row').scrollIntoViewIfNeeded();
+        },
+    },
+    {
+        // The setting was lowered to 50 after this space was set to 800 words:
+        // the slider stretches to 800 rather than cutting the challenge.
+        name: 'editor-stop-early-above-maximum',
+        fixture: fixtures.loweredWordMaximum,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#time-picker-container',
+        prepare: async (page) => {
+            await page.click('#editor-section-stop-header');
+        },
+    },
+    {
         name: 'editor-edit-advanced',
         fixture: fixtures.singleSchedule,
         platform: 'mac',

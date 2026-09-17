@@ -192,7 +192,17 @@ export const MIN_OVERRIDE_WORDS = 1;
 export const DEFAULT_OVERRIDE_WORDS = 15;
 /** Kept for older callers; same value as DEFAULT_OVERRIDE_WORDS. */
 export const DEFAULT_OVERRIDE_COUNT = DEFAULT_OVERRIDE_WORDS;
-export const MAX_OVERRIDE_WORDS_DESKTOP = 300;
+/**
+ * Hard ceiling on a stored desktop word count. Every clamp uses this, never the
+ * user's "maximum words" setting below — see getOverrideWordsSliderMax.
+ */
+export const MAX_OVERRIDE_WORDS_DESKTOP = 1000;
+/** The desktop maximum before it became a setting; legacy data still means this. */
+export const LEGACY_MAX_OVERRIDE_WORDS = 300;
+/** Settings → Enforcement → "Maximum words" (`settings.maxOverrideWords`). */
+export const MIN_MAX_OVERRIDE_WORDS_SETTING = 50;
+export const DEFAULT_MAX_OVERRIDE_WORDS_SETTING = LEGACY_MAX_OVERRIDE_WORDS;
+export const MAX_OVERRIDE_WORDS_SETTING_STEP = 50;
 /** Phones: Android's native gate clamps at its 111-word list anyway. */
 export const MAX_OVERRIDE_WORDS_MOBILE = 100;
 export const MAX_CUSTOM_OVERRIDE_CHARS = 7500;
@@ -245,6 +255,33 @@ export function usesWordCountForOverrideType(type) {
 
 export function getMaxOverrideWords(mobile = isMobileOverrideChallengePlatform()) {
     return mobile ? MAX_OVERRIDE_WORDS_MOBILE : MAX_OVERRIDE_WORDS_DESKTOP;
+}
+
+/** Clamp the "maximum words" setting to [50, 1000]; anything unparseable is the default. */
+export function normalizeMaxOverrideWordsSetting(value) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed)) return DEFAULT_MAX_OVERRIDE_WORDS_SETTING;
+    return Math.min(MAX_OVERRIDE_WORDS_DESKTOP, Math.max(MIN_MAX_OVERRIDE_WORDS_SETTING, parsed));
+}
+
+/**
+ * Top of the "Words to type" slider. The setting decides how far the slider
+ * reaches and nothing else: stored counts are clamped to the platform ceiling
+ * only, so lowering the setting cannot make an existing space easier to stop.
+ * A space already above the setting gets a slider long enough to hold its
+ * count, or opening the editor and saving would quietly cut the challenge.
+ * Phones ignore the setting — Android's native gate serves at most its own
+ * word list.
+ */
+export function getOverrideWordsSliderMax({
+    maxSetting = state.appData?.settings?.maxOverrideWords,
+    currentCount = 0,
+    mobile = isMobileOverrideChallengePlatform(),
+} = {}) {
+    if (mobile) return MAX_OVERRIDE_WORDS_MOBILE;
+    const current = Number.parseInt(currentCount, 10);
+    const held = Number.isFinite(current) ? Math.min(MAX_OVERRIDE_WORDS_DESKTOP, current) : 0;
+    return Math.max(normalizeMaxOverrideWordsSetting(maxSetting), held);
 }
 
 /** Five-letter words only — used for iOS word-count random-words (predictable length per word). */
@@ -305,8 +342,16 @@ export function normalizeCustomOverrideText(value) {
     return text.slice(0, MAX_CUSTOM_OVERRIDE_CHARS);
 }
 
-export function getTypingCharsPerMinuteForType() {
-    return 200; // estimate only
+/**
+ * Keystrokes per minute behind the time estimates — estimates only, nothing is
+ * enforced against them. Custom text is prose, typed at the commonly quoted 40
+ * words a minute on a keyboard (200) and somewhat less on a touchscreen.
+ * Random words are slower on both: each unrelated word has to be read before
+ * it is typed, and a phone offers no autocomplete for them.
+ */
+export function getTypingCharsPerMinuteForType(type, mobile = isMobileOverrideChallengePlatform()) {
+    if (normalizeOverrideType(type) === 'custom') return mobile ? 150 : 200;
+    return mobile ? 100 : 175;
 }
 
 export function getMinOverrideCountForType(type) {
@@ -335,16 +380,24 @@ export function getDifficultyTypingCharCount(difficulty) {
     return getOverrideGeneratedCharCount('random-words', normalizeOverrideCount(difficulty.count, 'random-words'));
 }
 
-/** Estimated minutes to type the challenge (letters at ~200 per minute). */
-export function getOverrideEstimatedMinutes(type, count, customText) {
+/**
+ * Estimated minutes to type the challenge. Desktop types the whole text, so
+ * random words cost their letters plus the spaces between them; the phone gate
+ * takes one word at a time and never asks for a space. This is display only —
+ * comparing difficulties stays on letters (getDifficultyTypingCharCount).
+ */
+export function getOverrideEstimatedMinutes(type, count, customText, mobile = isMobileOverrideChallengePlatform()) {
+    const charsPerMinute = getTypingCharsPerMinuteForType(type, mobile);
     if (normalizeOverrideType(type) === 'custom') {
         const charCount = typeof customText === 'string' ? customText.length : 0;
         if (charCount <= 0) return 0;
-        return Math.ceil(charCount / getTypingCharsPerMinuteForType());
+        return Math.ceil(charCount / charsPerMinute);
     }
     const parsed = Number.parseInt(count, 10);
     if (!Number.isFinite(parsed) || parsed <= 0) return 0;
-    return Math.ceil(getOverrideGeneratedCharCount('random-words', parsed) / getTypingCharsPerMinuteForType());
+    const letters = getOverrideGeneratedCharCount('random-words', parsed);
+    const keystrokes = mobile ? letters : letters + (parsed - 1);
+    return Math.ceil(keystrokes / charsPerMinute);
 }
 
 /**
@@ -364,13 +417,16 @@ export function migrateOverrideDifficultyToWords(raw, { maxWords, countsAreChars
     if (type === 'custom') {
         return { type, count: DEFAULT_OVERRIDE_WORDS, customText };
     }
+    // Legacy shapes predate the raised ceiling: "max difficulty" and a
+    // character target both meant at most the old 300-word maximum.
+    const legacyMax = Math.min(max, LEGACY_MAX_OVERRIDE_WORDS);
     if (raw?.maxDifficulty === true) {
-        return { type, count: max, customText: '' };
+        return { type, count: legacyMax, customText: '' };
     }
     const parsed = Number.parseInt(raw?.count, 10);
     if (!Number.isFinite(parsed) || parsed <= 0) {
         return { type, count: Math.min(max, DEFAULT_OVERRIDE_WORDS), customText: '' };
     }
     const words = countsAreChars ? Math.round(parsed / LEGACY_CHARS_PER_WORD) : parsed;
-    return { type, count: Math.min(max, Math.max(MIN_OVERRIDE_WORDS, words)), customText: '' };
+    return { type, count: Math.min(countsAreChars ? legacyMax : max, Math.max(MIN_OVERRIDE_WORDS, words)), customText: '' };
 }

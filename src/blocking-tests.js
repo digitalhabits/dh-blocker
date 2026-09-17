@@ -982,10 +982,10 @@
             assertEqual(hardest.count, 15, 'T38b: Inactive schedule does not contribute challenge count');
         })();
 
-        // T38c: A stored count above the desktop maximum is clamped to 300 words
+        // T38c: A stored count above the desktop maximum is clamped to 1000 words
         (function T38c() {
             const blocklist = createMockBlocklist({
-                overrideDifficulty: { type: 'random-words', count: 999 }
+                overrideDifficulty: { type: 'random-words', count: 4000 }
             });
             const now = Date.now();
             const appData = createMockAppData({
@@ -994,7 +994,7 @@
             });
             const hardest = findHardestChallengeAtTime(appData, now);
             assertEqual(hardest.type, 'random-words', 'T38c: Over-max random-words → type');
-            assertEqual(hardest.count, 300, 'T38c: Over-max random-words → clamped to 300 words');
+            assertEqual(hardest.count, 1000, 'T38c: Over-max random-words → clamped to 1000 words');
         })();
 
         // T38e: Two active blocks — the larger word count wins

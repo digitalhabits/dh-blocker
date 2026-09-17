@@ -13151,6 +13151,15 @@ body.dark-mode #settings-modal-title{
     grid-column: 1 / -1;
 }
 
+/* "Maximum words" is a slider, not a label-plus-control row: stack it like the
+   editor's "Words to type" row so the track gets the full width. */
+#settings-modal .settings-max-words-row{
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+}
+
 #settings-modal .settings-enforcement-section .grace-error{
     margin-top: 6px;
 }

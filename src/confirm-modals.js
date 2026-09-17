@@ -6,7 +6,7 @@ import { tauriAPI } from './tauri-api.js';
 import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
 import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn } from './blocklist-utils.js';
-import { DEFAULT_OVERRIDE_WORDS, generateOverrideChallengeText, getMaxOverrideCountForType, getMaxOverrideWords, getMinOverrideCountForType, getOverrideEstimatedMinutes, isMobileOverrideChallengePlatform, migrateOverrideDifficultyToWords, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType, sanitizeChallengeTargetText } from './override-challenge.js';
+import { DEFAULT_OVERRIDE_WORDS, generateOverrideChallengeText, getMaxOverrideCountForType, getMaxOverrideWords, getMinOverrideCountForType, getOverrideWordsSliderMax, getOverrideEstimatedMinutes, isMobileOverrideChallengePlatform, migrateOverrideDifficultyToWords, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType, sanitizeChallengeTargetText } from './override-challenge.js';
 import { isAndroidAllowlistUnsupported, isSchedulePausedNow, refreshDesktopHelperStatus, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
@@ -1317,7 +1317,8 @@ export function populateBlocklistFormFields(blocklist) {
     const customTextArea = document.getElementById('custom-override-text');
     document.getElementById('override-type').value = normalizedDifficulty.type;
     overrideCountField.min = String(getMinOverrideCountForType('random-words'));
-    overrideCountField.max = String(getMaxOverrideWords());
+    // Max before value: a range input clamps its value to the current max.
+    overrideCountField.max = String(getOverrideWordsSliderMax({ currentCount: normalizedDifficulty.count }));
     overrideCountField.value = String(normalizedDifficulty.count);
     customTextArea.value = normalizedDifficulty.customText || '';
     customTextArea.classList.remove('input-error');
@@ -1696,7 +1697,8 @@ export function syncOverrideCountUi() {
     if (countLabelEl) countLabelEl.textContent = tSettings('overrideWordsToType');
     if (countInput) {
         countInput.min = String(getMinOverrideCountForType('random-words'));
-        countInput.max = String(getMaxOverrideWords());
+        // Never below the count already on the slider — see getOverrideWordsSliderMax.
+        countInput.max = String(getOverrideWordsSliderMax({ currentCount: countInput.value }));
     }
 }
 

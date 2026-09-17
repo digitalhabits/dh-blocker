@@ -1863,6 +1863,15 @@
                         <div id="settings-enforcement-content" class="settings-enforcement-content">
                         <div class="settings-panel">
                         <div class="settings-panel-rows">
+                            <div class="settings-row settings-max-words-row" id="settings-max-words-row">
+                                <div class="override-slider-header">
+                                    <span id="settings-max-words-label" class="settings-row-label">Maximum words to stop early</span>
+                                    <span id="settings-max-words-value" class="exit-difficulty-time-estimate">300 words · ~11 min</span>
+                                </div>
+                                <span id="settings-max-words-hint" class="settings-row-hint">How far the "Words to type" slider goes in each focus space. Lowering it never shortens a challenge you have already set.</span>
+                                <input type="range" id="settings-max-words-input" class="editor-slider" min="50" max="1000" value="300" step="50" aria-labelledby="settings-max-words-label" aria-describedby="settings-max-words-hint">
+                            </div>
+
                             <div class="settings-row">
                                 <div class="settings-row-copy">
                                     <span id="settings-enforcement-row-label" class="settings-row-label">Auto-close browser if blocking is bypassed</span>

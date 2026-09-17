@@ -1,7 +1,7 @@
 // Blocklist CRUD: duplication, import/export, delete-undo, list rendering.
 // Extracted verbatim from app.js.
 import { state } from './state.js';
-import { getMaxOverrideWords, migrateOverrideDifficultyToWords } from './override-challenge.js';
+import { LEGACY_MAX_OVERRIDE_WORDS, getMaxOverrideWords, migrateOverrideDifficultyToWords } from './override-challenge.js';
 import { getBlocklistUnlockMinutes, normalizeUnlockMinutes } from './unlock-duration.js';
 import { confirmDiscardEditorEdits, editorHasUnsavedEdits, formatScheduleWhenSummary } from './focus-space-editor.js';
 import { deriveWhenToBlockKind } from './when-to-block.js';
@@ -467,7 +467,9 @@ let importedLegacyCounts = false;
 function normalizeImportedDifficulty(raw) {
     const maxWords = getMaxOverrideWords();
     const parsed = Number.parseInt(raw?.count, 10);
-    const countsAreChars = importedLegacyCounts && Number.isFinite(parsed) && parsed > maxWords;
+    // A legacy export holds character targets; anything above the maximum of
+    // its day (not today's raised ceiling) cannot have been a word count.
+    const countsAreChars = importedLegacyCounts && Number.isFinite(parsed) && parsed > Math.min(maxWords, LEGACY_MAX_OVERRIDE_WORDS);
     return migrateOverrideDifficultyToWords(raw, { maxWords, countsAreChars });
 }
 
