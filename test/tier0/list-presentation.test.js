@@ -14,7 +14,7 @@ function metaText(blocklist) {
     };
 }
 
-describe('focus-space card summary honours "show names in the overview"', () => {
+describe('focus-space card summary honours "show what it blocks on the card"', () => {
     test('a short list shows its names when the option is on', () => {
         const bl = { websites: ['twitter.com', 'x.com'], apps: [], showItemDetails: true };
         const { text, button } = metaText(bl);

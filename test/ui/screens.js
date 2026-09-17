@@ -145,7 +145,7 @@ export const screens = [
         clip: '#blocklists-container',
     },
     {
-        // "Show names … in the overview" on: a lone item and a short list show
+        // "Show what it blocks on the card" on: a lone item and a short list show
         // names, a long list shows counts; both lists expand.
         name: 'cards-names-shown',
         fixture: fixtures.cardNamesShown,

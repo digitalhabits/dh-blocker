@@ -143,7 +143,7 @@ export const emptyInstall = {
 };
 
 /**
- * "Show names … in the overview" against one item, a short list and a long
+ * "Show what it blocks on the card" against one item, a short list and a long
  * list — every shape the card's summary line can take. Two fixtures because
  * the card list scrolls: six cards would push half of them out of the shot.
  */

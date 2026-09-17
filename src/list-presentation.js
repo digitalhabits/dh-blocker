@@ -92,7 +92,7 @@ function buildBlocklistCardCountsSummary(siteCount, appCount) {
     return parts.join(` ${tSettings('blocklistCardCountsJoin')} `);
 }
 
-// "Show names … in the overview" (Advanced options). Spaces saved before the
+// "Show what it blocks on the card" (Advanced options). Spaces saved before the
 // option existed have no field and default to showing names.
 function blocklistCardShowsItemNames(blocklist) {
     return blocklist?.showItemDetails !== false;

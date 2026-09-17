@@ -13272,7 +13272,12 @@ body.dark-mode.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-bu
 }
 
 .checkbox-option input[type="checkbox"]{
-    margin-top: 2px;
+    /* The platform default is a ~14px box next to 15px text — easy to miss and
+       a small target. Size it to the line it sits on. */
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    margin-top: 0;
     cursor: pointer;
     accent-color: var(--accent-color);
 }
