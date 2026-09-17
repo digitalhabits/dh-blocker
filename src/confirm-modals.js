@@ -22,7 +22,7 @@ import {
     IOS_STOP_BTN_META_COLLAPSE_SLACK_PX, MINUTES_PER_DAY, MAX_SAME_DAY_END_MINUTES,
     clampSameDayMinutes, formatConfirmModalOverrideTypingLine,
     formatMinutesAsHHMM, formatTime, generateId,
-    shouldUseCompactMobileScheduleDayLabels, snapMinutesToInterval,
+    snapMinutesToInterval,
 } from './app.js';
 import { NEW_SPACE_UNLOCK_MINUTES, applyStopToTarget, getBlocklistUnlockMinutes } from './unlock-duration.js';
 import { deriveWhenToBlockKind } from './when-to-block.js';

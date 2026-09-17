@@ -1765,10 +1765,6 @@ function setupOverrideModalListeners() {
         if (blocklistId) await turnFocusSpaceOn(blocklistId);
     });
 
-    window.addEventListener('resize', () => syncMobileScheduleDayLabelsViewportMode());
-    window.visualViewport?.addEventListener('resize', syncMobileScheduleDayLabelsViewportMode);
-    window.addEventListener('orientationchange', () => syncMobileScheduleDayLabelsViewportMode());
-
     document.getElementById('confirm-override-btn').addEventListener('click', async () => {
         const result = getChallengeController('override').handleConfirm();
         // A correct but non-final word: the controller already advanced the UI.
@@ -1937,39 +1933,6 @@ export function formatBlockTimeRemainingShort(totalMins) {
 
 
 // Clean up URL for display (remove protocol, www, trailing slash)
-
-const MOBILE_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH = 1024;
-
-let iosCompactScheduleDayLabelsActive = null;
-
-/** Smaller mobile viewports, including iPad portrait, use single-letter day pills from first render. */
-function shouldUseCompactIosScheduleDayLabels() {
-    return shouldUseCompactMobileScheduleDayLabels();
-}
-
-export function shouldUseCompactMobileScheduleDayLabels() {
-    if (!state.isIOS && !state.isAndroid) return false;
-    // iPhone landscape has plenty of width for Mon/Tue/Wed pills; portrait stays compact.
-    if (document.body.classList.contains('ios-phone')) {
-        return window.matchMedia('(orientation: portrait)').matches;
-    }
-    const effVp = Math.round(getEffectiveViewportWidth());
-    return effVp > 0 && effVp <= MOBILE_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH;
-}
-
-export function syncMobileScheduleDayLabelsViewportMode() {
-    if (!state.isIOS && !state.isAndroid) return;
-    const nextCompact = shouldUseCompactMobileScheduleDayLabels();
-    if (nextCompact === state.mobileCompactScheduleDayLabelsActive) return;
-    state.mobileCompactScheduleDayLabelsActive = nextCompact;
-
-    const schedulePanel = document.getElementById('schedule-block-panel');
-    if (getWhenToBlockKind() !== 'manual') {
-        rebuildScheduleSegments();
-    }
-
-}
-
 
 const LANGUAGE_PICKER_ROOT_IDS = ['language-picker', 'welcome-language-picker'];
 

@@ -7,12 +7,6 @@ import { saveData } from './persistence.js';
 import { commitDelete, dismissUndoToast, pendingDelete, showUndoToast, undoDelete } from './blocklists.js';
 import { handleTimeChange } from './confirm-modals.js';
 import { pad, parseEndTimeBoundedInt, scrollPopoverOptionIntoView } from './time-inputs.js';
-import {
-    shouldUseCompactMobileScheduleDayLabels,
-} from './app.js';
-
-export const TIME_SEPARATOR_ARROW_HTML = '<span class="time-separator" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></span>';
-
 export let pendingSegmentDelete = null;
 
 export function commitSegmentDelete() {
@@ -356,28 +350,7 @@ export function handleSegmentDayToggle(segmentIndex, dayIndex, btn) {
         btn.classList.remove('active');
     }
 
-    syncSegmentDayPresetButtons(segmentIndex);
     handleTimeChange();
-}
-
-export function syncSegmentDayPresetButtons(segmentIndex) {
-    const segment = document.querySelector(`.schedule-segment[data-segment-index="${segmentIndex}"]`);
-    const segmentDays = state.scheduleSegments[segmentIndex]?.days;
-    if (!segment || !segmentDays) return;
-
-    const presetMap = {
-        weekdays: [0, 1, 2, 3, 4],
-        weekends: [5, 6],
-        everyday: [0, 1, 2, 3, 4, 5, 6],
-    };
-
-    segment.querySelectorAll('.segment-day-preset').forEach(btn => {
-        const presetDays = presetMap[btn.dataset.preset];
-        btn.classList.toggle('active', presetDays ? arraysEqual(
-            [...segmentDays].sort((a, b) => a - b),
-            presetDays,
-        ) : false);
-    });
 }
 
 // Remove a time segment
@@ -491,11 +464,6 @@ export function arraysEqual(a, b) {
         && a.every((value, index) => value === b[index]);
 }
 
-export function getSegmentDayPresetActiveClass(segmentDays, presetDays) {
-    const selected = Array.isArray(segmentDays) ? [...segmentDays].sort((a, b) => a - b) : [];
-    return arraysEqual(selected, presetDays) ? ' active' : '';
-}
-
 export function expandScheduleSegment(index) {
     if (isScheduleSegmentMutationBlocked(index)) return;
     if (!usesScheduleSegmentCollapse()) return;
@@ -509,38 +477,11 @@ export function collapseExpandedScheduleSegment() {
     rebuildScheduleSegments();
 }
 
-export function applySegmentDayPreset(segmentIndex, preset) {
-    if (isScheduleSegmentMutationBlocked(segmentIndex)) return;
-    const segment = state.scheduleSegments[segmentIndex];
-    if (!segment) return;
-
-    const presetDays = {
-        weekdays: [0, 1, 2, 3, 4],
-        weekends: [5, 6],
-        everyday: [0, 1, 2, 3, 4, 5, 6],
-    }[preset];
-
-    if (!presetDays) return;
-    segment.days = [...presetDays];
-
-    const segmentEl = document.querySelector(`.schedule-segment[data-segment-index="${segmentIndex}"]`);
-    if (segmentEl) {
-        segmentEl.querySelectorAll('.segment-day-toggle').forEach(btn => {
-            const dayIndex = parseInt(btn.dataset.day, 10);
-            btn.classList.toggle('active', segment.days.includes(dayIndex));
-        });
-        syncSegmentDayPresetButtons(segmentIndex);
-    }
-
-    handleTimeChange();
-}
-
 export function buildScheduleSegmentEditorHtml(seg, index, {
     showLabels,
     showMultiSegmentChrome,
     dayLabels,
     fullDayLabels,
-    useCompactDayLabels,
     labelStart,
     labelEnd,
     labelDays,
@@ -550,14 +491,6 @@ export function buildScheduleSegmentEditorHtml(seg, index, {
     const dayTogglesHtml = dayLabels.map((label, i) =>
         `<button type="button" class="segment-day-toggle${segmentDays.includes(i) ? ' active' : ''}" data-day="${i}" aria-label="${fullDayLabels[i]}">${label}</button>`
     ).join('');
-
-    const dayPresetsHtml = showMultiSegmentChrome ? `
-        <div class="segment-day-presets">
-            <button type="button" class="segment-day-preset${getSegmentDayPresetActiveClass(segmentDays, [0, 1, 2, 3, 4])}" data-preset="weekdays">${tSettings('segmentDaysWeekdays')}</button>
-            <button type="button" class="segment-day-preset${getSegmentDayPresetActiveClass(segmentDays, [5, 6])}" data-preset="weekends">${tSettings('segmentDaysWeekends')}</button>
-            <button type="button" class="segment-day-preset${getSegmentDayPresetActiveClass(segmentDays, [0, 1, 2, 3, 4, 5, 6])}" data-preset="everyday">${tSettings('segmentDaysEveryDay')}</button>
-        </div>
-    ` : '';
 
     const footerHtml = showMultiSegmentChrome ? `
         <div class="segment-editor-footer">
@@ -599,7 +532,6 @@ export function buildScheduleSegmentEditorHtml(seg, index, {
                             </div>
                         </div>
                     </div>
-                    ${TIME_SEPARATOR_ARROW_HTML}
                     <div class="time-picker-group">
                         ${showLabels ? `<label class="time-label">${labelEnd}</label>` : ''}
                         <div class="time-picker-row">
@@ -625,12 +557,11 @@ export function buildScheduleSegmentEditorHtml(seg, index, {
                 </div>
                 ${hideDays ? '' : `<div class="segment-days-group">
                     ${showLabels ? `<label class="time-label">${labelDays}</label>` : ''}
-                    <div class="segment-days${useCompactDayLabels ? ' compact-day-labels' : ''}" data-segment-index="${index}">
+                    <div class="segment-days" data-segment-index="${index}">
                         ${dayTogglesHtml}
                     </div>
                 </div>`}
             </div>
-            ${dayPresetsHtml}
             ${footerHtml}
         </div>
     `;
@@ -655,13 +586,6 @@ export function wireScheduleSegmentElement(segment, index) {
             e.stopPropagation();
             const dayIndex = parseInt(btn.dataset.day, 10);
             handleSegmentDayToggle(index, dayIndex, btn);
-        });
-    });
-
-    segment.querySelectorAll('.segment-day-preset').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            applySegmentDayPreset(index, btn.dataset.preset);
         });
     });
 
@@ -710,7 +634,7 @@ export function applyScheduleSegmentLocks(container = document.getElementById('s
         const locked = !unlocked && index < state.activeScheduleSegmentCount;
         segment.classList.toggle('segment-locked', locked);
         segment.querySelectorAll(
-            '.time-part, .segment-day-toggle, .remove-segment-btn, .segment-delete-btn, .segment-done-btn, .segment-day-preset, .segment-summary-btn'
+            '.time-part, .segment-day-toggle, .remove-segment-btn, .segment-delete-btn, .segment-done-btn, .segment-summary-btn'
         ).forEach(el => { el.disabled = locked; });
     });
 }
@@ -726,16 +650,15 @@ export function rebuildScheduleSegments(container = document.getElementById('sch
     const daily = state.editorKind === 'daily';
     container.innerHTML = '';
 
+    // Day toggles are circles with a single letter (M T W T F S S) on every
+    // platform, like the Android app; the full name is the aria-label.
     const fullDayLabels = weekdayAbbrevMon0List();
-    const useCompactDayLabels = shouldUseCompactMobileScheduleDayLabels();
-    const dayLabels = useCompactDayLabels ? weekdayLetterMon0List() : fullDayLabels;
-    const labelStart = tSettings('start');
-    const labelEnd = tSettings('end');
+    const dayLabels = weekdayLetterMon0List();
+    const labelStart = tSettings('startTime');
+    const labelEnd = tSettings('endTime');
     const labelDays = tSettings('days');
     const multiSegment = !daily && state.scheduleSegments.length > 1;
     const useCollapse = !daily && usesScheduleSegmentCollapse();
-
-    state.mobileCompactScheduleDayLabelsActive = useCompactDayLabels;
 
     state.scheduleSegments.forEach((seg, index) => {
         const segment = document.createElement('div');
@@ -752,7 +675,6 @@ export function rebuildScheduleSegments(container = document.getElementById('sch
                 showMultiSegmentChrome: multiSegment,
                 dayLabels,
                 fullDayLabels,
-                useCompactDayLabels,
                 labelStart,
                 labelEnd,
                 labelDays,

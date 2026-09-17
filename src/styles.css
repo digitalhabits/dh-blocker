@@ -2100,21 +2100,6 @@ body.ios:not(.ios-phone) .main-content .when-times .schedule-end-display input.t
         min-height: 42px;
     }
 
-    body.ios:not(.ios-phone) .main-content .when-times .time-separator{
-        align-self: flex-end;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        height: 42px;
-        padding-bottom: 0;
-        line-height: 0;
-        min-width: 22px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .when-times .time-separator svg{
-        width: 22px;
-        height: 22px;
-    }
 
     body.ios:not(.ios-phone) .main-content .time-colon{
         font-size: 22px;
@@ -2161,7 +2146,7 @@ body.ios:not(.ios-phone) .main-content .when-times .schedule-end-display input.t
     }
 
     body.ios:not(.ios-phone) .main-content .schedule-segment{
-        --schedule-segment-label-size: 14px;
+        --schedule-segment-label-size: 13px;
         --schedule-segment-remove-size: 30px;
     }
 
@@ -2169,18 +2154,6 @@ body.ios:not(.ios-phone) .main-content .when-times .schedule-end-display input.t
         gap: 14px 18px;
     }
 
-    body.ios:not(.ios-phone) .main-content .segment-day-toggle{
-        min-width: 54px;
-        height: 38px;
-        padding: 0 12px;
-        font-size: 16px;
-        border-radius: 8px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .segment-days.compact-day-labels .segment-day-toggle{
-        min-width: 38px;
-        padding: 0 6px;
-    }
 
     body.ios:not(.ios-phone) .main-content .segment-days{
         gap: 6px;
@@ -4698,8 +4671,8 @@ matching the canonical brand
     border-radius: 0;
     background: transparent;
     --schedule-segment-pad-y: 0;
-    --schedule-segment-label-size: 13px;
-    --schedule-segment-label-line-height: 1.3;
+    --schedule-segment-label-size: 12px;
+    --schedule-segment-label-line-height: 1.25;
     --schedule-segment-remove-size: 30px;
 }
 
@@ -4772,38 +4745,6 @@ matching the canonical brand
     color: var(--text-muted);
 }
 
-.segment-day-presets{
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 6px;
-    margin-top: 12px;
-}
-
-.segment-day-preset{
-    flex: 1 1 0;
-    min-width: 0;
-    padding: 6px 8px;
-    border: 1px solid var(--border-color);
-    border-radius: 999px;
-    background: var(--panel-bg);
-    color: var(--text-secondary);
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    white-space: nowrap;
-}
-
-.segment-day-preset:hover:not(:disabled){
-    border-color: color-mix(in srgb, var(--accent-color) 40%, var(--border-color));
-}
-
-.segment-day-preset.active{
-    border-color: var(--accent-color);
-    background: color-mix(in srgb, var(--accent-color) 12%, var(--panel-bg));
-    color: var(--accent-color);
-}
-
 .segment-editor-footer{
     display: flex;
     align-items: center;
@@ -4872,20 +4813,6 @@ body:not(.ios) .schedule-segment{
     min-height: 36px;
 }
 
-.when-times .time-separator{
-    align-self: flex-end;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    height: 36px;
-    padding-bottom: 0;
-    line-height: 0;
-}
-
-.when-times .time-separator svg{
-    width: 20px;
-    height: 20px;
-}
 
 /* iOS: schedule-segment delete clearance + vertically centered start→end arrow.
    Portrait iPad rules in the @media block below scale these same values up further. */
@@ -4898,20 +4825,9 @@ body.ios .when-times .time-picker-row {
     min-height: 42px;
 }
 
-body.ios .when-times .time-separator {
-    align-self: flex-end;
-    height: 42px;
-    min-width: 22px;
-    opacity: 0.75;
-}
-
-body.ios .when-times .time-separator svg {
-    width: 22px;
-    height: 22px;
-}
 
 body.ios .schedule-segment {
-    --schedule-segment-label-size: 14px;
+    --schedule-segment-label-size: 13px;
     --schedule-segment-remove-size: 30px;
 }
 
@@ -4939,8 +4855,15 @@ body.ios .schedule-segment .remove-segment-btn {
     flex-shrink: 0;
 }
 
+/* Start time / End time / Days: smaller and denser than the rest of the form,
+   like the Android app's field labels. */
 .when-times .time-label{
-    line-height: var(--schedule-segment-label-line-height, 1.3);
+    font-size: var(--schedule-segment-label-size, 12px);
+    font-weight: 600;
+    line-height: var(--schedule-segment-label-line-height, 1.25);
+    letter-spacing: 0.02em;
+    text-transform: none;
+    color: var(--text-muted);
 }
 
 .schedule-segment .remove-segment-btn{
@@ -5040,9 +4963,6 @@ body:not(.ios) .segment-row > .time-pickers-row{
         row-gap: 6px;
     }
 
-    body:not(.ios) .schedule-segment .time-separator {
-        display: none;
-    }
 
     body:not(.ios) .schedule-segment .time-picker-group:last-child {
         flex-basis: 100%;
@@ -5112,18 +5032,22 @@ body.handset-device .segment-days-group{
 .segment-days{
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 8px;
 }
 
+/* Circles with a single letter (M T W T F S S), like the Android app. One
+   size rule for every platform; phones get a slightly larger touch target. */
 .segment-day-toggle{
-    min-width: 40px;
-    height: 28px;
-    padding: 0 8px;
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    min-width: 0;
+    padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: 50%;
     background: var(--element-bg);
     color: var(--text-muted);
     font-size: 13px;
@@ -5132,19 +5056,12 @@ body.handset-device .segment-days-group{
     transition: all 0.15s ease;
 }
 
-body.ios .segment-day-toggle,
-body.android .segment-day-toggle {
-    min-width: 48px;
-    height: 32px;
-    padding: 0 10px;
-    font-size: 15px;
-}
 
-/* Only the compact single-letter fallback gets tighter horizontal sizing. */
-body.ios .segment-days.compact-day-labels .segment-day-toggle,
-body.android .segment-days.compact-day-labels .segment-day-toggle {
-    min-width: 32px;
-    padding: 0 4px;
+body.ios .segment-day-toggle,
+body.android .segment-day-toggle{
+    width: 40px;
+    height: 40px;
+    font-size: 15px;
 }
 
 .segment-day-toggle:disabled,
@@ -10642,16 +10559,6 @@ body.mobile-phone-home #enter-scheduler-modal .when-times .segment-row > .segmen
     width: 100%;
 }
 
-body.mobile-phone-home #enter-scheduler-modal .segment-day-toggle{
-    height: 34px;
-    min-height: 34px;
-    max-height: 34px;
-    padding: 0 8px;
-    font-size: 15px;
-    border-radius: 7px;
-    flex: 0 0 auto;
-    width: auto;
-}
 
 body.mobile-phone-home #enter-scheduler-modal .segment-days{
     gap: 4px;
@@ -10663,15 +10570,7 @@ body.mobile-phone-home #enter-scheduler-modal .segment-days{
 
 /* Mobile phones: weekday pills use natural width everywhere (like desktop), never stretch to fill. */
 body.mobile-phone-home .segment-days,
-body.mobile-phone-home .segment-days.compact-day-labels{
-    width: auto;
-    max-width: 100%;
-}
 
-body.mobile-phone-home .segment-days.compact-day-labels .segment-day-toggle{
-    flex: 0 0 auto;
-    width: auto;
-}
 
 body.mobile-phone-home .segment-row > .segment-days-group,
 body.mobile-phone-home .when-times .segment-row > .segment-days-group{
@@ -14463,35 +14362,12 @@ body.handset-device:not(.ios-phone):not(.mobile-phone-home) .main-content .segme
     min-width: 100%;
 }
 
-body.handset-device .main-content .segment-day-toggle{
-    height: 34px;
-    min-height: 34px;
-    max-height: 34px;
-    padding: 0 8px;
-    font-size: 15px;
-    border-radius: 7px;
-    flex: 0 0 auto;
-}
 
 body.handset-device .main-content .segment-days{
     gap: 4px;
     align-items: center;
 }
 
-body.handset-device:not(.ios-phone):not(.mobile-phone-home) .main-content .segment-days.compact-day-labels{
-    flex-wrap: nowrap;
-    width: 100%;
-}
-
-body.handset-device:not(.ios-phone):not(.mobile-phone-home) .main-content .segment-days.compact-day-labels .segment-day-toggle{
-    flex: 1 1 0;
-    min-width: 0;
-    width: auto;
-    height: 34px;
-    min-height: 34px;
-    max-height: 34px;
-    padding: 0 2px;
-}
 
 body.handset-device .main-content .when-times .segment-days{
     min-height: 34px;
@@ -14575,20 +14451,6 @@ body.handset-device .main-content .when-times .time-picker-row{
     min-height: 44px;
 }
 
-body.handset-device .main-content .when-times .time-separator{
-    align-self: flex-end;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    height: 44px;
-    padding-bottom: 0;
-    line-height: 0;
-}
-
-body.handset-device .main-content .when-times .time-separator svg{
-    width: 20px;
-    height: 20px;
-}
 
 body.handset-device .main-content .time-colon{
     font-size: 18px;

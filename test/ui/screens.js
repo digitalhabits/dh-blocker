@@ -292,6 +292,29 @@ export const screens = [
         },
     },
     {
+        // The expanded time row: start / end and the day circles (M T W T F S S).
+        // weeklyOffPeak: one Weekly segment, not enforcing now, so the editor
+        // renders it expanded and unlocked (a live schedule disables the row).
+        name: 'editor-weekly-days',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#editor-section-when',
+        prepare: async (page) => {
+            await page.click('#editor-section-when-header');
+        },
+    },
+    {
+        name: 'editor-weekly-days-iphone',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'iphone',
+        viewport: IPHONE,
+        prepare: async (page) => {
+            await page.click('.blocklist-card');
+            await page.click('#editor-section-when-header');
+        },
+    },
+    {
         name: 'editor-edit-stop-early',
         fixture: fixtures.singleSchedule,
         platform: 'mac',

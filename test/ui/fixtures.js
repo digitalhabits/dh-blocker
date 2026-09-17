@@ -181,4 +181,22 @@ export const loweredWordMaximum = {
     settings: { maxOverrideWords: 50, overrideCountUnit: 'words' },
 };
 
-export const fixtures = { crowdedWeek, singleSchedule, manualRunning, cardStates, flexibleBetweenBlocks, multiRangeSchedules, emptyInstall, cardNamesShown, cardNamesHidden, highWordMaximum, loweredWordMaximum };
+/**
+ * A Weekly space that is not enforcing right now (a one-minute segment at 03:00
+ * on weekdays) and Flexible, so the editor renders its time row expanded and
+ * unlocked — the screen where Start time / End time and the day circles live.
+ * A Committed schedule would lock the row even between its blocks.
+ */
+export const weeklyOffPeak = {
+    blocklists: [
+        { id: 'bl-weekly', name: 'Study', emoji: '📚', color: '#BCD9B6', websites: ['study.invalid'], apps: [], unlockMinutes: 60 },
+    ],
+    activeBlocks: [],
+    schedules: [
+        { id: 's-weekly', blocklistId: 'bl-weekly', repeatType: 'forever', allowEditsBetweenBlocks: true, segments: [seg(3, 0, 3, 1, [MON, TUE, WED, THU, FRI])] },
+    ],
+    startOverlays: [],
+    settings: {},
+};
+
+export const fixtures = { crowdedWeek, singleSchedule, weeklyOffPeak, manualRunning, cardStates, flexibleBetweenBlocks, multiRangeSchedules, emptyInstall, cardNamesShown, cardNamesHidden, highWordMaximum, loweredWordMaximum };

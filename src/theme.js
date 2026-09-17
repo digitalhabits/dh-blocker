@@ -14,7 +14,6 @@ import {
     setLanguagePickerOpen,
     applySettingsLanguage,
     applyFormattedCurrentVersion,
-    syncMobileScheduleDayLabelsViewportMode,
     setupLanguagePicker,
     applyFormattedLatestVersion,
 } from './app.js';
@@ -307,7 +306,6 @@ export function syncUiZoomResponsiveLayout() {
     }
 
     syncSchedulerModeTabLabelMode();
-    syncMobileScheduleDayLabelsViewportMode();
     syncEnterSchedulerSheetLayout();
 }
 
