@@ -139,6 +139,92 @@ fn prefers_the_first_shared_dir_that_has_the_file() {
     let _ = fs::remove_dir_all(root);
 }
 
+fn write_asset(shared_dir: &Path, relative: &str, contents: &[u8]) -> PathBuf {
+    let path = shared_dir.join("overlay-assets").join(relative);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, contents).unwrap();
+    path
+}
+
+#[test]
+fn imports_overlay_assets_beside_the_data_file() {
+    // Schedule start-overlay media lives in `overlay-assets/` next to the
+    // data file, and the data file only stores relative paths into it. A
+    // data file imported without the folder points at pictures and voice
+    // clips that were left behind.
+    let root = temp_root("assets");
+    let shared = root.join("ProgramData");
+    write_shared(&shared, b"{\"from\":\"shared\"}");
+    let asset = write_asset(&shared, "bl-1/img-1.png", b"png");
+    let dest_dir = root.join("per-user");
+    let dest = dest_dir.join(DATA_FILE_NAME);
+
+    assert!(import_shared_data_into_per_user(
+        &dest,
+        std::slice::from_ref(&shared)
+    ));
+
+    let copied = dest_dir
+        .join("overlay-assets")
+        .join("bl-1")
+        .join("img-1.png");
+    assert_eq!(fs::read(&copied).unwrap(), b"png");
+    // Copy, never move: the other accounts on this machine still need it.
+    assert!(asset.exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn merges_overlay_assets_left_behind_in_older_shared_dirs() {
+    // The pre-3.x rebrand copy-forward moved redd-block-data.json into the
+    // current ProgramData folder but never its overlay-assets, so the media a
+    // schedule references can sit one product name back from the file. Take
+    // the folder from every source; the first source wins per file.
+    let root = temp_root("assets-legacy");
+    let primary = root.join("Digital Habits Blocker");
+    let legacy = root.join("ReDD Block");
+    write_shared(&primary, b"from-primary");
+    write_shared(&legacy, b"from-legacy");
+    write_asset(&primary, "bl-2/new.png", b"new");
+    write_asset(&legacy, "global/voice.webm", b"webm");
+    write_asset(&primary, "bl-1/same.png", b"primary-wins");
+    write_asset(&legacy, "bl-1/same.png", b"legacy-loses");
+    let dest_dir = root.join("per-user");
+    let dest = dest_dir.join(DATA_FILE_NAME);
+
+    assert!(import_shared_data_into_per_user(&dest, &[primary, legacy]));
+
+    assert_eq!(fs::read_to_string(&dest).unwrap(), "from-primary");
+    let assets = dest_dir.join("overlay-assets");
+    assert_eq!(fs::read(assets.join("bl-2/new.png")).unwrap(), b"new");
+    assert_eq!(fs::read(assets.join("global/voice.webm")).unwrap(), b"webm");
+    assert_eq!(
+        fs::read(assets.join("bl-1/same.png")).unwrap(),
+        b"primary-wins"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn skipped_import_leaves_overlay_assets_alone() {
+    // Newer per-user data is kept, so its media is already where the app
+    // looks; nothing from the shared side should appear beside it.
+    let root = temp_root("assets-skip");
+    let shared = root.join("ProgramData");
+    let src = write_shared(&shared, b"stale-shared");
+    write_asset(&shared, "bl-1/img.png", b"png");
+    let dest_dir = root.join("per-user");
+    fs::create_dir_all(&dest_dir).unwrap();
+    let dest = dest_dir.join(DATA_FILE_NAME);
+    fs::write(&dest, b"fresh-per-user").unwrap();
+    age(&src, 60);
+
+    assert!(!import_shared_data_into_per_user(&dest, &[shared]));
+
+    assert!(!dest_dir.join("overlay-assets").exists());
+    let _ = fs::remove_dir_all(root);
+}
+
 #[test]
 fn no_shared_data_creates_nothing() {
     let root = temp_root("absent");

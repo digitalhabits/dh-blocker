@@ -6,7 +6,7 @@ use tauri::AppHandle;
 
 use super::data::get_data_path;
 
-const OVERLAY_ASSETS_DIR: &str = "overlay-assets";
+pub(crate) const OVERLAY_ASSETS_DIR: &str = "overlay-assets";
 
 fn overlay_assets_root(app: &AppHandle) -> Result<PathBuf, String> {
     let data_path = get_data_path(app);

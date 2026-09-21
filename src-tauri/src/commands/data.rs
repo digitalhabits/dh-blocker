@@ -294,6 +294,9 @@ pub(crate) fn import_shared_data_into_per_user(
                 src.display(),
                 dest.display()
             );
+            if let Some(dest_dir) = dest.parent() {
+                import_overlay_assets(dest_dir, shared_dirs);
+            }
             true
         }
         Err(e) => {
@@ -305,6 +308,56 @@ pub(crate) fn import_shared_data_into_per_user(
             false
         }
     }
+}
+
+/// Schedule start-overlay media (pictures, voice clips) lives in
+/// `overlay-assets/` beside the data file, which stores only relative paths
+/// into it (`overlay_assets.rs` resolves the folder from `get_data_path`).
+/// A data file imported without it references media that was left behind,
+/// so the folder is merged in from every source — the pre-3.x rebrand
+/// copy-forward moved only the data file, so a schedule's media can sit one
+/// product name back from the file that references it. First source wins
+/// per file, and nothing already at the destination is overwritten.
+///
+/// Failure falls toward a blank overlay, never a missing blocklist: the data
+/// file is already in place by the time this runs, and a copy error is logged
+/// and otherwise ignored.
+#[cfg(not(target_os = "ios"))]
+fn import_overlay_assets(dest_dir: &std::path::Path, shared_dirs: &[PathBuf]) {
+    use super::overlay_assets::OVERLAY_ASSETS_DIR;
+    let dest = dest_dir.join(OVERLAY_ASSETS_DIR);
+    for src in shared_dirs.iter().map(|dir| dir.join(OVERLAY_ASSETS_DIR)) {
+        if !src.is_dir() {
+            continue;
+        }
+        match copy_dir_merge(&src, &dest) {
+            Ok(()) => log::info!(
+                "shared data import: merged overlay assets {} -> {}",
+                src.display(),
+                dest.display()
+            ),
+            Err(e) => log::warn!(
+                "shared data import: overlay assets from {} incomplete: {e}",
+                src.display()
+            ),
+        }
+    }
+}
+
+/// Recursive copy that never replaces a file already present at `dest`.
+#[cfg(not(target_os = "ios"))]
+fn copy_dir_merge(src: &std::path::Path, dest: &std::path::Path) -> std::io::Result<()> {
+    fs::create_dir_all(dest)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let target = dest.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_merge(&entry.path(), &target)?;
+        } else if !target.exists() {
+            fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
 }
 
 /// Run the import at most once per process, before the first read of the
