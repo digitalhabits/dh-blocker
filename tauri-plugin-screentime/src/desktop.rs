@@ -92,6 +92,13 @@ impl<R: Runtime> Screentime<R> {
         })
     }
 
+    pub fn clear_manual_block(&self) -> crate::Result<SuccessResponse> {
+        Ok(SuccessResponse {
+            success: false,
+            error: Some("Not supported on desktop".to_string()),
+        })
+    }
+
     pub fn schedule_block(&self, _payload: ScheduleBlockRequest) -> crate::Result<SuccessResponse> {
         Ok(SuccessResponse {
             success: false,

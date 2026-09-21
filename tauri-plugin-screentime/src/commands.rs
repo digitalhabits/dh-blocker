@@ -81,6 +81,13 @@ pub(crate) async fn screentime_clear_block<R: Runtime>(
     app.screentime().clear_block()
 }
 
+#[command]
+pub(crate) async fn screentime_clear_manual_block<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<SuccessResponse> {
+    app.screentime().clear_manual_block()
+}
+
 // --- Scheduling ---
 
 #[command]

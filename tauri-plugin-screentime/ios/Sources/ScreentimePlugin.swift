@@ -944,17 +944,22 @@ class ScreentimePlugin: Plugin {
         invoke.resolve(response)
     }
     
-    @objc public func clearBlock(_ invoke: Invoke) throws {
-        // Clear the default store (manual blocks)
+    /// Clear only the manual channel: the default store, the App Group manual
+    /// record the extension re-applies at every schedule boundary, and the
+    /// manual half of the shield snapshot. The named "schedule" store is left
+    /// alone so a running schedule keeps enforcing.
+    @objc public func clearManualBlock(_ invoke: Invoke) throws {
+        clearManualChannel()
+        invoke.resolve(["success": true])
+    }
+
+    private func clearManualChannel() {
         store.webContent.blockedByFilter = nil
         store.shield.applications = nil
         store.shield.applicationCategories = nil
         store.clearAllSettings()
-        
-        // Clear manual block state in App Group so extension has no stale data
         SharedManualBlockStore.saveManualBlockState(ScheduleBlockData(domains: [], appTokenData: [], categoryTokenData: [], days: nil))
         SharedManualBlockStore.clearManualAllowlistState()
-
         persistManualShieldSnapshot(
             replaceDomains: [],
             replaceAppTokens: [],
@@ -962,6 +967,10 @@ class ScreentimePlugin: Plugin {
             replaceAllowlistFallback: true,
             allowlistFallback: nil
         )
+    }
+
+    @objc public func clearBlock(_ invoke: Invoke) throws {
+        clearManualChannel()
 
         // Also clear the named "schedule" store used by DeviceActivityMonitor
         // Since we use separate stores for manual vs schedule blocks, both

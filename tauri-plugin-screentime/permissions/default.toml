@@ -10,6 +10,7 @@ permissions = [
     "allow-refresh-activity-tokens",
     "allow-screentime-start-block",
     "allow-screentime-clear-block",
+    "allow-screentime-clear-manual-block",
     "allow-schedule-block",
     "allow-set-schedules",
     "allow-unschedule-block",

@@ -4,6 +4,7 @@ import {
     FOCUS_SPACE_COLOR_PALETTE,
     QUICK_START_EMOJI,
     applyIOSScreenTimeTokenRefreshResult,
+    iosManualSyncAction,
     blocklistNeedsIOSSelectionRefresh,
     healFocusSpaceColors,
     hasUsableIOSScreenTimeSelection,
@@ -424,5 +425,23 @@ describe('Screen Time token refresh recovery', () => {
         expect(stale.applicationTokens).toEqual(['app-1', 'app-2']);
         expect(stale.categoryTokens).toEqual(['category']);
         expect(stale.requiresReselection).toBe(true);
+    });
+});
+
+describe('iOS manual channel sync decision', () => {
+    // A timed manual block expiring while a schedule runs used to fall into a
+    // "do nothing" branch, leaving the expired block's apps shielded until the
+    // user started and stopped another block.
+    test('clears only the manual channel when a schedule is still running', () => {
+        expect(iosManualSyncAction({ hasActiveBlocks: false, hasActiveScheduleSegments: true })).toBe('clear-manual');
+    });
+
+    test('clears everything when nothing is active', () => {
+        expect(iosManualSyncAction({ hasActiveBlocks: false, hasActiveScheduleSegments: false })).toBe('clear-all');
+    });
+
+    test('applies the manual payload whenever a manual block is active', () => {
+        expect(iosManualSyncAction({ hasActiveBlocks: true, hasActiveScheduleSegments: true })).toBe('start');
+        expect(iosManualSyncAction({ hasActiveBlocks: true, hasActiveScheduleSegments: false })).toBe('start');
     });
 });

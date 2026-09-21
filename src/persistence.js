@@ -2,7 +2,7 @@
 // website sync. Extracted verbatim from app.js.
 import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
-import { normalizeBlocklist, isProtectedDomain, collectActiveIOSManualBlockPayload, healFocusSpaceColors } from './blocklist-utils.js';
+import { normalizeBlocklist, isProtectedDomain, collectActiveIOSManualBlockPayload, healFocusSpaceColors, iosManualSyncAction } from './blocklist-utils.js';
 import { isSchedulePausedNow, syncActiveBlocksToHelper, syncSchedulesToHelper, buildPersistedAppData } from './schedule-engine.js';
 import { generateId } from './app.js';
 import { updateBlockedApps } from './blocking-platform.js';
@@ -189,16 +189,14 @@ export async function updateHostsFile(silent = false) {
                 }
                 return isScheduleSegmentActiveNow(schedule, nowDate);
             });
-            if (!hasActiveBlocks) {
-                if (hasActiveScheduleSegments) {
-                    // Schedule enforcement on iOS is owned by the DeviceActivityMonitor extension.
-                    // Avoid clearing stores here or we can wipe an active scheduled block.
-                    console.log('[updateHostsFile] iOS: no manual blocks but schedule segment is active; keeping schedule enforcement');
-                    state.lastBlockedDomains = new Set();
-                    return { success: true };
-                }
-                console.log('[updateHostsFile] iOS: no active blocks, clearing Screen Time');
-                await tauriAPI.screentimeClearBlock();
+            const action = iosManualSyncAction({ hasActiveBlocks, hasActiveScheduleSegments });
+            if (action !== 'start') {
+                // Schedule enforcement is owned by the DeviceActivityMonitor extension; while a
+                // segment is active only the manual channel may be cleared, or the running
+                // schedule would be wiped too.
+                console.log(`[updateHostsFile] iOS: no manual blocks, ${action}`);
+                if (action === 'clear-manual') await tauriAPI.screentimeClearManualBlock();
+                else await tauriAPI.screentimeClearBlock();
                 state.lastBlockedDomains = new Set();
                 return { success: true };
             }

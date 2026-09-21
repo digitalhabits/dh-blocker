@@ -8,6 +8,7 @@ const COMMANDS: &[&str] = &[
     "refresh_activity_tokens",
     "screentime_start_block",
     "screentime_clear_block",
+    "screentime_clear_manual_block",
     "schedule_block",
     "set_schedules",
     "unschedule_block",

@@ -373,6 +373,18 @@ export function normalizeBlocklist(blocklist) {
     return normalizedBlocklist;
 }
 
+/**
+ * What the iOS save path should tell Screen Time about the manual channel.
+ * Schedules are enforced by the DeviceActivity extension from its own store,
+ * so a running schedule must never be wiped by a manual change — but the
+ * manual store must still be cleared when the last manual block ends,
+ * otherwise the extension re-applies the stale record at every boundary.
+ */
+export function iosManualSyncAction({ hasActiveBlocks, hasActiveScheduleSegments }) {
+    if (hasActiveBlocks) return 'start';
+    return hasActiveScheduleSegments ? 'clear-manual' : 'clear-all';
+}
+
 export function collectActiveIOSManualBlockPayload(now = Date.now()) {
     const allDomains = new Set();
     const allowedDomains = new Set();

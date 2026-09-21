@@ -93,6 +93,12 @@ impl<R: Runtime> Screentime<R> {
             .map_err(Into::into)
     }
 
+    pub fn clear_manual_block(&self) -> crate::Result<SuccessResponse> {
+        self.0
+            .run_mobile_plugin("clearManualBlock", UnblockRequest {})
+            .map_err(Into::into)
+    }
+
     // --- Scheduling ---
 
     pub fn schedule_block(&self, payload: ScheduleBlockRequest) -> crate::Result<SuccessResponse> {

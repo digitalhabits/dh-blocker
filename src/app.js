@@ -2120,7 +2120,7 @@ function setupOverrideModalListeners() {
                 await saveData();
 
                 if (state.isIOS) {
-                    await tauriAPI.screentimeClearBlock();
+                    await tauriAPI.screentimeClearManualBlock();
                     state.lastBlockedDomains = new Set();
                     await updateHostsFile();
                     await syncSchedulesToHelper();
