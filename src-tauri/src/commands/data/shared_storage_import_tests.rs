@@ -1,5 +1,5 @@
 #[cfg(not(feature = "system-test"))]
-use super::{canonical_data_path_static, per_user_data_path_static};
+use super::{canonical_data_path_static, per_user_data_path_static, TEST_IMPORT_SOURCES};
 use super::{import_shared_data_into_per_user, per_user_data_path_from, DATA_FILE_NAME};
 use std::fs;
 #[cfg(unix)]
@@ -159,6 +159,11 @@ fn no_shared_data_creates_nothing() {
 fn resolver_never_returns_a_machine_wide_path() {
     // The regression guard for the shared-storage resolver: there is one
     // branch now, so two accounts can never select the same file.
+    //
+    // The resolver also triggers the once-per-process import. Point it at
+    // nothing: this test must not copy the ProgramData file the developer's
+    // machine happens to have into their real per-user store.
+    *TEST_IMPORT_SOURCES.lock().unwrap() = Some(Vec::new());
     assert_eq!(canonical_data_path_static(), per_user_data_path_static());
 }
 

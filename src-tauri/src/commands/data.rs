@@ -316,8 +316,24 @@ fn import_shared_data_once(dest: &std::path::Path) {
     use std::sync::Once;
     static IMPORTED: Once = Once::new();
     IMPORTED.call_once(|| {
-        import_shared_data_into_per_user(dest, &legacy_shared_dirs());
+        import_shared_data_into_per_user(dest, &import_sources());
     });
+}
+
+/// Unit tests only: what `import_sources` returns instead of the real
+/// machine-wide directories. Without this, the resolver test ran the real
+/// import and copied whatever ProgramData file the developer's machine
+/// happened to have into their live per-user store.
+#[cfg(all(test, not(target_os = "ios")))]
+static TEST_IMPORT_SOURCES: std::sync::Mutex<Option<Vec<PathBuf>>> = std::sync::Mutex::new(None);
+
+#[cfg(not(target_os = "ios"))]
+fn import_sources() -> Vec<PathBuf> {
+    #[cfg(test)]
+    if let Some(dirs) = TEST_IMPORT_SOURCES.lock().unwrap().clone() {
+        return dirs;
+    }
+    legacy_shared_dirs()
 }
 
 /// Resolve the canonical app-data path.
