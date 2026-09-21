@@ -148,6 +148,13 @@ write it. No automated layer covers this: it needs two real accounts on one
 machine. Do steps 1–5 on Windows, then 6 on macOS.
 
 Requires two local accounts, A and B, both of which have launched the app.
+**B must run the Microsoft Store package** — sideload the `.msix` from
+`pnpm build:win-store` with `scripts/sign-msix-dev.ps1 -Install` (its dev
+signature gives it a different identity from the Store listing, so uninstall
+the Store copy as B first). Almost every Windows user is on the Store, and a
+Store app's writes under `%APPDATA%` are redirected into the package's private
+folder unless `build-msix.ps1` excludes the directory; the native host runs
+outside the package and would never see the file.
 
 - [ ] 1. **Reproduce first, on the currently released build.** As A, set a
       blocklist. Log in as B: B sees A's list, and B's edits fail to persist.
@@ -160,7 +167,12 @@ Requires two local accounts, A and B, both of which have launched the app.
       accounts can now actually save.
 - [ ] 5. In each account, confirm a blocked domain is still blocked in a
       browser, and that the native host resolved the same per-user file the app
-      writes (`native-host.log` sits next to it)
+      writes (`native-host.log` sits next to it). As B, also confirm the file
+      is on the real disk at `%APPDATA%\com.reddblock\redd-block-data.json` and
+      not only under `%LOCALAPPDATA%\Packages\<package>\LocalCache\Roaming\`
+- [ ] 5b. As either account, set a start-overlay picture on a schedule
+      **before** upgrading; after the upgrade it still shows (the
+      `overlay-assets` folder is imported beside the data file)
 - [ ] 6. Repeat 2–4 on macOS, including one machine that still has
       `/var/lib/redd-block/redd-block-data.json`, to cover the v1.x import path
 - [ ] 7. `%PROGRAMDATA%` / `/var/lib/redd-block` copies are **left in place** —

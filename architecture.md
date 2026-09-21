@@ -193,6 +193,14 @@ read it and had their edits fail. Nothing needs cross-user access: the native
 host is a child of the user's own browser, and the Windows watchdog task
 registers unelevated as the invoking user (`/RL LIMITED`, no `/RU`).
 
+The Microsoft Store build lists `%APPDATA%\com.reddblock` as an excluded
+directory in `scripts/build-msix.ps1`, next to the native-host staging folder.
+Windows can redirect a packaged app's writes under `%APPDATA%` into the
+package's private folder, which the native host — unpackaged, a child of the
+browser — cannot see; the exclusion guarantees the data file lands on the real
+disk regardless. Verified on a sideloaded Store package with two accounts
+(checklist §9b).
+
 Legacy v1 helper state may still exist at
 `/var/lib/redd-block/helper-state.json` (macOS) or
 `%PROGRAMDATA%\Fristed\helper-state.json` (Windows legacy; plus `%PROGRAMDATA%\ReDD Block\helper-state.json`) until migration removes
