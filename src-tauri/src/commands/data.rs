@@ -226,8 +226,9 @@ fn apply_system_test_override(fallback: impl FnOnce() -> PathBuf) -> PathBuf {
 /// These are import *sources* only. Nothing writes to them any more: a
 /// single file shared by every account on a PC meant one blocklist for
 /// the whole family, edits that failed for whoever did not create the
-/// file (`C:\ProgramData` grants Users create-folders, not create-files),
-/// and every account able to read every other account's blocklist.
+/// file (`C:\ProgramData` lets any account add files to a subfolder but not
+/// replace another account's, and a save is a rename over the existing
+/// file), and every account able to read every other account's blocklist.
 #[cfg(not(target_os = "ios"))]
 fn legacy_shared_dirs() -> Vec<PathBuf> {
     #[cfg(target_os = "windows")]
@@ -393,9 +394,9 @@ fn import_sources() -> Vec<PathBuf> {
 ///
 /// Always per-user, on every platform. macOS, Windows and iOS all treat
 /// per-user application data as the native default, and nothing in the app
-/// reads this file from another user's security context: the native host
-/// is a child of the user's own browser, and the Windows watchdog task
-/// registers unelevated as the invoking user.
+/// reads this file from another user's security context: every reader, the
+/// browser-spawned native host included, runs inside the signed-in user's
+/// own session.
 ///
 /// Public accessor so other command modules can locate the canonical
 /// redd-block-data.json without duplicating path selection logic.

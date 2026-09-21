@@ -187,11 +187,12 @@ local copy would silently revert the blocklist.
 
 Why per-user: one shared file meant every account on a PC got the same
 blocklist — a parent could not block a site for a child without blocking it for
-themselves — and because `C:\ProgramData` grants Users create-*folders* but not
-create-files, only the account that created the file could write it. The rest
-read it and had their edits fail. Nothing needs cross-user access: the native
-host is a child of the user's own browser, and the Windows watchdog task
-registers unelevated as the invoking user (`/RL LIMITED`, no `/RU`).
+themselves — and only the account that created the file could save to it:
+`C:\ProgramData` lets any account add files to a subfolder but not replace or
+delete another account's, and a save is an atomic rename over the existing
+file. The rest read it and had their edits fail. Nothing needs cross-user
+access: every reader, the browser-spawned native host included, runs inside the
+signed-in user's own session.
 
 The Microsoft Store build lists `%APPDATA%\com.reddblock` as an excluded
 directory in `scripts/build-msix.ps1`, next to the native-host staging folder.
