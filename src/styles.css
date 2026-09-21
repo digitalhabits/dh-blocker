@@ -437,16 +437,22 @@ body.android .time-pickers-row{
     flex-shrink: 0;
 }
 
-/* Drag region - takes up available space */
+/* Drag region - takes up available space. Only this inner strip carries
+   data-tauri-drag-region, so anything outside it (the traffic-light zone on
+   macOS) is neither a drag handle nor shown with a drag cursor. */
 .title-bar>div[data-tauri-drag-region]{
     -webkit-app-region: drag;
     cursor: move;
 }
 
-/* macOS traffic-light buttons sit at fixed top-left coordinates inside
-   the webview (overlay-style title bar); nothing else lives in the bar. */
+/* macOS traffic-light buttons sit at fixed top-left coordinates inside the
+   webview (overlay-style title bar): keep the drag strip clear of them so
+   they get the normal cursor and never start a window drag. */
 body.mac .title-bar{
     padding-left: 0;
+}
+body.mac .title-bar>div[data-tauri-drag-region]{
+    margin-left: 78px;
 }
 
 .app-title{
@@ -461,6 +467,7 @@ body.mac .title-bar{
 .title-bar > .window-controls,
 #rebrand-onboarding .eula-title-bar > .window-controls{
     position: absolute;
+    z-index: 1; /* above the drag strip */
     top: 0;
     right: 0;
     height: 100%;
@@ -6554,8 +6561,17 @@ body.windows:has(.onboarding-screen:not(.hidden):not(#rebrand-onboarding)) .titl
     min-height: 42px;
     width: 100%;
     position: relative;
+}
+/* Same shape as .title-bar: only the inner strip drags, and on macOS it stays
+   clear of the traffic lights. */
+#rebrand-onboarding .eula-title-bar > div[data-tauri-drag-region] {
+    position: absolute;
+    inset: 0;
     -webkit-app-region: drag;
     cursor: move;
+}
+body.mac #rebrand-onboarding .eula-title-bar > div[data-tauri-drag-region] {
+    left: 78px;
 }
 
 #rebrand-onboarding .eula-onboarding-scroll {

@@ -14,7 +14,8 @@
          Habits rebrand; fresh installs never see it (the shown-flag is set
          silently on first run). Copy applied by applyRebrandOnboardingLanguage. -->
     <div id="rebrand-onboarding" class="onboarding-screen hidden">
-        <div class="eula-title-bar" data-tauri-drag-region aria-hidden="true">
+        <div class="eula-title-bar" aria-hidden="true">
+            <div data-tauri-drag-region></div>
             <div id="rebrand-window-controls" class="window-controls hidden">
                 <button id="rebrand-titlebar-minimize" class="win-btn" title="Minimize">
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -62,7 +63,7 @@
         <!-- Title Bar: nothing but somewhere to grab the window. macOS draws its
              traffic lights into it (overlay title bar); Windows gets the custom
              controls on the right. -->
-        <div class="title-bar" data-tauri-drag-region>
+        <div class="title-bar">
             <div data-tauri-drag-region></div>
             <div id="window-controls" class="window-controls hidden">
                 <button id="titlebar-minimize" class="win-btn" title="Minimize">
