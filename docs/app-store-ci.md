@@ -80,6 +80,11 @@ shipping an identical build.
 4. Base64-encode it for the GitHub secret:
    `base64 -i AuthKey_XXXXXXXXXX.p8 | pbcopy`
 
+Both macOS jobs pin Xcode with `xcode-select` before building: the Screen
+Time plugin calls `ManagedSettingsStore.refresh`, which only exists from the
+iOS 26.5 SDK, so an older default Xcode on the runner would fail to compile.
+Bump the path in the workflow when moving to a newer Xcode.
+
 The same key authenticates both the build signing (Tauri passes it to
 `xcodebuild -allowProvisioningUpdates`) and the fastlane submission.
 

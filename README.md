@@ -120,7 +120,7 @@ Implementation details and module map: [architecture.md](architecture.md) (v3 cu
 - Visual Studio Build Tools with C++ workload
 
 **iOS additional requirements:**
-- Xcode 15+
+- Xcode 26.5+ (the iOS 26.5 SDK is needed for `ManagedSettingsStore.refresh`; older Xcodes fail to compile the Screen Time plugin)
 - An Apple Developer account
 - A physical iOS device (Screen Time APIs don't work in the simulator)
 
