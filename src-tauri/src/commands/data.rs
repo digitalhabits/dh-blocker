@@ -295,6 +295,9 @@ pub(crate) fn import_shared_data_into_per_user(
                 src.display(),
                 dest.display()
             );
+            // Android keeps no overlay-assets folder beside the data file
+            // (`overlay_assets` is desktop-only), so there is nothing to merge.
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             if let Some(dest_dir) = dest.parent() {
                 import_overlay_assets(dest_dir, shared_dirs);
             }
@@ -323,7 +326,7 @@ pub(crate) fn import_shared_data_into_per_user(
 /// Failure falls toward a blank overlay, never a missing blocklist: the data
 /// file is already in place by the time this runs, and a copy error is logged
 /// and otherwise ignored.
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn import_overlay_assets(dest_dir: &std::path::Path, shared_dirs: &[PathBuf]) {
     use super::overlay_assets::OVERLAY_ASSETS_DIR;
     let dest = dest_dir.join(OVERLAY_ASSETS_DIR);
@@ -346,7 +349,7 @@ fn import_overlay_assets(dest_dir: &std::path::Path, shared_dirs: &[PathBuf]) {
 }
 
 /// Recursive copy that never replaces a file already present at `dest`.
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn copy_dir_merge(src: &std::path::Path, dest: &std::path::Path) -> std::io::Result<()> {
     fs::create_dir_all(dest)?;
     for entry in fs::read_dir(src)? {
