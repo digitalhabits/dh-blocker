@@ -356,6 +356,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Select Xcode 26.6 (iOS 26.5 SDK required for ManagedSettingsStore.refresh)
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
 
