@@ -4091,6 +4091,24 @@ body.dark-mode .calendar-lane-overflow{
     background: rgba(255, 255, 255, 0.5);
     border-radius: 12px;
     border: 1px dashed rgba(0, 0, 0, 0.2);
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+/* The empty state is a create button: on hover the box firms up in its own
+   palette — a notch stronger than the usual element hover so the whole box
+   reads as pressable, without changing colour. */
+.no-active-blocks.clickable:hover{
+    background: rgba(255, 255, 255, 0.85);
+    border-color: rgba(0, 0, 0, 0.4);
+}
+
+.no-active-blocks.clickable:hover p{
+    color: var(--text-secondary);
+}
+
+body.dark-mode .no-active-blocks.clickable:hover{
+    background: var(--element-hover-bg);
+    border-color: rgba(255, 255, 255, 0.35);
 }
 
 .no-active-blocks p{
