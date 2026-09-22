@@ -2933,23 +2933,59 @@
                     const gridRect = grid.getBoundingClientRect();
                     const pencilRect = pencil.getBoundingClientRect();
                     if (!(gridRect.width > 0 && pencilRect.width > 0)) {
-                        // Temporary: this guard fails only in CI's headless
-                        // Linux; report what the page actually looks like.
-                        const advanced = document.getElementById('editor-advanced-schedule');
-                        const body = document.getElementById('editor-section-advanced-body');
-                        const section = document.getElementById('schedule-panel-overlay-section');
-                        console.log('❌ [T205 debug]', JSON.stringify({
+                        // Temporary CI-only diagnostics: this guard fails only in
+                        // headless Linux. Dump everything in one go.
+                        const desc = (el) => {
+                            if (!el) return 'null';
+                            const cs = getComputedStyle(el);
+                            const r = el.getBoundingClientRect();
+                            const name = el.id ? '#' + el.id : (el.className.toString().trim().split(/\s+/)[0] || el.tagName);
+                            return [
+                                name,
+                                'disp=' + cs.display,
+                                'vis=' + cs.visibility,
+                                'pos=' + cs.position,
+                                'w=' + Math.round(r.width) + 'x' + Math.round(r.height),
+                                'off=' + el.offsetWidth + 'x' + el.offsetHeight,
+                                'cli=' + el.clientWidth,
+                                'cssW=' + cs.width,
+                                'maxW=' + cs.maxWidth,
+                                'flex=' + cs.flex,
+                                'grid=' + (cs.gridTemplateColumns || '').slice(0, 40),
+                                'ov=' + cs.overflow,
+                                'tr=' + cs.transform.slice(0, 30),
+                                'rects=' + el.getClientRects().length,
+                            ].join(' ');
+                        };
+                        const chainOf = (el) => {
+                            const out = [];
+                            for (let n = el; n && n !== document.documentElement; n = n.parentElement) out.push(desc(n));
+                            return out;
+                        };
+                        const snap = (tag) => {
+                            console.log('❌ [T205 ' + tag + ' grid] ' + desc(grid));
+                            console.log('❌ [T205 ' + tag + ' pencil] ' + desc(pencil));
+                        };
+                        snap('now');
+                        void document.body.offsetHeight; // force layout
+                        snap('after-reflow');
+                        chainOf(pencil).forEach((line, i) => console.log('❌ [T205 chain ' + i + '] ' + line));
+                        console.log('❌ [T205 env] ' + JSON.stringify({
+                            matches: document.querySelectorAll('#focus-space-editor .schedule-repeat-section').length,
+                            gridIsAdvanced: grid === document.getElementById('editor-advanced-schedule'),
+                            gridInlineWidth: grid.style.width,
+                            gridConnected: grid.isConnected,
+                            pencilConnected: pencil.isConnected,
                             modalHidden: document.getElementById('blocklist-modal')?.classList.contains('hidden'),
                             editorParent: document.getElementById('focus-space-editor')?.parentElement?.id || null,
                             kind: document.querySelector('#when-kind-toggle .editor-segmented-btn.active')?.dataset.kind || null,
-                            advancedHidden: advanced?.classList.contains('hidden'),
-                            advancedDisplay: advanced ? getComputedStyle(advanced).display : null,
-                            bodyHidden: body?.classList.contains('hidden'),
-                            sectionHidden: section?.classList.contains('hidden'),
-                            sectionDisplay: section ? getComputedStyle(section).display : null,
-                            gridW: Math.round(gridRect.width), pencilW: Math.round(pencilRect.width),
-                            pencilDisplay: getComputedStyle(pencil).display,
-                            hasSetters: [typeof internals.setWhenToBlockKind, typeof internals.setOpenEditorSection].join(','),
+                            bodyClasses: document.body.className,
+                            uiZoom: getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom'),
+                            win: window.innerWidth + 'x' + window.innerHeight,
+                            dpr: window.devicePixelRatio,
+                            fonts: document.fonts ? document.fonts.status : 'n/a',
+                            sheets: document.styleSheets.length,
+                            advancedOuter: (document.getElementById('editor-advanced-schedule')?.outerHTML || '').slice(0, 300),
                         }));
                     }
                     assert(gridRect.width > 0 && pencilRect.width > 0,
