@@ -45,7 +45,7 @@ import {
     normalizeUnlockMinutes,
 } from './unlock-duration.js';
 import { applyOverrideTypeUi, closeBlocklistModal, closeStartConfirmModal, openBlocklistModal, openScheduleOverrideModal } from './confirm-modals.js';
-import { setupFocusSpaceEditor, showEditorDiscardConfirmModal } from './focus-space-editor.js';
+import { setOpenEditorSection, setupFocusSpaceEditor, showEditorDiscardConfirmModal } from './focus-space-editor.js';
 import { enhanceNativeSelects, enhanceSelect } from './custom-select.js';
 
 // Expose for integration tests (dev mode only)
@@ -122,6 +122,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     // Idempotent. The headless Tier 1 page has no Tauri transport, so app
     // startup stops at loadData() before wiring the editor's listeners; tests
     // that drive the editor call this first.
+    setOpenEditorSection,
     setupFocusSpaceEditor,
     // App-styled dropdowns over native selects.
     enhanceSelect,

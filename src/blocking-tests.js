@@ -2904,7 +2904,12 @@
                 document.getElementById('when-kind-weekly')?.click();
                 // Advanced options holds the row, and a collapsed section measures
                 // 0x0 — which would make every geometry assert below pass blind.
-                if (document.getElementById('editor-section-advanced-header')?.getAttribute('aria-expanded') !== 'true') {
+                // Opened through the editor's own setter rather than a synthetic
+                // header click: the click did not take in headless Linux, so the
+                // geometry asserts never ran there.
+                if (typeof internals.setOpenEditorSection === 'function') {
+                    internals.setOpenEditorSection('advanced');
+                } else if (document.getElementById('editor-section-advanced-header')?.getAttribute('aria-expanded') !== 'true') {
                     document.getElementById('editor-section-advanced-header')?.click();
                 }
                 const grid = document.querySelector('#focus-space-editor .schedule-repeat-section');
