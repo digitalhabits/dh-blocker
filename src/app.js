@@ -1593,13 +1593,16 @@ function setupModalListeners() {
         renderScheduleAlwaysOnRow();
 
         if (wasNewBlocklist) {
-            // New focus space: land on enter (sheet on iOS iPhone, inline elsewhere).
-            state.userExplicitlyDeselected = false;
-            const dropdown = document.getElementById('blocklist-select');
-            if (dropdown) {
-                dropdown.value = blocklist.id;
-                handleBlocklistSelect({ target: dropdown }, { openEnterUi: true });
-            }
+            // Land back on the list, not in the editor we just left: the new
+            // card carries its own switch, and a scheduled space needs no start.
+            deselectBlocklist();
+            requestAnimationFrame(() => {
+                const card = document.querySelector(`.blocklist-card[data-id="${blocklist.id}"]`);
+                if (!card) return;
+                card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                card.classList.add('blocklist-card-just-created');
+                card.addEventListener('animationend', () => card.classList.remove('blocklist-card-just-created'), { once: true });
+            });
         } else if (state.selectedBlocklistId) {
             // Edit existing: refresh controls only, never auto-open enter.
             const dropdown = document.getElementById('blocklist-select');

@@ -3862,6 +3862,16 @@ body.dark-mode .day-row.weekend{
     border: 1px dashed rgba(255, 255, 255, 0.35);
 }
 
+/* A just-created space: one soft pulse so the eye finds its new card. */
+@keyframes blocklist-card-just-created{
+    from{ box-shadow: 0 0 0 3px var(--redd-teal-soft); }
+    to{ box-shadow: 0 0 0 3px transparent; }
+}
+
+.blocklist-card-just-created{
+    animation: blocklist-card-just-created 1.4s ease-out;
+}
+
 /* Currently-running active block (highlighted state) */
 .calendar-block.running{
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.35) inset;
