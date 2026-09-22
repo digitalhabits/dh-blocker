@@ -194,10 +194,15 @@ $manifest = @"
     </virtualization:RegistryWriteVirtualization>
     <!-- v3.1.7 excluded registry only; Chrome still could not spawn the native
          host because manifests + staged exe were written under the MSIX virtual
-         copy of %LOCALAPPDATA%. Browsers read the real path from registry. -->
+         copy of %LOCALAPPDATA%. Browsers read the real path from registry.
+         The per-user data file (%APPDATA%\com.reddblock) is excluded for the
+         same reason: the native host runs unpackaged and reads the real
+         folder, so the blocklist must never end up in a virtualized copy the
+         host cannot see. Keep both directories excluded. -->
     <virtualization:FileSystemWriteVirtualization>
       <virtualization:ExcludedDirectories>
         <virtualization:ExcludedDirectory>`$(KnownFolder:LocalAppData)\Digital Habits Blocker</virtualization:ExcludedDirectory>
+        <virtualization:ExcludedDirectory>`$(KnownFolder:RoamingAppData)\com.reddblock</virtualization:ExcludedDirectory>
       </virtualization:ExcludedDirectories>
     </virtualization:FileSystemWriteVirtualization>
   </Properties>
