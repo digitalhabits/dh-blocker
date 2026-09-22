@@ -5115,6 +5115,9 @@ body.handset-device .segment-days-group{
     color: var(--text-muted);
     font-size: 13px;
     font-weight: 600;
+    /* Flex centres the glyph box, but the letters' side bearings leave them
+       reading a hair left of the circle's centre; nudge them right. */
+    padding-left: 0.5px;
     cursor: pointer;
     transition: all 0.15s ease;
 }
