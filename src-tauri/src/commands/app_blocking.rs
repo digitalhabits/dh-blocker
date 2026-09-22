@@ -176,8 +176,10 @@ pub fn sync_blocked_apps_from_disk(app: &AppHandle) {
         .filter(|a| !previous_blocked.contains(*a))
         .cloned()
         .collect();
-    // Never raise allowlist block-start warnings from disk sync — the
-    // frontend decides that transition via `allowlistNewlyStarted`.
+    // No explicit block-start flag from disk sync: the watcher derives the
+    // inactive→active transition from its own previous state (see
+    // `app_watcher::allowlist_block_started`), so this sync arms the
+    // warning sweep exactly when the file flips into an allow block.
     handle.set_policy(
         desired_blocked,
         newly_added_blocked,

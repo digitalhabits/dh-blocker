@@ -26,6 +26,7 @@
  * - T205: a long Start alert name keeps the customise pencil inside the panel
  * - T206: app chrome is not text-selectable; inputs are
  * - T207: colour-swatch tick / + are inked against the swatch's own colour
+ * - T208-T212: Desktop app-watcher payload: allow-mode spaces feed allowedApps, never the kill list
  */
 
 (function () {
@@ -1678,6 +1679,97 @@
     }
 
     // ========================================
+    // CATEGORY: DESKTOP APP WATCHER PAYLOAD (T208-T212)
+    // ========================================
+
+    // The desktop watcher quits whatever `apps` it is sent. An allow-mode focus
+    // space's `apps` is the list to keep open, so it must travel as
+    // `allowedApps` and never as `apps`. The collectors are private to
+    // blocking-platform.js, so drive updateBlockedApps and read what it hands
+    // setBlockedAppsViaHelper (called before its first await, so synchronous).
+    function runDesktopAppPayloadTests() {
+        console.log('\n🖥️ Desktop app-watcher payload');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        const api = internals.tauriAPI;
+        const saved = internals.appData;
+        const realSet = api.setBlockedAppsViaHelper;
+        const now = Date.now();
+        const allDay = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+        const live = (id) => createMockBlock(id, now - 1000, now + 60000);
+        let sent = null;
+        api.setBlockedAppsViaHelper = (apps, newlyAdded, opts) => {
+            sent = { apps, ...(opts || {}) };
+            return Promise.resolve({ success: true });
+        };
+        const sync = (blocklists, { activeBlocks = [], schedules = [] } = {}) => {
+            internals.appData = createMockAppData({ blocklists, activeBlocks, schedules });
+            sent = null;
+            void internals.updateBlockedApps();
+            return sent || {};
+        };
+        try {
+            (function T208() {
+                const allow = createMockBlocklist({ mode: 'allowlist', apps: ['Notes'] });
+                const block = createMockBlocklist({ mode: 'blocklist', apps: ['Slack'] });
+                const r = sync([allow, block], { activeBlocks: [live(allow.id), live(block.id)] });
+                assertEqual(r.apps, ['Slack'], 'T208: a manual allow-mode block keeps its apps out of the kill list; the block-mode one alongside still lands');
+            })();
+
+            (function T209() {
+                const allow = createMockBlocklist({ mode: 'allowlist', apps: ['Notes'] });
+                const block = createMockBlocklist({ mode: 'blocklist', apps: ['Slack'] });
+                const r = sync([allow, block], {
+                    schedules: [createMockSchedule(allow.id, [allDay]), createMockSchedule(block.id, [allDay])],
+                });
+                assertEqual(r.apps, ['Slack'], 'T209: an active allow-mode schedule keeps its apps out of the kill list; the block-mode one alongside still lands');
+            })();
+
+            (function T210() {
+                const manualAllow = createMockBlocklist({ mode: 'allowlist', apps: ['Notes', 'redd-block'] });
+                const schedAllow = createMockBlocklist({ mode: 'allowlist', apps: ['Xcode'] });
+                const block = createMockBlocklist({ mode: 'blocklist', apps: ['Slack'] });
+                const r = sync([manualAllow, schedAllow, block], {
+                    activeBlocks: [live(manualAllow.id), live(block.id)],
+                    schedules: [createMockSchedule(schedAllow.id, [allDay])],
+                });
+                assertEqual(r.allowedApps, ['Notes', 'Xcode'], 'T210: allowedApps unions manual and schedule allow-mode apps, minus protected apps and block-mode spaces');
+                assertEqual(r.allowlistActive, true, 'T210: allowlistActive is set while an allow-mode space is on');
+                assertEqual(r.apps, ['Slack'], 'T210: the kill list is untouched by the allow-mode spaces');
+            })();
+
+            (function T211() {
+                const manualAllow = createMockBlocklist({ mode: 'allowlist', apps: ['Notes'] });
+                const schedAllow = createMockBlocklist({ mode: 'allowlist', apps: ['Xcode'] });
+                const r = sync([manualAllow, schedAllow], {
+                    activeBlocks: [createMockBlock(manualAllow.id, now - 1000, now + 60000, { isPaused: true, pauseEndTime: now + 600000 })],
+                    schedules: [createMockSchedule(schedAllow.id, [allDay], { isPaused: true })],
+                });
+                assertEqual(r.allowedApps, [], 'T211: paused allow-mode block and schedule contribute nothing');
+                assertEqual(r.allowlistActive, false, 'T211: allowlistActive is off when nothing is allowed');
+            })();
+
+            (function T212() {
+                const future = createMockBlocklist({ mode: 'allowlist', apps: ['Notes'] });
+                const ended = createMockBlocklist({ mode: 'allowlist', apps: ['Xcode'] });
+                const r = sync([future, ended], {
+                    activeBlocks: [
+                        createMockBlock(future.id, now + 60000, now + 120000),
+                        createMockBlock(ended.id, now - 120000, now - 60000),
+                    ],
+                });
+                assertEqual(r.allowedApps, [], 'T212: allow-mode blocks outside their window contribute nothing');
+                assertEqual(r.allowlistActive, false, 'T212: allowlistActive is off outside the window');
+            })();
+        } finally {
+            // Re-sync the module's previous-set bookkeeping to the real data
+            // through the stub, so the next real tick sees no phantom transitions.
+            internals.appData = saved;
+            void internals.updateBlockedApps();
+            api.setBlockedAppsViaHelper = realSet;
+        }
+    }
+
+    // ========================================
     // CATEGORY 19: iOS SCHEDULE PAYLOAD (T151-T158)
     // ========================================
 
@@ -3234,6 +3326,7 @@
             runProtectedDomainTests();
             runIOSAllowlistPolicyTests();
             runAndroidPayloadTests();
+            runDesktopAppPayloadTests();
             runIOSSchedulePayloadTests();
             runEditFrictionGateTests();
             runChallengePrimitiveTests();
@@ -3271,6 +3364,7 @@
         runProtectedDomainTests,
         runIOSAllowlistPolicyTests,
         runAndroidPayloadTests,
+        runDesktopAppPayloadTests,
         runIOSSchedulePayloadTests,
         runEditFrictionGateTests,
         runChallengePrimitiveTests,

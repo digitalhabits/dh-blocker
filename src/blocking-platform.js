@@ -13,6 +13,7 @@ import {
     applyIOSScreenTimeTokenRefreshResult,
     getBlocklistIOSScreenTimeSelection,
     hasUsableIOSScreenTimeSelection,
+    isAllowlistBlocklist,
     isProtectedApp,
 } from './blocklist-utils.js';
 import { isSchedulePausedNow, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncSchedulesToHelper } from './schedule-engine.js';
@@ -59,6 +60,7 @@ export async function updateBlockedApps() {
     const scheduleApps = collectScheduleBlockedApps(now);
     const allBlockedApps = new Set([...manualApps, ...scheduleApps]);
     const appsArray = Array.from(allBlockedApps).sort();
+    const allowedApps = Array.from(collectAllowedApps(now)).sort();
 
     const prevAll = appBlockingPreviousAppsSet;
     const prevManual = appBlockingPreviousManualAppsSet ?? new Set();
@@ -95,7 +97,10 @@ export async function updateBlockedApps() {
     // helper-daemon gate left schedule app blocking as a no-op whenever
     // `state.helperAvailable` was still false at the first tick.
     try {
-        const result = await tauriAPI.setBlockedAppsViaHelper(appsArray, newlyAddedApps);
+        const result = await tauriAPI.setBlockedAppsViaHelper(appsArray, newlyAddedApps, {
+            allowedApps,
+            allowlistActive: allowedApps.length > 0,
+        });
         if (result && result.success) {
             console.log(
                 '[updateBlockedApps] Apps synced to watcher:',
@@ -232,6 +237,7 @@ export function collectManualBlockedApps(now = Date.now()) {
     for (const block of state.appData.activeBlocks || []) {
         if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
         const blocklist = state.appData.blocklists.find((bl) => bl.id === block.blocklistId);
+        if (isAllowlistBlocklist(blocklist)) continue;
         for (const app of blocklist?.apps || []) {
             if (!isProtectedApp(app)) set.add(app);
         }
@@ -247,9 +253,33 @@ export function collectScheduleBlockedApps(now = Date.now()) {
         if (isSchedulePausedNow(schedule, now)) continue;
         if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
         const blocklist = state.appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
+        if (isAllowlistBlocklist(blocklist)) continue;
         for (const app of blocklist?.apps || []) {
             if (!isProtectedApp(app)) set.add(app);
         }
+    }
+    return set;
+}
+
+/** Apps the active allow-mode spaces (manual or scheduled) want kept open —
+ *  the watcher quits everything else. Mirrors `derive_allowed_apps` in
+ *  native_host.rs, which the Rust 2 s disk sync uses between our pushes. */
+export function collectAllowedApps(now = Date.now()) {
+    const set = new Set();
+    const nowDate = new Date(now);
+    const add = (blocklist) => {
+        if (!isAllowlistBlocklist(blocklist)) return;
+        for (const app of blocklist.apps || []) {
+            if (!isProtectedApp(app)) set.add(app);
+        }
+    };
+    for (const block of state.appData.activeBlocks || []) {
+        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+        add(state.appData.blocklists.find((bl) => bl.id === block.blocklistId));
+    }
+    for (const schedule of state.appData.schedules || []) {
+        if (!schedule.segments || isSchedulePausedNow(schedule, now) || !isScheduleSegmentActiveNow(schedule, nowDate)) continue;
+        add(state.appData.blocklists.find((bl) => bl.id === schedule.blocklistId));
     }
     return set;
 }

@@ -429,14 +429,21 @@ policy: `apps`, `newly_added`, `allowed_apps`, `allowlist_active`,
 apps is active, any app **not** on the allowed union is a quit candidate
 (`sweep_allowlist`). Semantics differ from blocklist mode:
 
-- **At allow-mode start** (`allowlist_newly_started`, one-shot): every
-  currently visible non-allowed regular app gets the "Let's go!" warning —
-  nothing is quit silently on that tick. If nothing needs closing, a sentinel
+- **At allow-mode start** (one-shot): every currently visible non-allowed
+  regular app gets the "Let's go!" warning — nothing is quit silently on that
+  tick. The watcher derives the start itself (`allowlist_block_started`): armed
+  when its previous `allowlist_active` was false and the incoming one is true,
+  or when the caller passes `allowlist_newly_started` (kept on the wire and
+  honoured, though no caller sets it). The first policy after `start()` is a
+  baseline, not a transition, so launching into an already-running allow block
+  does not warn about everything already open. Active→active never re-arms,
+  whatever the allowed set did, since the 2 s disk sync pushes the same policy
+  for as long as the block runs. If nothing needs closing, a sentinel
   `__allowlist_intention__` entry (PID 0) raises an intention-only overlay so
   the user still confirms the session; acknowledging dismisses it with no
   countdown.
 - **Mid-session:** only the **frontmost** non-allowed app is enrolled and
-  silently quit — background agents keep running.
+  politely quit — background agents keep running.
 - Allowlist-origin entries get a re-check before each quit step
   (`allowlist_entry_still_user_facing`): if the PID is no longer user-facing,
   the quit is aborted. Blocklist entries keep the unconditional behavior.

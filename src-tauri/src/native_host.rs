@@ -532,8 +532,7 @@ pub fn derive_blocked_apps(data_path: &std::path::Path) -> Vec<String> {
 }
 
 /// Effective allowed-app set for allowlist-mode blocks at `now()`.
-/// Mirrors the frontend's `collectManualAllowedApps` /
-/// `collectScheduleAllowedApps` merge.
+/// Mirrors the frontend's `collectAllowedApps` merge.
 pub fn derive_allowed_apps(data_path: &std::path::Path) -> Vec<String> {
     let data = match crate::data_cache::read(data_path) {
         Some(d) => d,

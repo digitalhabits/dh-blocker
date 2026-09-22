@@ -232,6 +232,45 @@ fn an_allow_mode_sighting_gets_the_polite_quit_so_work_can_be_saved() {
     );
 }
 
+// ---- allow mode: block start ------------------------------------
+
+#[test]
+fn an_allow_block_starting_arms_the_block_start_sweep() {
+    // The watcher sees the transition in its own previous state: the
+    // last policy had no allowlist, this one does. Nothing on the wire
+    // ever says "newly started", so this is the only way the "save your
+    // work" warning can fire for a manual or scheduled allow block.
+    assert!(allowlist_block_started(false, false, true, false));
+}
+
+#[test]
+fn an_unchanged_allow_policy_does_not_re_arm_the_sweep() {
+    // The disk sync pushes the same policy every 2 s. Active→active must
+    // stay quiet, otherwise the warning would be raised on every sync for
+    // as long as the block runs.
+    assert!(!allowlist_block_started(false, true, true, false));
+    // Ending an allow block is not a start either.
+    assert!(!allowlist_block_started(false, true, false, false));
+    assert!(!allowlist_block_started(false, false, false, false));
+}
+
+#[test]
+fn the_first_policy_after_start_is_baseline_not_a_transition() {
+    // The app launched while an allow block was already running. Mirrors
+    // the frontend's first-sync rule: what was open before we got here is
+    // not something the user just did.
+    assert!(!allowlist_block_started(true, false, true, false));
+    assert!(!allowlist_block_started(true, false, false, false));
+}
+
+#[test]
+fn the_explicit_newly_started_flag_still_arms_the_sweep() {
+    // The wire contract is unchanged: a caller that says so is believed,
+    // even when the derived state would not have counted it.
+    assert!(allowlist_block_started(false, true, true, true));
+    assert!(allowlist_block_started(true, false, true, true));
+}
+
 // ---- allow mode: things that must never be closed -----------------
 
 #[test]
