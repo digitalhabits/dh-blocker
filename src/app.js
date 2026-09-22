@@ -125,6 +125,11 @@ import { getChallengeController } from './challenge-controller.js';
 import { getMaxOverrideCountForType, getOverrideEstimatedMinutes, getTypingCharsPerMinuteForType, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
 import { escapeHtml, cleanUrlForDisplay, parseRgbFromColorString, rgbToHex, rgbToHsl, hslToRgb, getRelativeLuminance, getEnteringChipColor, getContrastTextColor } from './utils.js';
 import { SETTINGS_TRANSLATIONS, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List, tSettings, tSettingsFmt, LANGUAGE_FLAG_SVG, LANGUAGE_NATIVE_LABELS, languageNativeLabel, SUPPORTED_LANGUAGE_CODES } from './i18n.js';
+
+// Where the current pointer press began. A drag that starts in a field and
+// ends elsewhere fires its click on the common ancestor, so outside-click
+// handlers must look at the press origin, not only the click target.
+let lastPressTarget = null;
 /** Windows Settings → Apps → Installed apps (Apps & features). */
 export const WINDOWS_APPS_SETTINGS_URI = 'ms-settings:appsfeatures';
 
@@ -498,26 +503,20 @@ function setupEventListeners() {
     // Close the schedule editor's time popovers on outside click.
     document.addEventListener('click', handlePopoverOutsideClick);
 
+    document.addEventListener('pointerdown', (e) => { lastPressTarget = e.target; }, true);
+
     // Click on background to deselect blocklists
+    const KEEP_SELECTION_WITHIN = [
+        '.blocklist-card', '.scheduler-section', '.time-picker-container', '.schedule-block-panel',
+        '.repeat-dropdown-wrapper', '.repeat-dropdown-menu', '.modal-overlay', '.section-header',
+        '.footer', '.title-bar', '.week-calendar-section', '.time-popover', '.time-part',
+        '.undo-toast', '.zoom-toast',
+    ].join(',');
     document.addEventListener('click', (e) => {
-        // Don't deselect if clicking on interactive elements
-        if (e.target.closest('.blocklist-card') ||
-            e.target.closest('.scheduler-section') ||
-            e.target.closest('.time-picker-container') ||
-            e.target.closest('.schedule-block-panel') ||
-            e.target.closest('.repeat-dropdown-wrapper') ||
-            e.target.closest('.repeat-dropdown-menu') ||
-            e.target.closest('.modal-overlay') ||
-            e.target.closest('.section-header') ||
-            e.target.closest('.footer') ||
-            e.target.closest('.title-bar') ||
-            e.target.closest('.week-calendar-section') ||
-            e.target.closest('.time-popover') ||
-            e.target.closest('.time-part') ||
-            e.target.closest('.undo-toast') ||
-            e.target.closest('.zoom-toast')) {
-            return;
-        }
+        // Don't deselect if the click — or the press it came from — was on
+        // interactive elements
+        if (e.target.closest(KEEP_SELECTION_WITHIN)) return;
+        if (lastPressTarget instanceof Element && lastPressTarget.closest(KEEP_SELECTION_WITHIN)) return;
 
         // Deselect blocklist if one is selected (asks first when there are unsaved edits)
         if (state.selectedBlocklistId) {
@@ -865,6 +864,14 @@ function setupModalListeners() {
         window.renderModalTags();
         return true;
     };
+
+    // A drag that starts inside a dialog (selecting text in a field) and ends
+    // over the backdrop fires a click on the backdrop, which every overlay
+    // treats as "close". Only a press that also began on the backdrop counts.
+    document.addEventListener('click', (e) => {
+        if (!(e.target instanceof Element) || !e.target.classList.contains('modal-overlay')) return;
+        if (lastPressTarget && lastPressTarget !== e.target) e.stopPropagation();
+    }, true);
 
     // Close modal when clicking outside content
     document.getElementById('blocklist-modal').addEventListener('click', (e) => {
