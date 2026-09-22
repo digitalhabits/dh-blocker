@@ -16455,6 +16455,26 @@ body.dark-mode .app-blocking-warning-card{
     padding-top: 4px;
 }
 
+/* Editing / Start alert: dropdowns at their own width, not the panel's. */
+.editor-advanced-schedule .repeat-dropdown-wrapper{
+    justify-self: start;
+}
+
+.editor-advanced-schedule .repeat-dropdown-btn{
+    width: auto;
+    min-width: 160px;
+    gap: 10px;
+}
+
+/* Pencil beside the Start alert dropdown: one flex group, not grid cells. */
+.editor-advanced-schedule .schedule-panel-overlay-controls{
+    display: flex;
+    grid-row: 3;
+    grid-column: 2 / 4;
+    justify-self: start;
+    gap: 6px;
+}
+
 .editor-advanced-schedule.hidden{
     display: none;
 }
