@@ -10786,7 +10786,7 @@ body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-content{
 }
 
 #blocklist-modal #modal-title{
-    margin: 0;
+    margin: 0 0 6px;
     min-width: 0;
     flex: 1 1 auto;
 }
@@ -16198,9 +16198,9 @@ body.dark-mode .app-blocking-warning-card{
     justify-content: space-between;
     gap: 8px;
     min-width: 0;
-    /* Pull "Focus space name" up: the container's 16px gap is too airy under
-       a header that is already 34px tall for its icon buttons. */
-    margin-bottom: -8px;
+    /* A little air between the header and the "Focus space name" eyebrow:
+       the container's 16px gap, pulled up 2px. */
+    margin-bottom: -2px;
 }
 
 .editor-panel-title{
