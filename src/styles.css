@@ -1896,7 +1896,9 @@ body.dark-mode .app-blocking-closedown-banner{
     overflow-x: clip;
     overscroll-behavior-y: none;
     position: relative;
-    padding: 0 24px 2px 24px;
+    /* No bottom padding: the sticky panel footer stops at the content edge,
+       so any padding shows as a sliver of panel beneath it. */
+    padding: 0 24px;
     margin-top: var(--title-bar-height);
     /* Account for fixed title bar */
     gap: 12px;
@@ -13449,8 +13451,19 @@ body.handset-device #start-block-confirm-modal .start-confirm-header-room h3{
     position: sticky;
     bottom: 0;
     z-index: 3;
-    margin: 0 -16px -16px;
-    padding: 4px 16px 12px;
+    /* The panel's bottom strip, 12px around Save. Square page-coloured box
+       with a rounded panel-coloured layer on top, so the corners show the
+       page rather than the content scrolling beneath. */
+    margin: -16px;
+    padding: 12px 16px;
+    background: var(--container-bg);
+}
+
+#editor-panel-footer::before{
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
     background: var(--panel-bg);
     border-radius: 0 0 12px 12px;
 }
