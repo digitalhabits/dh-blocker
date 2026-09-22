@@ -13415,23 +13415,16 @@ body:not(.handset-device) #start-block-confirm-modal .start-confirm-actions{
     padding-top: 12px;
 }
 
-body.handset-device #start-block-confirm-modal .mobile-modal-header{
-    align-items: center;
-}
-
-body.handset-device #start-block-confirm-modal .mobile-modal-back-btn{
-    align-self: flex-start;
-    margin-top: 2px;
-}
-
-body.handset-device #start-block-confirm-modal .start-confirm-header-room{
+body.handset-device #start-block-confirm-modal .start-confirm-header-room,
+body.handset-device #override-modal .start-confirm-header-room{
     margin-bottom: 0;
     min-width: 0;
     flex: 1 1 auto;
     gap: 8px 10px;
 }
 
-body.handset-device #start-block-confirm-modal .start-confirm-header-room h3{
+body.handset-device #start-block-confirm-modal .start-confirm-header-room h3,
+body.handset-device #override-modal .start-confirm-header-room h3{
     font-size: 1.45rem;
     color: var(--text-primary);
 }

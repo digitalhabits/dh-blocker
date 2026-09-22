@@ -1495,8 +1495,12 @@ export function setupHandsetModalScreens() {
         overlay.classList.add('mobile-fullscreen-modal');
         if (content.querySelector('.mobile-modal-header')) continue;
 
+        // Stop carries the same title + space chip as Start, so it builds its
+        // sticky header the same way.
         const isRoomStyleConfirmModal =
-            modalId === 'start-block-confirm-modal' || modalId === 'start-schedule-confirm-modal';
+            modalId === 'start-block-confirm-modal'
+            || modalId === 'start-schedule-confirm-modal'
+            || modalId === 'override-modal';
         if (!isRoomStyleConfirmModal) {
             titleSource.classList.add('mobile-modal-title-source');
         }
