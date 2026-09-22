@@ -2932,6 +2932,26 @@
                     label.textContent = 'An extremely long start alert name that would once have pushed the pencil off the panel';
                     const gridRect = grid.getBoundingClientRect();
                     const pencilRect = pencil.getBoundingClientRect();
+                    if (!(gridRect.width > 0 && pencilRect.width > 0)) {
+                        // Temporary: this guard fails only in CI's headless
+                        // Linux; report what the page actually looks like.
+                        const advanced = document.getElementById('editor-advanced-schedule');
+                        const body = document.getElementById('editor-section-advanced-body');
+                        const section = document.getElementById('schedule-panel-overlay-section');
+                        console.log('[T205 debug]', JSON.stringify({
+                            modalHidden: document.getElementById('blocklist-modal')?.classList.contains('hidden'),
+                            editorParent: document.getElementById('focus-space-editor')?.parentElement?.id || null,
+                            kind: document.querySelector('#when-kind-toggle .editor-segmented-btn.active')?.dataset.kind || null,
+                            advancedHidden: advanced?.classList.contains('hidden'),
+                            advancedDisplay: advanced ? getComputedStyle(advanced).display : null,
+                            bodyHidden: body?.classList.contains('hidden'),
+                            sectionHidden: section?.classList.contains('hidden'),
+                            sectionDisplay: section ? getComputedStyle(section).display : null,
+                            gridW: Math.round(gridRect.width), pencilW: Math.round(pencilRect.width),
+                            pencilDisplay: getComputedStyle(pencil).display,
+                            hasSetters: [typeof internals.setWhenToBlockKind, typeof internals.setOpenEditorSection].join(','),
+                        }));
+                    }
                     assert(gridRect.width > 0 && pencilRect.width > 0,
                         'T205: the Start alert row is laid out (a collapsed section measures 0 and proves nothing)');
                     const gridRight = gridRect.right;
