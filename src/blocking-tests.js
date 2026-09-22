@@ -2899,6 +2899,12 @@
             // Without this the editor has no listeners in the headless page, so
             // the clicks below open nothing and everything measures 0.
             internals.setupFocusSpaceEditor();
+            // On Windows (and headless Linux, which the app reads as Windows)
+            // `body.windows:has(.onboarding-screen:not(.hidden)) .modal-overlay`
+            // hides every modal while onboarding is up — so in CI the dialog
+            // below was display:none and everything measured 0.
+            const shownOnboarding = [...document.querySelectorAll('.onboarding-screen:not(.hidden)')];
+            shownOnboarding.forEach((el) => el.classList.add('hidden'));
             internals.openBlocklistModal();
             try {
                 // Weekly puts the Start alert row on screen, and Advanced options
@@ -2943,6 +2949,7 @@
                 }
             } finally {
                 internals.closeBlocklistModal();
+                shownOnboarding.forEach((el) => el.classList.remove('hidden'));
             }
         }
 
