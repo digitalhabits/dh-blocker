@@ -786,19 +786,26 @@ pub fn leave_blocking_warning_compact_window(app: &AppHandle) {
     };
     close_aux_blocking_warning_windows(app);
 
-    let _ = w.set_max_size(None::<LogicalSize<f64>>);
-
     let saved = BLOCKING_WARNING_SAVED_GEOM
         .lock()
         .ok()
         .and_then(|mut g| g.take());
 
-    let _ = w.set_min_size(Some(LogicalSize::new(
-        MAIN_RESTORE_MIN_W,
-        MAIN_RESTORE_MIN_H,
-    )));
-
+    // Only undo geometry we actually changed. Saved geometry is written by
+    // `enter_blocking_warning_compact_window` before it touches any size, so
+    // `None` means no warning ever expanded the window and there is nothing
+    // to restore. Re-applying the constraints anyway is not free on Windows:
+    // tao's `set_min/max_inner_size` end with a resize to the *current* size
+    // to re-check bounds, which clears a maximized window's zoomed state —
+    // the window jitters out of maximized and the title-bar button flips to
+    // Maximize. `reconcile_blocking_warning_shell` runs this on every window
+    // focus and on every Settings open, so the jitter was constant.
     if let Some(g) = saved {
+        let _ = w.set_max_size(None::<LogicalSize<f64>>);
+        let _ = w.set_min_size(Some(LogicalSize::new(
+            MAIN_RESTORE_MIN_W,
+            MAIN_RESTORE_MIN_H,
+        )));
         let _ = w.set_size(LogicalSize::new(g.inner_w, g.inner_h));
         let _ = w.set_position(PhysicalPosition::new(g.outer_x, g.outer_y));
     }

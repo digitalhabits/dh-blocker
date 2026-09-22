@@ -174,6 +174,16 @@ Requires `settings.enforcementEnabled` (opt-in in extension/setup dialog). Grace
 - [ ] End block → app usable again
 - [ ] **No** persistent `osascript` NSWorkspace subprocess (v3 uses sysinfo poll in-process)
 
+### Window geometry around the warning (no automated layer covers this)
+
+- [ ] **[windows]** Maximize the window, then open Settings, and alt-tab away
+      and click back → the window stays maximized and the title-bar button
+      still shows Restore (the shell reconcile must not re-apply size limits
+      when no warning expanded the window)
+- [ ] After a real "Let's go!" warning is acknowledged, the window returns to
+      the size and position it had before the warning — including when it was
+      maximized beforehand
+
 ---
 
 ## 12. macOS Automation Setup
