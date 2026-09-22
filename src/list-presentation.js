@@ -1,7 +1,7 @@
 // Shared list display/meta helpers for blocklist and allowlist focus spaces.
 // Extracted from app.js during allowlist-refactoring phase 1.
 import { escapeHtml, cleanUrlForDisplay } from './utils.js';
-import { getSettingsLanguage, tSettings } from './i18n.js';
+import { getSettingsLanguage, tSettings, tSettingsFmt } from './i18n.js';
 import {
     normalizeIOSScreenTimeSelection,
     getBlocklistRegularApps,
@@ -40,6 +40,17 @@ export function websiteWord(count) {
         return count === 1 ? 'hjemmeside' : 'hjemmesider';
     }
     return count === 1 ? 'website' : 'websites';
+}
+
+/** Editor "What to block" summary, e.g. "1 website · 0 apps" — singular when there is one. */
+export function formatEditorItemCounts({ websites = 0, apps = 0 } = {}) {
+    const part = (count, oneKey, manyKey) => (count === 1
+        ? tSettings(oneKey)
+        : tSettingsFmt(manyKey, { count: String(count) }));
+    return tSettingsFmt('whatToBlockSummaryFmt', {
+        websites: part(websites, 'countWebsiteOne', 'countWebsitesFmt'),
+        apps: part(apps, 'countAppOne', 'countAppsFmt'),
+    });
 }
 
 function siteWord(count) {
@@ -81,10 +92,48 @@ function buildBlocklistCardCountsSummary(siteCount, appCount) {
     return parts.join(` ${tSettings('blocklistCardCountsJoin')} `);
 }
 
-/** Expandable only when there is more than one item to inspect. */
+// "Show what it blocks on the card" (Advanced options). Spaces saved before the
+// option existed have no field and default to showing names.
+function blocklistCardShowsItemNames(blocklist) {
+    return blocklist?.showItemDetails !== false;
+}
+
+// Up to this many items the card line lists names; beyond it, counts.
+const CARD_INLINE_NAMES_MAX = 3;
+
+/** The names the card can list, in the order the meta line shows them. */
+function blocklistCardItemNames(blocklist) {
+    return [
+        // Keep the full domain for websites (not the registrable short label).
+        ...(blocklist?.websites || []).map(cleanUrlForDisplay),
+        ...getBlocklistDisplayApps(blocklist),
+    ];
+}
+
+/**
+ * Does the meta line already name every item? A short list is shown as names,
+ * so expanding it would repeat the line word for word. The iOS Screen Time
+ * picker contributes one label for many items, which is why the name count has
+ * to match the item count rather than being assumed.
+ */
+function cardLineNamesEveryItem(blocklist, total) {
+    if (total === 1) return true;
+    const names = blocklistCardItemNames(blocklist);
+    return total <= CARD_INLINE_NAMES_MAX && names.length === total;
+}
+
+/**
+ * Expandable only when the expansion would show something the line does not.
+ * Never when names are hidden (the expansion would reveal exactly what that
+ * option is there to keep off the card), and never when the line already lists
+ * every name — an affordance that repeats itself is worse than none.
+ */
 export function blocklistCardHasExpandableSummary(blocklist) {
+    if (!blocklistCardShowsItemNames(blocklist)) return false;
     const { siteCount, appCount } = getBlocklistCardItemCounts(blocklist);
-    return siteCount + appCount > 1;
+    const total = siteCount + appCount;
+    if (total <= 1) return false;
+    return !cardLineNamesEveryItem(blocklist, total);
 }
 
 /** Short label from a blocked domain, e.g. instagram.com → instagram. */
@@ -135,17 +184,25 @@ export function buildBlocklistCardMetaHtml(blocklist) {
         return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix">${prefix}</span></span>`;
     }
 
-    // Single site/app: show its name directly — no "1 site" expandable.
-    // Keep the full domain for websites (not the registrable short label).
-    if (total === 1) {
-        const name = siteCount === 1
-            ? cleanUrlForDisplay(blocklist.websites[0])
-            : (getBlocklistDisplayApps(blocklist)[0] || '');
-        return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix">${prefix}</span><span class="blocklist-meta-sep">·</span><span class="blocklist-meta-items">${escapeHtml(name)}</span></span>`;
+    const counts = buildBlocklistCardCountsSummary(siteCount, appCount);
+
+    // Names hidden: counts only, and nothing to expand.
+    if (!blocklistCardShowsItemNames(blocklist)) {
+        return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix">${prefix}</span><span class="blocklist-meta-sep">·</span><span class="blocklist-meta-items">${escapeHtml(counts)}</span></span>`;
     }
 
-    const summary = buildBlocklistCardCountsSummary(siteCount, appCount);
-    return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix">${prefix}</span><span class="blocklist-meta-sep">·</span><button type="button" class="blocklist-meta-items-btn" aria-expanded="false">${escapeHtml(summary)}</button></span>`;
+    const names = blocklistCardItemNames(blocklist);
+
+    // The line names every item (one of them, or a short list): plain text, no
+    // expand affordance — opening it would only repeat what is already there.
+    if (cardLineNamesEveryItem(blocklist, total)) {
+        const shown = total === 1 ? (names[0] || '') : names.join(', ');
+        return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix">${prefix}</span><span class="blocklist-meta-sep">·</span><span class="blocklist-meta-items">${escapeHtml(shown)}</span></span>`;
+    }
+
+    // A long list would only be cut off by the line's ellipsis, so it stays a
+    // count — and there the expansion earns its place.
+    return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix">${prefix}</span><span class="blocklist-meta-sep">·</span><button type="button" class="blocklist-meta-items-btn" aria-expanded="false">${escapeHtml(counts)}</button></span>`;
 }
 
 /** Expandable Sites / Apps detail sections with item pills. */

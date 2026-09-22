@@ -57,4 +57,185 @@ export const singleSchedule = {
     settings: {},
 };
 
-export const fixtures = { crowdedWeek, singleSchedule };
+/** A Manual space that is running (always-on block) — the editor's Manual state, locked. */
+export const manualRunning = {
+    blocklists: [
+        { id: 'bl-manual', name: 'No Twitter', emoji: '🎯', color: '#B8D1DE', websites: ['twitter.invalid', 'x.invalid'], apps: ['Slack'] },
+    ],
+    activeBlocks: [
+        { id: 'b1', blocklistId: 'bl-manual', startTime: Date.now() - 60_000, endTime: 253402300799999, isAlwaysOn: true },
+    ],
+    schedules: [],
+    startOverlays: [],
+    settings: {},
+};
+
+/**
+ * Schedules with several time ranges. The card shows every range when the line
+ * has room and falls back to "first range +N" when it does not: the short one
+ * should fit at desktop width, the long one should not.
+ */
+export const multiRangeSchedules = {
+    blocklists: [
+        { id: 'bl-weekend', name: 'Weekends', emoji: '🌤', color: '#6BAF92', websites: ['weekend.invalid'], apps: [] },
+        { id: 'bl-workday', name: 'Workday', emoji: '💼', color: '#4A90D9', websites: ['work.invalid'], apps: [] },
+    ],
+    activeBlocks: [],
+    schedules: [
+        { id: 's1', blocklistId: 'bl-weekend', repeatType: 'forever', segments: [seg(9, 0, 12, 0, [SAT, SUN]), seg(18, 0, 22, 0, [SAT, SUN])] },
+        {
+            id: 's2', blocklistId: 'bl-workday', repeatType: 'forever', segments: [
+                seg(0, 0, 7, 0, [MON, TUE, WED, THU, FRI]),
+                seg(9, 0, 12, 30, [MON, TUE, WED, THU, FRI]),
+                seg(14, 0, 17, 0, [MON, TUE, WED, THU, FRI]),
+            ],
+        },
+    ],
+    startOverlays: [],
+    settings: {},
+};
+
+/** Every switch state at once: manual on, manual paused, schedule on, schedule off, idle. */
+export const cardStates = {
+    blocklists: [
+        { id: 'bl-on', name: 'Manual on', emoji: '🎯', color: '#B8D1DE', websites: ['a.invalid'], apps: [] },
+        { id: 'bl-paused', name: 'Manual paused', emoji: '💪', color: '#B3D2C8', websites: ['b.invalid'], apps: [] },
+        { id: 'bl-sched', name: 'Scheduled', emoji: '📚', color: '#BCD9B6', websites: ['c.invalid'], apps: [] },
+        { id: 'bl-sched-off', name: 'Scheduled off', emoji: '📱', color: '#EBDCB6', websites: ['d.invalid'], apps: [] },
+        { id: 'bl-idle', name: 'Idle', emoji: '🌳', color: '#EECAAD', websites: ['e.invalid'], apps: [] },
+    ],
+    activeBlocks: [
+        { id: 'b-on', blocklistId: 'bl-on', startTime: Date.now() - 60_000, endTime: 253402300799999, isAlwaysOn: true },
+        { id: 'b-paused', blocklistId: 'bl-paused', startTime: Date.now() - 60_000, endTime: 253402300799999, isAlwaysOn: true, isPaused: true, pauseEndTime: Date.now() + 25 * 60_000 },
+    ],
+    schedules: [
+        { id: 's-on', blocklistId: 'bl-sched', repeatType: 'forever', segments: [seg(9, 0, 17, 0, [MON, TUE, WED, THU, FRI])] },
+        { id: 's-off', blocklistId: 'bl-sched-off', repeatType: 'forever', isPaused: true, segments: [seg(20, 0, 22, 0, [SAT, SUN])] },
+    ],
+    startOverlays: [],
+    settings: {},
+};
+
+/**
+ * A Flexible (allowEditsBetweenBlocks) schedule whose only segment is one minute
+ * at 03:00, so at any sane capture time it is *between* blocks: stopping it
+ * must open the stop modal without a typing challenge.
+ */
+export const flexibleBetweenBlocks = {
+    blocklists: [
+        { id: 'bl-flex', name: 'Night owl', emoji: '🦉', color: '#B3D2C8', websites: ['owl.invalid'], apps: [], unlockMinutes: 30 },
+    ],
+    activeBlocks: [],
+    schedules: [
+        { id: 's-flex', blocklistId: 'bl-flex', repeatType: 'forever', allowEditsBetweenBlocks: true, segments: [seg(3, 0, 3, 1, [MON, TUE, WED, THU, FRI, SAT, SUN])] },
+    ],
+    startOverlays: [],
+    settings: {},
+};
+
+/** A fresh install: no focus spaces at all (there is no default one). */
+export const emptyInstall = {
+    blocklists: [],
+    activeBlocks: [],
+    schedules: [],
+    startOverlays: [],
+    settings: {},
+};
+
+/**
+ * "Show what it blocks on the card" against one item, a short list and a long
+ * list — every shape the card's summary line can take. Two fixtures because
+ * the card list scrolls: six cards would push half of them out of the shot.
+ */
+const nameVisibilityCards = (extra) => ({
+    blocklists: [
+        { id: 'bl-one', name: 'One item', emoji: '🎯', color: '#B8D1DE', websites: ['a.invalid'], apps: [], ...extra },
+        { id: 'bl-few', name: 'Few items', emoji: '📚', color: '#BCD9B6', websites: ['twitter.invalid', 'x.invalid'], apps: ['Slack'], ...extra },
+        { id: 'bl-many', name: 'Many items', emoji: '🌳', color: '#EECAAD', websites: ['a.invalid', 'b.invalid', 'c.invalid', 'd.invalid'], apps: ['Slack', 'Mail'], ...extra },
+    ],
+    activeBlocks: [],
+    schedules: [],
+    startOverlays: [],
+    settings: {},
+});
+export const cardNamesShown = nameVisibilityCards({});
+export const cardNamesHidden = nameVisibilityCards({ showItemDetails: false });
+
+/**
+ * "Maximum words to stop early" raised to 1000, with one space using it (800)
+ * and one at the default 15 — the editor slider has to hold both.
+ */
+export const highWordMaximum = {
+    blocklists: [
+        { id: 'bl-hard', name: 'Deep Work', emoji: '🎯', color: '#4A90D9', websites: ['distract.invalid'], apps: [], overrideDifficulty: { type: 'random-words', count: 800, customText: '' } },
+    ],
+    activeBlocks: [],
+    schedules: [],
+    startOverlays: [],
+    settings: { maxOverrideWords: 1000, overrideCountUnit: 'words' },
+};
+
+/** The same 800-word space after the setting was lowered to 50: the count must survive. */
+export const loweredWordMaximum = {
+    ...highWordMaximum,
+    settings: { maxOverrideWords: 50, overrideCountUnit: 'words' },
+};
+
+/**
+ * A Weekly space that is not enforcing right now (a one-minute segment at 03:00
+ * on weekdays) and Flexible, so the editor renders its time row expanded and
+ * unlocked — the screen where Start time / End time and the day circles live.
+ * A Committed schedule would lock the row even between its blocks.
+ */
+export const weeklyOffPeak = {
+    blocklists: [
+        { id: 'bl-weekly', name: 'Study', emoji: '📚', color: '#BCD9B6', websites: ['study.invalid'], apps: [], unlockMinutes: 60 },
+    ],
+    activeBlocks: [],
+    schedules: [
+        { id: 's-weekly', blocklistId: 'bl-weekly', repeatType: 'forever', allowEditsBetweenBlocks: true, segments: [seg(3, 0, 3, 1, [MON, TUE, WED, THU, FRI])] },
+    ],
+    startOverlays: [],
+    settings: {},
+};
+
+/**
+ * Advanced options with a long Start alert name — the case that used to push
+ * the customise pencil out of the panel.
+ */
+export const longStartAlertName = {
+    blocklists: [
+        { id: 'bl-alert', name: 'Deep Work', emoji: '🎯', color: '#4A90D9', websites: ['distract.invalid'], apps: [], unlockMinutes: 60 },
+    ],
+    activeBlocks: [],
+    schedules: [
+        { id: 's-alert', blocklistId: 'bl-alert', repeatType: 'forever', allowEditsBetweenBlocks: true, startOverlayId: 'ov-long', segments: [seg(3, 0, 3, 1, [MON, TUE, WED, THU, FRI])] },
+    ],
+    startOverlays: [
+        { id: 'ov-long', name: 'Denmark Matters (ReDD Front!)', message: 'Back to it.', durationSeconds: 5 },
+    ],
+    settings: {},
+};
+
+/**
+ * Scheduled spaces that are switched off, so the "Editing" dropdown is unlocked
+ * and can be opened — one block space and one allow-only space, whose options
+ * have to describe opposite directions.
+ */
+const switchedOffSchedule = (blocklist) => ({
+    blocklists: [blocklist],
+    activeBlocks: [],
+    schedules: [
+        { id: 's1', blocklistId: blocklist.id, repeatType: 'forever', isPaused: true, segments: [seg(9, 0, 12, 30, [MON, TUE, WED, THU, FRI])] },
+    ],
+    startOverlays: [],
+    settings: {},
+});
+export const blockScheduleOff = switchedOffSchedule(
+    { id: 'bl-focus', name: 'Deep Work', emoji: '🎯', color: '#4A90D9', websites: ['distract.invalid'], apps: [] },
+);
+export const allowScheduleOff = switchedOffSchedule(
+    { id: 'bl-focus', name: 'Writing', emoji: '📚', color: '#BCD9B6', mode: 'allowlist', websites: ['docs.invalid'], apps: [] },
+);
+
+export const fixtures = { crowdedWeek, singleSchedule, weeklyOffPeak, longStartAlertName, manualRunning, cardStates, flexibleBetweenBlocks, multiRangeSchedules, emptyInstall, cardNamesShown, cardNamesHidden, highWordMaximum, loweredWordMaximum, blockScheduleOff, allowScheduleOff };

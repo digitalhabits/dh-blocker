@@ -764,7 +764,7 @@
         return { passed: true };
     }
 
-    async function testC3_maxDifficultyBlocklistStartClear() {
+    async function testC3_maxWordsBlocklistStartClear() {
         const skip = await ensureHelperRunningOrSkip('C3');
         if (skip) return skip;
 
@@ -774,11 +774,11 @@
             websites: [TEST_DOMAINS.b],
             name: 'C3'
         });
-        bl.overrideDifficulty = { type: 'random-words', count: 7500, maxDifficulty: true };
+        bl.overrideDifficulty = { type: 'random-words', count: 300 };
         addActiveBlock(bl.id, { durationMs: 120000 });
         await callSaveData();
         const startResult = await callUpdateHostsFile();
-        assertOrThrow(startResult && startResult.success, 'C3: start block with max difficulty failed');
+        assertOrThrow(startResult && startResult.success, 'C3: start block with max words failed');
         await assertEnforcedDomain('C3', TEST_DOMAINS.b);
 
         const clearResult = await tauriAPI.clearBlockViaHelper(bl.id);
@@ -1083,21 +1083,23 @@
         });
     }
 
-    async function testI3_stopAndPauseCancelWorkflows() {
+    async function testI3_stopCancelWorkflow() {
         return runIsolatedIntegrationTest('I3', async () => {
             hideAllIntegrationModals();
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'I3 Modal' });
             const block = addActiveBlock(bl.id, { durationMs: 120000 });
             await callSaveData();
             callRender();
-            document.getElementById('instant-mode-tab')?.click();
             selectIntegrationBlocklist('I3', bl);
+            // A running Manual space: its card switch is on and the editor is locked.
+            const switchEl = () => document.querySelector(`.blocklist-card[data-id="${bl.id}"] .blocklist-switch`);
             await waitForIntegrationCondition(
-                () => document.getElementById('start-block-btn')?.dataset.activeBlockId === block.id,
+                () => isVisible('time-picker-container') && switchEl()?.getAttribute('aria-checked') === 'true',
                 'I3 active block selection',
             );
+            assertOrThrow(document.getElementById('override-type')?.disabled, 'I3: running space must lock the editor');
 
-            document.getElementById('start-block-btn')?.click();
+            switchEl()?.click();
             await waitForIntegrationCondition(() => isVisible('override-modal'), 'I3 stop modal');
             document.getElementById('cancel-override-btn')?.click();
             await waitForIntegrationCondition(() => !isVisible('override-modal'), 'I3 stop modal cancel');
@@ -1105,15 +1107,9 @@
                 (getAppData().activeBlocks || []).some((candidate) => candidate.id === block.id),
                 'I3: cancelling stop removed the active block',
             );
-
-            await waitForIntegrationCondition(() => !document.getElementById('pause-block-btn')?.classList.contains('hidden'), 'I3 pause button');
-            document.getElementById('pause-block-btn')?.click();
-            await waitForIntegrationCondition(() => isVisible('pause-modal'), 'I3 pause modal');
-            document.getElementById('cancel-pause-btn')?.click();
-            await waitForIntegrationCondition(() => !isVisible('pause-modal'), 'I3 pause modal cancel');
             assertOrThrow(
                 !(getAppData().activeBlocks || []).find((candidate) => candidate.id === block.id)?.isPaused,
-                'I3: cancelling pause changed the active block state',
+                'I3: cancelling stop changed the active block state',
             );
             hideAllIntegrationModals();
             return { passed: true };
@@ -1152,9 +1148,11 @@
         });
     }
 
-    async function testI5_editWarningPauseUnlocksModal() {
+    async function testI5_switchStopUnlocksEditor() {
         return runIsolatedIntegrationTest('I5', async () => {
             hideAllIntegrationModals();
+            // The default unlock duration (24 h) makes switching off a timed pause,
+            // which is what unlocks the editor without losing the block.
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'I5 Modal' });
             const block = addActiveBlock(bl.id, { durationMs: 5 * 60 * 1000 });
             await callSaveData();
@@ -1162,20 +1160,21 @@
 
             const card = document.querySelector(`.blocklist-card[data-id="${bl.id}"]`);
             assertOrThrow(card, 'I5: focus-space card missing');
-            let editButton = card.querySelector('.edit-btn');
-            if (!editButton) {
-                card.querySelector('.blocklist-menu-btn')?.click();
-                editButton = card.querySelector('.edit-blocklist-item');
+            card.click();
+
+            await waitForIntegrationCondition(
+                () => isVisible('time-picker-container') && document.getElementById('editor-section-what-header'),
+                'I5 editor panel',
+            );
+            // What to block is collapsed for an existing space; open it to type.
+            if (document.getElementById('editor-section-what-header')?.getAttribute('aria-expanded') !== 'true') {
+                document.getElementById('editor-section-what-header')?.click();
             }
-            assertOrThrow(editButton, 'I5: edit button missing');
-            editButton.click();
+            assertOrThrow(document.getElementById('override-type')?.disabled, 'I5: running space must lock the editor');
+            const switchEl = card.querySelector('.blocklist-switch');
+            assertOrThrow(switchEl, 'I5: card switch missing');
 
-            await waitForIntegrationCondition(() => isVisible('blocklist-modal'), 'I5 edit modal');
-            assertOrThrow(isVisible('active-blocklist-warning'), 'I5: active warning missing');
-            const pauseButton = document.getElementById('active-blocklist-pause-btn');
-            assertOrThrow(pauseButton && !pauseButton.classList.contains('hidden'), 'I5: warning Pause button missing');
-
-            // Type an unsaved addition before pausing: the post-pause refresh
+            // Type an unsaved addition before stopping: the post-stop refresh
             // must swap the locked sets without rebuilding the working list
             // from saved data, or this silently disappears.
             const websiteInput = document.getElementById('modal-website-input');
@@ -1183,32 +1182,42 @@
             websiteInput.value = TEST_DOMAINS.b;
             websiteInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
             const tagText = () => document.getElementById('modal-websites-tags')?.textContent || '';
-            assertOrThrow(tagText().includes(TEST_DOMAINS.b), 'I5: pending website was not added before pausing');
+            assertOrThrow(tagText().includes(TEST_DOMAINS.b), 'I5: pending website was not added before stopping');
 
-            pauseButton.click();
-            await waitForIntegrationCondition(() => isVisible('pause-modal'), 'I5 pause modal');
+            switchEl.click();
+            await waitForIntegrationCondition(() => isVisible('override-modal'), 'I5 stop modal');
+            assertOrThrow(
+                !document.getElementById('override-modal')?.classList.contains('override-frictionless'),
+                'I5: a running Manual block must keep the challenge',
+            );
 
             await completeIntegrationChallenge('I5', {
-                modalId: 'pause-modal',
-                textId: 'pause-challenge-text',
-                inputId: 'pause-challenge-input',
-                wordInputId: 'pause-challenge-word-input',
-                currentWordId: 'pause-current-word',
-                confirmId: 'confirm-pause-btn',
+                modalId: 'override-modal',
+                textId: 'challenge-text',
+                inputId: 'challenge-input',
+                wordInputId: 'challenge-word-input',
+                currentWordId: 'challenge-current-word',
+                confirmId: 'confirm-override-btn',
             });
 
             await waitForIntegrationCondition(
-                () => !isVisible('pause-modal')
-                    && isVisible('blocklist-modal')
+                () => !isVisible('override-modal')
+                    && isVisible('time-picker-container')
                     && !!getAppData().activeBlocks.find(candidate => candidate.id === block.id)?.isPaused,
-                'I5 pause unlocks edit modal',
+                'I5 stop unlocks editor',
             );
-            assertOrThrow(!isVisible('active-blocklist-warning'), 'I5: warning stayed visible after pause');
-            assertOrThrow(!document.getElementById('override-type')?.disabled, 'I5: override settings stayed locked after pause');
-            assertOrThrow(tagText().includes(TEST_DOMAINS.b), 'I5: unsaved website edit was discarded by the pause refresh');
+            const stopped = getAppData().activeBlocks.find(candidate => candidate.id === block.id);
+            assertOrThrow(stopped, 'I5: the block must be paused, not removed, with a 24 h unlock');
+            assertOrThrow(
+                typeof stopped.pauseEndTime === 'number' && stopped.pauseEndTime > Date.now() + 23 * 60 * 60 * 1000,
+                'I5: the pause should end about 24 hours from now',
+            );
+            assertOrThrow(!document.getElementById('override-type')?.disabled, 'I5: override settings stayed locked after stopping');
+            assertOrThrow(!document.getElementById('unlock-duration-select')?.disabled, 'I5: unlock duration stayed locked after stopping');
+            assertOrThrow(tagText().includes(TEST_DOMAINS.b), 'I5: unsaved website edit was discarded by the stop refresh');
             assertOrThrow(
                 !document.querySelector('#modal-websites-tags .tag.locked'),
-                'I5: website tags stayed locked after pause',
+                'I5: website tags stayed locked after stopping',
             );
             hideAllIntegrationModals();
             return { passed: true };
@@ -1264,9 +1273,9 @@
             { group: 'H', name: 'H1: Single allowlist enforcement state', fn: testH1_singleAllowlistEnforcementState },
             { group: 'I', name: 'I1: Stop-all cancel restores Settings', fn: testI1_stopAllCancelRestoresSettings },
             { group: 'I', name: 'I2: Stop-all success restores Settings', fn: testI2_stopAllSuccessRestoresSettings },
-            { group: 'I', name: 'I3: Stop and pause cancel workflows', fn: testI3_stopAndPauseCancelWorkflows },
+            { group: 'I', name: 'I3: Stop cancel keeps the block', fn: testI3_stopCancelWorkflow },
             { group: 'I', name: 'I4: Android back closes topmost modal', fn: testI4_androidBackClosesTopmostModal },
-            { group: 'I', name: 'I5: Edit warning Pause unlocks modal', fn: testI5_editWarningPauseUnlocksModal },
+            { group: 'I', name: 'I5: Card switch stop unlocks editor', fn: testI5_switchStopUnlocksEditor },
             { group: 'I', name: 'I6: Let\'s go acknowledges before shell reconcile', fn: testI6_letsGoAcknowledgesBeforeShellReconcile }
         ];
 
@@ -1283,7 +1292,7 @@
             { group: 'A', name: 'A11: Data file owns enforcement', fn: testA11_dataFileOwnsEnforcement },
             { group: 'B', name: 'B2: One-off + schedule same blocklist', fn: testB2_oneOffPlusScheduleSameBlocklist },
             { group: 'C', name: 'C2: Clear-all manual blocks', fn: testC2_clearAllManualBlocks },
-            { group: 'C', name: 'C3: Max difficulty blocklist start/clear', fn: testC3_maxDifficultyBlocklistStartClear },
+            { group: 'C', name: 'C3: Max-words blocklist start/clear', fn: testC3_maxWordsBlocklistStartClear },
             { group: 'F', name: 'F1: Set blocked apps command path', fn: testF1_setBlockedAppsCommandPath },
             { group: 'F', name: 'F2: Protected app payload path', fn: testF2_protectedAppPayloadPath },
             { group: 'G', name: 'G1: Duplicate blocklist then start/clear path', fn: testG1_duplicateThenRun },

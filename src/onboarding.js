@@ -175,7 +175,6 @@ export async function presentRebrandNotice() {
 
     showExclusiveOnboardingScreen('rebrand-onboarding');
     document.getElementById('main-content')?.classList.add('hidden');
-    document.getElementById('now-blocking-row')?.classList.add('hidden');
     // Mirror the main title bar's window-control visibility (shown on
     // Windows) since this overlay covers the app's own title bar.
     const mainControlsHidden =
@@ -205,7 +204,6 @@ export function presentWelcomeOnboarding(onContinue) {
 
         showExclusiveOnboardingScreen('welcome-onboarding');
         document.getElementById('main-content')?.classList.add('hidden');
-        document.getElementById('now-blocking-row')?.classList.add('hidden');
         resetWelcomeDemoPanel();
         welcomeFirefoxInstalled = await detectWelcomeFirefoxInstalled();
         applyWelcomeOnboardingLanguage();
@@ -237,7 +235,6 @@ export function syncSetupBannerHeadline() {
 export function showEulaOnboardingScreen() {
     showExclusiveOnboardingScreen('eula-onboarding');
     document.getElementById('main-content')?.classList.add('hidden');
-    document.getElementById('now-blocking-row')?.classList.add('hidden');
     applyEulaOnboardingLanguage();
     const eulaContinueBtn = document.getElementById('eula-continue-btn');
     const eulaCheckbox = document.getElementById('eula-agree-checkbox');
@@ -595,7 +592,6 @@ export async function maybeShowMacAutomationIntro(onboardingState) {
     appState.migrationOnboardingActive = false;
     stopMigrationPolling();
     document.getElementById('main-content')?.classList.remove('hidden');
-    document.getElementById('now-blocking-row')?.classList.remove('hidden');
     document.getElementById('mac-automation-intro-modal')?.classList.remove('hidden');
     return true;
 }
@@ -675,7 +671,6 @@ export async function showMigrationOnboarding(phase, onboardingState, opts = {})
     state.migrationOnboardingActive = true;
     state.migrationOnboardingDismissed = false;
     startMigrationPolling();
-    document.getElementById('now-blocking-row')?.classList.add('hidden');
     if (main) main.classList.add('hidden');
 
     try {
@@ -730,10 +725,8 @@ export async function returnFromExtensionSetupOnboarding() {
 export function hideMigrationOnboarding() {
     const screen = document.getElementById('migration-onboarding');
     const main = document.getElementById('main-content');
-    const nowBlockingRow = document.getElementById('now-blocking-row');
     if (screen) screen.classList.add('hidden');
     if (main) main.classList.remove('hidden');
-    if (nowBlockingRow) nowBlockingRow.classList.remove('hidden');
     state.migrationOnboardingActive = false;
     state.migrationOnboardingDismissed = true;
     state.firstRunExtensionSetupPending = false;

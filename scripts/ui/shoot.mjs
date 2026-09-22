@@ -205,7 +205,6 @@ async function openScreen(browser, screen, eulaRevision) {
         // the onboarding visibility pass and would otherwise re-hide the app.
         document.querySelectorAll('[id$="-onboarding"]').forEach(el => el.classList.add('hidden'));
         document.getElementById('main-content')?.classList.remove('hidden');
-        document.getElementById('now-blocking-row')?.classList.remove('hidden');
 
         // detectPlatform() has no Linux branch and falls through to Windows, so
         // an unstamped screenshot taken on Linux silently claims to be Windows.

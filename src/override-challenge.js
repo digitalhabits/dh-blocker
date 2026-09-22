@@ -1,4 +1,4 @@
-// Override challenge generation: word lists, gibberish, difficulty math.
+// Override challenge generation: word list, word-count difficulty math.
 // Extracted verbatim from app.js.
 import { state } from './state.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage } from './i18n.js';
@@ -184,16 +184,32 @@ export function shouldBlockChallengeSpaceKey(inputEl, event) {
     return /\s/.test(inputEl.value[start - 1] || '');
 }
 
-// Word list for random word challenges
-export const MIN_OVERRIDE_CHARS = 5;
-/** iOS/Android count words rather than characters — one word is a valid minimum. */
-export const MIN_MOBILE_OVERRIDE_WORDS = 1;
-export const DEFAULT_OVERRIDE_COUNT = 10;
-export const TARGET_MAX_OVERRIDE_MINUTES = 30;
-/** iOS random-words / gibberish: max word count (random-words: 2500 letters at max; gibberish: 3000). */
-export const MAX_IOS_OVERRIDE_WORD_COUNT = 500;
-/** When character count >= this, preview text is frozen (no more regeneration) for random words and gibberish. */
-export const OVERRIDE_PREVIEW_TRUNCATE_AT = 50;
+// ── Override difficulty ───────────────────────────────────────────────────
+// `overrideDifficulty.count` is a number of WORDS on every platform (five-letter
+// words from the list below). Custom text is typed verbatim and has no count.
+export const OVERRIDE_TYPES = Object.freeze(['random-words', 'custom']);
+export const MIN_OVERRIDE_WORDS = 1;
+export const DEFAULT_OVERRIDE_WORDS = 15;
+/** Kept for older callers; same value as DEFAULT_OVERRIDE_WORDS. */
+export const DEFAULT_OVERRIDE_COUNT = DEFAULT_OVERRIDE_WORDS;
+/**
+ * Hard ceiling on a stored desktop word count. Every clamp uses this, never the
+ * user's "maximum words" setting below — see getOverrideWordsSliderMax.
+ */
+export const MAX_OVERRIDE_WORDS_DESKTOP = 1000;
+/** The desktop maximum before it became a setting; legacy data still means this. */
+export const LEGACY_MAX_OVERRIDE_WORDS = 300;
+/** Settings → Enforcement → "Maximum words" (`settings.maxOverrideWords`). */
+export const MIN_MAX_OVERRIDE_WORDS_SETTING = 50;
+export const DEFAULT_MAX_OVERRIDE_WORDS_SETTING = LEGACY_MAX_OVERRIDE_WORDS;
+export const MAX_OVERRIDE_WORDS_SETTING_STEP = 50;
+/** Phones: Android's native gate clamps at its 111-word list anyway. */
+export const MAX_OVERRIDE_WORDS_MOBILE = 100;
+export const MAX_CUSTOM_OVERRIDE_CHARS = 7500;
+/** Letters per generated word (the pool is five-letter words). */
+export const LETTERS_PER_WORD = 5;
+/** Average characters (letters + space) one desktop word used to cost — for migrating old counts. */
+export const LEGACY_CHARS_PER_WORD = 6;
 
 /**
  * Word-by-word challenge primitives. Moved here from app.js: they are pure
@@ -209,8 +225,13 @@ export function buildWordChallengeState(text) {
     };
 }
 
+export function isMobileOverrideChallengePlatform() {
+    return state.isIOS || state.isAndroid;
+}
+
+/** Phones type the challenge one word at a time; desktop types the whole text. */
 export function isMobileWordByWordChallenge(difficulty) {
-    return !!(isMobileOverrideChallengePlatform() && (difficulty?.type === 'random-words' || difficulty?.type === 'gibberish'));
+    return !!(isMobileOverrideChallengePlatform() && normalizeOverrideType(difficulty?.type) === 'random-words');
 }
 
 export function getCurrentChallengeWord(challengeState) {
@@ -223,19 +244,45 @@ export function getCompletedChallengeText(challengeState) {
     return challengeState.words.slice(0, challengeState.currentIndex).join(' ');
 }
 
-export function usesMobileWordCountForOverrideType(type) {
-    return !!((state.isIOS || state.isAndroid) && (type === 'random-words' || type === 'gibberish'));
+export function normalizeOverrideType(type) {
+    return type === 'custom' ? 'custom' : 'random-words';
 }
 
-export function isMobileOverrideChallengePlatform() {
-    return state.isIOS || state.isAndroid;
+/** Random words are counted in words on every platform; custom text has no count. */
+export function usesWordCountForOverrideType(type) {
+    return normalizeOverrideType(type) === 'random-words';
 }
 
-export function formatIOSGibberishChallenge(text) {
-    const compact = String(text || '').replace(/\s+/g, '');
-    return compact.replace(/(.{6})(?=.)/g, '$1 ');
+export function getMaxOverrideWords(mobile = isMobileOverrideChallengePlatform()) {
+    return mobile ? MAX_OVERRIDE_WORDS_MOBILE : MAX_OVERRIDE_WORDS_DESKTOP;
 }
 
+/** Clamp the "maximum words" setting to [50, 1000]; anything unparseable is the default. */
+export function normalizeMaxOverrideWordsSetting(value) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed)) return DEFAULT_MAX_OVERRIDE_WORDS_SETTING;
+    return Math.min(MAX_OVERRIDE_WORDS_DESKTOP, Math.max(MIN_MAX_OVERRIDE_WORDS_SETTING, parsed));
+}
+
+/**
+ * Top of the "How many words" slider. The setting decides how far the slider
+ * reaches and nothing else: stored counts are clamped to the platform ceiling
+ * only, so lowering the setting cannot make an existing space easier to stop.
+ * A space already above the setting gets a slider long enough to hold its
+ * count, or opening the editor and saving would quietly cut the challenge.
+ * Phones ignore the setting — Android's native gate serves at most its own
+ * word list.
+ */
+export function getOverrideWordsSliderMax({
+    maxSetting = state.appData?.settings?.maxOverrideWords,
+    currentCount = 0,
+    mobile = isMobileOverrideChallengePlatform(),
+} = {}) {
+    if (mobile) return MAX_OVERRIDE_WORDS_MOBILE;
+    const current = Number.parseInt(currentCount, 10);
+    const held = Number.isFinite(current) ? Math.min(MAX_OVERRIDE_WORDS_DESKTOP, current) : 0;
+    return Math.max(normalizeMaxOverrideWordsSetting(maxSetting), held);
+}
 
 /** Five-letter words only — used for iOS word-count random-words (predictable length per word). */
 let wordList5Cache = null;
@@ -277,208 +324,109 @@ export function generateRandomWordsByCount(wordCount) {
     return words.join(' ');
 }
 
-// Generate random words to reach target character count exactly (desktop / character-count mode)
-export function generateRandomWords(targetChars) {
-    const words = [];
-    let currentLength = 0;
-
-    // Safety break to prevent infinite loops
-    let attempts = 0;
-    const maxAttempts = 1000;
-
-    while (currentLength < targetChars && attempts < maxAttempts) {
-        attempts++;
-
-        const isFirstWord = words.length === 0;
-        const spaceNeeded = isFirstWord ? 0 : 1;
-        const remaining = targetChars - currentLength;
-        const maxWordLen = remaining - spaceNeeded;
-
-        if (maxWordLen <= 0) break;
-
-        // Try to find exact fit first
-        const exactMatches = wordList.filter(w => w.length === maxWordLen);
-
-        if (exactMatches.length > 0) {
-            // Found exact match! Finish here.
-            const word = exactMatches[Math.floor(Math.random() * exactMatches.length)];
-            words.push(word);
-            // No `currentLength` update: this branch consumes the remaining
-            // budget exactly and leaves the loop.
-            break;
-        } else {
-            // No exact match, pick a random word that fits and leaves room for at least 1 more char 
-            // (technically min word size is 1, so space+1=2 chars required for next step)
-
-            const validWords = wordList.filter(w => {
-                const newRemaining = remaining - (spaceNeeded + w.length);
-                return newRemaining >= 2;
-            });
-
-            if (validWords.length > 0) {
-                const word = validWords[Math.floor(Math.random() * validWords.length)];
-                words.push(word);
-                currentLength += spaceNeeded + word.length;
-            } else {
-                // If we're stuck (cannot find a word that fits exactly AND cannot find one leaving >=2 chars),
-                // it means we have e.g. 1 char left (after space) but no 1-char words? 
-                // With our list containing 'a', this shouldn't happen unless we need a 0-length word.
-                break;
-            }
-        }
-    }
-
-    return words.join(' ');
-}
-
 export function generateOverrideChallengeText(type, count, customText = '') {
-    if (type === 'custom' && customText) return customText;
-    const normalizedCount = normalizeOverrideCount(count, type);
-    if (type === 'gibberish') {
-        const raw = generateGibberish(usesMobileWordCountForOverrideType(type) ? normalizedCount * 6 : normalizedCount);
-        return isMobileOverrideChallengePlatform() ? formatIOSGibberishChallenge(raw) : raw;
-    }
-    if (usesMobileWordCountForOverrideType(type)) {
-        return generateRandomWordsByCount(normalizedCount);
-    }
-    return generateRandomWords(normalizedCount);
+    if (normalizeOverrideType(type) === 'custom' && customText) return customText;
+    return generateRandomWordsByCount(normalizeOverrideCount(count, 'random-words'));
 }
 
-// Generate gibberish
-export function generateGibberish(count) {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    let result = '';
-    for (let i = 0; i < count; i++) {
-        result += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return result;
-}
-
-export function normalizeOverrideCount(value, type = 'random-words') {
+/** Clamp a word count to [1, max words]; anything unparseable is the default. */
+export function normalizeOverrideCount(value, type = 'random-words', maxWords = getMaxOverrideWords()) {
     const parsed = parseInt(value, 10);
-    if (!Number.isFinite(parsed)) return DEFAULT_OVERRIDE_COUNT;
-    const maxCount = getMaxOverrideCharsForType(type);
-    return Math.min(maxCount, Math.max(getMinOverrideCountForType(type), parsed));
+    if (!Number.isFinite(parsed)) return DEFAULT_OVERRIDE_WORDS;
+    const max = Math.max(MIN_OVERRIDE_WORDS, Number(maxWords) || getMaxOverrideWords());
+    return Math.min(max, Math.max(MIN_OVERRIDE_WORDS, parsed));
 }
 
 export function normalizeCustomOverrideText(value) {
     const text = sanitizeChallengeTargetText(typeof value === 'string' ? value : '');
-    const maxChars = getMaxOverrideCharsForType('custom');
-    return text.slice(0, maxChars);
-}
-
-export function getTypingCharsPerMinuteForType(type) {
-    // Estimates only (not locked to max char counts).
-    if (type === 'gibberish') return 100;
-    return 200; // random-words and custom
+    return text.slice(0, MAX_CUSTOM_OVERRIDE_CHARS);
 }
 
 /**
- * Lower bound for the count field. Desktop counts characters, so 5 is the
- * smallest sensible challenge; mobile (iOS/Android) counts *words*, where a
- * single word is a legitimate choice for a light friction gate.
+ * Keystrokes per minute behind the time estimates — estimates only, nothing is
+ * enforced against them. Custom text is prose, typed at the commonly quoted 40
+ * words a minute on a keyboard (200) and somewhat less on a touchscreen.
+ * Random words are slower on both: each unrelated word has to be read before
+ * it is typed, and a phone offers no autocomplete for them.
  */
+export function getTypingCharsPerMinuteForType(type, mobile = isMobileOverrideChallengePlatform()) {
+    if (normalizeOverrideType(type) === 'custom') return mobile ? 150 : 200;
+    return mobile ? 100 : 175;
+}
+
 export function getMinOverrideCountForType(type) {
-    return usesMobileWordCountForOverrideType(type) ? MIN_MOBILE_OVERRIDE_WORDS : MIN_OVERRIDE_CHARS;
+    return normalizeOverrideType(type) === 'custom' ? 1 : MIN_OVERRIDE_WORDS;
 }
 
-export function getMaxOverrideCharsForType(type) {
-    if (usesMobileWordCountForOverrideType(type)) return MAX_IOS_OVERRIDE_WORD_COUNT;
-    if (type === 'gibberish') return 5000;
-    return 7500; // random-words and custom: fixed max; estimated time uses CPM
+/** Upper bound of the count field: words for random words, characters for custom text. */
+export function getMaxOverrideCountForType(type) {
+    return normalizeOverrideType(type) === 'custom' ? MAX_CUSTOM_OVERRIDE_CHARS : getMaxOverrideWords();
 }
 
+/** Typed letters for N words (spaces are not typed on the word-by-word phone gate). */
 export function getOverrideGeneratedCharCount(type, count) {
+    if (normalizeOverrideType(type) === 'custom') return 0;
     const parsed = Number.parseInt(count, 10);
-    const normalizedCount = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-    if (!usesMobileWordCountForOverrideType(type)) return normalizedCount;
-
-    if (type === 'random-words') {
-        return getIOSRandomWordsCharCount(normalizedCount);
-    }
-    return normalizedCount * 6;
+    const words = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+    return words * LETTERS_PER_WORD;
 }
 
 /** Letters-only workload for comparing override difficulties (e.g. override-all hardest). */
 export function getDifficultyTypingCharCount(difficulty) {
     if (!difficulty) return 0;
-    if (difficulty.type === 'custom') {
+    if (normalizeOverrideType(difficulty.type) === 'custom') {
         return typeof difficulty.customText === 'string' ? difficulty.customText.length : 0;
     }
-    const parsed = Number(difficulty.count);
-    const count = difficulty.maxDifficulty === true
-        ? getMaxOverrideCharsForType(difficulty.type)
-        : (Number.isFinite(parsed) && parsed > 0 ? parsed : 50);
-    return getOverrideGeneratedCharCount(difficulty.type, count);
+    return getOverrideGeneratedCharCount('random-words', normalizeOverrideCount(difficulty.count, 'random-words'));
 }
 
-/** Preview text for override difficulty (random words, gibberish, or custom). Used in blocklist modal. */
-export function getOverridePreviewText(type, count, customText) {
-    if (type === 'custom') {
-        const normalized = sanitizeChallengeTargetText(typeof customText === 'string' ? customText : '');
-        return normalized || 'Your custom text will appear here';
-    }
-    const num = parseInt(count, 10);
-    const countNum = Number.isFinite(num) && num >= 0 ? num : 10;
-    const generatedCharCount = getOverrideGeneratedCharCount(type, countNum);
-
-    if (type !== state.lastOverridePreviewType) {
-        state.lastOverridePreviewType = type;
-        state.overridePreviewFrozenByType[type] = null;
-    }
-
-    if (type === 'random-words' || type === 'gibberish') {
-        if (generatedCharCount >= OVERRIDE_PREVIEW_TRUNCATE_AT) {
-            let frozen = state.overridePreviewFrozenByType[type];
-            if (frozen != null) return frozen;
-            const generated = type === 'gibberish'
-                ? (isMobileOverrideChallengePlatform() ? formatIOSGibberishChallenge(generateGibberish(countNum * 6)) : generateGibberish(OVERRIDE_PREVIEW_TRUNCATE_AT))
-                : (usesMobileWordCountForOverrideType(type)
-                    ? generateRandomWordsByCount(countNum)
-                    : generateRandomWords(countNum));
-            frozen = generated.slice(0, OVERRIDE_PREVIEW_TRUNCATE_AT);
-            state.overridePreviewFrozenByType[type] = frozen;
-            return frozen;
-        }
-    }
-
-    if (type === 'gibberish') {
-        const generated = generateGibberish(usesMobileWordCountForOverrideType(type) ? countNum * 6 : countNum);
-        return isMobileOverrideChallengePlatform() ? formatIOSGibberishChallenge(generated) : generated;
-    }
-    if (usesMobileWordCountForOverrideType(type)) {
-        return generateRandomWordsByCount(countNum);
-    }
-    return generateRandomWords(countNum);
-}
-
-/** Estimated minutes to type the override challenge (based on character count and type). */
-export function getOverrideEstimatedMinutes(type, count, customText) {
-    if (type === 'custom') {
+/**
+ * Estimated minutes to type the challenge. Desktop types the whole text, so
+ * random words cost their letters plus the spaces between them; the phone gate
+ * takes one word at a time and never asks for a space. This is display only —
+ * comparing difficulties stays on letters (getDifficultyTypingCharCount).
+ */
+export function getOverrideEstimatedMinutes(type, count, customText, mobile = isMobileOverrideChallengePlatform()) {
+    const charsPerMinute = getTypingCharsPerMinuteForType(type, mobile);
+    if (normalizeOverrideType(type) === 'custom') {
         const charCount = typeof customText === 'string' ? customText.length : 0;
         if (charCount <= 0) return 0;
-        return Math.ceil(charCount / getTypingCharsPerMinuteForType('custom'));
+        return Math.ceil(charCount / charsPerMinute);
     }
-
     const parsed = Number.parseInt(count, 10);
-    const normalizedCount = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-    if (normalizedCount <= 0) return 0;
-
-    const charCount = getOverrideGeneratedCharCount(type, count);
-    // Mobile word-count UI still estimates from generated letters, at the random-words rate.
-    const cpm = usesMobileWordCountForOverrideType(type)
-        ? getTypingCharsPerMinuteForType('random-words')
-        : getTypingCharsPerMinuteForType(type);
-    return Math.ceil(charCount / cpm);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+    const letters = getOverrideGeneratedCharCount('random-words', parsed);
+    const keystrokes = mobile ? letters : letters + (parsed - 1);
+    return Math.ceil(keystrokes / charsPerMinute);
 }
 
-export function formatOverrideMaxDifficultyHint(type) {
-    const count = getMaxOverrideCharsForType(type);
-    const usesWords = usesMobileWordCountForOverrideType(type);
-    const locale = tSettings('locale');
-    const countStr = count.toLocaleString(locale);
-    return tSettingsFmt(
-        usesWords ? 'overrideMaxDifficultyHintWords' : 'overrideMaxDifficultyHintChars',
-        { count: countStr }
-    );
+/**
+ * Normalize a stored difficulty to the current shape `{ type, count, customText }`.
+ *
+ * Older data can carry `gibberish` (dropped: becomes random words),
+ * `maxDifficulty` with `countBeforeMax` / `typeBeforeMax` (dropped: becomes the
+ * platform maximum — the failure falls toward blocking), and, on desktop, a
+ * `count` that was a CHARACTER target (`countsAreChars`: divide by the average
+ * six characters a word used to cost, never below one word). Phone stores
+ * already counted words and are only clamped.
+ */
+export function migrateOverrideDifficultyToWords(raw, { maxWords, countsAreChars }) {
+    const max = Math.max(MIN_OVERRIDE_WORDS, Number(maxWords) || MAX_OVERRIDE_WORDS_DESKTOP);
+    const type = normalizeOverrideType(raw?.type);
+    const customText = type === 'custom' ? normalizeCustomOverrideText(raw?.customText) : '';
+    if (type === 'custom') {
+        return { type, count: DEFAULT_OVERRIDE_WORDS, customText };
+    }
+    // Legacy shapes predate the raised ceiling: "max difficulty" and a
+    // character target both meant at most the old 300-word maximum.
+    const legacyMax = Math.min(max, LEGACY_MAX_OVERRIDE_WORDS);
+    if (raw?.maxDifficulty === true) {
+        return { type, count: legacyMax, customText: '' };
+    }
+    const parsed = Number.parseInt(raw?.count, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return { type, count: Math.min(max, DEFAULT_OVERRIDE_WORDS), customText: '' };
+    }
+    const words = countsAreChars ? Math.round(parsed / LEGACY_CHARS_PER_WORD) : parsed;
+    return { type, count: Math.min(countsAreChars ? legacyMax : max, Math.max(MIN_OVERRIDE_WORDS, words)), customText: '' };
 }

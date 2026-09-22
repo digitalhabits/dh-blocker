@@ -2,12 +2,14 @@
 // website sync. Extracted verbatim from app.js.
 import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
-import { normalizeBlocklist, isProtectedDomain, collectActiveIOSManualBlockPayload, healFocusSpaceColors, iosManualSyncAction } from './blocklist-utils.js';
+import { normalizeBlocklist, isProtectedDomain, collectActiveIOSManualBlockPayload, healFocusSpaceColors, healWwwWebsiteEntries, iosManualSyncAction, migrateLegacyQuickStartBlocklists } from './blocklist-utils.js';
 import { isSchedulePausedNow, syncActiveBlocksToHelper, syncSchedulesToHelper, buildPersistedAppData } from './schedule-engine.js';
-import { generateId } from './app.js';
 import { updateBlockedApps } from './blocking-platform.js';
 import { normalizeLoadedEulaState } from './onboarding.js';
 import { migrateBlocklistStartOverlaysToGlobal, migrateLegacyScheduleStartOverlays } from './schedule-overlay.js';
+import { migrateLegacyRepeatType } from './when-to-block.js';
+import { getMaxOverrideWords, migrateOverrideDifficultyToWords } from './override-challenge.js';
+import { DEFAULT_UNLOCK_MINUTES, normalizeUnlockMinutes } from './unlock-duration.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 
 
@@ -51,18 +53,57 @@ export async function loadData() {
     if (normalizeLoadedEulaState()) {
         shouldSave = true;
     }
-    let healedQuickStartFlag = false;
-    state.appData.blocklists = (state.appData.blocklists || []).map((bl) => {
-        const normalized = normalizeBlocklist(bl);
-        if (normalized.isQuickStart === true && bl.isQuickStart !== true) {
-            healedQuickStartFlag = true;
+    state.appData.blocklists = (state.appData.blocklists || []).map((bl) => normalizeBlocklist(bl));
+    if (migrateLegacyQuickStartBlocklists(state.appData)) {
+        shouldSave = true;
+    }
+    // The editor keeps unsaved edits in memory only; drop the per-space drafts
+    // and the Timer / Schedule tab preferences older versions persisted.
+    for (const key of ['pendingScheduleSegments', 'pendingScheduleRepeatOptions', 'preferredStartMode', 'alwaysOnMode', 'instantBlockDuration']) {
+        if (key in state.appData.settings) {
+            delete state.appData.settings[key];
+            shouldSave = true;
         }
-        return normalized;
-    });
-    if (healedQuickStartFlag) {
+    }
+    // "Until" has no one-shot option any more.
+    for (const schedule of state.appData.schedules) {
+        if (migrateLegacyRepeatType(schedule)) shouldSave = true;
+    }
+    // overrideDifficulty.count is a word count everywhere now. Desktop stores
+    // written before this flag hold character targets; phone stores already
+    // held words. Gibberish and Max difficulty are folded in the same pass.
+    if (state.appData.settings.overrideCountUnit !== 'words') {
+        const countsAreChars = !(state.isIOS || state.isAndroid);
+        for (const bl of state.appData.blocklists) {
+            bl.overrideDifficulty = migrateOverrideDifficultyToWords(bl.overrideDifficulty, {
+                maxWords: getMaxOverrideWords(),
+                countsAreChars,
+            });
+        }
+        state.appData.settings.overrideCountUnit = 'words';
+        shouldSave = true;
+    }
+    // Every space carries a temporary unlock duration. Spaces saved before the
+    // field existed get the 24-hour default: a stop that used to be permanent
+    // now resumes on its own, the stricter of the two readings. The old global
+    // "Default pause length" setting has nothing left to prefill.
+    for (const bl of state.appData.blocklists) {
+        if (bl.unlockMinutes === undefined) {
+            bl.unlockMinutes = DEFAULT_UNLOCK_MINUTES;
+            shouldSave = true;
+        } else if (bl.unlockMinutes !== normalizeUnlockMinutes(bl.unlockMinutes)) {
+            bl.unlockMinutes = normalizeUnlockMinutes(bl.unlockMinutes);
+            shouldSave = true;
+        }
+    }
+    if ('defaultPauseMinutes' in state.appData.settings) {
+        delete state.appData.settings.defaultPauseMinutes;
         shouldSave = true;
     }
     if (healFocusSpaceColors(state.appData.blocklists)) {
+        shouldSave = true;
+    }
+    if (healWwwWebsiteEntries(state.appData.blocklists)) {
         shouldSave = true;
     }
     if (migrateBlocklistStartOverlaysToGlobal()) {
@@ -73,17 +114,8 @@ export async function loadData() {
     }
 
 
-    // Create default blocklist on first launch (no blocklists yet).
-    // On Android, defer until the native-schedule migration has had a chance
-    // to run (migrateAndroidNativeSchedules), otherwise users upgrading from
-    // the legacy app get a spurious "Distractions" default alongside their
-    // imported spaces — the migration (which runs later, post-onboarding)
-    // creates the default itself if there's no legacy data to import.
-    const androidMigrationPending = state.isAndroid && !state.appData.settings?.androidMigrationDone;
-    if (state.appData.blocklists.length === 0 && !androidMigrationPending && shouldCreateDefaultBlocklist()) {
-        createDefaultBlocklist();
-        shouldSave = true;
-    }
+    // No default focus space: a fresh install starts empty, so the first
+    // space is built by hand and teaches how the app works.
 
     if (shouldSave) {
         await saveData();
@@ -98,30 +130,6 @@ export function hasSeenAnyOnboarding() {
         || settings.welcomeOnboardingShown === true
         || settings.eulaAcceptedRevision != null
         || settings.eulaAcceptedAt != null;
-}
-
-function shouldCreateDefaultBlocklist() {
-    return !hasSeenAnyOnboarding();
-}
-
-// The first-launch default "Distractions" space. Shared by loadData and the
-// Android native-schedule migration (which owns default creation on Android).
-export function createDefaultBlocklist() {
-    state.appData.blocklists.push({
-        id: generateId(),
-        name: 'Distractions',
-        mode: 'blocklist',
-        // First colour in the palette (matches the openBlocklistModal default).
-        color: '#B8D1DE',
-        emoji: '📱',
-        websites: ['instagram.com', 'youtube.com', 'reddit.com'],
-        apps: [],
-        iosScreenTimeSelection: null,
-        overrideDifficulty: {
-            type: 'random-words',
-            count: (state.isIOS) ? 25 : 50
-        }
-    });
 }
 
 // Save data to main process

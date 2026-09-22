@@ -318,6 +318,69 @@ fn derive_payload_keeps_legacy_flat_blocklist_for_blocklist_mode_only() {
 }
 
 #[test]
+fn derive_payload_strips_leading_www_from_stored_websites() {
+    // Data saved before the input field normalized `www.` still carries it.
+    // Matching is "host == entry or a subdomain of entry", so an entry kept
+    // as `www.example.com` would never match `example.com` — the block would
+    // silently not apply to the bare domain.
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let path = write_temp_json(
+        "www-website-payload",
+        &json!({
+            "blocklists": [
+                {
+                    "id": "bl-block",
+                    "name": "Block",
+                    "websites": ["WWW.UlrikLyngs.com", "www2.example.com", "www.com"],
+                    "apps": []
+                },
+                {
+                    "id": "bl-allow",
+                    "name": "Allow",
+                    "mode": "allowlist",
+                    "websites": ["www.github.com"],
+                    "apps": []
+                }
+            ],
+            "activeBlocks": [
+                {
+                    "blocklistId": "bl-block",
+                    "startTime": now.saturating_sub(60_000),
+                    "endTime": now + 60_000
+                },
+                {
+                    "blocklistId": "bl-allow",
+                    "startTime": now.saturating_sub(30_000),
+                    "endTime": now + 60_000
+                }
+            ],
+            "schedules": [],
+            "settings": {}
+        }),
+    );
+
+    let (domains, blocks) = derive_payload(&path);
+    let _ = fs::remove_file(&path);
+
+    assert_eq!(
+        domains,
+        vec![
+            "ulriklyngs.com".to_string(),
+            "www.com".to_string(),
+            "www2.example.com".to_string()
+        ]
+    );
+    let allow = blocks
+        .iter()
+        .find(|b| b.blocklist_id == "bl-allow")
+        .unwrap();
+    assert_eq!(allow.domains, vec!["github.com".to_string()]);
+}
+
+#[test]
 fn current_payload_serializes_empty_legacy_blocklist_with_additive_allowlist_blocks() {
     #[derive(Serialize)]
     struct Msg<'a> {
@@ -469,18 +532,15 @@ fn expired_one_off_pause_resumes_enforcement() {
     );
 }
 
-/// `isPaused` with no `pauseEndTime` enforces rather than suppressing.
+/// A one-off block with `isPaused` and no `pauseEndTime` enforces rather
+/// than suppressing.
 ///
-/// This is a deliberate choice, not a fallback. It matches the schedule
-/// rule (`match_schedule_now` reads a missing end time as 0, so the pause
-/// is already over), and it fails in the safe direction for a blocker: a
-/// pause that cannot expire would disable enforcement forever, and setting
-/// `isPaused` while deleting `pauseEndTime` would be a trivial bypass of
-/// the whole app by hand-editing the data file.
-///
-/// Both writers — `confirm-modals.js` and the Android reconciliation in
-/// `blocking-platform.js` — always write the pair, so this shape is not
-/// reachable from the app itself.
+/// This is a deliberate choice, not a fallback: it fails in the safe
+/// direction for a blocker. The app never writes this shape for a block
+/// (switching a Manual space off deletes the block; timed pauses always carry
+/// an end time), so it can only come from hand-editing the data file.
+/// Schedules deliberately differ — see
+/// `schedule_pause_without_end_time_is_switched_off`.
 #[test]
 fn pause_without_end_time_does_not_suppress_enforcement() {
     let now = SystemTime::now()
@@ -514,6 +574,51 @@ fn pause_without_end_time_does_not_suppress_enforcement() {
     assert!(
         domains.contains(&"example.invalid".to_string()),
         "a pause with no end time must not disable enforcement indefinitely, got {domains:?}"
+    );
+}
+
+/// A schedule with `isPaused` and no `pauseEndTime` is switched off.
+///
+/// This is the one shape where schedules and one-off blocks deliberately
+/// differ. The card switch turns a Daily / Weekly space off by writing
+/// exactly this (through the override challenge), and the frontend engine,
+/// Android (`BlockerPlugin.kt`) and iOS (`ScheduleData.swift`) all read it
+/// as "paused until turned on again". Desktop must agree, or a space the
+/// user switched off would keep blocking on macOS/Windows only.
+#[test]
+fn schedule_pause_without_end_time_is_switched_off() {
+    let path = temp_json_path("schedule-pause-without-end-time");
+    let data = json!({
+        "blocklists": [{
+            "id": "bl-off",
+            "name": "Focus",
+            "mode": "blocklist",
+            "websites": ["switched-off.invalid"],
+            "apps": []
+        }],
+        "activeBlocks": [],
+        "schedules": [{
+            "id": "s-off",
+            "blocklistId": "bl-off",
+            "repeatType": "forever",
+            "segments": [{
+                "startHour": 0, "startMinute": 0,
+                "endHour": 23, "endMinute": 59,
+                "days": [0, 1, 2, 3, 4, 5, 6]
+            }],
+            "isPaused": true
+            // no pauseEndTime: off until the user turns it on
+        }],
+        "settings": {}
+    });
+
+    fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+    let (domains, _blocks) = derive_payload(&path);
+    let _ = fs::remove_file(&path);
+
+    assert!(
+        !domains.contains(&"switched-off.invalid".to_string()),
+        "a schedule switched off (isPaused, no pauseEndTime) must not enforce, got {domains:?}"
     );
 }
 

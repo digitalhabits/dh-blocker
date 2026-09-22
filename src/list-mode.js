@@ -9,68 +9,18 @@ const ALLOWLIST_SCOPE_CHECK_ICON = `<svg class="allowlist-scope-hint-icon" width
 /** Create/edit modal mode — set by entry point (New space vs Allow only) or existing list. */
 let selectedBlocklistModalMode = 'blocklist';
 
-/** Create dialog kind: saved list vs one-off quick start (create only). */
-let blocklistCreateKind = 'new-list';
-
-export function getBlocklistCreateKind() {
-    return blocklistCreateKind === 'quick-start' ? 'quick-start' : 'new-list';
-}
-
-export function setBlocklistCreateKind(kind) {
-    blocklistCreateKind = kind === 'quick-start' ? 'quick-start' : 'new-list';
-}
-
 /**
- * Show/hide create-kind tabs and fields that only apply to named lists.
+ * Show/hide the parts of the focus-space modal that only apply when creating.
  * @param {{ isCreate?: boolean }} [opts]
  */
-export function syncBlocklistCreateKindUi(opts = {}) {
+export function syncBlocklistCreateUi(opts = {}) {
     const creating = opts.isCreate === true;
-    const kind = getBlocklistCreateKind();
-    const isQuick = creating && kind === 'quick-start';
-
-    const tabs = document.getElementById('blocklist-create-kind-tabs');
-    if (tabs) {
-        tabs.classList.toggle('hidden', !creating);
-        tabs.querySelectorAll('.blocklist-create-kind-tab').forEach((btn) => {
-            btn.classList.toggle('active', btn.dataset.kind === kind);
-        });
-    }
 
     const modeDesc = document.getElementById('blocklist-modal-mode-desc');
     if (modeDesc) modeDesc.classList.toggle('hidden', !creating);
 
-    const toggleHidden = (id, hidden) => {
-        document.getElementById(id)?.classList.toggle('hidden', !!hidden);
-    };
-    toggleHidden('blocklist-name-group', isQuick);
-    toggleHidden('blocklist-emoji-group', isQuick);
-    toggleHidden('blocklist-color-group', isQuick);
-    toggleHidden('blocklist-advanced-toggle', isQuick);
-    toggleHidden('blocklist-override-group', isQuick);
-    toggleHidden('override-preview-block', isQuick);
-    // Quick start uses the simplified duration + effort-slider controls.
-    toggleHidden('blocklist-quick-start-options', !isQuick);
-    if (isQuick) {
-        document.getElementById('blocklist-advanced-content')?.classList.add('hidden');
-        document.getElementById('blocklist-advanced-toggle')?.classList.remove('expanded');
-        document.getElementById('custom-override-text')?.classList.add('hidden');
-        document.getElementById('custom-override-text-error')?.classList.add('hidden');
-        document.getElementById('override-count-warning')?.classList.add('hidden');
-    }
-
     const saveBtn = document.getElementById('save-blocklist-btn');
-    if (saveBtn) {
-        if (isQuick) {
-            saveBtn.textContent = tSettings(
-                getSelectedBlocklistModalMode() === 'allowlist'
-                    ? 'quickStartStartAllowing'
-                    : 'quickStartStartBlocking',
-            );
-        } else {
-            saveBtn.textContent = tSettings('save');
-        }
-    }
+    if (saveBtn) saveBtn.textContent = tSettings('save');
 }
 
 export function isBlocklistAllowlistMode(blocklist) {
@@ -119,9 +69,10 @@ export function updateAllowlistScopeHints(websiteCount = 0, appCount = 0) {
         const empty = count <= 0;
         el.classList.toggle('allowlist-scope-hint--empty', empty);
         el.classList.toggle('allowlist-scope-hint--active', !empty);
+        // "except this one" / "except these 3"
         const text = empty
             ? tSettings(emptyKey)
-            : tSettingsFmt(activeKey, { count });
+            : tSettingsFmt(count === 1 ? `${activeKey.replace(/Html$/, '')}OneHtml` : activeKey, { count });
         el.innerHTML = `${empty ? ALLOWLIST_SCOPE_CHECK_ICON : ALLOWLIST_SCOPE_LOCK_ICON}<span class="allowlist-scope-hint-text">${text}</span>`;
     };
 
@@ -145,6 +96,9 @@ export function updateBlocklistModalModeLabels(mode) {
         const el = document.getElementById(id);
         if (el) el.textContent = text;
     };
+    // Only the "What" heading flips. "When to block" holds in both modes: an
+    // allow-only space still blocks at those times — everything but its list.
+    assignText('editor-section-what-title', tSettings(isAllow ? 'whatToAllow' : 'whatToBlock'));
     assignText('blocklist-websites-label', tSettings(isAllow ? 'websitesAllow' : 'websites'));
     assignText('blocklist-apps-label', tSettings(isAllow ? 'appsAllow' : 'apps'));
     assignText(
@@ -158,6 +112,19 @@ export function updateBlocklistModalModeLabels(mode) {
     assignText(
         'show-item-details-label',
         tSettings(isAllow ? 'listAllowedOnCard' : 'listBlockedOnCard'),
+    );
+    // "Editing": the titles name the outcome and hold in both modes, but what
+    // counts as stricter does not mirror cleanly — allowing fewer things is
+    // stricter, while adding a time still is — so each mode spells it out.
+    assignText('strictness-option-committed-title', tSettings('allowEditsStrictLabel'));
+    assignText('strictness-option-flexible-title', tSettings('allowEditsFlexibleLabel'));
+    assignText(
+        'strictness-option-committed-desc',
+        tSettings(isAllow ? 'allowEditsStrictDescAllow' : 'allowEditsStrictDesc'),
+    );
+    assignText(
+        'strictness-option-flexible-desc',
+        tSettings(isAllow ? 'allowEditsFlexibleDescAllow' : 'allowEditsFlexibleDesc'),
     );
     const modeDesc = document.getElementById('blocklist-modal-mode-desc');
     if (modeDesc) {

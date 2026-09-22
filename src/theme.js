@@ -7,14 +7,13 @@ import { resolveMicrosoftStorePackage, isVersionHigher, getLatestVersionPlatform
 import { updateOverrideAllButtonVisibility, refreshUninstallButtonState } from './settings.js';
 import { stopHelperUiRefreshLoop } from './modal-manager.js';
 import { saveData } from './persistence.js';
-import { getLiveTimePickerContainer, syncAllStopBtnLabelFits, syncPauseDurationRowLayout, syncEnterSchedulerSheetLayout } from './confirm-modals.js';
+import { getLiveTimePickerContainer, syncEnterSchedulerSheetLayout } from './confirm-modals.js';
 import { wireEnforcementToggle, wireBlockingMethodSettings, resetSettingsEnforcementSection } from './enforcement.js';
 import { applyEnforcementDescCopy } from './onboarding.js';
 import {
     setLanguagePickerOpen,
     applySettingsLanguage,
     applyFormattedCurrentVersion,
-    syncMobileScheduleDayLabelsViewportMode,
     setupLanguagePicker,
     applyFormattedLatestVersion,
 } from './app.js';
@@ -29,7 +28,6 @@ export const UI_ZOOM_LAYOUT_CRAMPED_MAX = 1024;
 export const UI_ZOOM_LAYOUT_NARROW_MAX = 800;
 export const SCHED_TABS_ICON_ONLY_EXIT_WIDTH_DELTA = 8;
 let uiZoomLayoutRaf = 0;
-let selectionPromptLayoutRaf = 0;
 let uiZoomLayoutObserverBound = false;
 let schedTabsIconOnlyEnteredAtWidth = 0;
 export const UI_ZOOM_STEP = 0.1;
@@ -308,14 +306,7 @@ export function syncUiZoomResponsiveLayout() {
     }
 
     syncSchedulerModeTabLabelMode();
-    syncMobileScheduleDayLabelsViewportMode();
-    syncAllStopBtnLabelFits();
     syncEnterSchedulerSheetLayout();
-    scheduleSelectionPromptLayout();
-    const pauseModal = document.getElementById('pause-modal');
-    if (pauseModal && !pauseModal.classList.contains('hidden')) {
-        syncPauseDurationRowLayout();
-    }
 }
 
 export function usesStackSettingsPlacement() {
@@ -393,133 +384,6 @@ export function syncSchedulerModeTabLabelMode() {
     schedTabsIconOnlyEnteredAtWidth = iconOnly && state.isIOS ? enterHeader.clientWidth : 0;
 }
 
-export function scheduleSelectionPromptLayout() {
-    cancelAnimationFrame(selectionPromptLayoutRaf);
-    selectionPromptLayoutRaf = requestAnimationFrame(() => {
-        selectionPromptLayoutRaf = 0;
-        syncSelectionPromptLayout();
-    });
-}
-
-export function isGridTopRowStacked() {
-    const blocklists = document.getElementById('blocklists-section');
-    const scheduler = document.getElementById('scheduler-section');
-    if (!blocklists || !scheduler) return true;
-    const blocklistsRect = blocklists.getBoundingClientRect();
-    const schedulerRect = scheduler.getBoundingClientRect();
-    return schedulerRect.top > blocklistsRect.top + 16;
-}
-
-export function clearSelectionPromptLayout() {
-    const prompt = document.getElementById('selection-prompt');
-    const gridTopRow = document.querySelector('.grid-top-row');
-    const schedulerSection = document.getElementById('scheduler-section');
-    if (prompt) {
-        prompt.style.top = '';
-        prompt.style.left = '';
-        prompt.style.right = '';
-    }
-    if (schedulerSection) {
-        schedulerSection.style.removeProperty('--time-picker-placeholder-height');
-    }
-    if (gridTopRow) gridTopRow.classList.remove('grid-top-row--selection-prompt-active');
-    document.body.classList.remove('selection-prompt-layout-two-col', 'selection-prompt-layout-stack');
-    const measurer = document.getElementById('scheduler-placeholder-measurer');
-    if (measurer) measurer.innerHTML = '';
-}
-
-function stripIdsFromSubtree(root) {
-    if (!root) return;
-    if (root.id) root.removeAttribute('id');
-    root.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
-}
-
-export function measureTimePickerPlaceholderHeight(section) {
-    const mainContent = document.getElementById('main-content');
-    const timePicker = getLiveTimePickerContainer();
-    if (!section || !mainContent || !timePicker || section.clientWidth <= 0) return 0;
-
-    let measurer = document.getElementById('scheduler-placeholder-measurer');
-    if (!measurer) {
-        measurer = document.createElement('div');
-        measurer.id = 'scheduler-placeholder-measurer';
-        measurer.setAttribute('aria-hidden', 'true');
-        measurer.style.cssText = 'position:absolute;left:-10000px;top:0;visibility:hidden;pointer-events:none;box-sizing:border-box;';
-        mainContent.appendChild(measurer);
-    }
-
-    measurer.className = 'scheduler-content';
-    measurer.style.width = `${section.clientWidth}px`;
-    measurer.innerHTML = timePicker.outerHTML;
-    stripIdsFromSubtree(measurer);
-
-    const measuredPicker = measurer.querySelector('.time-picker-container');
-    measuredPicker?.classList.remove('hidden');
-    measuredPicker?.querySelector('.instant-block-panel')?.classList.remove('hidden');
-    measuredPicker?.querySelector('.schedule-block-panel')?.classList.add('hidden');
-    measuredPicker?.querySelector('.always-on-message')?.classList.add('hidden');
-    measuredPicker?.querySelector('.timed-controls')?.classList.add('hidden');
-    measuredPicker?.querySelector('.block-action-buttons')?.classList.add('hidden');
-
-    return measuredPicker?.offsetHeight || 0;
-}
-
-/** Pin the empty-state hint to the first blocklist card (two-column) or reserve time-picker space (stack). */
-export function syncSelectionPromptLayout() {
-    if (document.body.classList.contains('mobile-phone-home')) {
-        clearSelectionPromptLayout();
-        return;
-    }
-
-    const prompt = document.getElementById('selection-prompt');
-    const gridTopRow = document.querySelector('.grid-top-row');
-    const schedulerSection = document.getElementById('scheduler-section');
-    const firstCard = document.querySelector('#blocklists-container .blocklist-card');
-    if (!prompt || !gridTopRow) return;
-
-    const active = !prompt.classList.contains('hidden')
-        && !gridTopRow.classList.contains('grid-top-row--blocklist-selected')
-        && !!firstCard;
-
-    if (!active) {
-        clearSelectionPromptLayout();
-        return;
-    }
-
-    const gap = 48;
-    const stacked = isGridTopRowStacked();
-    const anchorRect = gridTopRow.getBoundingClientRect();
-    const cardRect = firstCard.getBoundingClientRect();
-    const promptHeight = prompt.offsetHeight || 24;
-
-    gridTopRow.classList.add('grid-top-row--selection-prompt-active');
-    document.body.classList.toggle('selection-prompt-layout-two-col', !stacked);
-    document.body.classList.toggle('selection-prompt-layout-stack', stacked);
-
-    if (stacked) {
-        prompt.style.top = '';
-        prompt.style.left = '';
-        prompt.style.right = '';
-        if (schedulerSection) {
-            const placeholderHeight = measureTimePickerPlaceholderHeight(schedulerSection);
-            if (placeholderHeight > 0) {
-                schedulerSection.style.setProperty('--time-picker-placeholder-height', `${placeholderHeight}px`);
-            }
-        }
-        return;
-    }
-
-    if (schedulerSection) {
-        schedulerSection.style.removeProperty('--time-picker-placeholder-height');
-    }
-
-    const top = cardRect.top - anchorRect.top + (cardRect.height - promptHeight) / 2;
-    const left = cardRect.right - anchorRect.left + gap;
-    prompt.style.top = `${Math.round(top)}px`;
-    prompt.style.left = `${Math.round(left)}px`;
-    prompt.style.right = '';
-}
-
 export function scheduleUiZoomResponsiveLayout() {
     cancelAnimationFrame(uiZoomLayoutRaf);
     uiZoomLayoutRaf = requestAnimationFrame(() => {
@@ -536,7 +400,6 @@ export function bindUiZoomLayoutObserver() {
         document.getElementById('scheduler-enter-header'),
         document.getElementById('scheduler-section'),
         document.getElementById('blocklists-container'),
-        document.getElementById('selection-prompt'),
         document.querySelector('.week-calendar-section'),
         document.getElementById('day-rows'),
         document.querySelector('.footer'),
@@ -545,8 +408,7 @@ export function bindUiZoomLayoutObserver() {
     uiZoomLayoutObserverBound = true;
     const ro = new ResizeObserver(() => {
         scheduleUiZoomResponsiveLayout();
-        scheduleSelectionPromptLayout();
-    });
+        });
     targets.forEach((el) => ro.observe(el));
 }
 
