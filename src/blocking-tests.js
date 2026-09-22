@@ -2938,7 +2938,7 @@
                         const advanced = document.getElementById('editor-advanced-schedule');
                         const body = document.getElementById('editor-section-advanced-body');
                         const section = document.getElementById('schedule-panel-overlay-section');
-                        console.log('[T205 debug]', JSON.stringify({
+                        console.log('❌ [T205 debug]', JSON.stringify({
                             modalHidden: document.getElementById('blocklist-modal')?.classList.contains('hidden'),
                             editorParent: document.getElementById('focus-space-editor')?.parentElement?.id || null,
                             kind: document.querySelector('#when-kind-toggle .editor-segmented-btn.active')?.dataset.kind || null,
