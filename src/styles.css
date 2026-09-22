@@ -5406,6 +5406,8 @@ body.dark-mode .schedule-panel-overlay-group .repeat-label.repeat-label-disabled
 }
 
 .repeat-dropdown-menu{
+    /* Panel menus are placed by positionSchedulePanelDropdownMenu, which
+       switches them to fixed so a scrolling dialog cannot clip them. */
     position: absolute;
     top: 100%;
     left: 0;
@@ -5424,7 +5426,8 @@ body.dark-mode .schedule-panel-overlay-group .repeat-label.repeat-label-disabled
 .repeat-dropdown-menu.strictness-dropdown-menu{
     left: auto;
     right: 0;
-    width: 300px;
+    /* Never wider than the window on a phone. */
+    width: min(300px, calc(100vw - 32px));
 }
 
 .repeat-dropdown-menu.hidden{

@@ -113,16 +113,50 @@ export function isScheduleSegmentMutationBlocked(segmentIndex) {
     return segmentIndex < state.activeScheduleSegmentCount;
 }
 
-/** Keep the right-aligned menu fully inside the viewport (nudge only when clipped). */
-function positionScheduleStrictnessDropdownMenu(menu) {
+/**
+ * Place an open panel dropdown menu. The menu is taken out of the flow
+ * (fixed) so a scrolling dialog or panel cannot clip it, then positioned
+ * under its button — or above it when it would fall below the window or
+ * under the editor's sticky Save strip — and clamped to the page content
+ * horizontally.
+ */
+export function positionSchedulePanelDropdownMenu(menu) {
     if (!menu || menu.classList.contains('hidden')) return;
-    menu.style.transform = '';
-    const rect = menu.getBoundingClientRect();
+    const btn = menu.parentElement?.querySelector('.repeat-dropdown-btn') || menu.previousElementSibling;
+    const btnRect = btn?.getBoundingClientRect();
+    if (!btnRect) return;
+
     const pad = 8;
-    let dx = 0;
-    if (rect.left < pad) dx = pad - rect.left;
-    else if (rect.right > window.innerWidth - pad) dx = window.innerWidth - pad - rect.right;
-    if (dx) menu.style.transform = `translateX(${dx}px)`;
+    const gap = 4;
+
+    Object.assign(menu.style, { position: 'fixed', top: '0px', left: '0px', transform: '' });
+    const { width: menuW, height: menuH } = menu.getBoundingClientRect();
+
+    // The sticky Save strip covers whatever scrolls under it, so for a menu
+    // inside the editor that strip is the real bottom edge.
+    let bottomLimit = window.innerHeight - pad;
+    const footer = document.getElementById('editor-panel-footer');
+    if (footer && footer.offsetParent !== null && menu.closest('#focus-space-editor')) {
+        bottomLimit = Math.min(bottomLimit, footer.getBoundingClientRect().top - pad);
+    }
+
+    const fitsBelow = btnRect.bottom + gap + menuH <= bottomLimit;
+    const fitsAbove = btnRect.top - gap - menuH >= pad;
+    const placeAbove = !fitsBelow && fitsAbove;
+
+    // Horizontal bounds are the container's content box — where its own text
+    // starts — so a menu wider than its button lines up with the content
+    // rather than hanging over the panel's padding.
+    const host = btn.closest('.modal-content, .time-picker-container') || document.querySelector('.main-content');
+    const hostRect = host?.getBoundingClientRect();
+    const hostStyle = host && getComputedStyle(host);
+    const minLeft = hostRect ? hostRect.left + parseFloat(hostStyle.paddingLeft) : pad;
+    const maxRight = hostRect ? hostRect.right - parseFloat(hostStyle.paddingRight) : window.innerWidth - pad;
+
+    // Right-aligned to the button, slid back inside those bounds when needed.
+    const left = Math.max(minLeft, Math.min(btnRect.right - menuW, maxRight - menuW));
+    const top = placeAbove ? btnRect.top - gap - menuH : btnRect.bottom + gap;
+    Object.assign(menu.style, { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` });
 }
 
 export function syncAllowEditsBetweenBlocksToggle() {
@@ -158,11 +192,12 @@ export function setupAllowEditsBetweenBlocksToggle() {
         if (isHidden) closeSchedulePanelDropdownMenus('schedule-strictness-dropdown-menu');
         menu.classList.toggle('hidden');
         if (isHidden) {
-            requestAnimationFrame(() => positionScheduleStrictnessDropdownMenu(menu));
+            requestAnimationFrame(() => positionSchedulePanelDropdownMenu(menu));
             setTimeout(() => {
                 document.addEventListener('click', function closeMenu(evt) {
                     if (!menu.contains(evt.target)) {
                         menu.classList.add('hidden');
+                        resetSchedulePanelDropdownMenu(menu);
                         document.removeEventListener('click', closeMenu);
                     }
                 });
@@ -170,7 +205,7 @@ export function setupAllowEditsBetweenBlocksToggle() {
         }
     });
 
-    window.addEventListener('resize', () => positionScheduleStrictnessDropdownMenu(menu));
+    window.addEventListener('resize', () => positionSchedulePanelDropdownMenu(menu));
 
     menu.querySelectorAll('.strictness-option').forEach(opt => {
         opt.addEventListener('click', (e) => {
@@ -204,10 +239,18 @@ export function getDefaultScheduleSegments() {
     ];
 }
 
+/** Drop the fixed placement so a reopened menu measures cleanly. */
+export function resetSchedulePanelDropdownMenu(menu) {
+    if (!menu) return;
+    Object.assign(menu.style, { position: '', top: '', left: '', transform: '' });
+}
+
 export function closeSchedulePanelDropdownMenus(exceptMenuId = null) {
     for (const menuId of ['schedule-panel-overlay-dropdown-menu', 'schedule-strictness-dropdown-menu']) {
         if (menuId !== exceptMenuId) {
-            document.getElementById(menuId)?.classList.add('hidden');
+            const menu = document.getElementById(menuId);
+            menu?.classList.add('hidden');
+            resetSchedulePanelDropdownMenu(menu);
         }
     }
 }

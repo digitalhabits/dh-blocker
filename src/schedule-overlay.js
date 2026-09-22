@@ -10,7 +10,7 @@ import { tSettings, tSettingsFmt } from './i18n.js';
 import { getBlocklistDisplayApps } from './list-presentation.js';
 import { isMobileOverrideChallengePlatform } from './override-challenge.js';
 import { saveData } from './persistence.js';
-import { closeSchedulePanelDropdownMenus } from './schedule-editor.js';
+import { closeSchedulePanelDropdownMenus, positionSchedulePanelDropdownMenu } from './schedule-editor.js';
 import { findResponsibleBlocklistForWarningApps, joinAppListWithLimit } from './blocking-platform.js';
 import {
     initScheduleOverlayMessageEditor,
@@ -795,6 +795,7 @@ export function toggleSchedulePanelOverlayDropdown(e) {
     menu.classList.toggle('hidden');
 
     if (isHidden) {
+        requestAnimationFrame(() => positionSchedulePanelDropdownMenu(menu));
         setTimeout(() => {
             document.addEventListener('click', function closeMenu(evt) {
                 if (!menu.contains(evt.target) && evt.target !== btn) {
