@@ -13327,6 +13327,20 @@ body.dark-mode.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-bu
     display: block;
 }
 
+/* The custom text belongs to the "What to type" row above it: no divider
+   between them, and a tighter top, so the line falls after the field like it
+   does after the words slider. */
+.settings-panel-rows > #override-method-row:not(.hidden) + .override-custom-text-row:not(.hidden){
+    border-top: none;
+    padding-top: 0;
+}
+
+/* In custom-text mode the hidden words-slider row sits between the field and
+   "Turn back on after", so the adjacent-row divider never fires; draw it. */
+.settings-panel-rows > .override-custom-text-row:not(.hidden) ~ .unlock-duration-row:not(.hidden){
+    border-top: 1px solid var(--border-color-medium);
+}
+
 .override-custom-text-row .form-textarea{
     margin-top: 0;
     width: 100%;
