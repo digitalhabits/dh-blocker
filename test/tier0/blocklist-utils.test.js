@@ -2,6 +2,9 @@ import { describe, expect, test } from 'vitest';
 import {
     ALWAYS_ON_END_TIME,
     FOCUS_SPACE_COLOR_PALETTE,
+    applyIOSScreenTimeTokenRefreshResult,
+    iosManualSyncAction,
+    blocklistNeedsIOSSelectionRefresh,
     healFocusSpaceColors,
     healWwwWebsiteEntries,
     hasUsableIOSScreenTimeSelection,
@@ -419,5 +422,84 @@ describe('healWwwWebsiteEntries', () => {
         const lists = [{ id: 'a', websites }, { id: 'b' }];
         expect(healWwwWebsiteEntries(lists)).toBe(false);
         expect(lists[0].websites).toBe(websites);
+    });
+});
+
+describe('Screen Time token refresh recovery', () => {
+    const sel = (apps = [], cats = []) => normalizeIOSScreenTimeSelection({
+        applicationTokens: apps,
+        categoryTokens: cats,
+        requiresReselection: false,
+    });
+
+    test('replaces persisted tokens with the values refreshed by iOS', () => {
+        const refreshed = applyIOSScreenTimeTokenRefreshResult(
+            sel(['old-app'], ['old-category']),
+            {
+                supported: true,
+                success: true,
+                applicationTokens: ['new-app'],
+                categoryTokens: ['new-category'],
+            },
+        );
+
+        expect(refreshed).toMatchObject({
+            applicationTokens: ['new-app'],
+            categoryTokens: ['new-category'],
+            applicationCount: 1,
+            categoryCount: 1,
+            requiresReselection: false,
+        });
+    });
+
+    test('preserves tokens unchanged when refresh is unavailable before iOS 26.5', () => {
+        const original = sel(['app'], ['category']);
+        expect(applyIOSScreenTimeTokenRefreshResult(original, {
+            supported: false,
+            success: true,
+        })).toEqual(original);
+    });
+
+    test('keeps failed tokens visible but marks them for reselection', () => {
+        const stale = applyIOSScreenTimeTokenRefreshResult(sel(['app']), {
+            supported: true,
+            success: false,
+            error: 'The token could not be refreshed',
+        });
+
+        expect(stale.applicationTokens).toEqual(['app']);
+        expect(stale.requiresReselection).toBe(true);
+        expect(blocklistNeedsIOSSelectionRefresh({ iosScreenTimeSelection: stale })).toBe(true);
+    });
+
+    test('fails closed when refresh silently drops any saved token', () => {
+        const stale = applyIOSScreenTimeTokenRefreshResult(sel(['app-1', 'app-2'], ['category']), {
+            supported: true,
+            success: true,
+            applicationTokens: ['new-app-1'],
+            categoryTokens: ['new-category'],
+        });
+
+        expect(stale.applicationTokens).toEqual(['app-1', 'app-2']);
+        expect(stale.categoryTokens).toEqual(['category']);
+        expect(stale.requiresReselection).toBe(true);
+    });
+});
+
+describe('iOS manual channel sync decision', () => {
+    // A timed manual block expiring while a schedule runs used to fall into a
+    // "do nothing" branch, leaving the expired block's apps shielded until the
+    // user started and stopped another block.
+    test('clears only the manual channel when a schedule is still running', () => {
+        expect(iosManualSyncAction({ hasActiveBlocks: false, hasActiveScheduleSegments: true })).toBe('clear-manual');
+    });
+
+    test('clears everything when nothing is active', () => {
+        expect(iosManualSyncAction({ hasActiveBlocks: false, hasActiveScheduleSegments: false })).toBe('clear-all');
+    });
+
+    test('applies the manual payload whenever a manual block is active', () => {
+        expect(iosManualSyncAction({ hasActiveBlocks: true, hasActiveScheduleSegments: true })).toBe('start');
+        expect(iosManualSyncAction({ hasActiveBlocks: true, hasActiveScheduleSegments: false })).toBe('start');
     });
 });

@@ -1590,7 +1590,8 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
         // Never: the Manual block is gone, the same way "Stop" always removed it.
         await saveData();
         if (state.isIOS) {
-            await tauriAPI.screentimeClearBlock();
+            // Manual channel only: a running schedule keeps enforcing.
+            await tauriAPI.screentimeClearManualBlock();
             state.lastBlockedDomains = new Set();
             await updateHostsFile();
             await syncSchedulesToHelper();

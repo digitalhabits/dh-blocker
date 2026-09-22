@@ -51,6 +51,19 @@ pub(crate) async fn unblock_apps<R: Runtime>(app: AppHandle<R>) -> Result<Succes
     app.screentime().unblock_apps()
 }
 
+#[command]
+pub(crate) async fn refresh_activity_tokens<R: Runtime>(
+    app: AppHandle<R>,
+    application_token_data: Vec<String>,
+    category_token_data: Vec<String>,
+) -> Result<RefreshActivityTokensResponse> {
+    app.screentime()
+        .refresh_activity_tokens(RefreshActivityTokensRequest {
+            application_token_data,
+            category_token_data,
+        })
+}
+
 // --- Combined Block/Unblock ---
 
 #[command]
@@ -66,6 +79,13 @@ pub(crate) async fn screentime_clear_block<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<SuccessResponse> {
     app.screentime().clear_block()
+}
+
+#[command]
+pub(crate) async fn screentime_clear_manual_block<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<SuccessResponse> {
+    app.screentime().clear_manual_block()
 }
 
 // --- Scheduling ---

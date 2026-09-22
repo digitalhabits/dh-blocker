@@ -70,6 +70,15 @@ impl<R: Runtime> Screentime<R> {
             .map_err(Into::into)
     }
 
+    pub fn refresh_activity_tokens(
+        &self,
+        payload: RefreshActivityTokensRequest,
+    ) -> crate::Result<RefreshActivityTokensResponse> {
+        self.0
+            .run_mobile_plugin("refreshActivityTokens", payload)
+            .map_err(Into::into)
+    }
+
     // --- Combined Block/Unblock (matches existing frontend API) ---
 
     pub fn start_block(&self, payload: StartBlockRequest) -> crate::Result<StartBlockResponse> {
@@ -81,6 +90,12 @@ impl<R: Runtime> Screentime<R> {
     pub fn clear_block(&self) -> crate::Result<SuccessResponse> {
         self.0
             .run_mobile_plugin("clearBlock", UnblockRequest {})
+            .map_err(Into::into)
+    }
+
+    pub fn clear_manual_block(&self) -> crate::Result<SuccessResponse> {
+        self.0
+            .run_mobile_plugin("clearManualBlock", UnblockRequest {})
             .map_err(Into::into)
     }
 

@@ -158,12 +158,21 @@ pub struct Settings {
     pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
+/// Name of the data file in every location it has ever lived.
+pub(crate) const DATA_FILE_NAME: &str = "redd-block-data.json";
+
+/// Per-user directory name — the Tauri bundle identifier, so this
+/// matches `app_data_dir()` for handle-free callers.
+const APP_DIR_NAME: &str = "com.reddblock";
+
 fn get_per_user_data_path(app: &AppHandle) -> PathBuf {
-    let app_data_dir = app
-        .path()
+    // `app_data_dir()` fails only when the platform dirs are unresolvable.
+    // Falling back keeps a broken environment on the same file the
+    // handle-free resolver picks, instead of panicking the command.
+    app.path()
         .app_data_dir()
-        .expect("Failed to get app data dir");
-    app_data_dir.join("redd-block-data.json")
+        .map(|dir| dir.join(DATA_FILE_NAME))
+        .unwrap_or_else(|_| per_user_data_path_static())
 }
 
 /// Return the data file explicitly assigned to a local system-test process.
@@ -212,106 +221,186 @@ fn apply_system_test_override(fallback: impl FnOnce() -> PathBuf) -> PathBuf {
     fallback()
 }
 
+/// Machine-wide locations written by pre-3.x builds, newest first.
+///
+/// These are import *sources* only. Nothing writes to them any more: a
+/// single file shared by every account on a PC meant one blocklist for
+/// the whole family, edits that failed for whoever did not create the
+/// file (`C:\ProgramData` lets any account add files to a subfolder but not
+/// replace another account's, and a save is a rename over the existing
+/// file), and every account able to read every other account's blocklist.
 #[cfg(not(target_os = "ios"))]
-fn get_shared_data_path() -> PathBuf {
-    get_shared_dir().join("redd-block-data.json")
+fn legacy_shared_dirs() -> Vec<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut dirs = vec![crate::product_identity::windows_primary_shared_dir()];
+        dirs.extend(crate::product_identity::windows_legacy_shared_dirs());
+        dirs
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // The v1/v2 root helper's directory. Nothing has created it since
+        // the helper was removed, so this only fires for v1.x upgraders.
+        vec![PathBuf::from("/var/lib/redd-block")]
+    }
 }
 
+/// Copy machine-wide data into this account's own store, taking the first
+/// `shared_dirs` entry that has a data file. Returns whether it copied.
+///
+/// The destination wins only when it is *newer*. The pre-v3 per-user ->
+/// shared migration copied without deleting, so an upgrading account can
+/// hold a per-user file frozen at migration time beside the shared file it
+/// has been editing ever since; preferring the local copy on age alone
+/// would silently revert the user's blocklist — an enforcement gap, so the
+/// tie is broken toward the file that was most recently written.
+///
+/// Never deletes the source: other accounts have not necessarily upgraded
+/// yet, and each of them needs to import the same file.
 #[cfg(not(target_os = "ios"))]
-fn get_shared_helper_state_path() -> PathBuf {
-    get_shared_dir().join("helper-state.json")
-}
+pub(crate) fn import_shared_data_into_per_user(
+    dest: &std::path::Path,
+    shared_dirs: &[PathBuf],
+) -> bool {
+    let modified = |path: &std::path::Path| {
+        fs::metadata(path)
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::UNIX_EPOCH)
+    };
 
-#[cfg(target_os = "windows")]
-fn get_windows_primary_shared_dir() -> PathBuf {
-    crate::product_identity::windows_primary_shared_dir()
-}
+    let Some(src) = shared_dirs
+        .iter()
+        .map(|dir| dir.join(DATA_FILE_NAME))
+        .find(|candidate| candidate.is_file())
+    else {
+        return false;
+    };
 
-#[cfg(target_os = "windows")]
-fn get_windows_legacy_shared_dirs() -> Vec<PathBuf> {
-    crate::product_identity::windows_legacy_shared_dirs()
-}
-
-/// Copy `redd-block-data.json` / `helper-state.json` from each legacy
-/// shared-storage folder into `primary_dir` when the destination is
-/// missing. Never overwrites an existing primary file; never deletes
-/// legacy folders. Used by the Windows ProgramData rebrand migration
-/// and covered by unit tests with temp dirs.
-#[cfg(any(target_os = "windows", test))]
-pub(crate) fn copy_shared_storage_forward(primary_dir: &std::path::Path, legacy_dirs: &[PathBuf]) {
-    if let Err(e) = fs::create_dir_all(primary_dir) {
-        log::warn!(
-            "windows shared storage migration: failed to create {}: {e}",
-            primary_dir.display()
-        );
-        return;
+    if dest.exists() && modified(dest) >= modified(&src) {
+        return false;
     }
 
-    for legacy_dir in legacy_dirs {
-        if !legacy_dir.exists() {
+    let contents = match fs::read(&src) {
+        Ok(contents) => contents,
+        Err(e) => {
+            log::warn!("shared data import: failed to read {}: {e}", src.display());
+            return false;
+        }
+    };
+
+    match write_data_file_atomic(dest, &contents) {
+        Ok(()) => {
+            log::info!(
+                "shared data import: copied {} -> {} (this account now has its own blocklist)",
+                src.display(),
+                dest.display()
+            );
+            // Android keeps no overlay-assets folder beside the data file
+            // (`overlay_assets` is desktop-only), so there is nothing to merge.
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            if let Some(dest_dir) = dest.parent() {
+                import_overlay_assets(dest_dir, shared_dirs);
+            }
+            true
+        }
+        Err(e) => {
+            log::warn!(
+                "shared data import: failed to copy {} -> {} atomically: {e}",
+                src.display(),
+                dest.display()
+            );
+            false
+        }
+    }
+}
+
+/// Schedule start-overlay media (pictures, voice clips) lives in
+/// `overlay-assets/` beside the data file, which stores only relative paths
+/// into it (`overlay_assets.rs` resolves the folder from `get_data_path`).
+/// A data file imported without it references media that was left behind,
+/// so the folder is merged in from every source — the pre-3.x rebrand
+/// copy-forward moved only the data file, so a schedule's media can sit one
+/// product name back from the file that references it. First source wins
+/// per file, and nothing already at the destination is overwritten.
+///
+/// Failure falls toward a blank overlay, never a missing blocklist: the data
+/// file is already in place by the time this runs, and a copy error is logged
+/// and otherwise ignored.
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn import_overlay_assets(dest_dir: &std::path::Path, shared_dirs: &[PathBuf]) {
+    use super::overlay_assets::OVERLAY_ASSETS_DIR;
+    let dest = dest_dir.join(OVERLAY_ASSETS_DIR);
+    for src in shared_dirs.iter().map(|dir| dir.join(OVERLAY_ASSETS_DIR)) {
+        if !src.is_dir() {
             continue;
         }
-
-        for name in ["redd-block-data.json", "helper-state.json"] {
-            let src = legacy_dir.join(name);
-            let dst = primary_dir.join(name);
-            if !src.exists() || dst.exists() {
-                continue;
-            }
-            match fs::copy(&src, &dst) {
-                Ok(_) => {
-                    log::info!(
-                        "windows shared storage migration: copied {} -> {}",
-                        src.display(),
-                        dst.display()
-                    );
-                }
-                Err(e) => {
-                    log::warn!(
-                        "windows shared storage migration: failed to copy {} -> {}: {e}",
-                        src.display(),
-                        dst.display()
-                    );
-                }
-            }
+        match copy_dir_merge(&src, &dest) {
+            Ok(()) => log::info!(
+                "shared data import: merged overlay assets {} -> {}",
+                src.display(),
+                dest.display()
+            ),
+            Err(e) => log::warn!(
+                "shared data import: overlay assets from {} incomplete: {e}",
+                src.display()
+            ),
         }
     }
 }
 
-#[cfg(target_os = "windows")]
-fn migrate_windows_shared_storage_copy() {
-    copy_shared_storage_forward(
-        &get_windows_primary_shared_dir(),
-        &get_windows_legacy_shared_dirs(),
-    );
+/// Recursive copy that never replaces a file already present at `dest`.
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn copy_dir_merge(src: &std::path::Path, dest: &std::path::Path) -> std::io::Result<()> {
+    fs::create_dir_all(dest)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let target = dest.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_merge(&entry.path(), &target)?;
+        } else if !target.exists() {
+            fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
 }
 
+/// Run the import at most once per process, before the first read of the
+/// per-user file. Every resolver goes through here rather than only
+/// `load_data`, because the enforcement loops and `cross_app_consent` can
+/// read the data file before the frontend ever asks for it.
 #[cfg(not(target_os = "ios"))]
-fn should_use_shared_data_path() -> bool {
-    #[cfg(target_os = "windows")]
-    migrate_windows_shared_storage_copy();
+fn import_shared_data_once(dest: &std::path::Path) {
+    use std::sync::Once;
+    static IMPORTED: Once = Once::new();
+    IMPORTED.call_once(|| {
+        import_shared_data_into_per_user(dest, &import_sources());
+    });
+}
 
-    let shared_data_path = get_shared_data_path();
-    if shared_data_path.exists() {
-        return true;
+/// Unit tests only: what `import_sources` returns instead of the real
+/// machine-wide directories. Without this, the resolver test ran the real
+/// import and copied whatever ProgramData file the developer's machine
+/// happened to have into their live per-user store.
+#[cfg(all(test, not(target_os = "ios")))]
+static TEST_IMPORT_SOURCES: std::sync::Mutex<Option<Vec<PathBuf>>> = std::sync::Mutex::new(None);
+
+#[cfg(not(target_os = "ios"))]
+fn import_sources() -> Vec<PathBuf> {
+    #[cfg(test)]
+    if let Some(dirs) = TEST_IMPORT_SOURCES.lock().unwrap().clone() {
+        return dirs;
     }
-
-    let helper_state_path = get_shared_helper_state_path();
-    if helper_state_path.exists() {
-        return true;
-    }
-
-    let shared_dir = get_shared_dir();
-    shared_dir.is_dir() && is_dir_writable(&shared_dir)
+    legacy_shared_dirs()
 }
 
 /// Resolve the canonical app-data path.
 ///
-/// On desktop, once shared storage has been activated we keep treating it as the
-/// canonical location so installs/uninstalls do not silently flip the app between
-/// shared and per-user data files.
+/// Always per-user, on every platform. macOS, Windows and iOS all treat
+/// per-user application data as the native default, and nothing in the app
+/// reads this file from another user's security context: every reader, the
+/// browser-spawned native host included, runs inside the signed-in user's
+/// own session.
 ///
-/// On iOS, the per-user app data dir is always used (single-user device).
 /// Public accessor so other command modules can locate the canonical
 /// redd-block-data.json without duplicating path selection logic.
 pub fn canonical_data_path(app: &AppHandle) -> Option<PathBuf> {
@@ -321,27 +410,44 @@ pub fn canonical_data_path(app: &AppHandle) -> Option<PathBuf> {
 /// Same path selection as [`canonical_data_path`] but without an
 /// [`AppHandle`]. Used by macOS startup gating (`cross_app_consent`)
 /// before the frontend has loaded — must NOT scan legacy bundle-id
-/// paths, only the canonical shared or per-user location.
+/// paths, only the canonical per-user location.
 #[cfg(not(target_os = "ios"))]
 pub fn canonical_data_path_static() -> PathBuf {
     apply_system_test_override(|| {
-        if should_use_shared_data_path() {
-            get_shared_data_path()
-        } else {
-            per_user_data_path_static()
-        }
+        let path = per_user_data_path_static();
+        import_shared_data_once(&path);
+        path
     })
 }
 
 #[cfg(not(target_os = "ios"))]
 fn per_user_data_path_static() -> PathBuf {
-    dirs::data_dir()
-        .map(|d| d.join("com.reddblock").join("redd-block-data.json"))
-        .unwrap_or_else(|| {
-            dirs::home_dir()
-                .unwrap_or_default()
-                .join("Library/Application Support/com.reddblock/redd-block-data.json")
-        })
+    per_user_data_path_from(dirs::data_dir(), dirs::home_dir())
+}
+
+/// Split out from [`per_user_data_path_static`] so the no-`data_dir`
+/// fallback is testable. That branch used to hand back a macOS
+/// `~/Library/Application Support` path on Windows and Linux too.
+#[cfg(not(target_os = "ios"))]
+fn per_user_data_path_from(data_dir: Option<PathBuf>, home: Option<PathBuf>) -> PathBuf {
+    if let Some(dir) = data_dir {
+        return dir.join(APP_DIR_NAME).join(DATA_FILE_NAME);
+    }
+
+    // Only reachable on a broken environment (no $HOME, no %APPDATA%).
+    // Mirror each platform's own layout so the app and the native host
+    // still agree on one file.
+    #[cfg(target_os = "macos")]
+    let relative = "Library/Application Support";
+    #[cfg(target_os = "windows")]
+    let relative = "AppData/Roaming";
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let relative = ".local/share";
+
+    home.unwrap_or_default()
+        .join(relative)
+        .join(APP_DIR_NAME)
+        .join(DATA_FILE_NAME)
 }
 
 pub(crate) fn get_data_path(app: &AppHandle) -> PathBuf {
@@ -353,59 +459,15 @@ pub(crate) fn get_data_path(app: &AppHandle) -> PathBuf {
     #[cfg(not(target_os = "ios"))]
     {
         apply_system_test_override(|| {
-            if should_use_shared_data_path() {
-                get_shared_data_path()
-            } else {
-                get_per_user_data_path(app)
-            }
+            let path = get_per_user_data_path(app);
+            import_shared_data_once(&path);
+            path
         })
     }
 }
 
-/// Get the system-wide shared directory (same location as helper-state.json).
-#[cfg(not(target_os = "ios"))]
-fn get_shared_dir() -> PathBuf {
-    #[cfg(target_os = "windows")]
-    {
-        get_windows_primary_shared_dir()
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        PathBuf::from("/var/lib/redd-block")
-    }
-}
-
-/// Check if a directory is writable by attempting to create and remove a temp file.
-#[cfg(not(target_os = "ios"))]
-fn is_dir_writable(dir: &std::path::Path) -> bool {
-    let test_path = dir.join(".write-test");
-    match fs::write(&test_path, b"test") {
-        Ok(_) => {
-            let _ = fs::remove_file(&test_path);
-            true
-        }
-        Err(_) => false,
-    }
-}
-
-/// Set file permissions so all local users can read and write the data file.
-#[cfg(not(target_os = "windows"))]
-fn set_shared_permissions(path: &std::path::Path) {
-    use std::os::unix::fs::PermissionsExt;
-    // rw-rw-rw- (0o666) — all users can read and write
-    let perms = std::fs::Permissions::from_mode(0o666);
-    if let Err(e) = fs::set_permissions(path, perms) {
-        log::warn!("Could not set shared permissions on {:?}: {}", path, e);
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn set_shared_permissions(_path: &std::path::Path) {
-    // On Windows, %PROGRAMDATA% is already accessible to all users by default.
-}
-
 /// Atomically replace the data file: write to a temp file in the same
-/// directory, apply shared permissions, then rename over the destination.
+/// directory, then rename over the destination.
 ///
 /// The data file is the single source of truth for active blocking and
 /// is re-read continuously by other threads and processes — the
@@ -447,9 +509,9 @@ pub(crate) fn write_data_file_atomic(
         // canonical path pointing at a not-yet-persisted temp file.
         file.sync_all()?;
         drop(file);
-        // The rename gives the destination the temp file's permissions,
-        // so the shared-file mode must be applied before the swap.
-        set_shared_permissions(&tmp);
+        // No permission fixup: the file is per-user now, so the default
+        // umask is what we want. The old 0666 made a user's blocklist
+        // world-writable, which is exactly the sharing we removed.
         fs::rename(&tmp, path)
     })();
 
@@ -576,10 +638,7 @@ fn normalize_eula_state(data: &mut AppData) -> bool {
 #[tauri::command]
 pub fn load_data(app: AppHandle) -> Result<AppData, String> {
     let data_path = get_data_path(&app);
-    let per_user_data_path = get_per_user_data_path(&app);
 
-    // Ensure parent directory exists (only needed for per-user fallback path;
-    // the shared dir is created by the helper daemon install)
     ensure_data_dir(&data_path)?;
 
     if data_path.exists() {
@@ -619,14 +678,8 @@ pub fn load_data(app: AppHandle) -> Result<AppData, String> {
                 return Ok(data);
             }
 
-            let destination_kind = if data_path == per_user_data_path {
-                "per-user"
-            } else {
-                "shared"
-            };
             log::info!(
-                "Migrating data into canonical {} location: {:?} -> {:?}",
-                destination_kind,
+                "Migrating data into canonical per-user location: {:?} -> {:?}",
                 source_path,
                 data_path
             );
@@ -760,16 +813,11 @@ pub fn wipe_user_data(app: &AppHandle) {
         }
     }
 
-    let shared_dir = get_shared_dir();
-    files.push(shared_dir.join("redd-block-data.json"));
-    files.push(shared_dir.join("helper-state.json"));
-
-    #[cfg(target_os = "windows")]
-    {
-        for legacy_dir in get_windows_legacy_shared_dirs() {
-            files.push(legacy_dir.join("redd-block-data.json"));
-            files.push(legacy_dir.join("helper-state.json"));
-        }
+    // Nothing writes these any more, but an uninstall still has to take
+    // away the machine-wide copies a pre-3.x install left behind.
+    for shared_dir in legacy_shared_dirs() {
+        files.push(shared_dir.join(DATA_FILE_NAME));
+        files.push(shared_dir.join("helper-state.json"));
     }
 
     #[cfg(target_os = "macos")]
@@ -814,7 +862,7 @@ fn wipe_path(path: &PathBuf) {
 }
 
 #[cfg(test)]
-mod shared_storage_migration_tests;
+mod shared_storage_import_tests;
 
 #[cfg(all(test, feature = "system-test"))]
 mod system_test_isolation_tests;

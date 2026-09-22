@@ -8,7 +8,13 @@ import snoozeIconUrl from './images/snooze.png';
 import { tauriAPI, openUrl } from './tauri-api.js';
 import { escapeHtml } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
-import { isProtectedApp, ALWAYS_ON_END_TIME } from './blocklist-utils.js';
+import {
+    ALWAYS_ON_END_TIME,
+    applyIOSScreenTimeTokenRefreshResult,
+    getBlocklistIOSScreenTimeSelection,
+    hasUsableIOSScreenTimeSelection,
+    isProtectedApp,
+} from './blocklist-utils.js';
 import { isSchedulePausedNow, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render } from './render.js';
@@ -21,6 +27,7 @@ import { updateManageSectionVisibility, closeOverrideAllModal } from './settings
 import { closeEditorDiscardConfirmModal } from './focus-space-editor.js';
 import { CURRENT_EULA_REVISION, getAcceptedEulaRevision, hasAcceptedEula, isFirstRunOnboardingInProgress } from './onboarding.js';
 import { generateId, runPostAcceptanceStartup } from './app.js';
+import { isIOSLeftEdgeBackSwipe } from './ios-gesture.js';
 
 // Update blocked apps sent to the in-process app watcher (desktop only).
 // Computes the effective union of apps from active one-off blocks AND active schedule
@@ -1251,6 +1258,7 @@ export function openAndroidFrictionGateModal(event) {
 }
 
 export async function initializeIOSBlockingState() {
+    await refreshIOSScreenTimeSelections();
     // Sync state.lastBlockedDomains from active (non-paused) blocks so pause/resume works after restart
     const now = Date.now();
     const activeDomains = new Set();
@@ -1263,6 +1271,54 @@ export async function initializeIOSBlockingState() {
     state.lastBlockedDomains = activeDomains;
     // Re-register DeviceActivity schedules so background activation survives app restarts.
     await syncSchedulesToHelper();
+}
+
+/**
+ * Refresh Apple's opaque Screen Time tokens before rebuilding native schedule
+ * state. ManagedSettingsStore.refresh is new in iOS 26.5; the native command
+ * reports `supported: false` on older releases and this becomes a no-op.
+ *
+ * Refresh each focus space separately so a failure marks only that selection
+ * for picker reselection. Keep the old tokens visible instead of silently
+ * replacing the selection with an empty one.
+ */
+export async function refreshIOSScreenTimeSelections() {
+    if (!state.isIOS) return { supported: false, changed: false, failures: 0 };
+
+    let supported = false;
+    let changed = false;
+    let failures = 0;
+
+    for (const blocklist of state.appData.blocklists || []) {
+        const selection = getBlocklistIOSScreenTimeSelection(blocklist);
+        if (!hasUsableIOSScreenTimeSelection(selection)) continue;
+
+        let result;
+        try {
+            result = await tauriAPI.screentimeRefreshActivityTokens(
+                selection.applicationTokens,
+                selection.categoryTokens,
+            );
+        } catch (error) {
+            console.error('[iOS token refresh] Native refresh failed:', error);
+            result = { supported: true, success: false, error: String(error) };
+        }
+
+        if (result?.supported !== true) {
+            return { supported: false, changed: false, failures: 0 };
+        }
+        supported = true;
+
+        const refreshed = applyIOSScreenTimeTokenRefreshResult(selection, result);
+        if (refreshed?.requiresReselection) failures += 1;
+        if (JSON.stringify(refreshed) !== JSON.stringify(selection)) {
+            blocklist.iosScreenTimeSelection = refreshed;
+            changed = true;
+        }
+    }
+
+    if (changed) await saveData();
+    return { supported, changed, failures };
 }
 
 export function updateOnboardingVisibility() {
@@ -1475,6 +1531,52 @@ export function attachModalScrollResetOnShow(modalEl) {
     }).observe(modalEl, { attributes: true, attributeFilter: ['class'] });
 }
 
+function bindIOSModalBackSwipe(overlay, backButton) {
+    if (!state.isIOS || !document.body?.classList.contains('ios-phone')) return;
+    if (!overlay || !backButton || overlay.dataset.iosEdgeSwipeBound === '1') return;
+
+    overlay.dataset.iosEdgeSwipeBound = '1';
+    let gestureStart = null;
+
+    overlay.addEventListener('touchstart', (event) => {
+        if (!event.touches || event.touches.length !== 1) {
+            gestureStart = null;
+            return;
+        }
+        const touch = event.touches[0];
+        gestureStart = {
+            startX: touch.clientX,
+            startY: touch.clientY,
+            touchCount: event.touches.length,
+        };
+    }, { passive: true, capture: true });
+
+    overlay.addEventListener('touchend', (event) => {
+        if (
+            !gestureStart
+            || !event.changedTouches
+            || event.changedTouches.length !== 1
+            || (event.touches && event.touches.length !== 0)
+        ) {
+            gestureStart = null;
+            return;
+        }
+
+        const touch = event.changedTouches[0];
+        const isBackSwipe = isIOSLeftEdgeBackSwipe({
+            ...gestureStart,
+            endX: touch.clientX,
+            endY: touch.clientY,
+        });
+        gestureStart = null;
+        if (isBackSwipe && !overlay.classList.contains('hidden')) backButton.click();
+    }, { passive: true, capture: true });
+
+    overlay.addEventListener('touchcancel', () => {
+        gestureStart = null;
+    }, { passive: true, capture: true });
+}
+
 export function setupHandsetModalScreens() {
     const modalIds = [
         'blocklist-modal',
@@ -1493,7 +1595,11 @@ export function setupHandsetModalScreens() {
         if (!overlay || !content || !titleSource) continue;
 
         overlay.classList.add('mobile-fullscreen-modal');
-        if (content.querySelector('.mobile-modal-header')) continue;
+        const existingHeader = content.querySelector('.mobile-modal-header');
+        if (existingHeader) {
+            bindIOSModalBackSwipe(overlay, existingHeader.querySelector('.mobile-modal-back-btn'));
+            continue;
+        }
 
         // Stop carries the same title + space chip as Start, so it builds its
         // sticky header the same way.
@@ -1541,6 +1647,7 @@ export function setupHandsetModalScreens() {
             if (dismissButton) dismissButton.click();
             else overlay.classList.add('hidden');
         });
+        bindIOSModalBackSwipe(overlay, backButton);
 
         header.append(backButton);
         if (!isRoomStyleConfirmModal) {

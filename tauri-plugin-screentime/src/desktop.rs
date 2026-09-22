@@ -65,6 +65,19 @@ impl<R: Runtime> Screentime<R> {
         })
     }
 
+    pub fn refresh_activity_tokens(
+        &self,
+        payload: RefreshActivityTokensRequest,
+    ) -> crate::Result<RefreshActivityTokensResponse> {
+        Ok(RefreshActivityTokensResponse {
+            success: true,
+            supported: false,
+            application_tokens: payload.application_token_data,
+            category_tokens: payload.category_token_data,
+            error: None,
+        })
+    }
+
     pub fn start_block(&self, _payload: StartBlockRequest) -> crate::Result<StartBlockResponse> {
         Ok(StartBlockResponse {
             success: false,
@@ -73,6 +86,13 @@ impl<R: Runtime> Screentime<R> {
     }
 
     pub fn clear_block(&self) -> crate::Result<SuccessResponse> {
+        Ok(SuccessResponse {
+            success: false,
+            error: Some("Not supported on desktop".to_string()),
+        })
+    }
+
+    pub fn clear_manual_block(&self) -> crate::Result<SuccessResponse> {
         Ok(SuccessResponse {
             success: false,
             error: Some("Not supported on desktop".to_string()),
