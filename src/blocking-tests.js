@@ -2901,17 +2901,23 @@
             internals.setupFocusSpaceEditor();
             internals.openBlocklistModal();
             try {
-                document.getElementById('when-kind-weekly')?.click();
-                // Advanced options holds the row, and a collapsed section measures
-                // 0x0 — which would make every geometry assert below pass blind.
-                // Opened through the editor's own setter rather than a synthetic
-                // header click: the click did not take in headless Linux, so the
-                // geometry asserts never ran there.
+                // Weekly puts the Start alert row on screen, and Advanced options
+                // holds it: both are driven through the editor's own setters
+                // rather than synthetic clicks, which do not take effect in
+                // headless Linux — the row stayed hidden, everything measured 0
+                // and the guard below caught it on every CI run.
+                if (typeof internals.setWhenToBlockKind === 'function') {
+                    internals.setWhenToBlockKind('weekly', { fromUser: true });
+                } else {
+                    document.getElementById('when-kind-weekly')?.click();
+                }
                 if (typeof internals.setOpenEditorSection === 'function') {
                     internals.setOpenEditorSection('advanced');
                 } else if (document.getElementById('editor-section-advanced-header')?.getAttribute('aria-expanded') !== 'true') {
                     document.getElementById('editor-section-advanced-header')?.click();
                 }
+                // A collapsed or hidden row measures 0x0, which would make every
+                // geometry assert below pass blind — the guard is the check.
                 const grid = document.querySelector('#focus-space-editor .schedule-repeat-section');
                 const label = document.getElementById('schedule-panel-overlay-dropdown-text');
                 const pencil = document.getElementById('schedule-panel-overlay-customise-btn');
