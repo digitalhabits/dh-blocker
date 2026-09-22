@@ -16494,16 +16494,26 @@ body.dark-mode .app-blocking-warning-card{
 .editor-advanced-schedule .repeat-dropdown-btn{
     width: auto;
     min-width: 160px;
+    max-width: 100%;
     gap: 10px;
 }
 
-/* Pencil beside the Start alert dropdown: one flex group, not grid cells. */
+/* Pencil beside the Start alert dropdown: one flex group, not grid cells.
+   Bounded by its grid area so a long alert name truncates in the button
+   instead of pushing the pencil out of the panel. */
 .editor-advanced-schedule .schedule-panel-overlay-controls{
     display: flex;
     grid-row: 3;
     grid-column: 2 / 4;
     justify-self: start;
     gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.editor-advanced-schedule .schedule-panel-overlay-controls .repeat-dropdown-wrapper{
+    min-width: 0;
+    max-width: 100%;
 }
 
 .editor-advanced-schedule.hidden{
