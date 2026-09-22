@@ -10112,6 +10112,12 @@ body.ios #focus-space-editor .tags-input-container .browse-btn-caption {
     padding: 20px;
 }
 
+/* Phones have no title bar: a dialog scrim covers the whole screen, status
+   bar and safe areas included. */
+body.handset-device .modal-overlay{
+    top: 0;
+}
+
 body.ios .modal-overlay {
     align-items: flex-start;
     padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 10px);
@@ -10128,6 +10134,12 @@ body.handset-device .modal-overlay.mobile-fullscreen-modal{
     align-items: stretch;
     padding: 0;
     overflow: hidden;
+}
+
+/* The discard confirmation is the one plain dialog a phone shows: centre it
+   rather than pinning it to the top like the full-screen sheets. */
+body.handset-device #editor-discard-modal{
+    align-items: center;
 }
 
 body.ios .modal-content {
