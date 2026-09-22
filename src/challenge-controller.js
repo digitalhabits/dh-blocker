@@ -237,10 +237,12 @@ export function createChallengeController(elements) {
             }
         },
 
-        /** Focus the active field. Separate from open() so callers can defer it to a rAF. */
+        /** Focus the active field. Separate from open() so callers can defer it to a rAF.
+         *  `preventScroll` matters on iOS: without it the page scrolls to reveal
+         *  the field and drags the sheet header up under the status bar. */
         focus() {
             if (skipped) return;
-            (wordState ? wordInputEl : inputEl)?.focus();
+            (wordState ? wordInputEl : inputEl)?.focus({ preventScroll: true });
         },
 
         /**
@@ -271,7 +273,7 @@ export function createChallengeController(elements) {
                 wordState.typedText = done ? targetText : getCompletedChallengeText(wordState);
                 if (!done) {
                     renderWordState();
-                    wordInputEl?.focus();
+                    wordInputEl?.focus({ preventScroll: true });
                     return { status: 'advanced' };
                 }
                 setProgress(targetText.length);
