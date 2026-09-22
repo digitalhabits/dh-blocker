@@ -1566,11 +1566,12 @@ export function setupHandsetModalScreens() {
 
         const scrollBody = document.createElement('div');
         scrollBody.className = 'mobile-modal-scroll-body';
+        // Only the long forms pin their buttons to the bottom of the sheet.
+        // The start confirmations are short, so a pinned footer leaves a wide
+        // gap above it; their buttons follow the content instead.
         const keepFooterOutsideScroll =
             modalId === 'blocklist-modal'
-            || modalId === 'settings-modal'
-            || modalId === 'start-block-confirm-modal'
-            || modalId === 'start-schedule-confirm-modal';
+            || modalId === 'settings-modal';
         while (header.nextSibling) {
             const node = header.nextSibling;
             if (
