@@ -459,6 +459,11 @@ export const SETTINGS_TRANSLATIONS = {
             '<strong>{blocklist}</strong> is starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close it for you.',
         appBlockingWarningSummaryMultiHtml:
             '<strong>{blocklist}</strong> is starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close them for you.',
+        appBlockingWarningHeadingPluralHtml: '<strong>{name}</strong> are starting',
+        appBlockingWarningSummarySinglePluralHtml:
+            '<strong>{blocklist}</strong> are starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close it for you.',
+        appBlockingWarningSummaryMultiPluralHtml:
+            '<strong>{blocklist}</strong> are starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close them for you.',
         appBlockingClosedownCountdownHtml:
             'Closing {apps} in <strong>{seconds}s</strong> — save your work now.',
         appBlockingClosedownFinalSingleHtml: 'Closing {apps} now…',
@@ -1339,6 +1344,11 @@ export const SETTINGS_TRANSLATIONS = {
             '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes den ned.',
         appBlockingWarningSummaryMultiHtml:
             '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes de ned.',
+        appBlockingWarningHeadingPluralHtml: '<strong>{name}</strong> starter',
+        appBlockingWarningSummarySinglePluralHtml:
+            '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes den ned.',
+        appBlockingWarningSummaryMultiPluralHtml:
+            '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes de ned.',
         appBlockingClosedownCountdownHtml:
             'Lukker {apps} om <strong>{seconds} sek.</strong> — gem dit arbejde nu.',
         appBlockingClosedownFinalSingleHtml: 'Lukker {apps} nu…',
@@ -2192,6 +2202,9 @@ export const SETTINGS_TRANSLATIONS = {
         appBlockingFallbackBlocklistName: '专注空间',
         appBlockingUnknownApp: '未知应用',
         appBlockingBannerAppFallback: '应用',
+        appBlockingWarningHeadingPluralHtml: '保存你的工作',
+        appBlockingWarningSummarySinglePluralHtml: '<strong>{app}</strong> 即将被关闭。',
+        appBlockingWarningSummaryMultiPluralHtml: '<strong>{count}</strong> 个应用即将被关闭。',
         appBlockingWarningHeadingHtml: '保存你的工作',
         appBlockingWarningSummarySingleHtml: '<strong>{app}</strong> 即将被关闭。',
         appBlockingWarningSummaryMultiHtml: '<strong>{count}</strong> 个应用即将被关闭。',

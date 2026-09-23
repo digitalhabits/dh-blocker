@@ -11,7 +11,7 @@ import { getBlocklistDisplayApps } from './list-presentation.js';
 import { isMobileOverrideChallengePlatform } from './override-challenge.js';
 import { saveData } from './persistence.js';
 import { closeSchedulePanelDropdownMenus, positionSchedulePanelDropdownMenu } from './schedule-editor.js';
-import { findResponsibleBlocklistForWarningApps, joinAppListWithLimit } from './blocking-platform.js';
+import { findResponsibleBlocklistsForWarningApps, joinAppListWithLimit } from './blocking-platform.js';
 import {
     initScheduleOverlayMessageEditor,
     getScheduleOverlayMessageEditorHtml,
@@ -286,7 +286,7 @@ export function getScheduleStartOverlayForBlocklistId(blocklistId) {
 }
 
 export function getScheduleStartOverlayForWarningApps(appNames) {
-    const blocklist = findResponsibleBlocklistForWarningApps(appNames);
+    const [blocklist] = findResponsibleBlocklistsForWarningApps(appNames);
     if (!blocklist) return null;
     return getScheduleStartOverlayForBlocklistId(blocklist.id);
 }
@@ -419,15 +419,14 @@ export async function applyOverlayMediaToElements({
     if (emojiEl) emojiEl.textContent = blocklistEmoji || '🎯';
 }
 
-export function buildDefaultWarningSummaryHtml(names, blocklistName, letsGoLabel) {
+export function buildDefaultWarningSummaryHtml(names, blocklistName, letsGoLabel, plural = false) {
     const apps = joinAppListWithLimit(names, 3);
     const bl = escapeHtml(blocklistName);
     const letsGo = escapeHtml(letsGoLabel || tSettings('appBlockingLetsGo'));
-    const summaryKey = names.length === 1
-        ? 'appBlockingWarningSummarySingleHtml'
-        : 'appBlockingWarningSummaryMultiHtml';
+    const summaryKey = `appBlockingWarningSummary${names.length === 1 ? 'Single' : 'Multi'}${plural ? 'Plural' : ''}Html`;
     return tSettingsFmt(summaryKey, { blocklist: bl, letsGo, apps });
 }
+
 
 export function getScheduleOverlayAppsPreviewList(blocklist) {
     const apps = getBlocklistDisplayApps(blocklist);
@@ -644,6 +643,7 @@ export async function applyScheduleStartOverlayPresentation({
     blocklistName,
     blocklistEmoji,
     appNames,
+    plural = false,
     headingEl,
     summaryEl,
     emojiWrapEl,
@@ -660,7 +660,7 @@ export async function applyScheduleStartOverlayPresentation({
         if (useCustom && overlay.heading) {
             headingEl.innerHTML = formatScheduleOverlayHeadingHtml(overlay.heading, blocklistName);
         } else {
-            headingEl.innerHTML = tSettingsFmt('appBlockingWarningHeadingHtml', {
+            headingEl.innerHTML = tSettingsFmt(plural ? 'appBlockingWarningHeadingPluralHtml' : 'appBlockingWarningHeadingHtml', {
                 name: escapeHtml(blocklistName),
             });
         }
@@ -674,7 +674,7 @@ export async function applyScheduleStartOverlayPresentation({
                 letsGoText,
             );
         } else {
-            summaryEl.innerHTML = buildDefaultWarningSummaryHtml(appNames, blocklistName, letsGoText);
+            summaryEl.innerHTML = buildDefaultWarningSummaryHtml(appNames, blocklistName, letsGoText, plural);
         }
     }
 

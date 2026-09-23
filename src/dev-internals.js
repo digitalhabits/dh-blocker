@@ -25,6 +25,8 @@ import { saveData, updateHostsFile } from './persistence.js';
 import {
     acceptEula,
     appBlockingWarningRows,
+    findResponsibleBlocklistsForWarningApps,
+    isAppBlockingWarningScheduleEligible,
     setupAndroidBackButtonHandling,
     updateBlockedApps,
 } from './blocking-platform.js';
@@ -105,6 +107,8 @@ window.__REDDBLOCK_INTERNALS__ = {
     // test rather than duplicating modal-close logic in the harness.
     setupAndroidBackButtonHandling,
     appBlockingWarningRows,
+    findResponsibleBlocklistsForWarningApps,
+    isAppBlockingWarningScheduleEligible,
     updateBlockedApps,
     DEFAULT_UNLOCK_MINUTES,
     UNLOCK_MINUTE_OPTIONS,

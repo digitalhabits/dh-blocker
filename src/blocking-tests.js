@@ -27,6 +27,7 @@
  * - T206: app chrome is not text-selectable; inputs are
  * - T207: colour-swatch tick / + are inked against the swatch's own colour
  * - T208-T212: Desktop app-watcher payload: allow-mode spaces feed allowedApps, never the kill list
+ * - T213-T217: The start card names the space that just started and closes the app (allow mode included)
  */
 
 (function () {
@@ -1770,6 +1771,79 @@
     }
 
     // ========================================
+    // CATEGORY: START-CARD ATTRIBUTION (T213-T217)
+    // ========================================
+
+    // The "get ready" card must name the space that just started and closes the
+    // listed apps. It used to search for a space that *lists* the app, which an
+    // allow-mode space never does, then fell back to any space at all — so an
+    // allow-only start borrowed the name and alert of an unrelated, stopped space.
+    function runWarningAttributionTests() {
+        console.log('\n🪧 Start-card attribution');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        const api = internals.tauriAPI;
+        const saved = internals.appData;
+        const realSet = api.setBlockedAppsViaHelper;
+        const now = Date.now();
+        const allDay = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+        const live = (id) => createMockBlock(id, now - 1000, now + 60000);
+        api.setBlockedAppsViaHelper = () => Promise.resolve({ success: true });
+        // Sync the state before the start, then the state after it.
+        const transition = (blocklists, before, after) => {
+            internals.appData = createMockAppData({ blocklists, ...before });
+            void internals.updateBlockedApps();
+            internals.appData = createMockAppData({ blocklists, ...after });
+            void internals.updateBlockedApps();
+        };
+        const named = (apps) => internals.findResponsibleBlocklistsForWarningApps(apps).map((bl) => bl.name);
+        const space = (name, mode, apps) => createMockBlocklist({ name, mode, apps });
+        try {
+            (function T213() {
+                const stopped = space('block 1 copy', 'blocklist', ['Chess']);
+                const allow = space('allow 1', 'allowlist', ['Claude']);
+                transition([stopped, allow], {}, { activeBlocks: [live(allow.id)] });
+                assertEqual(named(['Chess']), ['allow 1'], 'T213: an allow-only start is named for itself, not for a stopped space that lists the app');
+            })();
+
+            (function T214() {
+                const work = space('Work', 'blocklist', ['Chess']);
+                const evening = space('Evening', 'blocklist', ['Chess']);
+                const workBlock = live(work.id);
+                transition([work, evening], { activeBlocks: [workBlock] }, { activeBlocks: [workBlock, live(evening.id)] });
+                assertEqual(named(['Chess']), ['Evening'], 'T214: two running spaces list the app; the card names the one that just started');
+            })();
+
+            (function T215() {
+                const work = space('Work', 'blocklist', ['Chess']);
+                const evening = space('Evening', 'blocklist', ['Chess']);
+                transition([work, evening], {}, { activeBlocks: [live(work.id), live(evening.id)] });
+                assertEqual(named(['Chess']), ['Work', 'Evening'], 'T215: two spaces starting together are both named');
+            })();
+
+            (function T216() {
+                const stopped = space('block 1 copy', 'blocklist', ['Chess']);
+                const allow = space('allow 1', 'allowlist', ['Claude']);
+                const work = space('Work', 'blocklist', ['Slack']);
+                const allowBlock = live(allow.id);
+                transition([stopped, allow, work], { activeBlocks: [allowBlock] }, { activeBlocks: [allowBlock, live(work.id)] });
+                assertEqual(named(['Chess']), ['allow 1'], 'T216: when what just started does not close the app, a running space that does is named, never a stopped one');
+            })();
+
+            (function T217() {
+                const allow = space('allow 1', 'allowlist', ['Claude']);
+                transition([allow], {}, { schedules: [createMockSchedule(allow.id, [allDay])] });
+                assertEqual(internals.isAppBlockingWarningScheduleEligible(['Chess']), true, 'T217: an allow-only space started by its schedule offers the snooze');
+                transition([allow], {}, { activeBlocks: [live(allow.id)] });
+                assertEqual(internals.isAppBlockingWarningScheduleEligible(['Chess']), false, 'T217: started by hand, it does not');
+            })();
+        } finally {
+            internals.appData = saved;
+            void internals.updateBlockedApps();
+            api.setBlockedAppsViaHelper = realSet;
+        }
+    }
+
+    // ========================================
     // CATEGORY 19: iOS SCHEDULE PAYLOAD (T151-T158)
     // ========================================
 
@@ -3327,6 +3401,7 @@
             runIOSAllowlistPolicyTests();
             runAndroidPayloadTests();
             runDesktopAppPayloadTests();
+            runWarningAttributionTests();
             runIOSSchedulePayloadTests();
             runEditFrictionGateTests();
             runChallengePrimitiveTests();
