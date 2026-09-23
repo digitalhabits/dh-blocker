@@ -152,7 +152,7 @@ overlap). iOS uses its own App Group store, not this file.
 The desktop rule (blocklist wins on overlap; concurrent allowlists union) is
 mirrored on iOS by **two deliberately-duplicated resolvers that must stay in
 sync**: JS (`deriveIOSEffectiveWebsitePolicy` / `deriveIOSEffectiveAppPolicy` in
-`src/app.js`) for pre-validation, Swift (`IOSPolicyResolver` in the shared
+`src/allowlist-ios.js`) for pre-validation, Swift (`IOSPolicyResolver` in the shared
 `ScheduleData.swift`) for enforcement. Changing one without the other produces a
 UI that promises something enforcement will not do. See architecture.md §9.4
 and §12.3.
@@ -214,7 +214,7 @@ cleaning up rather than tolerating.
 Closing the window **hides to tray** and keeps all watchers running; enforcement
 continues across window close. See "The product principle" above for why there
 is no quit path. An EULA gate (revision-based, `CURRENT_EULA_REVISION` in
-`src/app.js`) blocks post-acceptance startup hooks. v1.x cleanup (hosts strip,
+`src/onboarding.js`) blocks post-acceptance startup hooks. v1.x cleanup (hosts strip,
 legacy daemon removal, may prompt for admin once) runs once via
 `src-tauri/src/commands/migration.rs`.
 
@@ -324,8 +324,8 @@ Things to know before you trust a green run:
   deprecated wholesale in favour of `objc2` — a real, separate migration — so
   the macOS FFI carries `allow(deprecated)`. Note that one is *not* scoped:
   `src-tauri/src/lib.rs` has a crate-root `#![allow(deprecated)]`, which turns
-  the lint off everywhere and makes the per-module allows in `browser_ext`,
-  `app_update` and `workspace_events` redundant. Narrowing it is worthwhile,
+  the lint off everywhere and makes the allows in `app_update`,
+  `workspace_events` and `app_watcher` redundant. Narrowing it is worthwhile,
   but until then do not read a green clippy run as evidence that a new
   deprecation was noticed.
 - **eslint is `js/recommended` only, and `no-unused-vars` is a warning, not an
