@@ -69,6 +69,19 @@ fn label_matches_process_name_case_insensitively() {
 }
 
 #[test]
+fn label_matches_a_name_carrying_an_invisible_direction_mark() {
+    // macOS reports WhatsApp's process name with a leading U+200E. Left in, it
+    // never equals the label the user picked: in allow mode that quits an app
+    // they explicitly allowed, and in block mode it quietly blocks nothing.
+    assert!(process_matches_app_label(
+        "WhatsApp",
+        "\u{200E}WhatsApp",
+        None
+    ));
+    assert!(is_protected_app_name("\u{200E}Finder"));
+}
+
+#[test]
 fn label_does_not_match_a_different_app_with_a_shared_prefix() {
     // Substring matching here would quit apps the user never listed.
     assert!(!process_matches_app_label("Slack", "Slackbot", None));

@@ -266,11 +266,29 @@ fn strip_exe_suffix(name: &str) -> &str {
     }
 }
 
+/// Invisible direction/format marks a platform can carry in a process name —
+/// macOS reports WhatsApp as "\u{200E}WhatsApp". Left in, the name never
+/// equals the label the user picked. Mirrors the frontend strip in
+/// `blocklist-utils.js`.
+const INVISIBLE_MARKS: &[char] = &[
+    '\u{200E}', '\u{200F}', '\u{202A}', '\u{202B}', '\u{202C}', '\u{202D}', '\u{202E}', '\u{2066}',
+    '\u{2067}', '\u{2068}', '\u{2069}', '\u{FEFF}',
+];
+
+fn strip_invisible_marks(name: &str) -> std::borrow::Cow<'_, str> {
+    if name.contains(INVISIBLE_MARKS) {
+        std::borrow::Cow::Owned(name.replace(INVISIBLE_MARKS, ""))
+    } else {
+        std::borrow::Cow::Borrowed(name)
+    }
+}
+
 /// Whether an app label must never be killed by the watcher. The suffix is
 /// dropped from both sides, so a listed `explorer.exe` covers a bare
 /// `explorer` and a listed `Taskmgr` covers `Taskmgr.exe`.
 pub fn is_protected_app_name(name: &str) -> bool {
-    let stem = strip_exe_suffix(name);
+    let name = strip_invisible_marks(name);
+    let stem = strip_exe_suffix(&name);
     PROTECTED
         .iter()
         .any(|p| stem.eq_ignore_ascii_case(strip_exe_suffix(p)))
@@ -287,8 +305,10 @@ fn process_matches_app_label(
     proc_name: &str,
     proc_exe: Option<&std::path::Path>,
 ) -> bool {
-    let stem = strip_exe_suffix(proc_name);
-    if label.eq_ignore_ascii_case(proc_name) || label.eq_ignore_ascii_case(stem) {
+    let label = strip_invisible_marks(label);
+    let proc_name = strip_invisible_marks(proc_name);
+    let stem = strip_exe_suffix(&proc_name);
+    if label.eq_ignore_ascii_case(&proc_name) || label.eq_ignore_ascii_case(stem) {
         return true;
     }
     #[cfg(target_os = "macos")]
