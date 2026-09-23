@@ -969,15 +969,26 @@ class ScreentimePlugin: Plugin {
         )
     }
 
+    /// Clear only the named "schedule" store — the OS-level shields the
+    /// DeviceActivityMonitor extension applied. The manual channel is left
+    /// alone, so a running one-off block keeps enforcing. Used when a schedule
+    /// is switched off open-ended: it stays in the data as paused, so
+    /// `setSchedules` sees nothing removed and will not clear the store itself.
+    @objc public func clearScheduleBlock(_ invoke: Invoke) throws {
+        clearScheduleChannel()
+        invoke.resolve(["success": true])
+    }
+
+    private func clearScheduleChannel() {
+        ManagedSettingsStore(named: .init("schedule")).clearAllSettings()
+        ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: [])
+    }
+
     @objc public func clearBlock(_ invoke: Invoke) throws {
         clearManualChannel()
 
-        // Also clear the named "schedule" store used by DeviceActivityMonitor
-        // Since we use separate stores for manual vs schedule blocks, both
-        // must be cleared for a complete "stop everything" action.
-        let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
-        scheduleStore.clearAllSettings()
-        ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: [])
+        // Both stores, for a complete "stop everything" action.
+        clearScheduleChannel()
         
         // Note: We intentionally do NOT clear currentSelection here.
         // The selection should persist so the user doesn't have to re-pick
