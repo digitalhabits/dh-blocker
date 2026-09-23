@@ -95,7 +95,7 @@ import {
     syncScheduleOverlayCustomiseEditorState, syncScheduleOverlayCustomiseTitle,
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
-import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, openBlocklistModal, openOverrideModal, refreshSelectedBlocklistUi, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncColorSwatchInk, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
+import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, isEnterSchedulerModalOpen, openBlocklistModal, openOverrideModal, refreshSelectedBlocklistUi, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncColorSwatchInk, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
 import { enhanceNativeSelects } from './custom-select.js';
 import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, deleteBlocklist, isBlocklistEditFrictionRequired, pendingDelete, saveBlocklistOrderFromDOM, setUndoToastMessage } from './blocklists.js';
 import {
@@ -1624,7 +1624,11 @@ function setupModalListeners() {
             const dropdown = document.getElementById('blocklist-select');
             if (dropdown) {
                 dropdown.value = state.selectedBlocklistId;
-                handleBlocklistSelect({ target: dropdown });
+                // handleBlocklistSelect defaults openEnterUi to false, and the
+                // sheet sync reads "not opening" as "close it" — which on a
+                // narrow window shut the editor and landed the user back on the
+                // list every time they saved. Keep whatever state it is in.
+                handleBlocklistSelect({ target: dropdown }, { openEnterUi: isEnterSchedulerModalOpen() });
             }
         }
     };
