@@ -10,7 +10,7 @@ import { ask, message, open as openDialog, save as saveDialog } from '@tauri-app
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { escapeHtml, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
-import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, isAllowlistBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist } from './blocklist-utils.js';
+import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, healWwwWebsiteEntries, isAllowlistBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist } from './blocklist-utils.js';
 import { computeNextOneShotOccurrenceMs, computeNextRepeatingOccurrenceMs, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render, renderScheduleVisibilityChips } from './render.js';
@@ -549,7 +549,7 @@ export function uniqueImportedBlocklistName(desiredName) {
 }
 
 export function blocklistFromImportedEntry(entry) {
-    return {
+    const blocklist = {
         id: generateId(),
         name: uniqueImportedBlocklistName(entry.name),
         mode: entry.mode || 'blocklist',
@@ -563,6 +563,9 @@ export function blocklistFromImportedEntry(entry) {
         overrideDifficulty: cloneOverrideDifficulty(entry.overrideDifficulty),
         unlockMinutes: normalizeUnlockMinutes(entry.unlockMinutes),
     };
+    // Same www. clean-up as typed sites: iOS hands stored entries to Screen Time as-is.
+    healWwwWebsiteEntries([blocklist]);
+    return blocklist;
 }
 
 export async function exportBlocklistsToFile() {
