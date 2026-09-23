@@ -127,8 +127,15 @@ export async function updateBlockedApps() {
 // shows in the overlay while the previously-acked PIDs continue
 // counting down in the banner.
 
-/** @type {Map<number, { name: string, ackedDeadlineMs?: number }>} */
+/** @type {Map<number, { name: string, intentionOnly: boolean, dismissed?: boolean, ackedDeadlineMs?: number }>} */
 export const appBlockingWarningRows = new Map();
+/** Rust's pid-0 row for an allow-mode start with nothing to close: the card explains, nothing counts down. */
+const ALLOWLIST_INTENTION_WARNING_NAME = '__allowlist_intention__';
+export const newWarningRow = (pid, name) => ({
+    name: name || 'App',
+    intentionOnly: pid === 0 || name === ALLOWLIST_INTENTION_WARNING_NAME,
+});
+const isWarningRowAwaitingAck = (row) => !row.ackedDeadlineMs && !row.dismissed;
 let appBlockingWarningUiAttached = false;
 let appBlockingClosedownTickInterval = null;
 
@@ -192,7 +199,7 @@ function pendingWarningAppNames() {
     const unknownApp = tSettings('appBlockingUnknownApp');
     const rawNames = [];
     for (const [, row] of appBlockingWarningRows) {
-        if (row.ackedDeadlineMs) continue;
+        if (!isWarningRowAwaitingAck(row) || row.intentionOnly) continue;
         rawNames.push((row.name || unknownApp).trim() || unknownApp);
     }
     return uniqueBlockedAppDisplayNames(rawNames);
@@ -337,7 +344,7 @@ export function onAppBlockingSnoozeExpired() {
     if (typeof renderBlocklists === 'function') renderBlocklists();
 
     const unackedPids = [...appBlockingWarningRows.entries()]
-        .filter(([, row]) => !row.ackedDeadlineMs)
+        .filter(([, row]) => isWarningRowAwaitingAck(row))
         .map(([pid]) => pid);
     if (unackedPids.length === 0) return;
 
@@ -377,9 +384,7 @@ export function setupAppBlockingWarningOverlay() {
         const p = event?.payload || {};
         const pid = Number(p.pid);
         if (!Number.isFinite(pid)) return;
-        appBlockingWarningRows.set(pid, {
-            name: p.name || 'App',
-        });
+        appBlockingWarningRows.set(pid, newWarningRow(pid, p.name));
         renderAppBlockingWarningOverlay();
         renderAppBlockingClosedownBanner();
     }).catch(onFail('warning-show'));
@@ -410,9 +415,7 @@ export function setupAppBlockingWarningOverlay() {
                 const pid = Number(row?.pid);
                 if (!Number.isFinite(pid)) continue;
                 if (appBlockingWarningRows.has(pid)) continue;
-                appBlockingWarningRows.set(pid, {
-                    name: row?.name || 'App',
-                });
+                appBlockingWarningRows.set(pid, newWarningRow(pid, row?.name));
                 seeded = true;
             }
             if (seeded) {
@@ -461,7 +464,9 @@ export function setupAppBlockingWarningOverlay() {
         void playAppBlockingLetsGoVoice();
         const ackedDeadlineMs = Date.now() + APP_BLOCKING_CLOSEDOWN_PREQUIT_MS;
         for (const row of appBlockingWarningRows.values()) {
-            if (!row.ackedDeadlineMs) row.ackedDeadlineMs = ackedDeadlineMs;
+            if (!isWarningRowAwaitingAck(row)) continue;
+            if (row.intentionOnly) row.dismissed = true;
+            else row.ackedDeadlineMs = ackedDeadlineMs;
         }
         // `letsGoAcknowledge` owns the native AwaitingUserAck -> PreQuit
         // transition and restores the saved window geometry. Do not ask the
@@ -487,7 +492,9 @@ export function renderAppBlockingWarningOverlay() {
     }
 
     const names = pendingWarningAppNames();
-    if (names.length === 0) {
+    const hasIntentionOnly = [...appBlockingWarningRows.values()]
+        .some((row) => row.intentionOnly && isWarningRowAwaitingAck(row));
+    if (names.length === 0 && !hasIntentionOnly) {
         state.appBlockingActiveStartOverlay = null;
         applyWarningOverlayPresence();
         return;
@@ -500,6 +507,11 @@ export function renderAppBlockingWarningOverlay() {
         : spaceNames[0] || tSettings('appBlockingFallbackBlocklistName');
     const blocklistEmoji = responsible[0]?.emoji || '🎯';
     const startOverlay = getScheduleStartOverlayForWarningApps(names);
+    // The allow-mode card lists what stays open; it applies when every space on the card is allow-mode.
+    const isAllowlistWarning = responsible.length > 0 && responsible.every(isAllowlistBlocklist);
+    const allowedAppNames = isAllowlistWarning
+        ? uniqueBlockedAppDisplayNames(responsible.flatMap((bl) => (bl.apps || []).filter((a) => !isProtectedApp(a))))
+        : [];
 
     const headingEl = document.getElementById('app-blocking-warning-heading');
     const summaryEl = document.getElementById('app-blocking-warning-summary');
@@ -529,8 +541,13 @@ export function renderAppBlockingWarningOverlay() {
         blocklistEmoji,
         appNames: names,
         plural: responsible.length > 1,
+        allowedAppNames,
+        isAllowlistWarning,
         headingEl,
         summaryEl,
+        allowlistAppsEl: document.getElementById('app-blocking-warning-allowlist-apps'),
+        allowlistPillsEl: document.getElementById('app-blocking-warning-allowlist-pills'),
+        noteEl: document.getElementById('app-blocking-warning-note'),
         emojiWrapEl,
         emojiEl,
         imageEl,
@@ -563,7 +580,7 @@ export function applyWarningOverlayPresence({ reconcileNativeShell = true } = {}
     // `ackedDeadlineMs` and migrates from the overlay to the banner.
     // Also hide while a schedule snooze is active.
     const hasUnackedRows = [...appBlockingWarningRows.values()]
-        .some((row) => !row.ackedDeadlineMs);
+        .some(isWarningRowAwaitingAck);
     const isSnoozed = appBlockingWarningSnoozedUntilMs > Date.now();
 
     overlay.classList.toggle('hidden', !hasUnackedRows || isSnoozed);
@@ -716,7 +733,7 @@ export function uniqueBlockedAppDisplayNames(names) {
 }
 
 /** Pretty list join: "A", "A and B", "A, B and C", "A, B and 4 more". */
-export function joinAppListWithLimit(names, max = 3, { bold = true } = {}) {
+export function joinAppListWithLimit(names, max = 3, { bold = true, oxford = false } = {}) {
     const arr = names.filter(Boolean);
     const wrap = bold
         ? (n) => `<strong>${escapeHtml(n)}</strong>`
@@ -727,7 +744,7 @@ export function joinAppListWithLimit(names, max = 3, { bold = true } = {}) {
     if (arr.length <= max) {
         const head = arr.slice(0, -1).map(wrap).join(', ');
         const tail = wrap(arr[arr.length - 1]);
-        return `${head} ${and} ${tail}`;
+        return oxford ? `${head}, ${and} ${tail}` : `${head} ${and} ${tail}`;
     }
     const shown = arr.slice(0, max - 1).map(wrap).join(', ');
     const remaining = arr.length - (max - 1);

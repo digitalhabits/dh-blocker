@@ -27,6 +27,8 @@ import {
     appBlockingWarningRows,
     findResponsibleBlocklistsForWarningApps,
     isAppBlockingWarningScheduleEligible,
+    newWarningRow,
+    renderAppBlockingWarningOverlay,
     setupAndroidBackButtonHandling,
     updateBlockedApps,
 } from './blocking-platform.js';
@@ -109,6 +111,8 @@ window.__REDDBLOCK_INTERNALS__ = {
     appBlockingWarningRows,
     findResponsibleBlocklistsForWarningApps,
     isAppBlockingWarningScheduleEligible,
+    newWarningRow,
+    renderAppBlockingWarningOverlay,
     updateBlockedApps,
     DEFAULT_UNLOCK_MINUTES,
     UNLOCK_MINUTE_OPTIONS,

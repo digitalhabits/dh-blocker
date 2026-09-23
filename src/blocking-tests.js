@@ -27,7 +27,7 @@
  * - T206: app chrome is not text-selectable; inputs are
  * - T207: colour-swatch tick / + are inked against the swatch's own colour
  * - T208-T212: Desktop app-watcher payload: allow-mode spaces feed allowedApps, never the kill list
- * - T213-T217: The start card names the space that just started and closes the app (allow mode included)
+ * - T213-T219: The start card names the space that just started and closes the app; allow mode gets its own card
  */
 
 (function () {
@@ -1771,7 +1771,7 @@
     }
 
     // ========================================
-    // CATEGORY: START-CARD ATTRIBUTION (T213-T217)
+    // CATEGORY: START CARD (T213-T219)
     // ========================================
 
     // The "get ready" card must name the space that just started and closes the
@@ -1836,7 +1836,47 @@
                 transition([allow], {}, { activeBlocks: [live(allow.id)] });
                 assertEqual(internals.isAppBlockingWarningScheduleEligible(['Chess']), false, 'T217: started by hand, it does not');
             })();
+
+            // The card itself. Render it from rows built the way the watcher's event builds them.
+            const renderCard = (rows) => {
+                internals.appBlockingWarningRows.clear();
+                for (const [pid, name] of rows) internals.appBlockingWarningRows.set(pid, internals.newWarningRow(pid, name));
+                internals.renderAppBlockingWarningOverlay();
+                const text = (id) => document.getElementById(id)?.textContent || '';
+                return {
+                    heading: text('app-blocking-warning-heading'),
+                    summary: text('app-blocking-warning-summary'),
+                    note: text('app-blocking-warning-note'),
+                    pills: [...document.querySelectorAll('#app-blocking-warning-allowlist-pills .app-blocking-allowlist-pill')].map((el) => el.textContent),
+                    pillsShown: !document.getElementById('app-blocking-warning-allowlist-apps')?.classList.contains('hidden'),
+                    all: text('app-blocking-warning-overlay'),
+                };
+            };
+
+            (function T218() {
+                const stopped = space('block 1 copy', 'blocklist', ['Chess']);
+                const allow = space('allow 1', 'allowlist', ['Claude', 'Cursor']);
+                transition([stopped, allow], {}, { activeBlocks: [live(allow.id)] });
+                const card = renderCard([[0, '__allowlist_intention__']]);
+                assert(card.heading.includes('allow 1'), 'T218: nothing to close — the card is headed with the allow-only space');
+                assertEqual(card.pills, ['CClaude', 'CCursor'], 'T218: the allowed apps show as pills');
+                assert(card.pillsShown, 'T218: the pill row is visible');
+                assert(!card.all.includes('__allowlist_intention__'), 'T218: the watcher placeholder never appears as an app');
+                assert(!card.note.includes('30 seconds'), 'T218: with nothing to close there is no save-your-work countdown');
+            })();
+
+            (function T219() {
+                const stopped = space('block 1 copy', 'blocklist', ['Chess']);
+                const allow = space('allow 1', 'allowlist', ['Claude']);
+                transition([stopped, allow], {}, { activeBlocks: [live(allow.id)] });
+                const card = renderCard([[101, 'Chess'], [102, 'Google Chrome']]);
+                assert(card.heading.includes('allow 1') && !card.heading.includes('block 1 copy'), 'T219: closing apps — the card names the allow-only space');
+                assertEqual(card.pills, ['CClaude'], 'T219: the pills are the allowed apps, not the closing ones');
+                assert(card.note.includes('Chess') && card.note.toLowerCase().includes('google chrome'), 'T219: the note names the apps being closed');
+            })();
         } finally {
+            internals.appBlockingWarningRows.clear();
+            internals.renderAppBlockingWarningOverlay();
             internals.appData = saved;
             void internals.updateBlockedApps();
             api.setBlockedAppsViaHelper = realSet;

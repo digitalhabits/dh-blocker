@@ -464,6 +464,14 @@ export const SETTINGS_TRANSLATIONS = {
             '<strong>{blocklist}</strong> are starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close it for you.',
         appBlockingWarningSummaryMultiPluralHtml:
             '<strong>{blocklist}</strong> are starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close them for you.',
+        appBlockingAllowlistIntro:
+            'Your device will become a toolkit with just the apps you\'ve allowed yourself to use.',
+        appBlockingAllowlistActionNoWarnedHtml:
+            'When you click <strong>{letsGo}</strong>, all other apps will be closed when you try to open them.',
+        appBlockingAllowlistActionSingleWarnedHtml:
+            'When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {warnedApps}, then we’ll close it for you.',
+        appBlockingAllowlistActionMultiWarnedHtml:
+            'When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {warnedApps}, then we’ll close them for you.',
         appBlockingClosedownCountdownHtml:
             'Closing {apps} in <strong>{seconds}s</strong> — save your work now.',
         appBlockingClosedownFinalSingleHtml: 'Closing {apps} now…',
@@ -1349,6 +1357,14 @@ export const SETTINGS_TRANSLATIONS = {
             '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes den ned.',
         appBlockingWarningSummaryMultiPluralHtml:
             '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes de ned.',
+        appBlockingAllowlistIntro:
+            'Din enhed bliver et værktøjssæt med kun de apps, du har givet dig selv lov til at bruge.',
+        appBlockingAllowlistActionNoWarnedHtml:
+            'Når du klikker på <strong>{letsGo}</strong>, lukkes alle andre apps, når du forsøger at åbne dem.',
+        appBlockingAllowlistActionSingleWarnedHtml:
+            'Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {warnedApps}, derefter lukkes den ned.',
+        appBlockingAllowlistActionMultiWarnedHtml:
+            'Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {warnedApps}, derefter lukkes de ned.',
         appBlockingClosedownCountdownHtml:
             'Lukker {apps} om <strong>{seconds} sek.</strong> — gem dit arbejde nu.',
         appBlockingClosedownFinalSingleHtml: 'Lukker {apps} nu…',
