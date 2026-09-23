@@ -1833,6 +1833,25 @@
                 assertEqual(sourcesNow().length, 0, 'T229: a schedule paused with no end time is not an active source, as Swift and the rest of the JS already treat it');
             })();
 
+            (function T235() {
+                // Switching a paused allow space back on runs the same check as starting it.
+                const running = allow(sites('a', 30));
+                const paused = allow(sites('b', 30));
+                const pausedBlock = createMockBlock(paused.id, now - 1000, now + 3600000, { isPaused: true, pauseEndTime: now + 600000 });
+                internals.appData = createMockAppData({
+                    blocklists: [running, paused],
+                    activeBlocks: [createMockBlock(running.id, now - 1000, now + 60000), pausedBlock],
+                });
+                const wasIOS = internals.isIOS;
+                internals.isIOS = true;
+                try {
+                    internals.turnFocusSpaceOn(paused.id, now)?.catch?.(() => {});
+                } finally {
+                    internals.isIOS = wasIOS;
+                }
+                assert(pausedBlock.isPaused === true, 'T235: resuming an allow space that would push the union past 50 is refused on iOS');
+            })();
+
         } finally {
             internals.appData = saved;
         }

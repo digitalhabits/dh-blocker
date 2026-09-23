@@ -59,6 +59,8 @@ import { renderDiagnosticsEnforcementSection } from './settings.js';
 window.__REDDBLOCK_INTERNALS__ = {
     get appData() { return state.appData; },
     set appData(val) { state.appData = val; },
+    get isIOS() { return state.isIOS; },
+    set isIOS(val) { state.isIOS = val; },
     saveData,
     updateHostsFile,
     get tauriAPI() { return tauriAPI; },
