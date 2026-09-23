@@ -11,6 +11,7 @@ import {
 } from './blocklist-utils.js';
 import { isBlocklistAllowlistMode } from './list-mode.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
+import { isSchedulePausedNow } from './schedule-engine.js';
 
 /** Apple caps `.all(except:)` exceptions at 50 domains / 50 tokens per store. */
 export const IOS_ALLOWLIST_EXCEPTION_LIMIT = 50;
@@ -29,16 +30,10 @@ export async function ensureIOSAllowlistStartable(blocklist) {
         });
         return false;
     }
-    if (enforceableWebsites.length > IOS_ALLOWLIST_EXCEPTION_LIMIT) {
-        await message(tSettings('allowlistIosDomainLimit').replace('{n}', String(enforceableWebsites.length)), {
-            title: tSettings('allowlistIosDomainLimitTitle'),
-            kind: 'warning',
-        });
-        return false;
-    }
-    if (appTokens.length > IOS_ALLOWLIST_EXCEPTION_LIMIT) {
-        await message(tSettings('allowlistIosTokenLimit').replace('{n}', String(appTokens.length)), {
-            title: tSettings('allowlistIosTokenLimitTitle'),
+    const breach = iosAllowlistUnionBreach(blocklist);
+    if (breach) {
+        await message(tSettings(breach.key).replace('{n}', String(breach.count)), {
+            title: tSettings(`${breach.key}Title`),
             kind: 'warning',
         });
         return false;
@@ -63,6 +58,23 @@ export async function ensureIOSAllowlistStartable(blocklist) {
     return true;
 }
 
+/** The limit this space would breach once it joins the spaces already running,
+ *  or null. Apple's cap is per store, not per focus space: two allow spaces of
+ *  30 sites each pass on their own and silently lose 10 between them, because
+ *  Swift keeps only a sorted 50-item prefix. Kept apart from the dialog above
+ *  so the decision is testable. */
+export function iosAllowlistUnionBreach(blocklist, now = Date.now()) {
+    const union = [
+        ...collectActiveIOSEnforcementSources(now).filter((s) => s.blocklist?.id !== blocklist?.id),
+        { kind: 'manual', blocklist },
+    ];
+    const sites = validateIOSAllowlistLimits(deriveIOSEffectiveWebsitePolicy(union));
+    if (!sites.ok) return { key: 'allowlistIosDomainLimit', count: sites.count };
+    const apps = validateIOSAllowlistLimits(deriveIOSEffectiveAppPolicy(union));
+    if (!apps.ok) return { key: 'allowlistIosTokenLimit', count: apps.count };
+    return null;
+}
+
 export function collectActiveIOSEnforcementSources(now = Date.now()) {
     const sources = [];
     for (const block of state.appData.activeBlocks || []) {
@@ -74,7 +86,7 @@ export function collectActiveIOSEnforcementSources(now = Date.now()) {
     const nowDate = new Date(now);
     for (const schedule of state.appData.schedules || []) {
         if (!schedule.segments || schedule.segments.length === 0) continue;
-        if (schedule.isPaused && schedule.pauseEndTime > now) continue;
+        if (isSchedulePausedNow(schedule, now)) continue;
         if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
         const blocklist = state.appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
         if (!blocklist) continue;

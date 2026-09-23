@@ -27,6 +27,8 @@
  * - T206: app chrome is not text-selectable; inputs are
  * - T207: colour-swatch tick / + are inked against the swatch's own colour
  * - T208-T212: Desktop app-watcher payload: allow-mode spaces feed allowedApps, never the kill list
+ * - T158b: iOS schedule entries drop protected domains, as the manual payload does
+ * - T226-T229: iOS allow-mode 50-item cap counted across every running space
  * - T213-T219, T222-T223: The start card names the space that just started and closes the app; allow mode gets its own card
  * - T220-T221: Diagnostics reports an allow-mode space as allowing, not blocking
  */
@@ -1772,6 +1774,70 @@
     }
 
     // ========================================
+    // CATEGORY: iOS ALLOW-MODE LIMITS AND PAUSE (T226-T229)
+    // ========================================
+
+    // Apple caps `.all(except:)` at 50 per store, and the store is shared by
+    // every active source. Validating one focus space at a time lets two of
+    // them pass and silently lose the overflow, which Swift drops by keeping a
+    // sorted 50-item prefix.
+    function runIOSAllowLimitTests() {
+        console.log('\n\u{1F34E} iOS allow-mode limits and pause');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        const {
+            collectActiveIOSEnforcementSources: sourcesNow,
+            iosAllowlistUnionBreach: breachFor,
+        } = internals;
+        const saved = internals.appData;
+        const now = Date.now();
+        const allDay = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+        const sites = (prefix, n) => Array.from({ length: n }, (_, i) => `${prefix}${i}.com`);
+        const allow = (websites) => createMockBlocklist({ mode: 'allowlist', websites, apps: [] });
+
+        try {
+            (function T226() {
+                const running = allow(sites('a', 30));
+                const candidate = allow(sites('b', 30));
+                internals.appData = createMockAppData({
+                    blocklists: [running, candidate],
+                    activeBlocks: [createMockBlock(running.id, now - 1000, now + 60000)],
+                });
+                const breach = breachFor(candidate);
+                assert(!!breach, 'T226: starting a 30-site allow space while another allows 30 breaches the 50 the store holds');
+                assertEqual(breach.count, 60, 'T226: the count reported is the union, not the one space');
+            })();
+
+            (function T227() {
+                const running = allow(sites('a', 30));
+                const candidate = allow(sites('a', 30));
+                internals.appData = createMockAppData({
+                    blocklists: [running, candidate],
+                    activeBlocks: [createMockBlock(running.id, now - 1000, now + 60000)],
+                });
+                assertEqual(breachFor(candidate), null, 'T227: two spaces allowing the same 30 sites still fit — the union is what counts');
+            })();
+
+            (function T228() {
+                const candidate = allow(sites('a', 60));
+                internals.appData = createMockAppData({ blocklists: [candidate], activeBlocks: [] });
+                assert(!!breachFor(candidate), 'T228: one space over the cap on its own is still caught');
+            })();
+
+            (function T229() {
+                // Switching a space off open-ended pauses it with no end time.
+                const a = allow(sites('a', 30));
+                internals.appData = createMockAppData({
+                    blocklists: [a],
+                    schedules: [createMockSchedule(a.id, [allDay], { isPaused: true })],
+                });
+                assertEqual(sourcesNow().length, 0, 'T229: a schedule paused with no end time is not an active source, as Swift and the rest of the JS already treat it');
+            })();
+
+        } finally {
+            internals.appData = saved;
+        }
+    }
+
     // CATEGORY: START CARD (T213-T219, T222-T223)
     // ========================================
 
@@ -2050,6 +2116,18 @@
                 const entry = build()[0];
                 assertEqual(entry.appTokenData, ['tokA'], 'T158: app tokens are carried on an allow entry');
                 assertEqual(entry.categoryTokenData, ['catA'], 'T158: category tokens are preserved, not zeroed');
+            })();
+
+            (function T158b() {
+                // The manual payload filters these; schedules shipped them raw,
+                // and in allow mode they also eat into the 50-exception budget.
+                const protectedDomain = window.__REDDBLOCK_INTERNALS__.PROTECTED_DOMAINS[0];
+                const bl = createMockBlocklist({ mode: 'blocklist', websites: ['x.com', protectedDomain] });
+                withData([bl], [createMockSchedule(bl.id, [seg])]);
+                const entries = build();
+                assertEqual(entries.length, 1, 'T158b: the schedule produces an entry');
+                assert(!entries[0].domains.includes(protectedDomain), 'T158b: a protected domain never ships in a schedule entry');
+                assert(entries[0].domains.includes('x.com'), 'T158b: ordinary domains still ship');
             })();
         } finally {
             window.__REDDBLOCK_INTERNALS__.appData = saved;
@@ -3503,6 +3581,7 @@
             runIOSAllowlistPolicyTests();
             runAndroidPayloadTests();
             runDesktopAppPayloadTests();
+            runIOSAllowLimitTests();
             runWarningAttributionTests();
             runDiagnosticsAllowModeTests();
             runIOSSchedulePayloadTests();

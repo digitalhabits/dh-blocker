@@ -1620,10 +1620,12 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
     }
 
     if (outcome.kind === 'off' && state.isIOS) {
-        // Clear both Screen Time stores so the switched-off schedule's blocks are
-        // removed immediately; updateHostsFile and syncSchedulesToHelper then
-        // re-apply the correct state for everything else.
-        await tauriAPI.screentimeClearBlock();
+        // Only a schedule reaches 'off', and it stays in the data as paused, so
+        // setSchedules sees nothing removed and will not clear the store itself.
+        // Clear the schedule store alone: clearing both would drop every other
+        // space's shields too, and leave them down if the re-apply below never
+        // lands. syncSchedulesToHelper re-applies the rest in the same call.
+        await tauriAPI.screentimeClearScheduleBlock();
         state.lastBlockedDomains = new Set();
     }
 

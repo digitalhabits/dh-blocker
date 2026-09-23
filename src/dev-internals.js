@@ -37,6 +37,8 @@ import { render, isClockTickRunning } from './render.js';
 import { duplicateBlocklist, getNextCopyName, isBlocklistEditFrictionRequired } from './blocklists.js';
 import { getMaxOverrideCountForType, getMaxOverrideWords } from './override-challenge.js';
 import {
+    collectActiveIOSEnforcementSources,
+    iosAllowlistUnionBreach,
     deriveIOSEffectiveWebsitePolicy,
     deriveIOSEffectiveAppPolicy,
     validateIOSAllowlistLimits,
@@ -87,6 +89,8 @@ window.__REDDBLOCK_INTERNALS__ = {
     getCurrentChallengeWord,
     getCompletedChallengeText,
     createChallengeController,
+    collectActiveIOSEnforcementSources,
+    iosAllowlistUnionBreach,
     deriveIOSEffectiveWebsitePolicy,
     deriveIOSEffectiveAppPolicy,
     validateIOSAllowlistLimits,

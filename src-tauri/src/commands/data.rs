@@ -172,7 +172,7 @@ fn get_per_user_data_path(app: &AppHandle) -> PathBuf {
     app.path()
         .app_data_dir()
         .map(|dir| dir.join(DATA_FILE_NAME))
-        .unwrap_or_else(|_| per_user_data_path_static())
+        .unwrap_or_else(|_| per_user_data_fallback())
 }
 
 /// Return the data file explicitly assigned to a local system-test process.
@@ -418,6 +418,22 @@ pub fn canonical_data_path_static() -> PathBuf {
         import_shared_data_once(&path);
         path
     })
+}
+
+/// Where the per-user file lives when `app_data_dir()` cannot be resolved.
+/// Desktop falls back to the same handle-free resolver the native host uses,
+/// so both still agree on one file. iOS has no handle-free equivalent — the
+/// container path is only knowable through the app handle — so it falls back
+/// inside the container instead. Unreachable in practice on iOS, where
+/// `app_data_dir()` resolves from the sandbox itself.
+#[cfg(not(target_os = "ios"))]
+fn per_user_data_fallback() -> PathBuf {
+    per_user_data_path_static()
+}
+
+#[cfg(target_os = "ios")]
+fn per_user_data_fallback() -> PathBuf {
+    std::env::temp_dir().join(DATA_FILE_NAME)
 }
 
 #[cfg(not(target_os = "ios"))]
