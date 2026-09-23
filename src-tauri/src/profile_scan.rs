@@ -345,7 +345,9 @@ pub fn firefox_app_installed() -> bool {
                 .map(|h| h.join("Applications/Firefox.app"))
                 .unwrap_or_default(),
         ];
+        // The register lookup covers any other name or place, e.g. run from the disk image.
         candidates.iter().any(|p| p.exists())
+            || app_path_for_bundle_id("org.mozilla.firefox").is_some()
     }
     #[cfg(target_os = "windows")]
     {
@@ -355,6 +357,37 @@ pub fn firefox_app_installed() -> bool {
     {
         firefox_root().map(|p| p.exists()).unwrap_or(false)
     }
+}
+
+/// Where macOS's app register (Launch Services) has the app with this bundle
+/// id, whatever it is called or wherever it sits. None if never seen or gone.
+#[cfg(target_os = "macos")]
+fn app_path_for_bundle_id(bundle_id: &str) -> Option<PathBuf> {
+    use cocoa::base::{id, nil};
+    use cocoa::foundation::NSString;
+    use objc::{class, msg_send, sel, sel_impl};
+    objc::rc::autoreleasepool(|| unsafe {
+        let ws: id = msg_send![class!(NSWorkspace), sharedWorkspace];
+        let bid: id = NSString::alloc(nil).init_str(bundle_id);
+        let bid: id = msg_send![bid, autorelease];
+        let url: id = msg_send![ws, URLForApplicationWithBundleIdentifier: bid];
+        if url.is_null() {
+            return None;
+        }
+        let path: id = msg_send![url, path];
+        let c: *const std::os::raw::c_char = if path.is_null() {
+            std::ptr::null()
+        } else {
+            msg_send![path, UTF8String]
+        };
+        if c.is_null() {
+            return None;
+        }
+        Some(PathBuf::from(
+            std::ffi::CStr::from_ptr(c).to_string_lossy().into_owned(),
+        ))
+        .filter(|p| p.exists())
+    })
 }
 
 /// Find the full path to a browser executable by name (e.g. "chrome",
