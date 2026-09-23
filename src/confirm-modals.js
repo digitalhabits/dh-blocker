@@ -270,11 +270,11 @@ export function closeStartConfirmModal() {
     state.pendingStartBlocklistId = null;
 }
 
-/** "Blocking resumes automatically after 10 minutes." / "It stays off until you turn it on again." */
+/** "Blocking resumes automatically after 10 minutes." (allow mode names itself) / "It stays off until you turn it on again." */
 export function formatStopOutcomeLine(blocklist) {
     const minutes = getBlocklistUnlockMinutes(blocklist);
     if (minutes > 0) {
-        return tSettingsFmt('stopResumesAfterFmt', { duration: formatUnlockDurationLabel(minutes) });
+        return tSettingsFmt(isAllowlistBlocklist(blocklist) ? 'stopResumesAllowAfterFmt' : 'stopResumesAfterFmt', { duration: formatUnlockDurationLabel(minutes) });
     }
     return tSettings('stopStaysOff');
 }
