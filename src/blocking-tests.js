@@ -28,6 +28,7 @@
  * - T207: colour-swatch tick / + are inked against the swatch's own colour
  * - T208-T212: Desktop app-watcher payload: allow-mode spaces feed allowedApps, never the kill list
  * - T158b: iOS schedule entries drop protected domains, as the manual payload does
+ * - T226-T229: iOS allow-mode 50-item cap counted across every running space
  */
 
 (function () {
@@ -1771,6 +1772,71 @@
     }
 
     // ========================================
+    // CATEGORY: iOS ALLOW-MODE LIMITS AND PAUSE (T226-T229)
+    // ========================================
+
+    // Apple caps `.all(except:)` at 50 per store, and the store is shared by
+    // every active source. Validating one focus space at a time lets two of
+    // them pass and silently lose the overflow, which Swift drops by keeping a
+    // sorted 50-item prefix.
+    function runIOSAllowLimitTests() {
+        console.log('\n\u{1F34E} iOS allow-mode limits and pause');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        const {
+            collectActiveIOSEnforcementSources: sourcesNow,
+            iosAllowlistUnionBreach: breachFor,
+        } = internals;
+        const saved = internals.appData;
+        const now = Date.now();
+        const allDay = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+        const sites = (prefix, n) => Array.from({ length: n }, (_, i) => `${prefix}${i}.com`);
+        const allow = (websites) => createMockBlocklist({ mode: 'allowlist', websites, apps: [] });
+
+        try {
+            (function T226() {
+                const running = allow(sites('a', 30));
+                const candidate = allow(sites('b', 30));
+                internals.appData = createMockAppData({
+                    blocklists: [running, candidate],
+                    activeBlocks: [createMockBlock(running.id, now - 1000, now + 60000)],
+                });
+                const breach = breachFor(candidate);
+                assert(!!breach, 'T226: starting a 30-site allow space while another allows 30 breaches the 50 the store holds');
+                assertEqual(breach.count, 60, 'T226: the count reported is the union, not the one space');
+            })();
+
+            (function T227() {
+                const running = allow(sites('a', 30));
+                const candidate = allow(sites('a', 30));
+                internals.appData = createMockAppData({
+                    blocklists: [running, candidate],
+                    activeBlocks: [createMockBlock(running.id, now - 1000, now + 60000)],
+                });
+                assertEqual(breachFor(candidate), null, 'T227: two spaces allowing the same 30 sites still fit — the union is what counts');
+            })();
+
+            (function T228() {
+                const candidate = allow(sites('a', 60));
+                internals.appData = createMockAppData({ blocklists: [candidate], activeBlocks: [] });
+                assert(!!breachFor(candidate), 'T228: one space over the cap on its own is still caught');
+            })();
+
+            (function T229() {
+                // Switching a space off open-ended pauses it with no end time.
+                const a = allow(sites('a', 30));
+                internals.appData = createMockAppData({
+                    blocklists: [a],
+                    schedules: [createMockSchedule(a.id, [allDay], { isPaused: true })],
+                });
+                assertEqual(sourcesNow().length, 0, 'T229: a schedule paused with no end time is not an active source, as Swift and the rest of the JS already treat it');
+            })();
+
+        } finally {
+            internals.appData = saved;
+        }
+    }
+
+    // ========================================
     // CATEGORY 19: iOS SCHEDULE PAYLOAD (T151-T158)
     // ========================================
 
@@ -3340,6 +3406,7 @@
             runIOSAllowlistPolicyTests();
             runAndroidPayloadTests();
             runDesktopAppPayloadTests();
+            runIOSAllowLimitTests();
             runIOSSchedulePayloadTests();
             runEditFrictionGateTests();
             runChallengePrimitiveTests();
