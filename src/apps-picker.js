@@ -5,6 +5,21 @@ import { tauriAPI } from './tauri-api.js';
 import { escapeHtml } from './utils.js';
 import { pushModalUndo } from './app.js';
 import { ensureInstalledAppsCache } from './blocking-platform.js';
+import { isProtectedApp } from './blocklist-utils.js';
+
+/** Should the picker offer to add `filter` as a typed name? Only when the search
+ *  found nothing, and never for the blocker itself — blocking it would take
+ *  enforcement down with it. Separate from the DOM so it can be tested. */
+export function canOfferTypedAppName(filter, installedApps = []) {
+    const name = String(filter || '').trim();
+    if (!name) return false;
+    if (isProtectedApp(name)) return false;
+    const lower = name.toLocaleLowerCase();
+    return !installedApps.some((a) => (
+        String(a?.display_name || '').toLocaleLowerCase() === lower
+        || String(a?.process_name || '').toLocaleLowerCase() === lower
+    ));
+}
 
 // The blocklist modal's selected-apps array lives inside setupModalListeners
 // (app.js) and is shared with this picker via `window.modalApps`. Keep a
@@ -48,6 +63,10 @@ export async function openInstalledAppsPicker() {
         return [];
     };
     const selectedProcessNames = new Set();
+    // Desktop only: an app the scan missed can still be named by hand. On iOS and
+    // Android the list comes from the OS and a typed name would match nothing.
+    const canTypeNames = !state.isAndroid && !state.isIOS;
+    const typedApps = [];
 
     function sameAppPickerName(displayName, processName) {
         const normalize = (value) => String(value || '').trim().toLocaleLowerCase();
@@ -56,13 +75,25 @@ export async function openInstalledAppsPicker() {
 
     function renderAppList(filter = '') {
         const lowerFilter = filter.toLowerCase();
+        const source = typedApps.length > 0 ? [...typedApps, ...apps] : apps;
         const filtered = filter
-            ? apps.filter(a =>
+            ? source.filter(a =>
                 a.display_name.toLowerCase().includes(lowerFilter) ||
                 a.process_name.toLowerCase().includes(lowerFilter))
-            : apps;
+            : source;
 
         if (filtered.length === 0) {
+            if (filter && canTypeNames) {
+                const typed = filter.trim();
+                const safe = escapeHtml(typed);
+                listEl.innerHTML = `<div class="app-picker-empty">No installed app called "${safe}"</div>`
+                    + (canOfferTypedAppName(typed, apps)
+                        ? `<button type="button" class="modal-btn cancel-btn app-picker-add-typed">Add "${safe}" anyway</button>`
+                        : '');
+                listEl.querySelector('.app-picker-add-typed')
+                    ?.addEventListener('click', () => addTypedName(typed));
+                return;
+            }
             listEl.innerHTML = filter
                 ? '<div class="app-picker-empty">No apps match your search</div>'
                 : '<div class="app-picker-empty">No installed apps found</div>';
@@ -105,6 +136,16 @@ export async function openInstalledAppsPicker() {
         });
     }
 
+    function addTypedName(rawName) {
+        const name = String(rawName || '').trim();
+        if (!canOfferTypedAppName(name, apps)) return;
+        typedApps.push({ display_name: name, process_name: name });
+        selectedProcessNames.add(name);
+        searchInput.value = '';
+        renderAppList('');
+        updateAddButton();
+    }
+
     function updateAddButton() {
         const newCount = [...selectedProcessNames].filter(
             p => !getModalApps().some(a => a.toLowerCase() === p.toLowerCase())
@@ -120,10 +161,19 @@ export async function openInstalledAppsPicker() {
     const onSearch = () => renderAppList(searchInput.value);
     searchInput.addEventListener('input', onSearch);
 
+    // Enter adds the typed name, the same as the button.
+    const onSearchKeydown = (e) => {
+        if (e.key !== 'Enter' || !canTypeNames) return;
+        e.preventDefault();
+        if (listEl.querySelector('.app-picker-add-typed')) addTypedName(searchInput.value);
+    };
+    searchInput.addEventListener('keydown', onSearchKeydown);
+
     // Clean up and close
     function closePickerModal() {
         modal.classList.add('hidden');
         searchInput.removeEventListener('input', onSearch);
+        searchInput.removeEventListener('keydown', onSearchKeydown);
         modal.removeEventListener('click', onOverlayClick);
     }
 

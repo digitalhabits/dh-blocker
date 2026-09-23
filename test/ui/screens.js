@@ -536,6 +536,21 @@ export const screens = [
         },
     },
     {
+        // Desktop only: a name the installed-apps scan missed can be typed in.
+        name: 'app-picker-typed-name',
+        fixture: fixtures.cardStates,
+        platform: 'mac',
+        prepare: async (page) => {
+            await page.click('.blocklist-card[data-id="bl-on"]', { position: { x: 30, y: 20 } });
+            await page.click('#editor-section-what-header');
+            await page.click('#modal-browse-apps-btn');
+            await page.waitForSelector('#app-picker-modal:not(.hidden)');
+            await page.fill('#app-picker-search', 'Photoshop');
+            await page.waitForSelector('.app-picker-add-typed');
+        },
+        clip: '#app-picker-modal .modal-content',
+    },
+    {
         name: 'editor-edit-iphone',
         fixture: fixtures.singleSchedule,
         platform: 'iphone',
