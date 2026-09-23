@@ -38,6 +38,7 @@ import { deleteBlocklist, duplicateBlocklist, isBlocklistEditFrictionRequired } 
 import { getOverrideEstimatedMinutes, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
 import { UNLOCK_MINUTE_OPTIONS, normalizeUnlockMinutes } from './unlock-duration.js';
 import { getSelectedBlocklistModalMode, setBlocklistModalMode } from './list-mode.js';
+import { isFocusSpaceOn } from './focus-space-switch.js';
 import { handleTimeChange, populateBlocklistFormFields, resetBlocklistFormState, syncBlocklistEditFrictionUi } from './confirm-modals.js';
 import { syncSelectedControlState } from './render.js';
 import { updateWindowHeight } from './blocking-platform.js';
@@ -217,6 +218,10 @@ function editorSchedule() {
  */
 export function applyEditorScheduleForBlocklist(blocklistId) {
     const when = readEditorWhenToBlock();
+    // Saving edits the settings; it must not flip the switch. A space counts as
+    // on merely by having an unpaused schedule, so creating one here would start
+    // a space the user had off — even with every segment in the past or future.
+    const wasOn = isFocusSpaceOn(blocklistId);
     if (!Array.isArray(state.appData.schedules)) state.appData.schedules = [];
     const existingIndex = state.appData.schedules.findIndex((s) => s.blocklistId === blocklistId);
     const existing = existingIndex >= 0 ? state.appData.schedules[existingIndex] : null;
@@ -239,6 +244,8 @@ export function applyEditorScheduleForBlocklist(blocklistId) {
     state.appData.schedules.push({
         id: crypto.randomUUID(),
         blocklistId,
+        // Paused with no end time is the off state, so an off space stays off.
+        ...(wasOn ? {} : { isPaused: true }),
         segments: when.segments,
         repeatType: when.repeatType,
         repeatDate: when.repeatDate,
@@ -363,7 +370,13 @@ export function discardFocusSpaceEditor() {
     const blocklist = state.editingBlocklistId
         ? state.appData.blocklists.find((bl) => bl.id === state.editingBlocklistId) || null
         : null;
+    // Discard undoes the fields; it is not a reset of the screen. Populating
+    // collapses every section (it is written for opening an editor), so put the
+    // open one back — otherwise discarding one typo shuts the section you were
+    // working in and reads as though everything was thrown away.
+    const openSection = state.openEditorSection;
     populateFocusSpaceEditor(blocklist, { mode: getSelectedBlocklistModalMode() });
+    setOpenEditorSection(openSection);
 }
 
 function updateEditorTitles(isCreate, mode) {
