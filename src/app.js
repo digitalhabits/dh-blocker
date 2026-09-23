@@ -497,6 +497,16 @@ function setupEventListeners() {
         });
     }
 
+    if (state.isIOS) {
+        // Screen Time access is granted and revoked in Settings, and there is no
+        // callback for "the user came back" — the same reason Android re-checks
+        // its Accessibility permission here. Without this the app keeps showing
+        // focus spaces as on after access is revoked, until the next launch.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') void checkScreentimeAuth();
+        });
+    }
+
     // Windows custom title bar: sync maximize/restore icon from window events (no polling).
     void setupMaximizeButtonSync();
 

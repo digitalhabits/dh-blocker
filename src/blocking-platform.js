@@ -865,6 +865,8 @@ export async function checkScreentimeAuth() {
     } catch (err) {
         console.error('Error checking Screen Time auth:', err);
         state.screentimeAuthorized = false;
+    } finally {
+        state.screentimeAuthChecked = true;
     }
     updateOnboardingVisibility();
 }
@@ -880,6 +882,8 @@ export async function requestScreentimeAuth() {
         console.error('Error requesting Screen Time auth:', err);
         state.screentimeAuthorized = false;
         return { granted: false, status: 'error', error: err.toString() };
+    } finally {
+        state.screentimeAuthChecked = true;
     }
 }
 
@@ -1360,7 +1364,7 @@ export function updateOnboardingVisibility() {
     const androidOverlay = document.getElementById('android-permissions-onboarding');
     const main = document.getElementById('main-content');
     const showEula = !hasAcceptedEula();
-    const showScreentime = state.isIOS && !showEula && !state.screentimeAuthorized;
+    const showScreentime = state.isIOS && !showEula && state.screentimeAuthChecked && !state.screentimeAuthorized;
     const showAndroidPermissions = state.isAndroid && !showEula && state.androidPermissionsGranted === false;
     const keepEulaVisibleForPendingSetup = !state.isIOS
         && !state.isAndroid
