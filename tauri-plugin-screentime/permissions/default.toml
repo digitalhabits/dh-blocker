@@ -11,6 +11,7 @@ permissions = [
     "allow-screentime-start-block",
     "allow-screentime-clear-block",
     "allow-screentime-clear-manual-block",
+    "allow-screentime-clear-schedule-block",
     "allow-schedule-block",
     "allow-set-schedules",
     "allow-unschedule-block",

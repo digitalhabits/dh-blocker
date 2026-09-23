@@ -551,3 +551,72 @@ export function collectActiveIOSManualBlockPayload(now = Date.now()) {
     }
     return out;
 }
+
+/// Invisible direction/format marks a platform may carry in a process name —
+/// macOS reports WhatsApp as "‎WhatsApp". Left in, they defeat the
+/// installed-apps lookup and survive into the name we show.
+const INVISIBLE_MARKS = /[\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
+
+const cleanProcessName = (name) => String(name || '')
+    .replace(INVISIBLE_MARKS, '')
+    .trim()
+    .replace(/\.exe$/i, '');
+
+export function normalizeBlockedAppKey(name) {
+    return cleanProcessName(name).toLowerCase();
+}
+
+/** `label` is what the platform called it; `exeName` is the executable behind
+ *  it when the caller knows one. The executable is looked up first because on
+ *  Windows the label is the window title — eM Client reads as whichever mail
+ *  folder is open — while the executable is stable and resolves through the
+ *  installed-app list to the name in the Start menu. */
+export function displayNameForBlockedApp(label, exeName) {
+    const installed = (name) => {
+        const k = normalizeBlockedAppKey(name);
+        if (!k) return null;
+        return (state.installedAppsCache || []).find(
+            (a) => normalizeBlockedAppKey(a.process_name) === k,
+        )?.display_name || null;
+    };
+    const byExe = installed(exeName);
+    if (byExe) return byExe;
+
+    const processName = label;
+    const key = normalizeBlockedAppKey(processName);
+    if (!key) return processName;
+    const match = installed(processName);
+    if (match) return match;
+
+    // Unknown app (not installed / not in the cache). Package-style ids
+    // (Android, e.g. app.vanadium.browser) read worse when title-cased.
+    if (key.includes('.')) return key;
+    // A name that mixes cases, or spaces out words it already capitalised, is
+    // already user-facing ("WhatsApp", "eM Client") — lowercasing it was the
+    // bug. An all-caps name is not: Windows shortcuts resolve EXCEL.EXE to the
+    // stem "EXCEL", which should read "Excel". Splitting on camelCase would
+    // mangle the very names this protects, so it splits on _ and - only.
+    const raw = cleanProcessName(processName);
+    if (/[a-z]/.test(raw) && (/[A-Z]/.test(raw) || /\s/.test(raw))) return raw;
+    const spaced = key.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+    return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/** One entry per blocked app — Edge's many PIDs collapse to a single name.
+ *  Takes either a name or a `[label, exeName]` pair; dedupes on what is
+ *  finally shown, so two windows of one app cannot appear twice under
+ *  different titles. */
+export function uniqueBlockedAppDisplayNames(names) {
+    const seen = new Set();
+    const out = [];
+    for (const entry of names) {
+        const [label, exeName] = Array.isArray(entry) ? entry : [entry, undefined];
+        if (!normalizeBlockedAppKey(label)) continue;
+        const shown = displayNameForBlockedApp(label, exeName);
+        const key = normalizeBlockedAppKey(shown);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push(shown);
+    }
+    return out;
+}

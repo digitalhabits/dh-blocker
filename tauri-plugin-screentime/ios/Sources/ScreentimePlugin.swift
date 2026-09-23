@@ -347,6 +347,13 @@ class ScreentimePlugin: Plugin {
         }
     }
 
+    /// A .notDetermined reading is ambiguous when we have seen an approval
+    /// before: the authorization center may still be resolving moments after
+    /// launch, or the user may have revoked access in Settings. checkAuthorization
+    /// waits this long for it to resolve before concluding it is revoked.
+    private static let authorizationSettleAttempts = 10
+    private static let authorizationSettleIntervalNs: UInt64 = 150_000_000
+
     private static var hasCachedAuthorizationApproval: Bool {
         get {
             sharedDefaults?.bool(forKey: authorizationApprovedKey) ?? false
@@ -361,28 +368,29 @@ class ScreentimePlugin: Plugin {
     /// FamilyControls reports `authorizationStatus` as `.notDetermined` on a fresh
     /// app launch even when the OS-level grant is still active. Persist the last
     /// known approved state so onboarding and native commands stay in sync across launches.
+    /// The centre's own answer, with no cached approval standing in for it.
+    private func rawAuthorizationStatus() -> AuthorizationStatus {
+        let read = { AuthorizationCenter.shared.authorizationStatus }
+        return Thread.isMainThread ? read() : DispatchQueue.main.sync(execute: read)
+    }
+
     private func resolvedAuthorizationStatus() -> AuthorizationStatus {
-        let readStatus = {
-            let status = AuthorizationCenter.shared.authorizationStatus
-            switch status {
-            case .approved, .approvedWithDataAccess:
-                Self.hasCachedAuthorizationApproval = true
-                return status
-            case .denied:
-                Self.hasCachedAuthorizationApproval = false
-                return status
-            case .notDetermined:
-                return Self.hasCachedAuthorizationApproval ? .approved : status
-            @unknown default:
-                return status
-            }
+        let status = rawAuthorizationStatus()
+        switch status {
+        case .approved, .approvedWithDataAccess:
+            Self.hasCachedAuthorizationApproval = true
+        case .denied:
+            Self.hasCachedAuthorizationApproval = false
+        case .notDetermined:
+            // Stands in for a status that is probably still resolving, so a
+            // launch does not flap to "not authorised". checkAuthorization is
+            // what clears the cache once it has waited and seen the reading
+            // stay .notDetermined — the revoked case.
+            return Self.hasCachedAuthorizationApproval ? .approved : status
+        @unknown default:
+            break
         }
-
-        if Thread.isMainThread {
-            return readStatus()
-        }
-
-        return DispatchQueue.main.sync(execute: readStatus)
+        return status
     }
     
     @objc public func requestAuthorization(_ invoke: Invoke) throws {
@@ -415,11 +423,29 @@ class ScreentimePlugin: Plugin {
     }
     
     @objc public func checkAuthorization(_ invoke: Invoke) throws {
-        let status = resolvedAuthorizationStatus()
-        invoke.resolve([
-            "granted": authorizationIsApproved(status),
-            "status": statusString(status)
-        ])
+        // A revoked approval and a still-resolving one both read .notDetermined,
+        // and the app asks this during startup, so elapsed time cannot tell them
+        // apart. Wait for the reading to settle instead: if it never resolves,
+        // the approval is gone and the cache must stop claiming otherwise, or
+        // the app goes on showing focus spaces as on while nothing is shielded.
+        Task {
+            if Self.hasCachedAuthorizationApproval, self.rawAuthorizationStatus() == .notDetermined {
+                var settled = false
+                for _ in 0..<Self.authorizationSettleAttempts {
+                    try? await Task.sleep(nanoseconds: Self.authorizationSettleIntervalNs)
+                    if self.rawAuthorizationStatus() != .notDetermined {
+                        settled = true
+                        break
+                    }
+                }
+                if !settled { Self.hasCachedAuthorizationApproval = false }
+            }
+            let status = self.resolvedAuthorizationStatus()
+            invoke.resolve([
+                "granted": self.authorizationIsApproved(status),
+                "status": self.statusString(status)
+            ])
+        }
     }
     
     // MARK: - Activity Picker
@@ -969,15 +995,26 @@ class ScreentimePlugin: Plugin {
         )
     }
 
+    /// Clear only the named "schedule" store — the OS-level shields the
+    /// DeviceActivityMonitor extension applied. The manual channel is left
+    /// alone, so a running one-off block keeps enforcing. Used when a schedule
+    /// is switched off open-ended: it stays in the data as paused, so
+    /// `setSchedules` sees nothing removed and will not clear the store itself.
+    @objc public func clearScheduleBlock(_ invoke: Invoke) throws {
+        clearScheduleChannel()
+        invoke.resolve(["success": true])
+    }
+
+    private func clearScheduleChannel() {
+        ManagedSettingsStore(named: .init("schedule")).clearAllSettings()
+        ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: [])
+    }
+
     @objc public func clearBlock(_ invoke: Invoke) throws {
         clearManualChannel()
 
-        // Also clear the named "schedule" store used by DeviceActivityMonitor
-        // Since we use separate stores for manual vs schedule blocks, both
-        // must be cleared for a complete "stop everything" action.
-        let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
-        scheduleStore.clearAllSettings()
-        ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: [])
+        // Both stores, for a complete "stop everything" action.
+        clearScheduleChannel()
         
         // Note: We intentionally do NOT clear currentSelection here.
         // The selection should persist so the user doesn't have to re-pick

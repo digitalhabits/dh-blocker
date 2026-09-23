@@ -31,6 +31,11 @@ export const state = {
     /** MSIX / Microsoft Store install — updates come from the Store, not GitHub. */
     isMicrosoftStorePackage: null,
     screentimeAuthorized: false, // Track if Screen Time is authorized (iOS)
+    /// False until the first authorization check answers. The grant screen
+    /// waits for it, so a cold start does not flash the prompt while the
+    /// authorization centre is still resolving (Android does the same with a
+    /// null androidPermissionsGranted).
+    screentimeAuthChecked: false,
     // null = not checked yet. Avoid showing the Android Accessibility
     // onboarding screen during startup before the native permission check
     // has had a chance to answer.

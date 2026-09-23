@@ -4,7 +4,7 @@ import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { message } from '@tauri-apps/plugin-dialog';
 import { tSettings } from './i18n.js';
-import { getBlocklistIOSPayload, isAllowlistBlocklist } from './blocklist-utils.js';
+import { getBlocklistIOSPayload, isAllowlistBlocklist, isProtectedDomain } from './blocklist-utils.js';
 import { formatDateForDisplay, isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { formatTime } from './app.js';
 
@@ -379,7 +379,9 @@ export function buildIOSScheduleEntries() {
     for (const schedule of state.appData.schedules || []) {
         if (!schedule.segments || schedule.segments.length === 0) continue;
         const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-        const domains = blocklist?.websites || [];
+        // Same filter as the manual payload: a protected domain must never ship,
+        // and in allow mode it would also eat into the 50-exception budget.
+        const domains = (blocklist?.websites || []).filter((d) => !isProtectedDomain(d));
         const iosPayload = getBlocklistIOSPayload(blocklist);
         const blocklistEmoji = blocklist?.emoji ?? null;
         const blocklistName = blocklist?.name ?? null;
