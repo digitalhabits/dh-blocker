@@ -136,11 +136,21 @@ export async function openInstalledAppsPicker() {
         });
     }
 
+    /** Tick `name` in the list, adding a row for it when the scan never found it. */
+    function selectAppName(rawName) {
+        const name = String(rawName || '').trim();
+        if (!name || isProtectedApp(name)) return;
+        const known = [...apps, ...typedApps].some(
+            (a) => sameAppPickerName(a.process_name, name) || sameAppPickerName(a.display_name, name),
+        );
+        if (!known) typedApps.push({ display_name: name, process_name: name });
+        selectedProcessNames.add(name);
+    }
+
     function addTypedName(rawName) {
         const name = String(rawName || '').trim();
         if (!canOfferTypedAppName(name, apps)) return;
-        typedApps.push({ display_name: name, process_name: name });
-        selectedProcessNames.add(name);
+        selectAppName(name);
         searchInput.value = '';
         renderAppList('');
         updateAddButton();
@@ -214,27 +224,15 @@ export async function openInstalledAppsPicker() {
     if (browseBtn && !state.isAndroid) {
         browseBtn.classList.remove('hidden');
         browseBtn.onclick = async () => {
-            closePickerModal();
+            // Stay in the picker: closing it first threw away everything the user
+            // had already ticked, and wrote the browsed app past the selection
+            // straight into the editor.
             const appNames = await tauriAPI.openAppPicker();
             if (appNames && appNames.length > 0) {
-                const modalApps = getModalApps();
-                const toAdd = appNames.filter(n => !modalApps.includes(n));
-                if (toAdd.length > 0) {
-                    const toAddCopy = [...toAdd];
-                    pushModalUndo('app', () => {
-                        toAddCopy.forEach(a => {
-                            const i = modalApps.indexOf(a);
-                            if (i !== -1) modalApps.splice(i, 1);
-                        });
-                        window.renderModalTags();
-                    });
-                }
-                for (const appName of appNames) {
-                    if (!modalApps.includes(appName)) {
-                        modalApps.push(appName);
-                    }
-                }
-                window.renderModalTags();
+                appNames.forEach(selectAppName);
+                searchInput.value = '';
+                renderAppList('');
+                updateAddButton();
             }
         };
     } else if (browseBtn) {
