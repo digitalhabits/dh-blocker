@@ -1616,6 +1616,7 @@ export function setupHandsetModalScreens() {
         'override-all-modal',
         // Desktop single-column reuses this sheet; wrap chrome on every platform.
         'enter-scheduler-modal',
+        'schedule-overlay-customise-modal',
     ];
 
     for (const modalId of modalIds) {
@@ -1696,15 +1697,6 @@ export function setupHandsetModalScreens() {
         }
         content.prepend(header);
 
-        if (isRoomStyleConfirmModal) {
-            const roomHeader = content.querySelector('.start-confirm-header-room');
-            // Handset only: title lives in the sticky mobile header. On desktop/iPad the
-            // header wrapper is display:none — keep the room header in the scroll body.
-            if (roomHeader && document.body.classList.contains('handset-device')) {
-                header.appendChild(roomHeader);
-            }
-        }
-
         const scrollBody = document.createElement('div');
         scrollBody.className = 'mobile-modal-scroll-body';
         // Only the long forms pin their buttons to the bottom of the sheet.
@@ -1712,21 +1704,84 @@ export function setupHandsetModalScreens() {
         // gap above it; their buttons follow the content instead.
         const keepFooterOutsideScroll =
             modalId === 'blocklist-modal'
-            || modalId === 'settings-modal';
+            || modalId === 'settings-modal'
+            || modalId === 'schedule-overlay-customise-modal'
+            || modalId === 'enter-scheduler-modal';
+        // Each sheet names its action row differently.
+        const footerClass = {
+            'schedule-overlay-customise-modal': 'schedule-overlay-customise-footer',
+            'enter-scheduler-modal': 'editor-panel-footer',
+        }[modalId] || 'modal-buttons';
         while (header.nextSibling) {
             const node = header.nextSibling;
             if (
                 keepFooterOutsideScroll
                 && node.nodeType === Node.ELEMENT_NODE
-                && node.classList.contains('modal-buttons')
+                && node.classList.contains(footerClass)
             ) {
                 break;
             }
             scrollBody.appendChild(node);
         }
         content.appendChild(scrollBody);
+
+        // Whether this modal is currently a full-screen sheet. Read the header
+        // rather than naming platforms: three separate rules decide it — the
+        // handset class, the compact-desktop class and a width media query — and
+        // they have drifted apart before.
+        const sheetShowing = () => getComputedStyle(header).display !== 'none';
+
+        if (isRoomStyleConfirmModal) {
+            // The title and its space chip belong in the sticky header wherever
+            // that header is on screen, phone sheet and narrow desktop alike.
+            const roomHeader = content.querySelector('.start-confirm-header-room');
+            const placeRoomHeader = () => {
+                if (!roomHeader) return;
+                const wanted = sheetShowing() ? header : scrollBody;
+                if (roomHeader.parentElement === wanted) return;
+                if (wanted === header) header.appendChild(roomHeader);
+                else scrollBody.prepend(roomHeader);
+            };
+            placeRoomHeader();
+            window.addEventListener('resize', placeRoomHeader);
+            new MutationObserver(placeRoomHeader)
+                .observe(overlay, { attributes: true, attributeFilter: ['class'] });
+        }
+
+        if (modalId === 'enter-scheduler-modal') {
+            // The editor's footer is buried inside #focus-space-editor, which moves
+            // between the two-column panel and this sheet, so the sweep above never
+            // sees it and CSS cannot lift it out of the scrolling area — which is why
+            // the scrollbar overlapped it. Hoist it beside the scroll body while the
+            // sheet header is on screen, and hand it back to the editor when it is not.
+            // Look both up on every call: #focus-space-editor is one node that lives
+            // in the side panel and is MOVED into this modal when the sheet opens, so
+            // at setup neither is here yet.
+            const placeEditorFooter = () => {
+                const footer = document.getElementById('editor-panel-footer');
+                const editor = document.getElementById('focus-space-editor');
+                if (!footer || !editor) return;
+                const wanted = sheetShowing() && content.contains(editor) ? content : editor;
+                if (footer.parentElement !== wanted) wanted.appendChild(footer);
+            };
+            // The editor re-renders constantly, so coalesce to one check a frame
+            // rather than reading layout on every mutation.
+            let queued = false;
+            const queuePlaceEditorFooter = () => {
+                if (queued) return;
+                queued = true;
+                requestAnimationFrame(() => { queued = false; placeEditorFooter(); });
+            };
+            placeEditorFooter();
+            window.addEventListener('resize', queuePlaceEditorFooter);
+            const watch = new MutationObserver(queuePlaceEditorFooter);
+            watch.observe(overlay, { attributes: true, attributeFilter: ['class'] });
+            // The editor arrives after the overlay unhides, so watch for it landing.
+            watch.observe(content, { childList: true, subtree: true });
+        }
+
         if (keepFooterOutsideScroll) {
-            const footer = content.querySelector(':scope > .modal-buttons');
+            const footer = content.querySelector(`:scope > .${footerClass}`);
             if (footer) content.appendChild(footer);
         }
         attachModalScrollResetOnShow(overlay);
