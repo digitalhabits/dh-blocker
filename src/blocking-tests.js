@@ -3450,6 +3450,10 @@
                 `T187: a stopped Manual space that auto-starts drops "starts when enabled" (got "${autoText}")`);
             assert(statusText(never.id).includes('starts when enabled'),
                 `T188: a Manual space set to Never keeps "starts when enabled" (got "${statusText(never.id)}")`);
+            // A 24 h stop always ends on the next calendar day.
+            internals.appData.activeBlocks[0].pauseEndTime = now + 24 * 3600000;
+            internals.render();
+            assert(statusText(autoStart.id).includes('tomorrow'), `T236: a pause ending tomorrow says so (got "${statusText(autoStart.id)}")`);
         } finally {
             internals.appData = savedAppData;
             internals.render();

@@ -97,11 +97,12 @@ function buildBlocklistCardStatusLine(bl, now = Date.now()) {
     const manualAutoStarts = kind === 'manual' && !!block && getBlocklistUnlockMinutes(bl) > 0;
     const timing = manualAutoStarts ? tSettings('whenManualShort') : formatScheduleWhenSummary(kind, schedule);
     const fullTiming = manualAutoStarts ? timing : formatScheduleWhenSummary(kind, schedule, { full: true });
-    // 24-hour HH:MM, matching the schedule times on the same line.
+    // 24-hour HH:MM, matching the schedule times on the same line. Strictness caps a pause at 24 h, so it ends today or tomorrow.
     const pausedUntil = (pauseEndTime) => {
         const d = new Date(pauseEndTime);
         const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-        return tSettingsFmt('cardStatusPausedUntilFmt', { time: hhmm });
+        const key = d.toDateString() === new Date(now).toDateString() ? 'cardStatusPausedUntilFmt' : 'cardStatusPausedUntilTomorrowFmt';
+        return tSettingsFmt(key, { time: hhmm });
     };
 
     let status = null;
