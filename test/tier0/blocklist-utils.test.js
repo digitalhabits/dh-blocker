@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test } from 'vitest';
 import {
     ALWAYS_ON_END_TIME,
     FOCUS_SPACE_COLOR_PALETTE,
@@ -9,7 +9,9 @@ import {
     healWwwWebsiteEntries,
     hasUsableIOSScreenTimeSelection,
     isBlockAlwaysOn,
+    displayNameForBlockedApp,
     isProtectedApp,
+    normalizeBlockedAppKey,
     isProtectedDomain,
     mergeIOSScreenTimeSelectionAdditive,
     migrateLegacyQuickStartBlocklists,
@@ -17,6 +19,7 @@ import {
     parseLegacyScreenTimeSummary,
     resolveIOSScreenTimeSelectionForSave,
 } from '../../src/blocklist-utils.js';
+import { state } from '../../src/state.js';
 
 describe('protected apps and domains', () => {
     test('the app can never be added to a blocklist', () => {
@@ -501,5 +504,66 @@ describe('iOS manual channel sync decision', () => {
     test('applies the manual payload whenever a manual block is active', () => {
         expect(iosManualSyncAction({ hasActiveBlocks: true, hasActiveScheduleSegments: true })).toBe('start');
         expect(iosManualSyncAction({ hasActiveBlocks: true, hasActiveScheduleSegments: false })).toBe('start');
+    });
+});
+
+// macOS reports WhatsApp's process name with a leading U+200E left-to-right
+// mark. Same class of invisible-prefix bug as Samsung Internet's URL bar.
+const LRM = '\u200E';
+
+afterEach(() => { state.installedAppsCache = null; });
+
+describe('app names shown to the user', () => {
+    test('an invisible direction mark does not defeat the installed-apps lookup', () => {
+        // Without stripping it, the key never matches the cache entry and the
+        // name falls through to the raw-token path.
+        state.installedAppsCache = [{ process_name: 'WhatsApp', display_name: 'WhatsApp' }];
+        expect(displayNameForBlockedApp(`${LRM}WhatsApp`)).toBe('WhatsApp');
+        expect(normalizeBlockedAppKey(`${LRM}WhatsApp`)).toBe(normalizeBlockedAppKey('WhatsApp'));
+    });
+
+    test('an unknown app keeps the casing it came with', () => {
+        // Capitalising only the first character used to lowercase the rest,
+        // and on WhatsApp that first character was the invisible mark.
+        expect(displayNameForBlockedApp(`${LRM}WhatsApp`)).toBe('WhatsApp');
+        expect(displayNameForBlockedApp('Google Chrome')).toBe('Google Chrome');
+        expect(displayNameForBlockedApp('Windows PowerShell')).toBe('Windows PowerShell');
+    });
+
+    test('an all-caps name is not treated as already user-facing', () => {
+        // Windows shortcuts resolve EXCEL.EXE to the stem "EXCEL". Keeping a
+        // name that carries its own capitals is right for "WhatsApp", but an
+        // all-caps stem has no lower case to carry and reads as shouting.
+        state.installedAppsCache = [];
+        expect(displayNameForBlockedApp('EXCEL')).toBe('Excel');
+        expect(displayNameForBlockedApp('EXCEL.EXE')).toBe('Excel');
+        expect(displayNameForBlockedApp('WINWORD')).toBe('Winword');
+        // Sentence case, like every other tidied token here.
+        expect(displayNameForBlockedApp('MICROSOFT EXCEL')).toBe('Microsoft excel');
+        // Mixed case is still left alone, and a plain stem still gets one capital.
+        expect(displayNameForBlockedApp('eM Client')).toBe('eM Client');
+        expect(displayNameForBlockedApp('chrome')).toBe('Chrome');
+    });
+
+    test('a bare process token is tidied into something readable', () => {
+        expect(displayNameForBlockedApp('chrome')).toBe('Chrome');
+        expect(displayNameForBlockedApp('chrome.exe')).toBe('Chrome');
+        expect(displayNameForBlockedApp('chrome_crashpad_handler')).toBe('Chrome crashpad handler');
+    });
+
+    test('the executable name wins over the label the platform gave us', () => {
+        // Windows labels a warning with the window title, which names the open
+        // document or mail folder: eM Client showed up as "Operations". The
+        // executable behind it resolves against the installed-app list.
+        state.installedAppsCache = [{ process_name: 'MailClient', display_name: 'eM Client' }];
+        expect(displayNameForBlockedApp('Operations', 'MailClient.exe')).toBe('eM Client');
+        // Not installed, or no executable known: keep the platform's label.
+        expect(displayNameForBlockedApp('Operations', 'Unknown.exe')).toBe('Operations');
+        expect(displayNameForBlockedApp('Operations')).toBe('Operations');
+    });
+
+    test('package-style ids are left alone', () => {
+        // Android ids read worse title-cased.
+        expect(displayNameForBlockedApp('app.vanadium.browser')).toBe('app.vanadium.browser');
     });
 });
