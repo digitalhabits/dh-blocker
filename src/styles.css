@@ -7494,7 +7494,7 @@ body.ios .eula-onboarding-actions .eula-continue-btn {
     width: auto;
     margin: 0;
     padding: 12px 20px;
-    border: none;
+    border: 1px solid transparent;
     font-size: 15px;
     font-weight: 600;
     line-height: 1.2;
@@ -7523,8 +7523,6 @@ body.dark-mode .eula-back-btn:hover{
 }
 
 /* Footer credit link — no underline (EULA / privacy links in the card keep theirs). */
-#welcome-onboarding-footer-1 .legal-onboarding-link,
-#eula-onboarding-footer-1 .legal-onboarding-link,
 #eula-project-blurb .legal-onboarding-link,
 #ios-screentime-onboarding-note .legal-onboarding-link,
 #android-permissions-onboarding-note .legal-onboarding-link {
@@ -9314,8 +9312,68 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     font-style: italic;
 }
 
-#eula-onboarding .legal-onboarding-note{
-    font-style: normal;
+/* "Private by design": heading, one line, details on demand, then the
+   agreement below a divider. */
+.eula-privacy-title{
+    margin: 0 0 6px;
+    font-family: var(--font-heading);
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--redd-navy);
+}
+
+.eula-privacy-lead{
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.eula-how-we-count{
+    margin-top: 6px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.eula-how-we-count summary{
+    display: inline-block;
+    cursor: pointer;
+    list-style: none;
+    color: var(--accent-color);
+}
+
+.eula-how-we-count summary::-webkit-details-marker{
+    display: none;
+}
+
+.eula-how-we-count summary::after{
+    content: '\203A';
+    display: inline-block;
+    margin-left: 4px;
+    transition: transform 0.15s ease;
+}
+
+.eula-how-we-count[open] summary::after{
+    transform: rotate(90deg);
+}
+
+.eula-how-we-count summary:focus-visible{
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+    border-radius: 3px;
+}
+
+.eula-how-we-count p{
+    margin: 6px 0 0;
+}
+
+.eula-privacy-divider{
+    height: 0;
+    margin: 16px 0;
+    border: none;
+    border-top: 1px solid var(--redd-border);
 }
 
 .legal-onboarding-link{

@@ -62,8 +62,12 @@ export const SETTINGS_TRANSLATIONS = {
         eulaAgreeAria: 'I agree to the End User License Agreement and Privacy Policy',
         eulaAgreeLineHtml:
             'I agree to Centre for Digital Habits\' <a href="https://digitalhabits.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/eula">End User License Agreement</a>',
-        eulaNoteHtml:
-            'Note: we collect no personal data. Blocker sends one anonymous count a day, with an ID that changes every month, so we know how many people use it. You can turn this off in Settings. See our <a href="https://digitalhabits.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy">Privacy Policy</a>.',
+        eulaPrivacyTitle: 'Private by design',
+        eulaPrivacyLead: 'We collect no personal data. We only count how many people use Blocker.',
+        eulaPrivacyLeadNoPing: 'We collect no personal data, and Blocker sends nothing to us.',
+        eulaHowWeCount: 'How we count',
+        eulaHowWeCountHtml:
+            'Once a day, Blocker sends an anonymous count with an ID that changes every month. You can turn it off in Settings. <a href="https://digitalhabits.org/privacy-policy#usage-count" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy#usage-count">Privacy Policy</a>',
         eulaContinueBtn: 'Continue',
         eulaContinueBusy: 'Continuing…',
         eulaBackBtn: 'Back',
@@ -133,9 +137,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeDemoFullscreenExitAriaLabel: 'Exit fullscreen',
         welcomeDemoCloseLabel: 'Close',
         welcomeFooter1Html:
-            'Built by <a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Centre for Digital Habits</a>, a not-for-profit creating open-source digital focus tools &amp; training. In collaboration with researchers at the University of Oxford and University of Maastricht.',
-        welcomeFooter2Html:
-            '<a href="https://github.com/ulyngs/digital-habits-blocker" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">View the source code on GitHub</a>.',
+            '<a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Centre for Digital Habits</a> is a not-for-profit creating digital focus tools in collaboration with researchers at the universities of Oxford, Copenhagen and Maastricht. <a href="https://github.com/digitalhabits/dh-blocker" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">View the source code on GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Get started',
         // Migration / extension onboarding overlay
         migrationPreWelcomeTitle: 'Welcome to Digital Habits: Blocker 2.0',
@@ -978,8 +980,12 @@ export const SETTINGS_TRANSLATIONS = {
         eulaAgreeAria: 'Jeg accepterer brugerbetingelserne og privatlivspolitikken',
         eulaAgreeLineHtml:
             'Jeg accepterer Center for Digitale Vaners <a href="https://digitalhabits.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/eula">brugerbetingelser</a>',
-        eulaNoteHtml:
-            'Bemærk: vi indsamler ingen persondata. Blocker sender én anonym optælling om dagen, med et ID der skifter hver måned, så vi ved, hvor mange der bruger den. Du kan slå det fra under Indstillinger. Se vores <a href="https://digitalhabits.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy">privatlivspolitik</a>.',
+        eulaPrivacyTitle: 'Privatliv som udgangspunkt',
+        eulaPrivacyLead: 'Vi indsamler ingen persondata. Vi tæller kun, hvor mange der bruger Blocker.',
+        eulaPrivacyLeadNoPing: 'Vi indsamler ingen persondata, og Blocker sender intet til os.',
+        eulaHowWeCount: 'Sådan tæller vi',
+        eulaHowWeCountHtml:
+            'Én gang om dagen sender Blocker en anonym optælling med et ID, der skifter hver måned. Du kan slå det fra under Indstillinger. <a href="https://digitalhabits.org/privacy-policy#usage-count" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy#usage-count">Privatlivspolitik</a>',
         eulaContinueBtn: 'Fortsæt',
         eulaContinueBusy: 'Arbejder…',
         eulaBackBtn: 'Tilbage',
@@ -1049,9 +1055,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeDemoFullscreenExitAriaLabel: 'Afslut fuld skærm',
         welcomeDemoCloseLabel: 'Luk',
         welcomeFooter1Html:
-            'Udviklet af <a href="https://digitalevaner.dk" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Center for Digitale Vaner</a>, en non-profit, der bygger open source digitale fokusværktøjer og kurser. I samarbejde med forskere ved University of Oxford og Maastricht University.',
-        welcomeFooter2Html:
-            '<a href="https://github.com/ulyngs/digital-habits-blocker" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Se kildekoden på GitHub</a>.',
+            '<a href="https://digitalevaner.dk" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Center for Digitale Vaner</a> er en non-profit, der bygger digitale fokusværktøjer i samarbejde med forskere ved universiteterne i Oxford, København og Maastricht. <a href="https://github.com/digitalhabits/dh-blocker" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Se kildekoden på GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Start',
         // Migration / extension onboarding overlay
         migrationPreWelcomeTitle: 'Velkommen til Digital Habits: Blocker 2.0',
@@ -1865,7 +1869,12 @@ export const SETTINGS_TRANSLATIONS = {
         bannerActionSetUpIn: '设置',
         eulaAgreeAria: '我同意最终用户许可协议和隐私政策',
         eulaAgreeLineHtml: '我同意 Centre for Digital Habits 的 <a href="https://digitalhabits.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/eula">最终用户许可协议</a>',
-        eulaNoteHtml: '注意：我们不收集任何个人数据。Blocker 每天发送一次匿名计数，其 ID 每月更换，以便我们了解使用人数。你可以在设置中关闭此功能。详见我们的 <a href="https://digitalhabits.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy">隐私政策</a>。',
+        eulaPrivacyTitle: '隐私优先',
+        eulaPrivacyLead: '我们不收集任何个人数据，只统计有多少人在使用 Blocker。',
+        eulaPrivacyLeadNoPing: '我们不收集任何个人数据，Blocker 也不会向我们发送任何内容。',
+        eulaHowWeCount: '我们如何统计',
+        eulaHowWeCountHtml:
+            'Blocker 每天发送一次匿名计数，其 ID 每月更换。你可以在设置中关闭此功能。<a href="https://digitalhabits.org/privacy-policy#usage-count" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy#usage-count">隐私政策</a>',
         eulaContinueBtn: '继续',
         eulaContinueBusy: '正在继续...',
         eulaBackBtn: '返回',
@@ -1916,8 +1925,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeDemoFullscreenEnterAriaLabel: '进入全屏',
         welcomeDemoFullscreenExitAriaLabel: '退出全屏',
         welcomeDemoCloseLabel: '关闭',
-        welcomeFooter1Html: '由 <a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Centre for Digital Habits</a> 开发，这是一个创建开源数字专注工具和培训的非营利项目。与牛津大学和马斯特里赫特大学研究人员合作。',
-        welcomeFooter2Html: '<a href="https://github.com/ulyngs/digital-habits-blocker" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">在 GitHub 查看源代码</a>。',
+        welcomeFooter1Html: '<a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Centre for Digital Habits</a> 是一个非营利组织，与牛津大学、哥本哈根大学和马斯特里赫特大学的研究人员合作开发数字专注工具。<a href="https://github.com/digitalhabits/dh-blocker" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">在 GitHub 查看源代码</a>。',
         welcomeOnboardingContinueBtn: '开始使用',
         migrationPreWelcomeTitle: '欢迎使用 Digital Habits: Blocker 2.0',
         migrationPreSubtitle: '需要完成一次清理才能结束升级。',

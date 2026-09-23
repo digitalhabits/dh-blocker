@@ -183,6 +183,24 @@ export const screens = [
         viewport: IPHONE,
     },
 
+    // ---- First run: the EULA screen, with "How we count" open --------------
+    ...[
+        { name: 'eula-mac', platform: 'mac', viewport: DESKTOP },
+        { name: 'eula-mac-dark', platform: 'mac', viewport: DESKTOP, theme: 'dark' },
+        { name: 'eula-iphone', platform: 'iphone', viewport: IPHONE },
+    ].map((screen) => ({
+        ...screen,
+        fixture: fixtures.crowdedWeek,
+        prepare: async (page) => {
+            await page.evaluate(() => {
+                document.getElementById('main-content')?.classList.add('hidden');
+                document.getElementById('eula-onboarding')?.classList.remove('hidden');
+                const details = document.getElementById('eula-how-we-count');
+                if (details) details.open = true;
+            });
+        },
+    })),
+
     // ---- Turning a space on: what will be blocked, the way out, the unlock ----
     {
         name: 'start-confirm-modal',

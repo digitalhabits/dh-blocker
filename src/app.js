@@ -2225,8 +2225,17 @@ export function applyEulaOnboardingLanguage() {
     const agreeInner = document.getElementById('eula-agree-line-inner');
     if (agreeInner) agreeInner.innerHTML = tSettings('eulaAgreeLineHtml');
 
-    const note = document.getElementById('eula-note');
-    if (note) note.innerHTML = tSettings('eulaNoteHtml');
+    // "Private by design". Android sends no usage ping, so it gets the
+    // "sends nothing" line and no "How we count".
+    const privacyTitle = document.getElementById('eula-privacy-title');
+    if (privacyTitle) privacyTitle.textContent = tSettings('eulaPrivacyTitle');
+    const privacyLead = document.getElementById('eula-privacy-lead');
+    if (privacyLead) privacyLead.textContent = tSettings(state.isAndroid ? 'eulaPrivacyLeadNoPing' : 'eulaPrivacyLead');
+    const howWeCountSummary = document.getElementById('eula-how-we-count-summary');
+    if (howWeCountSummary) howWeCountSummary.textContent = tSettings('eulaHowWeCount');
+    const howWeCountBody = document.getElementById('eula-how-we-count-body');
+    if (howWeCountBody) howWeCountBody.innerHTML = tSettings('eulaHowWeCountHtml');
+    document.getElementById('eula-how-we-count')?.classList.toggle('hidden', !!state.isAndroid);
 
     const blurb = document.getElementById('eula-project-blurb');
     if (blurb) blurb.innerHTML = tSettings('eulaProjectBlurb');
@@ -2234,8 +2243,6 @@ export function applyEulaOnboardingLanguage() {
     const footer1 = document.getElementById('eula-onboarding-footer-1');
     if (footer1) footer1.innerHTML = tSettings('welcomeFooter1Html');
 
-    const footer2 = document.getElementById('eula-onboarding-footer-2');
-    if (footer2) footer2.innerHTML = tSettings('welcomeFooter2Html');
 
     const cb = document.getElementById('eula-agree-checkbox');
     if (cb) cb.setAttribute('aria-label', tSettings('eulaAgreeAria'));
@@ -2432,8 +2439,6 @@ export function applyWelcomeOnboardingLanguage() {
     const footer1 = document.getElementById('welcome-onboarding-footer-1');
     if (footer1) footer1.innerHTML = tSettings('welcomeFooter1Html');
 
-    const footer2 = document.getElementById('welcome-onboarding-footer-2');
-    if (footer2) footer2.innerHTML = tSettings('welcomeFooter2Html');
 }
 
 function isWelcomeDemoVideoExpanded() {
