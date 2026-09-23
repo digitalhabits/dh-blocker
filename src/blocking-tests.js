@@ -28,6 +28,7 @@
  * - T207: colour-swatch tick / + are inked against the swatch's own colour
  * - T208-T212: Desktop app-watcher payload: allow-mode spaces feed allowedApps, never the kill list
  * - T213-T219: The start card names the space that just started and closes the app; allow mode gets its own card
+ * - T220-T221: Diagnostics reports an allow-mode space as allowing, not blocking
  */
 
 (function () {
@@ -1884,6 +1885,44 @@
     }
 
     // ========================================
+    // CATEGORY: DIAGNOSTICS ALLOW MODE (T220-T221)
+    // ========================================
+
+    // An allow-mode space's domains and apps are the ones it PERMITS. The
+    // diagnostics screen listed them under "Currently being blocked", stating
+    // the opposite of what was being enforced.
+    function runDiagnosticsAllowModeTests() {
+        console.log('\n\u{1FA7A} Diagnostics allow mode');
+        const render = (currentBlocking) => {
+            const host = document.createElement('div');
+            host.innerHTML = window.__REDDBLOCK_INTERNALS__.renderDiagnosticsEnforcementSection(currentBlocking);
+            return host.textContent;
+        };
+        const allowBlock = { blocklistId: 'a', name: 'allow 1', mode: 'allowlist', domains: ['docs.rs'], source: 'activeBlock' };
+
+        (function T220() {
+            const text = render({
+                domains: [], blocks: [allowBlock], apps: [],
+                allowed_apps: ['Claude'], allowed_domains: ['docs.rs'], allowlist_active: true,
+            });
+            assert(!text.includes('Currently being blocked'), 'T220: an allow-mode block is not headed "Currently being blocked"');
+            assert(text.includes('Currently being enforced'), 'T220: it is headed with neutral wording instead');
+            assert(text.includes('allow mode'), 'T220: the space is labelled allow mode');
+            assert(text.includes('Allowed apps (1)') && text.includes('Claude'), 'T220: the allowed apps are listed as allowed');
+            assert(text.includes('Allowed sites (1)'), 'T220: the allowed sites are listed as allowed');
+        })();
+
+        (function T221() {
+            const text = render({
+                domains: ['x.com'], blocks: [{ blocklistId: 'b', name: 'block 1', mode: 'blocklist', domains: ['x.com'], source: 'schedule' }],
+                apps: ['Chess'], allowed_apps: [], allowed_domains: [], allowlist_active: false,
+            });
+            assert(text.includes('Currently being blocked'), 'T221: a plain blocklist still reads as blocking');
+            assert(!text.includes('allow mode') && !text.includes('Allowed apps'), 'T221: and says nothing about allow mode');
+        })();
+    }
+
+    // ========================================
     // CATEGORY 19: iOS SCHEDULE PAYLOAD (T151-T158)
     // ========================================
 
@@ -3442,6 +3481,7 @@
             runAndroidPayloadTests();
             runDesktopAppPayloadTests();
             runWarningAttributionTests();
+            runDiagnosticsAllowModeTests();
             runIOSSchedulePayloadTests();
             runEditFrictionGateTests();
             runChallengePrimitiveTests();

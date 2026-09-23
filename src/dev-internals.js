@@ -51,6 +51,7 @@ import {
 import { applyOverrideTypeUi, closeBlocklistModal, closeStartConfirmModal, openBlocklistModal, openScheduleOverrideModal } from './confirm-modals.js';
 import { setOpenEditorSection, setWhenToBlockKind, setupFocusSpaceEditor, showEditorDiscardConfirmModal } from './focus-space-editor.js';
 import { enhanceNativeSelects, enhanceSelect } from './custom-select.js';
+import { renderDiagnosticsEnforcementSection } from './settings.js';
 
 // Expose for integration tests (dev mode only)
 window.__REDDBLOCK_INTERNALS__ = {
@@ -136,6 +137,8 @@ window.__REDDBLOCK_INTERNALS__ = {
     // App-styled dropdowns over native selects.
     enhanceSelect,
     enhanceNativeSelects,
+    // Diagnostics HTML, so Tier 1 can assert what an allow-mode block reports.
+    renderDiagnosticsEnforcementSection,
 };
 
 // ========================================
