@@ -63,7 +63,7 @@ export const SETTINGS_TRANSLATIONS = {
         eulaAgreeLineHtml:
             'I agree to Centre for Digital Habits\' <a href="https://digitalhabits.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/eula">End User License Agreement</a>',
         eulaNoteHtml:
-            'Note: we do not collect any user data, as per our <a href="https://digitalhabits.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy">Privacy Policy</a>.',
+            'Note: we collect no personal data. Blocker sends one anonymous count a day, with an ID that changes every month, so we know how many people use it. You can turn this off in Settings. See our <a href="https://digitalhabits.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy">Privacy Policy</a>.',
         eulaContinueBtn: 'Continue',
         eulaContinueBusy: 'Continuing…',
         eulaBackBtn: 'Back',
@@ -432,6 +432,8 @@ export const SETTINGS_TRANSLATIONS = {
         settingsOnboardingBtn: 'Onboarding',
         settingsBlocklistsIoLabel: 'Blocklists & schedules',
         settingsBlocklistsIoHint: 'Save a backup or restore from a file.',
+        settingsUsagePingLabel: 'Send anonymous usage count',
+        settingsUsagePingHint: 'Once a day, with an ID that changes every month. Nothing about your blocks, sites or apps.',
         settingsExportBlocklistsBtn: 'Export',
         settingsImportBlocklistsBtn: 'Import',
         exportBlocklistsSaveTitle: 'Export blocklists',
@@ -977,7 +979,7 @@ export const SETTINGS_TRANSLATIONS = {
         eulaAgreeLineHtml:
             'Jeg accepterer Center for Digitale Vaners <a href="https://digitalhabits.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/eula">brugerbetingelser</a>',
         eulaNoteHtml:
-            'Bemærk, at vi ikke indsamler brugerdata, som beskrevet i vores <a href="https://digitalhabits.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy">privatlivspolitik</a>.',
+            'Bemærk: vi indsamler ingen persondata. Blocker sender én anonym optælling om dagen, med et ID der skifter hver måned, så vi ved, hvor mange der bruger den. Du kan slå det fra under Indstillinger. Se vores <a href="https://digitalhabits.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy">privatlivspolitik</a>.',
         eulaContinueBtn: 'Fortsæt',
         eulaContinueBusy: 'Arbejder…',
         eulaBackBtn: 'Tilbage',
@@ -1329,6 +1331,8 @@ export const SETTINGS_TRANSLATIONS = {
         settingsOnboardingBtn: 'Onboarding',
         settingsBlocklistsIoLabel: 'Sikkerhedskopi',
         settingsBlocklistsIoHint: 'Gem en sikkerhedskopi, eller gendan fra en fil.',
+        settingsUsagePingLabel: 'Send anonym brugsoptælling',
+        settingsUsagePingHint: 'Én gang om dagen, med et ID der skifter hver måned. Intet om dine blokeringer, sider eller apps.',
         settingsExportBlocklistsBtn: 'Eksportér',
         settingsImportBlocklistsBtn: 'Importér',
         exportBlocklistsSaveTitle: 'Eksportér bloklister',
@@ -1861,7 +1865,7 @@ export const SETTINGS_TRANSLATIONS = {
         bannerActionSetUpIn: '设置',
         eulaAgreeAria: '我同意最终用户许可协议和隐私政策',
         eulaAgreeLineHtml: '我同意 Centre for Digital Habits 的 <a href="https://digitalhabits.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/eula">最终用户许可协议</a>',
-        eulaNoteHtml: '注意：根据我们的 <a href="https://digitalhabits.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy">隐私政策</a>，我们不会收集任何用户数据。',
+        eulaNoteHtml: '注意：我们不收集任何个人数据。Blocker 每天发送一次匿名计数，其 ID 每月更换，以便我们了解使用人数。你可以在设置中关闭此功能。详见我们的 <a href="https://digitalhabits.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy">隐私政策</a>。',
         eulaContinueBtn: '继续',
         eulaContinueBusy: '正在继续...',
         eulaBackBtn: '返回',
@@ -2205,6 +2209,8 @@ export const SETTINGS_TRANSLATIONS = {
         settingsOnboardingBtn: '重新显示入门指引',
         settingsBlocklistsIoLabel: '专注空间数据',
         settingsBlocklistsIoHint: '备份或恢复你的专注空间。',
+        settingsUsagePingLabel: '发送匿名使用计数',
+        settingsUsagePingHint: '每天一次，ID 每月更换。不包含你的屏蔽、网站或应用信息。',
         settingsExportBlocklistsBtn: '导出',
         settingsImportBlocklistsBtn: '导入',
         exportBlocklistsSaveTitle: '导出专注空间',

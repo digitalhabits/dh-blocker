@@ -122,6 +122,7 @@ import { turnFocusSpaceOn } from './focus-space-switch.js';
 import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, getEffectiveViewportWidth, bindUiZoomLayoutObserver } from './theme.js';
 import { checkForAppUpdate, getLatestVersionPlatformKey, isVersionHigher, resolveMicrosoftStorePackage, updateBannerWhatsNewButtonHtml } from './update-banner.js';
 import { updateDownloadInProgress } from './update-banner.js';
+import { setupUsagePingToggle, startUsagePing } from './usage-ping.js';
 import { getChallengeController } from './challenge-controller.js';
 import { getMaxOverrideCountForType, getOverrideEstimatedMinutes, getTypingCharsPerMinuteForType, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
 import { escapeHtml, cleanUrlForDisplay, parseRgbFromColorString, rgbToHex, rgbToHsl, hslToRgb, getRelativeLuminance, getEnteringChipColor, getContrastTextColor } from './utils.js';
@@ -201,6 +202,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupUiZoomShortcuts();
     setupHelpMenuLinks();
     setupHelperSettings();
+    setupUsagePingToggle();
     setupSettingsHelpButtons();
     setupBlocklistsImportExportButtons();
     setupAppForegroundRefresh();
@@ -322,6 +324,8 @@ export async function runPostAcceptanceStartup() {
         if (!state.isIOS && !state.isAndroid) {
             checkForAppUpdate();
         }
+        // Anonymous daily usage ping (Mac, Windows, iOS; off in Settings).
+        startUsagePing();
         state.startupInitializationComplete = true;
     })();
 
@@ -2887,6 +2891,8 @@ export function applySettingsLanguage() {
     setText('settings-onboarding-btn-label', tSettings('settingsOnboardingBtn'));
     setText('settings-blocklists-io-label', tSettings('settingsBlocklistsIoLabel'));
     setText('settings-blocklists-io-hint', tSettings('settingsBlocklistsIoHint'));
+    setText('settings-usage-ping-label', tSettings('settingsUsagePingLabel'));
+    setText('settings-usage-ping-hint', tSettings('settingsUsagePingHint'));
     setText('settings-export-blocklists-btn-label', tSettings('settingsExportBlocklistsBtn'));
     setText('settings-import-blocklists-btn-label', tSettings('settingsImportBlocklistsBtn'));
     setText('uninstall-confirm-title', tSettings('uninstallConfirmTitle'));
