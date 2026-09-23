@@ -346,10 +346,26 @@ Before manual checks, run the automated allowlist coverage: Tier 1 Category 14
 
 - [ ] Start allow-mode space with 1–2 allowed apps while several non-allowed apps are open: every visible non-allowed app gets the "Let's go!" warning (allowed-app pills shown); nothing is quit before acknowledging
 - [ ] Start with **no** closable apps open: intention-only overlay appears; "Let's go!" dismisses it with no countdown
-- [ ] Mid-session: bring a non-allowed app frontmost → it is quit (30 s wrap-up then polite quit); background agents keep running
+- [ ] Mid-session: bring a non-allowed app frontmost → it is politely quit at once, no warning (SIGKILL 10 s later if it ignores the quit); background agents keep running; log line reads `allowlist sighting`
 - [ ] Switch away from a warned non-allowed app before its quit lands → quit is aborted (no longer user-facing)
 - [ ] Allowed apps and protected apps (Finder, Digital Habits: Blocker) are never targeted
 - [ ] End/stop: no further quits; previously warned apps reopen normally
+
+### Apps: block start with non-allowed apps open (macOS and Windows)
+
+No test layer can see a real process being warned or quit. Allow-mode start
+used to skip the warning entirely (Windows) or warn about and queue the
+*allowed* app and its bundle helpers (macOS), leaving open non-allowed apps to
+be closed later as mid-block sightings. Allow e.g. Claude only; keep Claude and
+one safe non-allowed app (Calculator, Notes) open and visible, no blocklist
+space active. Log: `~/Library/Logs/com.reddblock/Digital Habits Blocker.log`
+(macOS) / `%LOCALAPPDATA%\com.reddblock\logs\Digital Habits Blocker.log`
+(Windows).
+
+- [ ] Manual start → warning names the non-allowed app only, with the ~30 s countdown; Claude is never named, warned or quit
+- [ ] Log shows `allowlist block-start` for the non-allowed app and **no** `block-start sighting` line — one naming Claude means the fix has regressed
+- [ ] Scheduled start (segment in ~2 min, same apps open) → same warning and log lines at segment start; the non-allowed app is not left to be caught later as an `allowlist sighting`
+- [ ] After acknowledging: countdown runs, non-allowed app is politely quit, Claude stays open
 
 ### Diagnostics
 

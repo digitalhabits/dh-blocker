@@ -338,6 +338,9 @@ pub struct Handle {
     apps: BlockedApps,
     allowed_apps: AllowedApps,
     allowlist_active: Arc<AtomicBool>,
+    /// False until the first `set_policy`, so that call is a baseline
+    /// rather than a block-start transition (see `allowlist_block_started`).
+    policy_seen: AtomicBool,
     allowlist_warn_pending: Arc<AtomicBool>,
     pending_warning_apps: PendingWarningApps,
     stop: Arc<AtomicBool>,
@@ -379,14 +382,19 @@ impl Handle {
                 *w = new_allowed;
             }
         }
-        if self
+        let first_policy = !self.policy_seen.swap(true, Ordering::SeqCst);
+        let was_active = self
             .allowlist_active
-            .swap(allowlist_active, Ordering::SeqCst)
-            != allowlist_active
-        {
+            .swap(allowlist_active, Ordering::SeqCst);
+        if was_active != allowlist_active {
             changed = true;
         }
-        if allowlist_newly_started {
+        if allowlist_block_started(
+            first_policy,
+            was_active,
+            allowlist_active,
+            allowlist_newly_started,
+        ) {
             self.allowlist_warn_pending.store(true, Ordering::SeqCst);
             changed = true;
         }
@@ -505,6 +513,7 @@ pub fn start(app: Option<AppHandle>) -> Handle {
         apps,
         allowed_apps,
         allowlist_active,
+        policy_seen: AtomicBool::new(false),
         allowlist_warn_pending,
         pending_warning_apps,
         stop,
@@ -686,6 +695,31 @@ fn mid_block_sighting_quit(origin: EntryOrigin) -> SightingQuit {
         EntryOrigin::Blocklist => SightingQuit::Silent,
         EntryOrigin::Allowlist => SightingQuit::Polite,
     }
+}
+
+/// Whether a policy push starts an allow-mode block, arming the one-shot
+/// block-start sweep in `sweep_allowlist` (the "save your work" warning for
+/// every visible non-allowed app). The watcher derives it from its own
+/// previous state — inactive→active — because nothing on the wire ever sets
+/// `explicit`: the frontend and the disk sync both pass `false`. `explicit`
+/// is still honoured so the command contract does not change.
+///
+/// Two deliberate choices. The first policy after `start()` is a baseline,
+/// not a transition: if the app launches into an already-running allow block,
+/// what is open was open before we got here (the frontend's first-sync rule,
+/// see `appBlockingPreviousAppsSet` in `src/blocking-platform.js`) — the
+/// failure this picks is that those apps are only closed when they next come
+/// frontmost, rather than a warning storm on every launch. And active→active
+/// never counts, whatever the allowed set did: the disk sync pushes the same
+/// policy every 2 s, and re-arming on it would raise the warning on every
+/// sync for as long as the block runs.
+fn allowlist_block_started(
+    first_policy: bool,
+    was_active: bool,
+    now_active: bool,
+    explicit: bool,
+) -> bool {
+    explicit || (!first_policy && !was_active && now_active)
 }
 
 /// One tick of the per-PID quit state machine, decided purely from the
@@ -1236,9 +1270,10 @@ fn sweep_allowlist(
         return;
     }
 
-    // One-shot: the very next sweep after `set_policy(..., allowlist_newly_started)`
-    // scans every visible non-allowed app. All of them get the user-ack warning —
-    // never silent quit on the same tick (mid-block frontmost violations only).
+    // One-shot: the very next sweep after `set_policy` saw an allow block
+    // start (`allowlist_block_started`) scans every visible non-allowed app.
+    // All of them get the user-ack warning — never silent quit on the same
+    // tick (mid-block frontmost violations only).
     let block_start_batch = block_start;
     if block_start {
         allowlist_warn_pending.store(false, Ordering::SeqCst);
