@@ -1335,6 +1335,14 @@ pub fn url_is_blocked(url: &str, blocks: &[BlockInfo]) -> bool {
     }
 
     // Allowlist blocks: any active allowlist with domains → block unless allowed.
+    //
+    // `domain_matches` covers subdomains, so allowing `example.com` also allows
+    // `mail.example.com`. That is deliberate, and it is the one place allow mode
+    // errs towards permitting: allowing a site without the subdomains it actually
+    // serves from would be unusable, and the user named the domain themselves.
+    // The same rule on the blocking side errs the other way, which is why one
+    // matcher serves both — `old.reddit.com` must not walk past a blocked
+    // `reddit.com`. Exact-host allows would be a behaviour change, not a fix.
     let allowlist_active = blocks
         .iter()
         .any(|b| native_host::blocklist_mode_is_allowlist(&b.mode) && !b.domains.is_empty());
