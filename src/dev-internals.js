@@ -51,7 +51,7 @@ import {
     normalizeUnlockMinutes,
 } from './unlock-duration.js';
 import { applyOverrideTypeUi, closeBlocklistModal, closeStartConfirmModal, openBlocklistModal, openScheduleOverrideModal } from './confirm-modals.js';
-import { applyEditorScheduleForBlocklist, populateFocusSpaceEditor, setOpenEditorSection, setWhenToBlockKind, setupFocusSpaceEditor, showEditorDiscardConfirmModal } from './focus-space-editor.js';
+import { applyEditorScheduleForBlocklist, discardFocusSpaceEditor, populateFocusSpaceEditor, setOpenEditorSection, setWhenToBlockKind, setupFocusSpaceEditor, showEditorDiscardConfirmModal } from './focus-space-editor.js';
 import { enhanceNativeSelects, enhanceSelect } from './custom-select.js';
 import { renderDiagnosticsEnforcementSection } from './settings.js';
 
@@ -136,6 +136,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     // startup stops at loadData() before wiring the editor's listeners; tests
     // that drive the editor call this first.
     applyEditorScheduleForBlocklist,
+    discardFocusSpaceEditor,
     populateFocusSpaceEditor,
     setOpenEditorSection,
     setWhenToBlockKind,

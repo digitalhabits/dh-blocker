@@ -44,7 +44,7 @@ import {
 import { openInstalledAppsPicker } from './apps-picker.js';
 import { handlePopoverOutsideClick } from './time-inputs.js';
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
-import { applyEditorScheduleForBlocklist, applyFocusSpaceEditorLanguage, confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, isEditorInCreateModal, notifyEditorChanged, populateFocusSpaceEditor, setupFocusSpaceEditor } from './focus-space-editor.js';
+import { applyEditorScheduleForBlocklist, applyFocusSpaceEditorLanguage, confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, isEditorInCreateModal, notifyEditorChanged, populateFocusSpaceEditor, setOpenEditorSection, setupFocusSpaceEditor } from './focus-space-editor.js';
 import { loadData, saveData, updateHostsFile } from './persistence.js';
 import { cleanDomainInput, isValidDomain, processWebsiteInput, setupWebsitesImportMenu, resetWebsitesImportMenuPosition } from './website-input.js';
 import { updateBlockedApps, acceptEula, appBlockingWarningSnoozedUntilMs, checkAndroidPermissions, checkHelperStatus, checkScreentimeAuth, collectManualBlockedApps, collectScheduleBlockedApps, detectPlatform, ensureInstalledAppsCache, initializeAndroidBlockingState, initializeIOSBlockingState, listenForAndroidFrictionGate, onAndroidResumed, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAndroidBackButtonHandling, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility, openExternal, updateWindowHeight, isHelperInstallCancelled, isHelperConnectionError, joinAppListWithLimit, formatAppBlockingSnoozeStartsIn, APP_BLOCKING_SNOOZE_ICON_IMG_12 } from './blocking-platform.js';
@@ -1594,7 +1594,12 @@ function setupModalListeners() {
         if (isEditorInCreateModal()) {
             closeBlocklistModal();
         } else {
+            // Saving is not a reset: keep the section the user is working in.
+            // Populating closes every section, which on a narrow window also
+            // changes the sheet's height and can bounce it shut.
+            const openSection = state.openEditorSection;
             populateFocusSpaceEditor(blocklist);
+            setOpenEditorSection(openSection);
         }
 
         // Only update blocklist display without resetting schedule segments

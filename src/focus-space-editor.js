@@ -370,7 +370,13 @@ export function discardFocusSpaceEditor() {
     const blocklist = state.editingBlocklistId
         ? state.appData.blocklists.find((bl) => bl.id === state.editingBlocklistId) || null
         : null;
+    // Discard undoes the fields; it is not a reset of the screen. Populating
+    // collapses every section (it is written for opening an editor), so put the
+    // open one back — otherwise discarding one typo shuts the section you were
+    // working in and reads as though everything was thrown away.
+    const openSection = state.openEditorSection;
     populateFocusSpaceEditor(blocklist, { mode: getSelectedBlocklistModalMode() });
+    setOpenEditorSection(openSection);
 }
 
 function updateEditorTitles(isCreate, mode) {

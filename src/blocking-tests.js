@@ -3201,6 +3201,29 @@
             }
         }
 
+        // T230: Discard undoes the fields without collapsing the section you are
+        // working in — populating the editor closes every section, which reads as
+        // a reset rather than an undo.
+        (function T230() {
+            const saved = internals.appData;
+            try {
+                const bl = createMockBlocklist({ name: 'Focus', websites: ['x.com'], apps: [] });
+                internals.appData = createMockAppData({ blocklists: [bl] });
+                internals.setupFocusSpaceEditor();
+                internals.populateFocusSpaceEditor(bl);
+                internals.setOpenEditorSection('when');
+                const nameInput = document.getElementById('blocklist-name');
+                if (nameInput) nameInput.value = 'Changed';
+                internals.discardFocusSpaceEditor();
+                assert(
+                    !document.getElementById('editor-section-when-body')?.classList.contains('hidden'),
+                    'T230: and leaves the open section open',
+                );
+            } finally {
+                internals.appData = saved;
+            }
+        })();
+
         // T231: Saving a switch from Manual to a schedule must not start the space.
         // A space reads as on merely by having an unpaused schedule, so creating
         // one used to turn it on even with every segment in the past or future.
