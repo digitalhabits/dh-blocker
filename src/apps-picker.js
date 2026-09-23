@@ -4,7 +4,7 @@ import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { escapeHtml } from './utils.js';
 import { pushModalUndo } from './app.js';
-import { ensureInstalledAppsCache, displayNameForBlockedApp } from './blocking-platform.js';
+import { ensureInstalledAppsCache } from './blocking-platform.js';
 
 // The blocklist modal's selected-apps array lives inside setupModalListeners
 // (app.js) and is shared with this picker via `window.modalApps`. Keep a

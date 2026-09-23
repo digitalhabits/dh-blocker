@@ -551,3 +551,51 @@ export function collectActiveIOSManualBlockPayload(now = Date.now()) {
     }
     return out;
 }
+
+/// Invisible direction/format marks a platform may carry in a process name —
+/// macOS reports WhatsApp as "‎WhatsApp". Left in, they defeat the
+/// installed-apps lookup and survive into the name we show.
+const INVISIBLE_MARKS = /[\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
+
+const cleanProcessName = (name) => String(name || '')
+    .replace(INVISIBLE_MARKS, '')
+    .trim()
+    .replace(/\.exe$/i, '');
+
+export function normalizeBlockedAppKey(name) {
+    return cleanProcessName(name).toLowerCase();
+}
+
+export function displayNameForBlockedApp(processName) {
+    const key = normalizeBlockedAppKey(processName);
+    if (!key) return processName;
+    const match = (state.installedAppsCache || []).find(
+        (a) => normalizeBlockedAppKey(a.process_name) === key,
+    );
+    if (match?.display_name) return match.display_name;
+
+    // Unknown app (not installed / not in the cache). Package-style ids
+    // (Android, e.g. app.vanadium.browser) read worse when title-cased.
+    if (key.includes('.')) return key;
+    // A name carrying its own capitals or spaces is already user-facing
+    // ("WhatsApp", "Windows PowerShell") — lowercasing it was the bug. Only
+    // bare tokens need prettifying, and splitting those on camelCase would
+    // mangle the very names this protects, so it splits on _ and - only.
+    const raw = cleanProcessName(processName);
+    if (/[A-Z]/.test(raw) || /\s/.test(raw)) return raw;
+    const spaced = raw.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+    return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/** One entry per blocked app — Edge's many PIDs collapse to a single name. */
+export function uniqueBlockedAppDisplayNames(names) {
+    const seen = new Set();
+    const out = [];
+    for (const name of names) {
+        const key = normalizeBlockedAppKey(name);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push(displayNameForBlockedApp(name));
+    }
+    return out;
+}

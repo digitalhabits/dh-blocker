@@ -13,8 +13,11 @@ import {
     applyIOSScreenTimeTokenRefreshResult,
     getBlocklistIOSScreenTimeSelection,
     hasUsableIOSScreenTimeSelection,
+    displayNameForBlockedApp,
     isAllowlistBlocklist,
     isProtectedApp,
+    normalizeBlockedAppKey,
+    uniqueBlockedAppDisplayNames,
 } from './blocklist-utils.js';
 import { isSchedulePausedNow, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
@@ -661,25 +664,6 @@ export function stopAppBlockingClosedownTick() {
     }
 }
 
-export function normalizeBlockedAppKey(name) {
-    return String(name || '').trim().replace(/\.exe$/i, '').toLowerCase();
-}
-
-export function displayNameForBlockedApp(processName) {
-    const key = normalizeBlockedAppKey(processName);
-    if (!key) return processName;
-    const match = (state.installedAppsCache || []).find(
-        (a) => normalizeBlockedAppKey(a.process_name) === key,
-    );
-    if (match?.display_name) return match.display_name;
-
-    // Unknown app (not installed / not in the cache). Package-style ids
-    // (Android, e.g. app.vanadium.browser) read worse when title-cased, so
-    // leave them as-is; only prettify bare desktop process names ("chrome").
-    if (key.includes('.')) return key;
-    return key.charAt(0).toUpperCase() + key.slice(1);
-}
-
 let installedAppsCachePromise = null;
 
 /**
@@ -717,19 +701,6 @@ export async function ensureInstalledAppsCache({ refresh = false } = {}) {
         }
     })();
     return installedAppsCachePromise;
-}
-
-/** One entry per blocked app — Edge's many PIDs collapse to a single name. */
-export function uniqueBlockedAppDisplayNames(names) {
-    const seen = new Set();
-    const out = [];
-    for (const name of names) {
-        const key = normalizeBlockedAppKey(name);
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-        out.push(displayNameForBlockedApp(name));
-    }
-    return out;
 }
 
 /** Pretty list join: "A", "A and B", "A, B and C", "A, B and 4 more". */

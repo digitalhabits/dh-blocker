@@ -7,8 +7,8 @@ import {
     getBlocklistRegularApps,
     getBlocklistIOSScreenTimeSelection,
     formatIOSScreenTimeSelectionLabel,
+    displayNameForBlockedApp,
 } from './blocklist-utils.js';
-import { displayNameForBlockedApp } from './blocking-platform.js';
 import { isBlocklistAllowlistMode } from './list-mode.js';
 
 /**
