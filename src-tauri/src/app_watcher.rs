@@ -144,10 +144,16 @@ static USER_ACK_PENDING: AtomicBool = AtomicBool::new(false);
 /// frontend can replay any `warning-show` events it missed — Tauri events
 /// are fire-and-forget, and on cold start the watcher often emits before
 /// JS has called `listen`.
-static PENDING_WARNING_ACKS: OnceLock<Mutex<HashMap<u32, (String, String, WarningOrigin)>>> =
-    OnceLock::new();
+static PENDING_WARNING_ACKS: OnceLock<Mutex<HashMap<u32, PendingAck>>> = OnceLock::new();
 
-fn pending_warning_acks_map() -> &'static Mutex<HashMap<u32, (String, String, WarningOrigin)>> {
+/// What a replayed `warning-show` needs to carry, minus the pid it is keyed by.
+struct PendingAck {
+    name: String,
+    process: String,
+    origin: WarningOrigin,
+}
+
+fn pending_warning_acks_map() -> &'static Mutex<HashMap<u32, PendingAck>> {
     PENDING_WARNING_ACKS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -167,11 +173,11 @@ pub fn pending_warning_acks() -> Vec<PendingBlockingWarning> {
     match pending_warning_acks_map().lock() {
         Ok(map) => map
             .iter()
-            .map(|(&pid, (name, process, origin))| PendingBlockingWarning {
+            .map(|(&pid, ack)| PendingBlockingWarning {
                 pid,
-                name: name.clone(),
-                process: process.clone(),
-                origin: *origin,
+                name: ack.name.clone(),
+                process: ack.process.clone(),
+                origin: ack.origin,
             })
             .collect(),
         Err(_) => Vec::new(),
@@ -180,7 +186,14 @@ pub fn pending_warning_acks() -> Vec<PendingBlockingWarning> {
 
 fn remember_pending_warning_ack(pid: u32, name: &str, process: &str, origin: WarningOrigin) {
     if let Ok(mut map) = pending_warning_acks_map().lock() {
-        map.insert(pid, (name.to_string(), process.to_string(), origin));
+        map.insert(
+            pid,
+            PendingAck {
+                name: name.to_string(),
+                process: process.to_string(),
+                origin,
+            },
+        );
     }
 }
 
