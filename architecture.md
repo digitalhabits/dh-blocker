@@ -680,8 +680,10 @@ Manual start (`startManualBlock`) or a Daily/Weekly save — via
 `ensureIOSAllowlistStartable` → `iosAllowlistUnionBreach`
 (`src/allowlist-ios.js`), which counts the union of every source running now
 plus the new space, since the cap is per store, not per space (Tier 1
-T226–T229). It does not re-check when a paused space is resumed or a
-schedule window opens later. Swift double-checks the manual payload in
+T226–T229). Switching a paused space back on is checked the same way
+(T235). Resuming on its own — a pause running out or a schedule window
+opening — is deliberately not checked: the space resumes and the appliers
+trim, rather than refusing a resume nobody is there to see. Swift double-checks the manual payload in
 `startBlock` (returns `success: false`) and, as a last-resort guard, the
 appliers keep a sorted 50-item prefix (over-blocking is the fail-safe
 direction for a blocker).
