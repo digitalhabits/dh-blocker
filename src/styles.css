@@ -10284,7 +10284,6 @@ body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .modal-c
     padding: 0;
     box-shadow: none;
     overflow: hidden;
-    background: var(--app-bg);
 }
 
 body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .mobile-modal-header,
@@ -10384,7 +10383,6 @@ body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .mobile-
     /* Cancel the desktop popup scrollbar hack so full-screen sheets keep equal gutters. */
     margin-right: 0 !important;
     padding: 18px 20px 20px !important;
-    scrollbar-gutter: stable;
 }
 
 /* Title lives in the sheet header — keep the space chip,
@@ -10407,14 +10405,14 @@ body.desktop-compact-layout #settings-modal .settings-modal-header{
 }
 
 body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .modal-buttons,
-body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-buttons{
+body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-buttons,
+body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-modal .modal-buttons{
     flex-shrink: 0;
     display: flex;
     gap: 10px;
     margin: 0;
     padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid rgba(225, 220, 214, 0.88);
-    background: var(--app-bg);
 }
 
 /* Narrow desktop: same full-screen sheets via viewport media query (not only the
@@ -10427,7 +10425,8 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
         #settings-modal,
         #override-modal,
         #start-block-confirm-modal,
-        #override-all-modal
+        #override-all-modal,
+        #schedule-overlay-customise-modal
     ).mobile-fullscreen-modal{
         top: var(--title-bar-height);
         left: 0;
@@ -10448,7 +10447,8 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
         #settings-modal,
         #override-modal,
         #start-block-confirm-modal,
-        #override-all-modal
+        #override-all-modal,
+        #schedule-overlay-customise-modal
     ).mobile-fullscreen-modal .modal-content{
         display: flex;
         flex-direction: column;
@@ -10461,7 +10461,6 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
         padding: 0;
         box-shadow: none;
         overflow: hidden;
-        background: var(--app-bg);
     }
 
     body:not(.handset-device):not(.ios):not(.android) :is(
@@ -10470,7 +10469,8 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
         #settings-modal,
         #override-modal,
         #start-block-confirm-modal,
-        #override-all-modal
+        #override-all-modal,
+        #schedule-overlay-customise-modal
     ).mobile-fullscreen-modal .mobile-modal-header{
         position: relative;
         top: auto;
@@ -10485,6 +10485,32 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
         background: color-mix(in srgb, var(--app-bg) 92%, transparent);
         backdrop-filter: blur(14px);
         border-bottom: 1px solid rgba(225, 220, 214, 0.88);
+    }
+
+    /* Start/Stop move their title and space chip into the sheet header, so it
+       needs the same treatment the phone sheet gives it (13444). */
+    body:not(.handset-device):not(.ios):not(.android) :is(
+        #start-block-confirm-modal,
+        #override-modal
+    ) .start-confirm-header-room{
+        margin-top: 0;
+        margin-bottom: 0;
+        min-width: 0;
+        flex: 1 1 auto;
+        gap: 8px 10px;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) :is(
+        #start-block-confirm-modal,
+        #override-modal
+    ) .start-confirm-header-room h3{
+        /* Same as .mobile-modal-header-title above — 1.45rem is the phone size
+           and sits too tall in the desktop sheet's 6px header. */
+        font-family: var(--font-heading);
+        font-size: 1.25rem;
+        font-weight: 700;
+        line-height: 1.2;
+        color: var(--text-primary);
     }
 
     body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal .mobile-modal-back-btn{
@@ -10532,7 +10558,8 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
         #settings-modal,
         #override-modal,
         #start-block-confirm-modal,
-        #override-all-modal
+        #override-all-modal,
+        #schedule-overlay-customise-modal
     ).mobile-fullscreen-modal .mobile-modal-scroll-body{
         flex: 1;
         min-height: 0;
@@ -10542,13 +10569,14 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
         overscroll-behavior: contain;
         margin-right: 0 !important;
         padding: 18px 20px 20px !important;
-        scrollbar-gutter: stable;
     }
 
     body:not(.handset-device):not(.ios):not(.android) :is(
         #blocklist-modal,
-        #settings-modal
-    ).mobile-fullscreen-modal .modal-buttons{
+        #settings-modal,
+        #schedule-overlay-customise-modal,
+        #enter-scheduler-modal
+    ).mobile-fullscreen-modal :is(.modal-buttons, .schedule-overlay-customise-footer, .editor-panel-footer){
         flex-shrink: 0;
         display: flex;
         gap: 10px;
@@ -10558,12 +10586,101 @@ body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-butto
         background: var(--app-bg);
     }
 
+    /* Cancel reads as a button against the cream footer, not a hole in it. */
+    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal
+        :is(.modal-buttons, .schedule-overlay-customise-footer) .modal-btn.cancel-btn{
+        background: var(--popover-bg);
+    }
+
+    /* The alert editor's footer stacks at narrow widths (12271), which put Delete
+       on its own row and left the sticky footer top-heavy. In the sheet it stays
+       one row: Delete left, Cancel and Save right, all vertically centred. */
+    body:not(.handset-device):not(.ios):not(.android) #schedule-overlay-customise-modal.mobile-fullscreen-modal .schedule-overlay-customise-footer{
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) #schedule-overlay-customise-modal.mobile-fullscreen-modal .schedule-overlay-customise-footer-left{
+        width: auto;
+    }
+
+    /* Edit focus space: sticky alone only pins once the content overflows, so the
+       footer drifted up and down as sections expanded. Make the editor fill the
+       sheet and push the footer down, so it sits on the bottom edge either way. */
+
     body:not(.handset-device):not(.ios):not(.android) #settings-modal .settings-modal-header{
         display: none;
     }
 
     body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .modal-buttons{
         display: none;
+    }
+
+    /* Edit focus space reads like Create: the sheet's own title bar, then the
+       duplicate/delete row, then the form straight on the sheet background.
+       Mirrors the handset sheet (header 10720, title 10781, panel row 16722 /
+       16727, card reset 10687). The header rule repeats the display:none
+       selector at 10360 verbatim so source order wins it back. */
+    body.enter-scheduler-modal-open:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header{
+        display: grid;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal .editor-panel-header{
+        justify-content: flex-end;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal .editor-panel-title,
+    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal .editor-panel-back-btn{
+        display: none;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .time-picker-container{
+        background: transparent;
+        box-shadow: none;
+        border-radius: 0;
+        padding: 0;
+        margin-bottom: 0;
+    }
+
+    /* The editor's Save / Unsaved-changes bar is already sticky, but it wears the
+       two-column panel's chrome: negative margins and a rounded panel-coloured
+       layer that only made sense inside the white card the sheet no longer has.
+       Give it the same footer treatment as Create focus space (10573). */
+    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal #editor-panel-footer::before{
+        display: none;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal #editor-panel-footer{
+        position: static;
+        margin: 0;
+    }
+
+    /* The unsaved-changes bar carries its own padding, margin and border (5794),
+       which grew the sticky footer the moment anything changed and shifted Save
+       down. In the sheet the footer owns the spacing: the label and Discard just
+       appear beside Save, and the row keeps its height. */
+    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .schedule-pending-bar{
+        /* The bar keeps its own box (5794) and the footer grows with it; only the
+           4px margin-top goes, so the bar sits centred in the footer with the
+           same space above and below rather than pushed down. */
+        margin-top: 0;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .schedule-pending-label{
+        transform: translateY(-1px);
+    }
+
+    /* The alert editor's title is a sentence, not a name — let it wrap rather
+       than truncate, and keep it centred against the back chevron. */
+    body:not(.handset-device):not(.ios):not(.android) #schedule-overlay-customise-modal.mobile-fullscreen-modal .mobile-modal-header{
+        align-items: center;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) #schedule-overlay-customise-modal.mobile-fullscreen-modal .mobile-modal-header-title{
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
     }
 }
 
