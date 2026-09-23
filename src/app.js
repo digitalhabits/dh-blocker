@@ -2814,7 +2814,6 @@ export function applySettingsLanguage() {
     setText('override-all-instruction', tSettings('overrideAllInstruction'));
     setText('cancel-override-all-btn', tSettings('cancel'));
     setText('confirm-override-all-btn', tSettings('overrideAll'));
-    setText('next-day-indicator', `+1 ${tSettings('nextDay')}`);
 
     setText('settings-modal-title', tSettings('settingsTitle'));
     setText('settings-general-heading', tSettings('settingsGeneralHeading'));
