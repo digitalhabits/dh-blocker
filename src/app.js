@@ -44,7 +44,7 @@ import {
 import { openInstalledAppsPicker } from './apps-picker.js';
 import { handlePopoverOutsideClick } from './time-inputs.js';
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
-import { applyEditorScheduleForBlocklist, applyFocusSpaceEditorLanguage, confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, isEditorInCreateModal, populateFocusSpaceEditor, setupFocusSpaceEditor } from './focus-space-editor.js';
+import { applyEditorScheduleForBlocklist, applyFocusSpaceEditorLanguage, confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, isEditorInCreateModal, notifyEditorChanged, populateFocusSpaceEditor, setOpenEditorSection, setupFocusSpaceEditor } from './focus-space-editor.js';
 import { loadData, saveData, updateHostsFile } from './persistence.js';
 import { cleanDomainInput, isValidDomain, processWebsiteInput, setupWebsitesImportMenu, resetWebsitesImportMenuPosition } from './website-input.js';
 import { updateBlockedApps, acceptEula, appBlockingWarningSnoozedUntilMs, checkAndroidPermissions, checkHelperStatus, checkScreentimeAuth, collectManualBlockedApps, collectScheduleBlockedApps, detectPlatform, ensureInstalledAppsCache, initializeAndroidBlockingState, initializeIOSBlockingState, listenForAndroidFrictionGate, onAndroidResumed, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAndroidBackButtonHandling, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility, openExternal, updateWindowHeight, isHelperInstallCancelled, isHelperConnectionError, joinAppListWithLimit, formatAppBlockingSnoozeStartsIn, APP_BLOCKING_SNOOZE_ICON_IMG_12 } from './blocking-platform.js';
@@ -95,7 +95,7 @@ import {
     syncScheduleOverlayCustomiseEditorState, syncScheduleOverlayCustomiseTitle,
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
-import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, openBlocklistModal, openOverrideModal, refreshSelectedBlocklistUi, restopForNewStrictness, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncColorSwatchInk, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
+import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, isEnterSchedulerModalOpen, openBlocklistModal, openOverrideModal, refreshSelectedBlocklistUi, restopForNewStrictness, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncColorSwatchInk, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
 import { enhanceNativeSelects } from './custom-select.js';
 import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, deleteBlocklist, isBlocklistEditFrictionRequired, pendingDelete, saveBlocklistOrderFromDOM, setUndoToastMessage } from './blocklists.js';
 import {
@@ -1597,7 +1597,12 @@ function setupModalListeners() {
         if (isEditorInCreateModal()) {
             closeBlocklistModal();
         } else {
+            // Saving is not a reset: keep the section the user is working in.
+            // Populating closes every section, which on a narrow window also
+            // changes the sheet's height and can bounce it shut.
+            const openSection = state.openEditorSection;
             populateFocusSpaceEditor(blocklist);
+            setOpenEditorSection(openSection);
         }
 
         // Only update blocklist display without resetting schedule segments
@@ -1622,7 +1627,11 @@ function setupModalListeners() {
             const dropdown = document.getElementById('blocklist-select');
             if (dropdown) {
                 dropdown.value = state.selectedBlocklistId;
-                handleBlocklistSelect({ target: dropdown });
+                // handleBlocklistSelect defaults openEnterUi to false, and the
+                // sheet sync reads "not opening" as "close it" — which on a
+                // narrow window shut the editor and landed the user back on the
+                // list every time they saved. Keep whatever state it is in.
+                handleBlocklistSelect({ target: dropdown }, { openEnterUi: isEnterSchedulerModalOpen() });
             }
         }
     };
@@ -1644,6 +1653,11 @@ function setupModalListeners() {
     };
 
     const renderModalTags = () => {
+        // Websites and apps are added from surfaces outside #focus-space-editor —
+        // the app picker is its own overlay — so the editor's own input/change
+        // listener never fires and the footer stayed clean until something else
+        // was touched. Every add and remove path comes through here.
+        notifyEditorChanged();
         renderTags(modalWebsitesTags, modalWebsites, (idx) => {
             const value = modalWebsites[idx];
             if (window.lockedWebsites && window.lockedWebsites.includes(value)) {
