@@ -366,3 +366,25 @@ fn the_exe_suffix_is_dropped_whatever_its_case() {
     // A user's label matches the process however Windows cases it.
     assert!(process_matches_app_label("notepad", "NOTEPAD.EXE", None));
 }
+
+#[cfg(target_os = "windows")]
+#[test]
+fn a_window_title_loses_its_elevation_prefix() {
+    // Windows prefixes an elevated window's title, so the card read
+    // "Administrator: Windows PowerShell". Only the exact English prefix is
+    // stripped: ": " is ordinary punctuation in titles ("Zoom: Meeting"), so
+    // splitting on it generally would cut real names in half.
+    assert_eq!(
+        display_name_from_window_title("Administrator: Windows PowerShell", "powershell.exe"),
+        "Windows PowerShell"
+    );
+    // The separator split still wins, and an unprefixed title is untouched.
+    assert_eq!(
+        display_name_from_window_title("Untitled - Paint", "mspaint.exe"),
+        "Paint"
+    );
+    assert_eq!(
+        display_name_from_window_title("Zoom: Meeting", "zoom.exe"),
+        "Zoom: Meeting"
+    );
+}

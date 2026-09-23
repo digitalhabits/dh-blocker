@@ -134,8 +134,10 @@ export async function updateBlockedApps() {
 export const appBlockingWarningRows = new Map();
 /** Rust's pid-0 row for an allow-mode start with nothing to close: the card explains, nothing counts down. */
 const ALLOWLIST_INTENTION_WARNING_NAME = '__allowlist_intention__';
-export const newWarningRow = (pid, name) => ({
+export const newWarningRow = (pid, name, origin, process) => ({
     name: name || 'App',
+    origin,
+    process,
     intentionOnly: pid === 0 || name === ALLOWLIST_INTENTION_WARNING_NAME,
 });
 const isWarningRowAwaitingAck = (row) => !row.ackedDeadlineMs && !row.dismissed;
@@ -200,12 +202,21 @@ export function getActiveAppBlockingSnoozeBlocklistIds(now = Date.now()) {
 /** Display names of the apps the card is still waiting on the user for. */
 function pendingWarningAppNames() {
     const unknownApp = tSettings('appBlockingUnknownApp');
-    const rawNames = [];
+    const rows = [];
     for (const [, row] of appBlockingWarningRows) {
         if (!isWarningRowAwaitingAck(row) || row.intentionOnly) continue;
-        rawNames.push((row.name || unknownApp).trim() || unknownApp);
+        rows.push([(row.name || unknownApp).trim() || unknownApp, row.process]);
     }
-    return uniqueBlockedAppDisplayNames(rawNames);
+    return uniqueBlockedAppDisplayNames(rows);
+}
+
+/** Modes that raised the warnings still awaiting the user ('blocklist' / 'allowlist'). */
+function pendingWarningOrigins() {
+    const origins = new Set();
+    for (const [, row] of appBlockingWarningRows) {
+        if (isWarningRowAwaitingAck(row) && row.origin) origins.add(row.origin);
+    }
+    return origins;
 }
 
 export function formatAppBlockingSnoozeStartsIn(remainingMs) {
@@ -304,33 +315,42 @@ function collectRunningSpaces(now = Date.now(), nowDate = new Date(now)) {
     return out;
 }
 
-/** A blocklist closes the apps it lists; an allow-mode space closes the ones it does not. */
-function spaceClosesApp(blocklist, appName) {
+/** Whether this space is the one that closes `appName`, given the modes that
+ *  raised the warnings on screen. A space only ever speaks for its own mode:
+ *  an allow-mode space closes everything it does not list, so "not listed" is
+ *  true of every blocklist-mode warning too, and it used to claim those as
+ *  well — naming a space that was not responsible. With the mode known there
+ *  is nothing left to match by name for allow mode, which also settles Windows,
+ *  where the warning carries a window title and the space lists executables.
+ *  `origins` empty means the watcher did not say (a replay from an older
+ *  build): fall back to the name test rather than claim nothing. */
+function spaceClosesApp(blocklist, appName, origins) {
+    const isAllow = isAllowlistBlocklist(blocklist);
+    if (origins.size > 0 && !origins.has(isAllow ? 'allowlist' : 'blocklist')) return false;
+    if (isAllow && origins.size > 0) return true;
     const target = normalizeBlockedAppKey(appName);
     const listed = (blocklist.apps || []).some((a) => normalizeBlockedAppKey(a) === target);
-    return isAllowlistBlocklist(blocklist) ? !listed : listed;
+    return isAllow ? !listed : listed;
 }
 
 /** The spaces the start card speaks for, as [{ blocklist, source }]: those that just
  *  started and close one of `appNames`, else any running space that does — never a
  *  stopped one. With no app names (allow mode, nothing to close) the allow-mode spaces. */
-function findResponsibleSpacesForWarningApps(appNames, now = Date.now()) {
+function findResponsibleSpacesForWarningApps(appNames, now = Date.now(), origins = pendingWarningOrigins()) {
     const running = collectRunningSpaces(now);
     const runningKeys = new Set(running.map(spaceKey));
     const pick = (spaces) => spaces.flatMap((s) => {
         const blocklist = state.appData.blocklists.find((bl) => bl.id === s.blocklistId);
         if (!blocklist || !runningKeys.has(spaceKey(s))) return [];
-        const closes = appNames.length
-            ? appNames.some((a) => spaceClosesApp(blocklist, a))
-            : isAllowlistBlocklist(blocklist);
+        const closes = (appNames.length ? appNames : ['']).some((a) => spaceClosesApp(blocklist, a, origins));
         return closes ? [{ blocklist, source: s.source }] : [];
     });
     const started = pick(appBlockingJustStarted);
     return started.length ? started : pick(running);
 }
 
-export function findResponsibleBlocklistsForWarningApps(appNames) {
-    return [...new Set(findResponsibleSpacesForWarningApps(appNames).map((s) => s.blocklist))];
+export function findResponsibleBlocklistsForWarningApps(appNames, origins) {
+    return [...new Set(findResponsibleSpacesForWarningApps(appNames, Date.now(), origins).map((s) => s.blocklist))];
 }
 
 /** Snooze is for schedule starts: offered only when every space on the card started from its schedule. */
@@ -387,7 +407,7 @@ export function setupAppBlockingWarningOverlay() {
         const p = event?.payload || {};
         const pid = Number(p.pid);
         if (!Number.isFinite(pid)) return;
-        appBlockingWarningRows.set(pid, newWarningRow(pid, p.name));
+        appBlockingWarningRows.set(pid, newWarningRow(pid, p.name, p.origin, p.process));
         renderAppBlockingWarningOverlay();
         renderAppBlockingClosedownBanner();
     }).catch(onFail('warning-show'));
@@ -418,7 +438,7 @@ export function setupAppBlockingWarningOverlay() {
                 const pid = Number(row?.pid);
                 if (!Number.isFinite(pid)) continue;
                 if (appBlockingWarningRows.has(pid)) continue;
-                appBlockingWarningRows.set(pid, newWarningRow(pid, row?.name));
+                appBlockingWarningRows.set(pid, newWarningRow(pid, row?.name, row?.origin, row?.process));
                 seeded = true;
             }
             if (seeded) {
@@ -624,8 +644,9 @@ export function renderAppBlockingClosedownBanner() {
     }
 
     const appFallback = tSettings('appBlockingBannerAppFallback');
-    const rawNames = acked.map((r) => (r.name || appFallback).trim() || appFallback);
-    const names = uniqueBlockedAppDisplayNames(rawNames);
+    const names = uniqueBlockedAppDisplayNames(
+        acked.map((r) => [(r.name || appFallback).trim() || appFallback, r.process]),
+    );
     const appsHtml = joinAppListWithLimit(names, 3);
     const soonestDeadline = Math.min(...acked.map((r) => r.ackedDeadlineMs));
     const remainingMs = Math.max(0, soonestDeadline - Date.now());

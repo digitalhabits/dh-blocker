@@ -27,7 +27,7 @@
  * - T206: app chrome is not text-selectable; inputs are
  * - T207: colour-swatch tick / + are inked against the swatch's own colour
  * - T208-T212: Desktop app-watcher payload: allow-mode spaces feed allowedApps, never the kill list
- * - T213-T219: The start card names the space that just started and closes the app; allow mode gets its own card
+ * - T213-T219, T222-T223: The start card names the space that just started and closes the app; allow mode gets its own card
  * - T220-T221: Diagnostics reports an allow-mode space as allowing, not blocking
  */
 
@@ -1772,7 +1772,7 @@
     }
 
     // ========================================
-    // CATEGORY: START CARD (T213-T219)
+    // CATEGORY: START CARD (T213-T219, T222-T223)
     // ========================================
 
     // The "get ready" card must name the space that just started and closes the
@@ -1796,7 +1796,10 @@
             internals.appData = createMockAppData({ blocklists, ...after });
             void internals.updateBlockedApps();
         };
-        const named = (apps) => internals.findResponsibleBlocklistsForWarningApps(apps).map((bl) => bl.name);
+        const named = (apps, origins) => internals.findResponsibleBlocklistsForWarningApps(apps, origins).map((bl) => bl.name);
+        // What the watcher puts on a warning event, as the card reads it back.
+        const BLOCKLIST_ORIGIN = new Set(['blocklist']);
+        const ALLOWLIST_ORIGIN = new Set(['allowlist']);
         const space = (name, mode, apps) => createMockBlocklist({ name, mode, apps });
         try {
             (function T213() {
@@ -1841,7 +1844,7 @@
             // The card itself. Render it from rows built the way the watcher's event builds them.
             const renderCard = (rows) => {
                 internals.appBlockingWarningRows.clear();
-                for (const [pid, name] of rows) internals.appBlockingWarningRows.set(pid, internals.newWarningRow(pid, name));
+                for (const [pid, name, origin] of rows) internals.appBlockingWarningRows.set(pid, internals.newWarningRow(pid, name, origin));
                 internals.renderAppBlockingWarningOverlay();
                 const text = (id) => document.getElementById(id)?.textContent || '';
                 return {
@@ -1858,7 +1861,7 @@
                 const stopped = space('block 1 copy', 'blocklist', ['Chess']);
                 const allow = space('allow 1', 'allowlist', ['Claude', 'Cursor']);
                 transition([stopped, allow], {}, { activeBlocks: [live(allow.id)] });
-                const card = renderCard([[0, '__allowlist_intention__']]);
+                const card = renderCard([[0, '__allowlist_intention__', 'allowlist']]);
                 assert(card.heading.includes('allow 1'), 'T218: nothing to close — the card is headed with the allow-only space');
                 assertEqual(card.pills, ['CClaude', 'CCursor'], 'T218: the allowed apps show as pills');
                 assert(card.pillsShown, 'T218: the pill row is visible');
@@ -1870,10 +1873,30 @@
                 const stopped = space('block 1 copy', 'blocklist', ['Chess']);
                 const allow = space('allow 1', 'allowlist', ['Claude']);
                 transition([stopped, allow], {}, { activeBlocks: [live(allow.id)] });
-                const card = renderCard([[101, 'Chess'], [102, 'Google Chrome']]);
+                const card = renderCard([[101, 'Chess', 'allowlist'], [102, 'Google Chrome', 'allowlist']]);
                 assert(card.heading.includes('allow 1') && !card.heading.includes('block 1 copy'), 'T219: closing apps — the card names the allow-only space');
                 assertEqual(card.pills, ['CClaude'], 'T219: the pills are the allowed apps, not the closing ones');
                 assert(card.note.includes('Chess') && card.note.toLowerCase().includes('google chrome'), 'T219: the note names the apps being closed');
+            })();
+
+            // T222-T223: the watcher says which mode raised the warning, so a
+            // space only speaks for its own mode. Working it out from app names
+            // instead made an allow-mode space claim every warning it did not
+            // list — which is every blocklist-mode warning as well as its own.
+            (function T222() {
+                const allow = space('allow 1', 'allowlist', ['Claude']);
+                const work = space('Work', 'blocklist', ['Chess']);
+                const both = { activeBlocks: [live(allow.id), live(work.id)] };
+                transition([allow, work], both, both);
+                assertEqual(named(['Chess'], BLOCKLIST_ORIGIN), ['Work'], 'T222: a blocklist warning names only the blocklist space, not the allow-mode space running beside it');
+            })();
+
+            (function T223() {
+                // Windows sends the window title, which can read exactly like an
+                // allowed app. Matching by name then hid the space from its own card.
+                const allow = space('allow 1', 'allowlist', ['Notepad']);
+                transition([allow], {}, { activeBlocks: [live(allow.id)] });
+                assertEqual(named(['Notepad'], ALLOWLIST_ORIGIN), ['allow 1'], 'T223: an allow-mode space is named even when the closing app reads like one it allows');
             })();
         } finally {
             internals.appBlockingWarningRows.clear();

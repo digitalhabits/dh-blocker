@@ -530,10 +530,36 @@ describe('app names shown to the user', () => {
         expect(displayNameForBlockedApp('Windows PowerShell')).toBe('Windows PowerShell');
     });
 
+    test('an all-caps name is not treated as already user-facing', () => {
+        // Windows shortcuts resolve EXCEL.EXE to the stem "EXCEL". Keeping a
+        // name that carries its own capitals is right for "WhatsApp", but an
+        // all-caps stem has no lower case to carry and reads as shouting.
+        state.installedAppsCache = [];
+        expect(displayNameForBlockedApp('EXCEL')).toBe('Excel');
+        expect(displayNameForBlockedApp('EXCEL.EXE')).toBe('Excel');
+        expect(displayNameForBlockedApp('WINWORD')).toBe('Winword');
+        // Sentence case, like every other tidied token here.
+        expect(displayNameForBlockedApp('MICROSOFT EXCEL')).toBe('Microsoft excel');
+        // Mixed case is still left alone, and a plain stem still gets one capital.
+        expect(displayNameForBlockedApp('eM Client')).toBe('eM Client');
+        expect(displayNameForBlockedApp('chrome')).toBe('Chrome');
+    });
+
     test('a bare process token is tidied into something readable', () => {
         expect(displayNameForBlockedApp('chrome')).toBe('Chrome');
         expect(displayNameForBlockedApp('chrome.exe')).toBe('Chrome');
         expect(displayNameForBlockedApp('chrome_crashpad_handler')).toBe('Chrome crashpad handler');
+    });
+
+    test('the executable name wins over the label the platform gave us', () => {
+        // Windows labels a warning with the window title, which names the open
+        // document or mail folder: eM Client showed up as "Operations". The
+        // executable behind it resolves against the installed-app list.
+        state.installedAppsCache = [{ process_name: 'MailClient', display_name: 'eM Client' }];
+        expect(displayNameForBlockedApp('Operations', 'MailClient.exe')).toBe('eM Client');
+        // Not installed, or no executable known: keep the platform's label.
+        expect(displayNameForBlockedApp('Operations', 'Unknown.exe')).toBe('Operations');
+        expect(displayNameForBlockedApp('Operations')).toBe('Operations');
     });
 
     test('package-style ids are left alone', () => {
