@@ -2227,16 +2227,28 @@ export const SETTINGS_TRANSLATIONS = {
         appBlockingFallbackBlocklistName: '专注空间',
         appBlockingUnknownApp: '未知应用',
         appBlockingBannerAppFallback: '应用',
-        appBlockingWarningHeadingPluralHtml: '保存你的工作',
-        appBlockingWarningSummarySinglePluralHtml: '<strong>{app}</strong> 即将被关闭。',
-        appBlockingWarningSummaryMultiPluralHtml: '<strong>{count}</strong> 个应用即将被关闭。',
-        appBlockingWarningHeadingHtml: '保存你的工作',
-        appBlockingWarningSummarySingleHtml: '<strong>{app}</strong> 即将被关闭。',
-        appBlockingWarningSummaryMultiHtml: '<strong>{count}</strong> 个应用即将被关闭。',
+        appBlockingWarningHeadingPluralHtml: '<strong>{name}</strong> 即将开始',
+        appBlockingWarningSummarySinglePluralHtml:
+            '<strong>{blocklist}</strong> 即将开始 — 是时候收尾了。<br>点击 <strong>{letsGo}</strong> 后，你有 30 秒保存 {apps} 中的工作，然后我们会为你关闭它。',
+        appBlockingWarningSummaryMultiPluralHtml:
+            '<strong>{blocklist}</strong> 即将开始 — 是时候收尾了。<br>点击 <strong>{letsGo}</strong> 后，你有 30 秒保存 {apps} 中的工作，然后我们会为你关闭它们。',
+        appBlockingAllowlistIntro:
+            '你的设备将变成一个工具箱，只保留你允许自己使用的应用。',
+        appBlockingAllowlistActionNoWarnedHtml:
+            '点击 <strong>{letsGo}</strong> 后，当你尝试打开其他应用时，它们会被关闭。',
+        appBlockingAllowlistActionSingleWarnedHtml:
+            '点击 <strong>{letsGo}</strong> 后，你有 30 秒保存 {warnedApps} 中的工作，然后我们会为你关闭它。',
+        appBlockingAllowlistActionMultiWarnedHtml:
+            '点击 <strong>{letsGo}</strong> 后，你有 30 秒保存 {warnedApps} 中的工作，然后我们会为你关闭它们。',
+        appBlockingWarningHeadingHtml: '<strong>{name}</strong> 即将开始',
+        appBlockingWarningSummarySingleHtml:
+            '<strong>{blocklist}</strong> 即将开始 — 是时候收尾了。<br>点击 <strong>{letsGo}</strong> 后，你有 30 秒保存 {apps} 中的工作，然后我们会为你关闭它。',
+        appBlockingWarningSummaryMultiHtml:
+            '<strong>{blocklist}</strong> 即将开始 — 是时候收尾了。<br>点击 <strong>{letsGo}</strong> 后，你有 30 秒保存 {apps} 中的工作，然后我们会为你关闭它们。',
         appBlockingClosedownCountdownHtml: '{apps} 将在 <strong>{seconds}</strong> 秒后关闭。',
         appBlockingClosedownFinalSingleHtml: '正在关闭 {apps}...',
         appBlockingClosedownFinalMultiHtml: '正在关闭 {apps}...',
-        appBlockingListMoreFmt: '另有 {count} 个',
+        appBlockingListMoreFmt: '另有 {n} 个',
         settingsFeedbackFooterHtml: '有反馈或需要帮助？请联系 <a href="mailto:team@digitalhabits.org">team@digitalhabits.org</a>。',
         madeWith: '用心制作',
         by: '出品',
