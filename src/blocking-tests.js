@@ -27,6 +27,7 @@
  * - T206: app chrome is not text-selectable; inputs are
  * - T207: colour-swatch tick / + are inked against the swatch's own colour
  * - T208-T212: Desktop app-watcher payload: allow-mode spaces feed allowedApps, never the kill list
+ * - T158b: iOS schedule entries drop protected domains, as the manual payload does
  */
 
 (function () {
@@ -1874,6 +1875,18 @@
                 const entry = build()[0];
                 assertEqual(entry.appTokenData, ['tokA'], 'T158: app tokens are carried on an allow entry');
                 assertEqual(entry.categoryTokenData, ['catA'], 'T158: category tokens are preserved, not zeroed');
+            })();
+
+            (function T158b() {
+                // The manual payload filters these; schedules shipped them raw,
+                // and in allow mode they also eat into the 50-exception budget.
+                const protectedDomain = window.__REDDBLOCK_INTERNALS__.PROTECTED_DOMAINS[0];
+                const bl = createMockBlocklist({ mode: 'blocklist', websites: ['x.com', protectedDomain] });
+                withData([bl], [createMockSchedule(bl.id, [seg])]);
+                const entries = build();
+                assertEqual(entries.length, 1, 'T158b: the schedule produces an entry');
+                assert(!entries[0].domains.includes(protectedDomain), 'T158b: a protected domain never ships in a schedule entry');
+                assert(entries[0].domains.includes('x.com'), 'T158b: ordinary domains still ship');
             })();
         } finally {
             window.__REDDBLOCK_INTERNALS__.appData = saved;
