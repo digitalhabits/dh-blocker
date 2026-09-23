@@ -10,7 +10,7 @@ import { ask, message, open as openDialog, save as saveDialog } from '@tauri-app
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { escapeHtml, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
-import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, isAllowlistBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist } from './blocklist-utils.js';
+import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, healWwwWebsiteEntries, isAllowlistBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist } from './blocklist-utils.js';
 import { computeNextOneShotOccurrenceMs, computeNextRepeatingOccurrenceMs, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render, renderScheduleVisibilityChips } from './render.js';
@@ -97,11 +97,12 @@ function buildBlocklistCardStatusLine(bl, now = Date.now()) {
     const manualAutoStarts = kind === 'manual' && !!block && getBlocklistUnlockMinutes(bl) > 0;
     const timing = manualAutoStarts ? tSettings('whenManualShort') : formatScheduleWhenSummary(kind, schedule);
     const fullTiming = manualAutoStarts ? timing : formatScheduleWhenSummary(kind, schedule, { full: true });
-    // 24-hour HH:MM, matching the schedule times on the same line.
+    // 24-hour HH:MM, matching the schedule times on the same line. Strictness caps a pause at 24 h, so it ends today or tomorrow.
     const pausedUntil = (pauseEndTime) => {
         const d = new Date(pauseEndTime);
         const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-        return tSettingsFmt('cardStatusPausedUntilFmt', { time: hhmm });
+        const key = d.toDateString() === new Date(now).toDateString() ? 'cardStatusPausedUntilFmt' : 'cardStatusPausedUntilTomorrowFmt';
+        return tSettingsFmt(key, { time: hhmm });
     };
 
     let status = null;
@@ -548,7 +549,7 @@ export function uniqueImportedBlocklistName(desiredName) {
 }
 
 export function blocklistFromImportedEntry(entry) {
-    return {
+    const blocklist = {
         id: generateId(),
         name: uniqueImportedBlocklistName(entry.name),
         mode: entry.mode || 'blocklist',
@@ -562,6 +563,9 @@ export function blocklistFromImportedEntry(entry) {
         overrideDifficulty: cloneOverrideDifficulty(entry.overrideDifficulty),
         unlockMinutes: normalizeUnlockMinutes(entry.unlockMinutes),
     };
+    // Same www. clean-up as typed sites: iOS hands stored entries to Screen Time as-is.
+    healWwwWebsiteEntries([blocklist]);
+    return blocklist;
 }
 
 export async function exportBlocklistsToFile() {

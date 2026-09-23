@@ -18,6 +18,7 @@
 import { state } from './state.js';
 import { isSchedulePausedNow } from './schedule-engine.js';
 import { isOneOffPauseActive } from './blocklists.js';
+import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
 import {
     openOverrideModal,
     openScheduleOverrideModal,
@@ -99,11 +100,13 @@ export async function turnFocusSpaceOn(blocklistId, now = Date.now()) {
 
     if (schedule) {
         if (!isSchedulePausedNow(schedule, now)) return false;
+        if (!await ensureIOSAllowlistStartable(blocklist)) return false;
         await resumePausedSchedule(schedule);
         return true;
     }
     if (block) {
         if (!isOneOffPauseActive(block, now)) return false;
+        if (!await ensureIOSAllowlistStartable(blocklist)) return false;
         await resumePausedBlock(block);
         return true;
     }

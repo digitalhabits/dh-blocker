@@ -95,7 +95,7 @@ import {
     syncScheduleOverlayCustomiseEditorState, syncScheduleOverlayCustomiseTitle,
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
-import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, isEnterSchedulerModalOpen, openBlocklistModal, openOverrideModal, refreshSelectedBlocklistUi, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncColorSwatchInk, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
+import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, isEnterSchedulerModalOpen, openBlocklistModal, openOverrideModal, refreshSelectedBlocklistUi, restopForNewStrictness, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncColorSwatchInk, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
 import { enhanceNativeSelects } from './custom-select.js';
 import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, deleteBlocklist, isBlocklistEditFrictionRequired, pendingDelete, saveBlocklistOrderFromDOM, setUndoToastMessage } from './blocklists.js';
 import {
@@ -1568,6 +1568,9 @@ function setupModalListeners() {
         applyEditorScheduleForBlocklist(blocklist.id);
 
         await saveData();
+        if (existingBlocklistForSave && normalizeUnlockMinutes(existingBlocklistForSave.unlockMinutes) !== blocklist.unlockMinutes) {
+            await restopForNewStrictness(blocklist.id);
+        }
 
         // If this blocklist is active (block or schedule), update blocking rules immediately
         const now = Date.now();
@@ -2828,7 +2831,6 @@ export function applySettingsLanguage() {
     setText('override-all-instruction', tSettings('overrideAllInstruction'));
     setText('cancel-override-all-btn', tSettings('cancel'));
     setText('confirm-override-all-btn', tSettings('overrideAll'));
-    setText('next-day-indicator', `+1 ${tSettings('nextDay')}`);
 
     setText('settings-modal-title', tSettings('settingsTitle'));
     setText('settings-general-heading', tSettings('settingsGeneralHeading'));

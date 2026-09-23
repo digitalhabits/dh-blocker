@@ -1833,6 +1833,25 @@
                 assertEqual(sourcesNow().length, 0, 'T229: a schedule paused with no end time is not an active source, as Swift and the rest of the JS already treat it');
             })();
 
+            (function T235() {
+                // Switching a paused allow space back on runs the same check as starting it.
+                const running = allow(sites('a', 30));
+                const paused = allow(sites('b', 30));
+                const pausedBlock = createMockBlock(paused.id, now - 1000, now + 3600000, { isPaused: true, pauseEndTime: now + 600000 });
+                internals.appData = createMockAppData({
+                    blocklists: [running, paused],
+                    activeBlocks: [createMockBlock(running.id, now - 1000, now + 60000), pausedBlock],
+                });
+                const wasIOS = internals.isIOS;
+                internals.isIOS = true;
+                try {
+                    internals.turnFocusSpaceOn(paused.id, now)?.catch?.(() => {});
+                } finally {
+                    internals.isIOS = wasIOS;
+                }
+                assert(pausedBlock.isPaused === true, 'T235: resuming an allow space that would push the union past 50 is refused on iOS');
+            })();
+
         } finally {
             internals.appData = saved;
         }
@@ -3417,6 +3436,44 @@
         }
     }
 
+    // T232-T234: changing strictness on a stopped space redoes the stop with the new setting.
+    // Checked synchronously: the stop updates appData before its first await; the native sync tail is not under test.
+    function runRestopForNewStrictnessTests() {
+        console.log('\n🔁 Strictness change on a stopped space');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        if (typeof internals.restopForNewStrictness !== 'function') {
+            assert(false, 'T232: restopForNewStrictness is exposed to tests');
+            return;
+        }
+        const saved = internals.appData;
+        const now = Date.now();
+        const FOREVER = 253402300799999;
+        const block = (id, extra = {}) => createMockBlock(id, now - 60000, FOREVER, { isAlwaysOn: true, ...extra });
+        const pending = { isPaused: true, pauseEndTime: now + 24 * 3600000 };
+        try {
+            const never = createMockBlocklist({ id: 'bl-restop-never', unlockMinutes: 0 });
+            const five = createMockBlocklist({ id: 'bl-restop-five', unlockMinutes: 5 });
+            const running = createMockBlocklist({ id: 'bl-restop-running', unlockMinutes: 0 });
+            internals.appData = createMockAppData({
+                blocklists: [never, five, running],
+                activeBlocks: [block(never.id, pending), block(five.id, pending), block(running.id)],
+                schedules: [],
+            });
+            const settle = (p) => p?.catch?.(() => {});
+            settle(internals.restopForNewStrictness(never.id));
+            assert(!internals.appData.activeBlocks.some((b) => b.blocklistId === never.id),
+                'T232: switching a stopped space to Never cancels its pending restart');
+            settle(internals.restopForNewStrictness(five.id));
+            const fiveEnd = internals.appData.activeBlocks.find((b) => b.blocklistId === five.id)?.pauseEndTime;
+            assert(Math.abs(fiveEnd - (now + 5 * 60000)) < 60000, `T233: switching it to 5 min restarts it 5 min from now (got ${fiveEnd - now} ms)`);
+            settle(internals.restopForNewStrictness(running.id));
+            const runningBlock = internals.appData.activeBlocks.find((b) => b.blocklistId === running.id);
+            assert(!!runningBlock && !runningBlock.isPaused, 'T234: a running space is not stopped by a strictness change');
+        } finally {
+            internals.appData = saved;
+        }
+    }
+
     // ========================================
     // CATEGORY: CARD TIMING TEXT AND SECTION KEYBOARD (T187-T190)
     // ========================================
@@ -3445,6 +3502,10 @@
                 `T187: a stopped Manual space that auto-starts drops "starts when enabled" (got "${autoText}")`);
             assert(statusText(never.id).includes('starts when enabled'),
                 `T188: a Manual space set to Never keeps "starts when enabled" (got "${statusText(never.id)}")`);
+            // A 24 h stop always ends on the next calendar day.
+            internals.appData.activeBlocks[0].pauseEndTime = now + 24 * 3600000;
+            internals.render();
+            assert(statusText(autoStart.id).includes('tomorrow'), `T236: a pause ending tomorrow says so (got "${statusText(autoStart.id)}")`);
         } finally {
             internals.appData = savedAppData;
             internals.render();
@@ -3641,6 +3702,7 @@
             runChallengePrimitiveTests();
             runChallengeControllerTests();
             runTemporaryUnlockTests();
+            runRestopForNewStrictnessTests();
             runCompactDesktopCardTapTests();
             runFocusSpaceSwitchTests();
             runCardRenderStabilityTests();

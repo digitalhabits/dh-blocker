@@ -270,11 +270,11 @@ export function closeStartConfirmModal() {
     state.pendingStartBlocklistId = null;
 }
 
-/** "Blocking resumes automatically after 10 minutes." / "It stays off until you turn it on again." */
+/** "Blocking resumes automatically after 10 minutes." (allow mode names itself) / "It stays off until you turn it on again." */
 export function formatStopOutcomeLine(blocklist) {
     const minutes = getBlocklistUnlockMinutes(blocklist);
     if (minutes > 0) {
-        return tSettingsFmt('stopResumesAfterFmt', { duration: formatUnlockDurationLabel(minutes) });
+        return tSettingsFmt(isAllowlistBlocklist(blocklist) ? 'stopResumesAllowAfterFmt' : 'stopResumesAfterFmt', { duration: formatUnlockDurationLabel(minutes) });
     }
     return tSettings('stopStaysOff');
 }
@@ -1671,6 +1671,26 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
                 console.warn('[iOS] One-off pause-resume registration failed:', e);
             }
         }
+    }
+    return outcome;
+}
+
+/**
+ * Strictness changed on a stopped space whose restart is pending: redo the stop
+ * as if made now with the new setting, so Never cancels the restart and 5 min
+ * restarts in 5 min. A running space, or one plainly off, is left alone.
+ */
+export async function restopForNewStrictness(blocklistId, now = Date.now()) {
+    const pending = (t) => t.blocklistId === blocklistId && t.isPaused && t.pauseEndTime > now;
+    const block = state.appData.activeBlocks.find(pending) || null;
+    const schedule = block ? null : (state.appData.schedules || []).find(pending) || null;
+    if (!block && !schedule) return null;
+    const outcome = await stopFocusSpaceTarget({ block, schedule });
+    // iOS keeps the resume it registered at the first stop; empty its payload so it re-applies nothing.
+    if (outcome?.kind === 'removed' && state.isIOS) {
+        const allow = isAllowlistBlocklist(state.appData.blocklists.find(bl => bl.id === blocklistId));
+        await tauriAPI.screentimeSetResumePayload({ blockId: block.id, domains: [], appTokenData: [], categoryTokenData: [], mode: allow ? 'allowlist' : null })
+            .catch((e) => console.warn('[iOS] Emptying the resume payload failed:', e));
     }
     return outcome;
 }

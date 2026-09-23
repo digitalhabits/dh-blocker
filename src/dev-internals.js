@@ -50,7 +50,7 @@ import {
     applyStopToTarget,
     normalizeUnlockMinutes,
 } from './unlock-duration.js';
-import { applyOverrideTypeUi, closeBlocklistModal, closeStartConfirmModal, openBlocklistModal, openScheduleOverrideModal } from './confirm-modals.js';
+import { applyOverrideTypeUi, closeBlocklistModal, closeStartConfirmModal, openBlocklistModal, openScheduleOverrideModal, restopForNewStrictness } from './confirm-modals.js';
 import { applyEditorScheduleForBlocklist, discardFocusSpaceEditor, populateFocusSpaceEditor, setOpenEditorSection, setWhenToBlockKind, setupFocusSpaceEditor, showEditorDiscardConfirmModal } from './focus-space-editor.js';
 import { enhanceNativeSelects, enhanceSelect } from './custom-select.js';
 import { renderDiagnosticsEnforcementSection } from './settings.js';
@@ -59,6 +59,8 @@ import { renderDiagnosticsEnforcementSection } from './settings.js';
 window.__REDDBLOCK_INTERNALS__ = {
     get appData() { return state.appData; },
     set appData(val) { state.appData = val; },
+    get isIOS() { return state.isIOS; },
+    set isIOS(val) { state.isIOS = val; },
     saveData,
     updateHostsFile,
     get tauriAPI() { return tauriAPI; },
@@ -123,6 +125,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     UNLOCK_MINUTE_OPTIONS,
     applyStopToTarget,
     normalizeUnlockMinutes,
+    restopForNewStrictness,
     openScheduleOverrideModal,
     closeStartConfirmModal,
     turnFocusSpaceOn,

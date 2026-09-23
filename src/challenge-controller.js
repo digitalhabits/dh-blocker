@@ -115,8 +115,8 @@ export function createChallengeController(elements) {
     const renderWordState = () => {
         if (!wordState) return;
         const currentWord = getCurrentChallengeWord(wordState);
+        // Only finished words count: the bar starts empty, not on the word still to type.
         const completed = getCompletedChallengeText(wordState);
-        const reached = completed ? `${completed} ${currentWord}` : currentWord;
         if (wordProgressEl) {
             wordProgressEl.textContent = tSettingsFmt('challengeWordProgressFmt', {
                 current: wordState.currentIndex + 1,
@@ -125,7 +125,7 @@ export function createChallengeController(elements) {
         }
         if (currentWordEl) currentWordEl.textContent = currentWord;
         if (wordInputEl) wordInputEl.value = '';
-        setProgress(reached.length);
+        setProgress(completed.length);
         if (confirmBtnEl) confirmBtnEl.disabled = !currentWord;
     };
 
