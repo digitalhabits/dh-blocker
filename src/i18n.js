@@ -405,6 +405,9 @@ export const SETTINGS_TRANSLATIONS = {
         diagnosticsFdaRevoked: 'Revoked',
         diagnosticsActiveBlocks: 'Active blocks',
         diagnosticsRecentLogSection: 'Recent log (last {n} lines)',
+        diagnosticsCurrentEnforcement: 'Currently being enforced',
+        diagnosticsAllowedDomainsCount: 'Allowed sites ({n})',
+        diagnosticsAllowedAppsCount: 'Allowed apps ({n})',
         diagnosticsCurrentlyBlocking: 'Currently being blocked',
         diagnosticsActiveSources: 'Active blocklists',
         diagnosticsActiveSourcesNone: 'None',
@@ -459,6 +462,19 @@ export const SETTINGS_TRANSLATIONS = {
             '<strong>{blocklist}</strong> is starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close it for you.',
         appBlockingWarningSummaryMultiHtml:
             '<strong>{blocklist}</strong> is starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close them for you.',
+        appBlockingWarningHeadingPluralHtml: '<strong>{name}</strong> are starting',
+        appBlockingWarningSummarySinglePluralHtml:
+            '<strong>{blocklist}</strong> are starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close it for you.',
+        appBlockingWarningSummaryMultiPluralHtml:
+            '<strong>{blocklist}</strong> are starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close them for you.',
+        appBlockingAllowlistIntro:
+            'Your device will become a toolkit with just the apps you\'ve allowed yourself to use.',
+        appBlockingAllowlistActionNoWarnedHtml:
+            'When you click <strong>{letsGo}</strong>, all other apps will be closed when you try to open them.',
+        appBlockingAllowlistActionSingleWarnedHtml:
+            'When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {warnedApps}, then we’ll close it for you.',
+        appBlockingAllowlistActionMultiWarnedHtml:
+            'When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {warnedApps}, then we’ll close them for you.',
         appBlockingClosedownCountdownHtml:
             'Closing {apps} in <strong>{seconds}s</strong> — save your work now.',
         appBlockingClosedownFinalSingleHtml: 'Closing {apps} now…',
@@ -1285,6 +1301,9 @@ export const SETTINGS_TRANSLATIONS = {
         diagnosticsFdaRevoked: 'Tilbagekaldt',
         diagnosticsActiveBlocks: 'Aktive blokeringer',
         diagnosticsRecentLogSection: 'Seneste log (sidste {n} linjer)',
+        diagnosticsCurrentEnforcement: 'Håndhæves lige nu',
+        diagnosticsAllowedDomainsCount: 'Tilladte sider ({n})',
+        diagnosticsAllowedAppsCount: 'Tilladte apps ({n})',
         diagnosticsCurrentlyBlocking: 'Blokeres lige nu',
         diagnosticsActiveSources: 'Aktive blokeringslister',
         diagnosticsActiveSourcesNone: 'Ingen',
@@ -1339,6 +1358,19 @@ export const SETTINGS_TRANSLATIONS = {
             '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes den ned.',
         appBlockingWarningSummaryMultiHtml:
             '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes de ned.',
+        appBlockingWarningHeadingPluralHtml: '<strong>{name}</strong> starter',
+        appBlockingWarningSummarySinglePluralHtml:
+            '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes den ned.',
+        appBlockingWarningSummaryMultiPluralHtml:
+            '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes de ned.',
+        appBlockingAllowlistIntro:
+            'Din enhed bliver et værktøjssæt med kun de apps, du har givet dig selv lov til at bruge.',
+        appBlockingAllowlistActionNoWarnedHtml:
+            'Når du klikker på <strong>{letsGo}</strong>, lukkes alle andre apps, når du forsøger at åbne dem.',
+        appBlockingAllowlistActionSingleWarnedHtml:
+            'Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {warnedApps}, derefter lukkes den ned.',
+        appBlockingAllowlistActionMultiWarnedHtml:
+            'Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {warnedApps}, derefter lukkes de ned.',
         appBlockingClosedownCountdownHtml:
             'Lukker {apps} om <strong>{seconds} sek.</strong> — gem dit arbejde nu.',
         appBlockingClosedownFinalSingleHtml: 'Lukker {apps} nu…',
@@ -2144,6 +2176,9 @@ export const SETTINGS_TRANSLATIONS = {
         diagnosticsFdaRevoked: '已撤销',
         diagnosticsActiveBlocks: '运行中的阻止',
         diagnosticsRecentLogSection: '最近日志（{n} 条）',
+        diagnosticsCurrentEnforcement: '当前生效的限制',
+        diagnosticsAllowedDomainsCount: '{n} 个允许的网站',
+        diagnosticsAllowedAppsCount: '{n} 个允许的应用',
         diagnosticsCurrentlyBlocking: '当前正在阻止',
         diagnosticsActiveSources: '活动来源',
         diagnosticsActiveSourcesNone: '无',
@@ -2192,13 +2227,28 @@ export const SETTINGS_TRANSLATIONS = {
         appBlockingFallbackBlocklistName: '专注空间',
         appBlockingUnknownApp: '未知应用',
         appBlockingBannerAppFallback: '应用',
-        appBlockingWarningHeadingHtml: '保存你的工作',
-        appBlockingWarningSummarySingleHtml: '<strong>{app}</strong> 即将被关闭。',
-        appBlockingWarningSummaryMultiHtml: '<strong>{count}</strong> 个应用即将被关闭。',
+        appBlockingWarningHeadingPluralHtml: '<strong>{name}</strong> 即将开始',
+        appBlockingWarningSummarySinglePluralHtml:
+            '<strong>{blocklist}</strong> 即将开始 — 是时候收尾了。<br>点击 <strong>{letsGo}</strong> 后，你有 30 秒保存 {apps} 中的工作，然后我们会为你关闭它。',
+        appBlockingWarningSummaryMultiPluralHtml:
+            '<strong>{blocklist}</strong> 即将开始 — 是时候收尾了。<br>点击 <strong>{letsGo}</strong> 后，你有 30 秒保存 {apps} 中的工作，然后我们会为你关闭它们。',
+        appBlockingAllowlistIntro:
+            '你的设备将变成一个工具箱，只保留你允许自己使用的应用。',
+        appBlockingAllowlistActionNoWarnedHtml:
+            '点击 <strong>{letsGo}</strong> 后，当你尝试打开其他应用时，它们会被关闭。',
+        appBlockingAllowlistActionSingleWarnedHtml:
+            '点击 <strong>{letsGo}</strong> 后，你有 30 秒保存 {warnedApps} 中的工作，然后我们会为你关闭它。',
+        appBlockingAllowlistActionMultiWarnedHtml:
+            '点击 <strong>{letsGo}</strong> 后，你有 30 秒保存 {warnedApps} 中的工作，然后我们会为你关闭它们。',
+        appBlockingWarningHeadingHtml: '<strong>{name}</strong> 即将开始',
+        appBlockingWarningSummarySingleHtml:
+            '<strong>{blocklist}</strong> 即将开始 — 是时候收尾了。<br>点击 <strong>{letsGo}</strong> 后，你有 30 秒保存 {apps} 中的工作，然后我们会为你关闭它。',
+        appBlockingWarningSummaryMultiHtml:
+            '<strong>{blocklist}</strong> 即将开始 — 是时候收尾了。<br>点击 <strong>{letsGo}</strong> 后，你有 30 秒保存 {apps} 中的工作，然后我们会为你关闭它们。',
         appBlockingClosedownCountdownHtml: '{apps} 将在 <strong>{seconds}</strong> 秒后关闭。',
         appBlockingClosedownFinalSingleHtml: '正在关闭 {apps}...',
         appBlockingClosedownFinalMultiHtml: '正在关闭 {apps}...',
-        appBlockingListMoreFmt: '另有 {count} 个',
+        appBlockingListMoreFmt: '另有 {n} 个',
         settingsFeedbackFooterHtml: '有反馈或需要帮助？请联系 <a href="mailto:team@digitalhabits.org">team@digitalhabits.org</a>。',
         madeWith: '用心制作',
         by: '出品',

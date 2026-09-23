@@ -25,6 +25,10 @@ import { saveData, updateHostsFile } from './persistence.js';
 import {
     acceptEula,
     appBlockingWarningRows,
+    findResponsibleBlocklistsForWarningApps,
+    isAppBlockingWarningScheduleEligible,
+    newWarningRow,
+    renderAppBlockingWarningOverlay,
     setupAndroidBackButtonHandling,
     updateBlockedApps,
 } from './blocking-platform.js';
@@ -49,6 +53,7 @@ import {
 import { applyOverrideTypeUi, closeBlocklistModal, closeStartConfirmModal, openBlocklistModal, openScheduleOverrideModal } from './confirm-modals.js';
 import { setOpenEditorSection, setWhenToBlockKind, setupFocusSpaceEditor, showEditorDiscardConfirmModal } from './focus-space-editor.js';
 import { enhanceNativeSelects, enhanceSelect } from './custom-select.js';
+import { renderDiagnosticsEnforcementSection } from './settings.js';
 
 // Expose for integration tests (dev mode only)
 window.__REDDBLOCK_INTERNALS__ = {
@@ -109,6 +114,10 @@ window.__REDDBLOCK_INTERNALS__ = {
     // test rather than duplicating modal-close logic in the harness.
     setupAndroidBackButtonHandling,
     appBlockingWarningRows,
+    findResponsibleBlocklistsForWarningApps,
+    isAppBlockingWarningScheduleEligible,
+    newWarningRow,
+    renderAppBlockingWarningOverlay,
     updateBlockedApps,
     DEFAULT_UNLOCK_MINUTES,
     UNLOCK_MINUTE_OPTIONS,
@@ -132,6 +141,8 @@ window.__REDDBLOCK_INTERNALS__ = {
     // App-styled dropdowns over native selects.
     enhanceSelect,
     enhanceNativeSelects,
+    // Diagnostics HTML, so Tier 1 can assert what an allow-mode block reports.
+    renderDiagnosticsEnforcementSection,
 };
 
 // ========================================

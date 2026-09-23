@@ -8,10 +8,11 @@ import { tauriAPI } from './tauri-api.js';
 import { escapeHtml } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
 import { getBlocklistDisplayApps } from './list-presentation.js';
+import { isAllowlistBlocklist } from './blocklist-utils.js';
 import { isMobileOverrideChallengePlatform } from './override-challenge.js';
 import { saveData } from './persistence.js';
 import { closeSchedulePanelDropdownMenus, positionSchedulePanelDropdownMenu } from './schedule-editor.js';
-import { findResponsibleBlocklistForWarningApps, joinAppListWithLimit } from './blocking-platform.js';
+import { findResponsibleBlocklistsForWarningApps, joinAppListWithLimit } from './blocking-platform.js';
 import {
     initScheduleOverlayMessageEditor,
     getScheduleOverlayMessageEditorHtml,
@@ -286,7 +287,7 @@ export function getScheduleStartOverlayForBlocklistId(blocklistId) {
 }
 
 export function getScheduleStartOverlayForWarningApps(appNames) {
-    const blocklist = findResponsibleBlocklistForWarningApps(appNames);
+    const [blocklist] = findResponsibleBlocklistsForWarningApps(appNames);
     if (!blocklist) return null;
     return getScheduleStartOverlayForBlocklistId(blocklist.id);
 }
@@ -419,14 +420,35 @@ export async function applyOverlayMediaToElements({
     if (emojiEl) emojiEl.textContent = blocklistEmoji || '🎯';
 }
 
-export function buildDefaultWarningSummaryHtml(names, blocklistName, letsGoLabel) {
+export function buildDefaultWarningSummaryHtml(names, blocklistName, letsGoLabel, plural = false) {
     const apps = joinAppListWithLimit(names, 3);
     const bl = escapeHtml(blocklistName);
     const letsGo = escapeHtml(letsGoLabel || tSettings('appBlockingLetsGo'));
-    const summaryKey = names.length === 1
-        ? 'appBlockingWarningSummarySingleHtml'
-        : 'appBlockingWarningSummaryMultiHtml';
+    const summaryKey = `appBlockingWarningSummary${names.length === 1 ? 'Single' : 'Multi'}${plural ? 'Plural' : ''}Html`;
     return tSettingsFmt(summaryKey, { blocklist: bl, letsGo, apps });
+}
+
+function getAllowlistWarningAppInitial(name) {
+    const trimmed = String(name || '').trim();
+    return trimmed ? Array.from(trimmed)[0].toLocaleUpperCase() : '?';
+}
+
+function buildAllowlistWarningAppsHtml(allowedNames) {
+    return allowedNames.map((name) => (
+        `<span class="app-blocking-allowlist-pill"><span class="app-blocking-allowlist-pill-icon">${escapeHtml(getAllowlistWarningAppInitial(name))}</span><span>${escapeHtml(name)}</span></span>`
+    )).join('');
+}
+
+function buildAllowlistWarningNoteHtml(warnedNames, letsGoLabel) {
+    const letsGo = escapeHtml(letsGoLabel || tSettings('appBlockingLetsGo'));
+    if (warnedNames.length === 0) {
+        return tSettingsFmt('appBlockingAllowlistActionNoWarnedHtml', { letsGo });
+    }
+    const warnedApps = joinAppListWithLimit(warnedNames, warnedNames.length, { oxford: true });
+    const summaryKey = warnedNames.length === 1
+        ? 'appBlockingAllowlistActionSingleWarnedHtml'
+        : 'appBlockingAllowlistActionMultiWarnedHtml';
+    return tSettingsFmt(summaryKey, { warnedApps, letsGo });
 }
 
 export function getScheduleOverlayAppsPreviewList(blocklist) {
@@ -644,8 +666,14 @@ export async function applyScheduleStartOverlayPresentation({
     blocklistName,
     blocklistEmoji,
     appNames,
+    plural = false,
+    allowedAppNames = [],
+    isAllowlistWarning = false,
     headingEl,
     summaryEl,
+    allowlistAppsEl,
+    allowlistPillsEl,
+    noteEl,
     emojiWrapEl,
     emojiEl,
     imageEl,
@@ -660,22 +688,32 @@ export async function applyScheduleStartOverlayPresentation({
         if (useCustom && overlay.heading) {
             headingEl.innerHTML = formatScheduleOverlayHeadingHtml(overlay.heading, blocklistName);
         } else {
-            headingEl.innerHTML = tSettingsFmt('appBlockingWarningHeadingHtml', {
+            headingEl.innerHTML = tSettingsFmt(plural ? 'appBlockingWarningHeadingPluralHtml' : 'appBlockingWarningHeadingHtml', {
                 name: escapeHtml(blocklistName),
             });
         }
     }
 
     if (summaryEl) {
-        if (useCustom && overlay.message) {
+        if (isAllowlistWarning) {
+            summaryEl.textContent = tSettings('appBlockingAllowlistIntro');
+        } else if (useCustom && overlay.message) {
             summaryEl.innerHTML = formatScheduleOverlayCustomMessageHtml(
                 overlay.message,
                 appNames,
                 letsGoText,
             );
         } else {
-            summaryEl.innerHTML = buildDefaultWarningSummaryHtml(appNames, blocklistName, letsGoText);
+            summaryEl.innerHTML = buildDefaultWarningSummaryHtml(appNames, blocklistName, letsGoText, plural);
         }
+    }
+    allowlistAppsEl?.classList.toggle('hidden', !isAllowlistWarning);
+    if (allowlistPillsEl) {
+        allowlistPillsEl.innerHTML = isAllowlistWarning ? buildAllowlistWarningAppsHtml(allowedAppNames) : '';
+    }
+    if (noteEl) {
+        noteEl.innerHTML = isAllowlistWarning ? buildAllowlistWarningNoteHtml(appNames, letsGoText) : '';
+        noteEl.classList.toggle('hidden', !isAllowlistWarning);
     }
 
     await applyOverlayMediaToElements({
@@ -898,14 +936,20 @@ export async function renderScheduleOverlayCustomisePreview(blocklist, draft) {
     const names = getBlocklistDisplayApps(blocklist);
     const previewNames = names.length > 0 ? names : [tSettings('appBlockingUnknownApp')];
     const normalized = normalizeScheduleStartOverlay(draft);
+    const isAllowlistPreview = isAllowlistBlocklist(blocklist);
 
     await applyScheduleStartOverlayPresentation({
         overlay: normalized,
         blocklistName: blocklist.name,
         blocklistEmoji: blocklist.emoji || '🎯',
         appNames: previewNames,
+        allowedAppNames: isAllowlistPreview ? previewNames : [],
+        isAllowlistWarning: isAllowlistPreview,
         headingEl: document.getElementById('schedule-overlay-preview-heading'),
         summaryEl: document.getElementById('schedule-overlay-preview-summary'),
+        allowlistAppsEl: document.getElementById('schedule-overlay-preview-allowlist-apps'),
+        allowlistPillsEl: document.getElementById('schedule-overlay-preview-allowlist-pills'),
+        noteEl: document.getElementById('schedule-overlay-preview-note'),
         emojiWrapEl: document.getElementById('schedule-overlay-preview-emoji-wrap'),
         emojiEl: document.getElementById('schedule-overlay-preview-emoji'),
         imageEl: document.getElementById('schedule-overlay-preview-image'),

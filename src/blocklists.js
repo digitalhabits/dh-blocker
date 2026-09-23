@@ -22,7 +22,7 @@ import {
 } from './app.js';
 import { buildBlocklistCardMetaHtml, buildBlocklistCardDetailsHtml, blocklistCardHasExpandableSummary } from './list-presentation.js';
 import { cloneOverrideDifficulty, deselectBlocklist, handleBlocklistSelect, isBlocklistCardVisuallySelected, isEnterSchedulerModalOpen, openBlocklistModal } from './confirm-modals.js';
-import { appBlockingWarningSnoozedUntilMs, formatAppBlockingSnoozeStartsIn, getActiveAppBlockingSnoozeBlocklistId } from './blocking-platform.js';
+import { appBlockingWarningSnoozedUntilMs, formatAppBlockingSnoozeStartsIn, getActiveAppBlockingSnoozeBlocklistIds } from './blocking-platform.js';
 
 function getVisibleBlocklists() {
     return state.appData.blocklists || [];
@@ -113,7 +113,7 @@ function buildBlocklistCardStatusLine(bl, now = Date.now()) {
     } else if (schedule) {
         if (isSchedulePausedNow(schedule, now)) {
             status = schedule.pauseEndTime ? pausedUntil(schedule.pauseEndTime) : tSettings('cardStatusOff');
-        } else if (getActiveAppBlockingSnoozeBlocklistId(now) === bl.id) {
+        } else if (getActiveAppBlockingSnoozeBlocklistIds(now).includes(bl.id)) {
             status = capitalizeFirst(formatAppBlockingSnoozeStartsIn(appBlockingWarningSnoozedUntilMs - now));
         } else if (isScheduleSegmentActiveNow(schedule, new Date(now))) {
             status = nowLabel; tone = ' is-blocking';

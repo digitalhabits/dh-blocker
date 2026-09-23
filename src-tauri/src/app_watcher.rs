@@ -144,9 +144,16 @@ static USER_ACK_PENDING: AtomicBool = AtomicBool::new(false);
 /// frontend can replay any `warning-show` events it missed — Tauri events
 /// are fire-and-forget, and on cold start the watcher often emits before
 /// JS has called `listen`.
-static PENDING_WARNING_ACKS: OnceLock<Mutex<HashMap<u32, String>>> = OnceLock::new();
+static PENDING_WARNING_ACKS: OnceLock<Mutex<HashMap<u32, PendingAck>>> = OnceLock::new();
 
-fn pending_warning_acks_map() -> &'static Mutex<HashMap<u32, String>> {
+/// What a replayed `warning-show` needs to carry, minus the pid it is keyed by.
+struct PendingAck {
+    name: String,
+    process: String,
+    origin: WarningOrigin,
+}
+
+fn pending_warning_acks_map() -> &'static Mutex<HashMap<u32, PendingAck>> {
     PENDING_WARNING_ACKS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -166,18 +173,27 @@ pub fn pending_warning_acks() -> Vec<PendingBlockingWarning> {
     match pending_warning_acks_map().lock() {
         Ok(map) => map
             .iter()
-            .map(|(&pid, name)| PendingBlockingWarning {
+            .map(|(&pid, ack)| PendingBlockingWarning {
                 pid,
-                name: name.clone(),
+                name: ack.name.clone(),
+                process: ack.process.clone(),
+                origin: ack.origin,
             })
             .collect(),
         Err(_) => Vec::new(),
     }
 }
 
-fn remember_pending_warning_ack(pid: u32, name: &str) {
+fn remember_pending_warning_ack(pid: u32, name: &str, process: &str, origin: WarningOrigin) {
     if let Ok(mut map) = pending_warning_acks_map().lock() {
-        map.insert(pid, name.to_string());
+        map.insert(
+            pid,
+            PendingAck {
+                name: name.to_string(),
+                process: process.to_string(),
+                origin,
+            },
+        );
     }
 }
 
@@ -266,11 +282,29 @@ fn strip_exe_suffix(name: &str) -> &str {
     }
 }
 
+/// Invisible direction/format marks a platform can carry in a process name —
+/// macOS reports WhatsApp as "\u{200E}WhatsApp". Left in, the name never
+/// equals the label the user picked. Mirrors the frontend strip in
+/// `blocklist-utils.js`.
+const INVISIBLE_MARKS: &[char] = &[
+    '\u{200E}', '\u{200F}', '\u{202A}', '\u{202B}', '\u{202C}', '\u{202D}', '\u{202E}', '\u{2066}',
+    '\u{2067}', '\u{2068}', '\u{2069}', '\u{FEFF}',
+];
+
+fn strip_invisible_marks(name: &str) -> std::borrow::Cow<'_, str> {
+    if name.contains(INVISIBLE_MARKS) {
+        std::borrow::Cow::Owned(name.replace(INVISIBLE_MARKS, ""))
+    } else {
+        std::borrow::Cow::Borrowed(name)
+    }
+}
+
 /// Whether an app label must never be killed by the watcher. The suffix is
 /// dropped from both sides, so a listed `explorer.exe` covers a bare
 /// `explorer` and a listed `Taskmgr` covers `Taskmgr.exe`.
 pub fn is_protected_app_name(name: &str) -> bool {
-    let stem = strip_exe_suffix(name);
+    let name = strip_invisible_marks(name);
+    let stem = strip_exe_suffix(&name);
     PROTECTED
         .iter()
         .any(|p| stem.eq_ignore_ascii_case(strip_exe_suffix(p)))
@@ -287,8 +321,10 @@ fn process_matches_app_label(
     proc_name: &str,
     proc_exe: Option<&std::path::Path>,
 ) -> bool {
-    let stem = strip_exe_suffix(proc_name);
-    if label.eq_ignore_ascii_case(proc_name) || label.eq_ignore_ascii_case(stem) {
+    let label = strip_invisible_marks(label);
+    let proc_name = strip_invisible_marks(proc_name);
+    let stem = strip_exe_suffix(&proc_name);
+    if label.eq_ignore_ascii_case(&proc_name) || label.eq_ignore_ascii_case(stem) {
         return true;
     }
     #[cfg(target_os = "macos")]
@@ -524,12 +560,29 @@ pub fn start(app: Option<AppHandle>) -> Handle {
 
 // ---- Event payloads -------------------------------------------------------
 
+/// Which mode raised a warning. The card speaks for the spaces of that mode:
+/// without it the frontend had to guess from app names, and an allow-mode
+/// space — which lists what it keeps, not what it closes — matched every
+/// warning it did not list, including other spaces' blocklist warnings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WarningOrigin {
+    Blocklist,
+    Allowlist,
+}
+
 /// Emitted once when a PID transitions into the warning phase.
 /// Also returned by [`pending_warning_acks`] for frontend replay.
 #[derive(Clone, Debug, Serialize)]
 pub struct PendingBlockingWarning {
     pub pid: u32,
     pub name: String,
+    /// Executable behind the warning, for the frontend's installed-app
+    /// lookup. `name` is the platform's own label, and on Windows that is the
+    /// window title — which names the open document or mail folder rather
+    /// than the app, and changes as the user moves around inside it.
+    pub process: String,
+    pub origin: WarningOrigin,
 }
 
 /// Emitted once when a PID transitions into the warning phase.
@@ -537,6 +590,8 @@ pub struct PendingBlockingWarning {
 struct WarningShow {
     pid: u32,
     name: String,
+    process: String,
+    origin: WarningOrigin,
 }
 
 /// Emitted when a PID leaves the warning phase, regardless of cause.
@@ -619,8 +674,15 @@ pub fn blocking_warning_shell_active() -> bool {
     BLOCKING_WARNING_LAYERS.load(Ordering::SeqCst) > 0
 }
 
-fn emit_warning_show(app: Option<&AppHandle>, pid: u32, name: &str, _total_secs: u64) {
-    remember_pending_warning_ack(pid, name);
+fn emit_warning_show(
+    app: Option<&AppHandle>,
+    pid: u32,
+    name: &str,
+    process: &str,
+    origin: WarningOrigin,
+    _total_secs: u64,
+) {
+    remember_pending_warning_ack(pid, name, process, origin);
     blocking_warning_begin(app);
     if let Some(a) = app {
         crate::commands::show_blocking_warning_shell_without_stealing_focus(a);
@@ -631,6 +693,8 @@ fn emit_warning_show(app: Option<&AppHandle>, pid: u32, name: &str, _total_secs:
             WarningShow {
                 pid,
                 name: name.to_string(),
+                process: process.to_string(),
+                origin,
             },
         );
     }
@@ -668,6 +732,15 @@ enum PidPhase {
 enum EntryOrigin {
     Blocklist,
     Allowlist,
+}
+
+impl From<EntryOrigin> for WarningOrigin {
+    fn from(origin: EntryOrigin) -> Self {
+        match origin {
+            EntryOrigin::Blocklist => WarningOrigin::Blocklist,
+            EntryOrigin::Allowlist => WarningOrigin::Allowlist,
+        }
+    }
 }
 
 /// How a PID first seen in the middle of a block is asked to quit.
@@ -1012,7 +1085,14 @@ fn sweep(
                     log::info!(
                         "app_watcher: block-start sighting pid={pid} name='{name}'; raising user-ack warning"
                     );
-                    emit_warning_show(app, pid.as_u32(), &matched_name, PREQUIT_DURATION.as_secs());
+                    emit_warning_show(
+                        app,
+                        pid.as_u32(),
+                        &matched_name,
+                        &matched_name,
+                        EntryOrigin::Blocklist.into(),
+                        PREQUIT_DURATION.as_secs(),
+                    );
                     slot.insert(PidEntry {
                         matched_name,
                         phase: PidPhase::AwaitingUserAck,
@@ -1316,7 +1396,14 @@ fn sweep_allowlist(
                     log::info!(
                         "app_watcher: allowlist block-start pid={pid} name='{proc_name}'; raising user-ack warning"
                     );
-                    emit_warning_show(app, pid.as_u32(), &display_name, PREQUIT_DURATION.as_secs());
+                    emit_warning_show(
+                        app,
+                        pid.as_u32(),
+                        &display_name,
+                        &proc_name,
+                        EntryOrigin::Allowlist.into(),
+                        PREQUIT_DURATION.as_secs(),
+                    );
                     block_start_warning_raised = true;
                     slot.insert(PidEntry {
                         matched_name: display_name.clone(),
@@ -1376,6 +1463,8 @@ fn raise_allowlist_intention_warning(
         app,
         ALLOWLIST_INTENTION_PID_RAW,
         ALLOWLIST_INTENTION_NAME,
+        ALLOWLIST_INTENTION_NAME,
+        EntryOrigin::Allowlist.into(),
         PREQUIT_DURATION.as_secs(),
     );
     entries.insert(
@@ -1549,6 +1638,17 @@ fn display_name_from_window_title(title: &str, proc_name: &str) -> String {
             if !tail.is_empty() && tail.len() <= 64 {
                 return tail.to_string();
             }
+        }
+    }
+
+    // Windows prefixes an elevated window's title, so the card read
+    // "Administrator: Windows PowerShell". Only this exact prefix goes: ": " is
+    // ordinary punctuation in titles ("Zoom: Meeting"), so splitting on it in
+    // general would cut real names in half.
+    if let Some(rest) = trimmed.strip_prefix("Administrator: ") {
+        let rest = rest.trim();
+        if !rest.is_empty() {
+            return rest.to_string();
         }
     }
 

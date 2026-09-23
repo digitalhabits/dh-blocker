@@ -29,6 +29,8 @@
  * - T208-T212: Desktop app-watcher payload: allow-mode spaces feed allowedApps, never the kill list
  * - T158b: iOS schedule entries drop protected domains, as the manual payload does
  * - T226-T229: iOS allow-mode 50-item cap counted across every running space
+ * - T213-T219, T222-T223: The start card names the space that just started and closes the app; allow mode gets its own card
+ * - T220-T221: Diagnostics reports an allow-mode space as allowing, not blocking
  */
 
 (function () {
@@ -1836,6 +1838,179 @@
         }
     }
 
+    // CATEGORY: START CARD (T213-T219, T222-T223)
+    // ========================================
+
+    // The "get ready" card must name the space that just started and closes the
+    // listed apps. It used to search for a space that *lists* the app, which an
+    // allow-mode space never does, then fell back to any space at all — so an
+    // allow-only start borrowed the name and alert of an unrelated, stopped space.
+    function runWarningAttributionTests() {
+        console.log('\n🪧 Start-card attribution');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        const api = internals.tauriAPI;
+        const saved = internals.appData;
+        const realSet = api.setBlockedAppsViaHelper;
+        const now = Date.now();
+        const allDay = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+        const live = (id) => createMockBlock(id, now - 1000, now + 60000);
+        api.setBlockedAppsViaHelper = () => Promise.resolve({ success: true });
+        // Sync the state before the start, then the state after it.
+        const transition = (blocklists, before, after) => {
+            internals.appData = createMockAppData({ blocklists, ...before });
+            void internals.updateBlockedApps();
+            internals.appData = createMockAppData({ blocklists, ...after });
+            void internals.updateBlockedApps();
+        };
+        const named = (apps, origins) => internals.findResponsibleBlocklistsForWarningApps(apps, origins).map((bl) => bl.name);
+        // What the watcher puts on a warning event, as the card reads it back.
+        const BLOCKLIST_ORIGIN = new Set(['blocklist']);
+        const ALLOWLIST_ORIGIN = new Set(['allowlist']);
+        const space = (name, mode, apps) => createMockBlocklist({ name, mode, apps });
+        try {
+            (function T213() {
+                const stopped = space('block 1 copy', 'blocklist', ['Chess']);
+                const allow = space('allow 1', 'allowlist', ['Claude']);
+                transition([stopped, allow], {}, { activeBlocks: [live(allow.id)] });
+                assertEqual(named(['Chess']), ['allow 1'], 'T213: an allow-only start is named for itself, not for a stopped space that lists the app');
+            })();
+
+            (function T214() {
+                const work = space('Work', 'blocklist', ['Chess']);
+                const evening = space('Evening', 'blocklist', ['Chess']);
+                const workBlock = live(work.id);
+                transition([work, evening], { activeBlocks: [workBlock] }, { activeBlocks: [workBlock, live(evening.id)] });
+                assertEqual(named(['Chess']), ['Evening'], 'T214: two running spaces list the app; the card names the one that just started');
+            })();
+
+            (function T215() {
+                const work = space('Work', 'blocklist', ['Chess']);
+                const evening = space('Evening', 'blocklist', ['Chess']);
+                transition([work, evening], {}, { activeBlocks: [live(work.id), live(evening.id)] });
+                assertEqual(named(['Chess']), ['Work', 'Evening'], 'T215: two spaces starting together are both named');
+            })();
+
+            (function T216() {
+                const stopped = space('block 1 copy', 'blocklist', ['Chess']);
+                const allow = space('allow 1', 'allowlist', ['Claude']);
+                const work = space('Work', 'blocklist', ['Slack']);
+                const allowBlock = live(allow.id);
+                transition([stopped, allow, work], { activeBlocks: [allowBlock] }, { activeBlocks: [allowBlock, live(work.id)] });
+                assertEqual(named(['Chess']), ['allow 1'], 'T216: when what just started does not close the app, a running space that does is named, never a stopped one');
+            })();
+
+            (function T217() {
+                const allow = space('allow 1', 'allowlist', ['Claude']);
+                transition([allow], {}, { schedules: [createMockSchedule(allow.id, [allDay])] });
+                assertEqual(internals.isAppBlockingWarningScheduleEligible(['Chess']), true, 'T217: an allow-only space started by its schedule offers the snooze');
+                transition([allow], {}, { activeBlocks: [live(allow.id)] });
+                assertEqual(internals.isAppBlockingWarningScheduleEligible(['Chess']), false, 'T217: started by hand, it does not');
+            })();
+
+            // The card itself. Render it from rows built the way the watcher's event builds them.
+            const renderCard = (rows) => {
+                internals.appBlockingWarningRows.clear();
+                for (const [pid, name, origin] of rows) internals.appBlockingWarningRows.set(pid, internals.newWarningRow(pid, name, origin));
+                internals.renderAppBlockingWarningOverlay();
+                const text = (id) => document.getElementById(id)?.textContent || '';
+                return {
+                    heading: text('app-blocking-warning-heading'),
+                    summary: text('app-blocking-warning-summary'),
+                    note: text('app-blocking-warning-note'),
+                    pills: [...document.querySelectorAll('#app-blocking-warning-allowlist-pills .app-blocking-allowlist-pill')].map((el) => el.textContent),
+                    pillsShown: !document.getElementById('app-blocking-warning-allowlist-apps')?.classList.contains('hidden'),
+                    all: text('app-blocking-warning-overlay'),
+                };
+            };
+
+            (function T218() {
+                const stopped = space('block 1 copy', 'blocklist', ['Chess']);
+                const allow = space('allow 1', 'allowlist', ['Claude', 'Cursor']);
+                transition([stopped, allow], {}, { activeBlocks: [live(allow.id)] });
+                const card = renderCard([[0, '__allowlist_intention__', 'allowlist']]);
+                assert(card.heading.includes('allow 1'), 'T218: nothing to close — the card is headed with the allow-only space');
+                assertEqual(card.pills, ['CClaude', 'CCursor'], 'T218: the allowed apps show as pills');
+                assert(card.pillsShown, 'T218: the pill row is visible');
+                assert(!card.all.includes('__allowlist_intention__'), 'T218: the watcher placeholder never appears as an app');
+                assert(!card.note.includes('30 seconds'), 'T218: with nothing to close there is no save-your-work countdown');
+            })();
+
+            (function T219() {
+                const stopped = space('block 1 copy', 'blocklist', ['Chess']);
+                const allow = space('allow 1', 'allowlist', ['Claude']);
+                transition([stopped, allow], {}, { activeBlocks: [live(allow.id)] });
+                const card = renderCard([[101, 'Chess', 'allowlist'], [102, 'Google Chrome', 'allowlist']]);
+                assert(card.heading.includes('allow 1') && !card.heading.includes('block 1 copy'), 'T219: closing apps — the card names the allow-only space');
+                assertEqual(card.pills, ['CClaude'], 'T219: the pills are the allowed apps, not the closing ones');
+                assert(card.note.includes('Chess') && card.note.toLowerCase().includes('google chrome'), 'T219: the note names the apps being closed');
+            })();
+
+            // T222-T223: the watcher says which mode raised the warning, so a
+            // space only speaks for its own mode. Working it out from app names
+            // instead made an allow-mode space claim every warning it did not
+            // list — which is every blocklist-mode warning as well as its own.
+            (function T222() {
+                const allow = space('allow 1', 'allowlist', ['Claude']);
+                const work = space('Work', 'blocklist', ['Chess']);
+                const both = { activeBlocks: [live(allow.id), live(work.id)] };
+                transition([allow, work], both, both);
+                assertEqual(named(['Chess'], BLOCKLIST_ORIGIN), ['Work'], 'T222: a blocklist warning names only the blocklist space, not the allow-mode space running beside it');
+            })();
+
+            (function T223() {
+                // Windows sends the window title, which can read exactly like an
+                // allowed app. Matching by name then hid the space from its own card.
+                const allow = space('allow 1', 'allowlist', ['Notepad']);
+                transition([allow], {}, { activeBlocks: [live(allow.id)] });
+                assertEqual(named(['Notepad'], ALLOWLIST_ORIGIN), ['allow 1'], 'T223: an allow-mode space is named even when the closing app reads like one it allows');
+            })();
+        } finally {
+            internals.appBlockingWarningRows.clear();
+            internals.renderAppBlockingWarningOverlay();
+            internals.appData = saved;
+            void internals.updateBlockedApps();
+            api.setBlockedAppsViaHelper = realSet;
+        }
+    }
+
+    // ========================================
+    // CATEGORY: DIAGNOSTICS ALLOW MODE (T220-T221)
+    // ========================================
+
+    // An allow-mode space's domains and apps are the ones it PERMITS. The
+    // diagnostics screen listed them under "Currently being blocked", stating
+    // the opposite of what was being enforced.
+    function runDiagnosticsAllowModeTests() {
+        console.log('\n\u{1FA7A} Diagnostics allow mode');
+        const render = (currentBlocking) => {
+            const host = document.createElement('div');
+            host.innerHTML = window.__REDDBLOCK_INTERNALS__.renderDiagnosticsEnforcementSection(currentBlocking);
+            return host.textContent;
+        };
+        const allowBlock = { blocklistId: 'a', name: 'allow 1', mode: 'allowlist', domains: ['docs.rs'], source: 'activeBlock' };
+
+        (function T220() {
+            const text = render({
+                domains: [], blocks: [allowBlock], apps: [],
+                allowed_apps: ['Claude'], allowed_domains: ['docs.rs'], allowlist_active: true,
+            });
+            assert(!text.includes('Currently being blocked'), 'T220: an allow-mode block is not headed "Currently being blocked"');
+            assert(text.includes('Currently being enforced'), 'T220: it is headed with neutral wording instead');
+            assert(text.includes('allow mode'), 'T220: the space is labelled allow mode');
+            assert(text.includes('Allowed apps (1)') && text.includes('Claude'), 'T220: the allowed apps are listed as allowed');
+            assert(text.includes('Allowed sites (1)'), 'T220: the allowed sites are listed as allowed');
+        })();
+
+        (function T221() {
+            const text = render({
+                domains: ['x.com'], blocks: [{ blocklistId: 'b', name: 'block 1', mode: 'blocklist', domains: ['x.com'], source: 'schedule' }],
+                apps: ['Chess'], allowed_apps: [], allowed_domains: [], allowlist_active: false,
+            });
+            assert(text.includes('Currently being blocked'), 'T221: a plain blocklist still reads as blocking');
+            assert(!text.includes('allow mode') && !text.includes('Allowed apps'), 'T221: and says nothing about allow mode');
+        })();
+    }
+
     // ========================================
     // CATEGORY 19: iOS SCHEDULE PAYLOAD (T151-T158)
     // ========================================
@@ -3407,6 +3582,8 @@
             runAndroidPayloadTests();
             runDesktopAppPayloadTests();
             runIOSAllowLimitTests();
+            runWarningAttributionTests();
+            runDiagnosticsAllowModeTests();
             runIOSSchedulePayloadTests();
             runEditFrictionGateTests();
             runChallengePrimitiveTests();

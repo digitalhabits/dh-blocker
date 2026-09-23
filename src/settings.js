@@ -544,6 +544,47 @@ export function diagnosticsOkNoValue(yes) {
     return `<span class="${yes ? 'diag-ok' : 'diag-error'}">${yes ? tSettings('diagnosticsYes') : tSettings('diagnosticsNo')}</span>`;
 }
 
+/// What is actually being enforced right now. An allow-mode space's domains
+/// and apps are the ones it PERMITS, so heading them "Currently being blocked"
+/// states the opposite of the truth — hence the neutral title and the separate
+/// allowed lists whenever allow mode is on.
+export function renderDiagnosticsEnforcementSection(cb) {
+    if (!cb) return '';
+    const e = (s) => escapeHtml(String(s));
+    const countRow = (key, list) => diagnosticsKvPreRow(
+        e(tSettings(key).replace('{n}', String(list?.length ?? 0))), list || [], e,
+    );
+    const titleKey = cb.allowlist_active ? 'diagnosticsCurrentEnforcement' : 'diagnosticsCurrentlyBlocking';
+    let html = '<div class="diagnostics-section">';
+    html += `<div class="diagnostics-section-title">${e(tSettings(titleKey))}</div>`;
+    html += '<div class="diagnostics-card">';
+    if (cb.blocks && cb.blocks.length > 0) {
+        html += '<ul class="diagnostics-list">';
+        for (const b of cb.blocks) {
+            const allow = b.mode === 'allowlist';
+            const label = `${b.emoji ? b.emoji + ' ' : ''}${b.name || b.blocklistId}`;
+            const srcLabel = b.source === 'schedule' ? 'schedule' : 'one-off';
+            const endsTxt = b.endsAt ? ` until ${new Date(b.endsAt).toLocaleString()}` : '';
+            const n = (b.domains || []).length;
+            const detail = `${srcLabel}${allow ? ' · allow mode' : ''}${endsTxt} · ${n} ${allow ? 'allowed ' : ''}domain${n === 1 ? '' : 's'}`;
+            html += `<li class="diagnostics-kv-row"><span class="diagnostics-kv-label">${e(label)}</span><span class="diagnostics-kv-value diag-muted">${e(detail)}</span></li>`;
+        }
+        html += '</ul>';
+    } else {
+        html += diagnosticsKvRow(
+            e(tSettings('diagnosticsActiveSources')),
+            `<span class="diag-muted">${e(tSettings('diagnosticsActiveSourcesNone'))}</span>`,
+        );
+    }
+    html += countRow('diagnosticsDomainsCount', cb.domains);
+    html += countRow('diagnosticsAppsCount', cb.apps);
+    if (cb.allowlist_active) {
+        html += countRow('diagnosticsAllowedDomainsCount', cb.allowed_domains);
+        html += countRow('diagnosticsAllowedAppsCount', cb.allowed_apps);
+    }
+    return html + '</div></div>';
+}
+
 // Render the structured SystemDiagnostics struct as HTML sections.
 // Designed for both user-readable scan AND copy-as-JSON for support.
 export function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
@@ -558,40 +599,7 @@ export function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) 
     html += diagnosticsKvRow(e(tSettings('diagnosticsOsArch')), `${e(d.app.os)} / ${e(d.app.arch)}`);
     html += '</div></div>';
 
-    // Currently being blocked
-    if (d.current_blocking) {
-        const cb = d.current_blocking;
-        html += '<div class="diagnostics-section">';
-        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsCurrentlyBlocking'))}</div>`;
-        html += '<div class="diagnostics-card">';
-        if (cb.blocks && cb.blocks.length > 0) {
-            html += '<ul class="diagnostics-list">';
-            for (const b of cb.blocks) {
-                const label = `${b.emoji ? b.emoji + ' ' : ''}${b.name || b.blocklistId}`;
-                const srcLabel = b.source === 'schedule' ? 'schedule' : 'one-off';
-                const endsTxt = b.endsAt ? ` until ${new Date(b.endsAt).toLocaleString()}` : '';
-                const domainsCount = (b.domains || []).length;
-                html += `<li class="diagnostics-kv-row"><span class="diagnostics-kv-label">${e(label)}</span><span class="diagnostics-kv-value diag-muted">${e(srcLabel)}${e(endsTxt)} · ${domainsCount} domain${domainsCount === 1 ? '' : 's'}</span></li>`;
-            }
-            html += '</ul>';
-        } else {
-            html += diagnosticsKvRow(
-                e(tSettings('diagnosticsActiveSources')),
-                `<span class="diag-muted">${e(tSettings('diagnosticsActiveSourcesNone'))}</span>`,
-            );
-        }
-        html += diagnosticsKvPreRow(
-            e(tSettings('diagnosticsDomainsCount').replace('{n}', String(cb.domains?.length ?? 0))),
-            cb.domains || [],
-            e,
-        );
-        html += diagnosticsKvPreRow(
-            e(tSettings('diagnosticsAppsCount').replace('{n}', String(cb.apps?.length ?? 0))),
-            cb.apps || [],
-            e,
-        );
-        html += '</div></div>';
-    }
+    html += renderDiagnosticsEnforcementSection(d.current_blocking);
 
     // Migration
     const m = d.migration;
