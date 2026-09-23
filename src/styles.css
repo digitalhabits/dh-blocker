@@ -10576,7 +10576,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         #settings-modal,
         #schedule-overlay-customise-modal,
         #enter-scheduler-modal
-    ).mobile-fullscreen-modal :is(.modal-buttons, .schedule-overlay-customise-footer, .editor-panel-footer){
+    ).mobile-fullscreen-modal :is(.modal-buttons, .schedule-overlay-customise-footer){
         flex-shrink: 0;
         display: flex;
         gap: 10px;
@@ -10641,34 +10641,6 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         border-radius: 0;
         padding: 0;
         margin-bottom: 0;
-    }
-
-    /* The editor's Save / Unsaved-changes bar is already sticky, but it wears the
-       two-column panel's chrome: negative margins and a rounded panel-coloured
-       layer that only made sense inside the white card the sheet no longer has.
-       Give it the same footer treatment as Create focus space (10573). */
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal #editor-panel-footer::before{
-        display: none;
-    }
-
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal #editor-panel-footer{
-        position: static;
-        margin: 0;
-    }
-
-    /* The unsaved-changes bar carries its own padding, margin and border (5794),
-       which grew the sticky footer the moment anything changed and shifted Save
-       down. In the sheet the footer owns the spacing: the label and Discard just
-       appear beside Save, and the row keeps its height. */
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .schedule-pending-bar{
-        /* The bar keeps its own box (5794) and the footer grows with it; only the
-           4px margin-top goes, so the bar sits centred in the footer with the
-           same space above and below rather than pushed down. */
-        margin-top: 0;
-    }
-
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .schedule-pending-label{
-        transform: translateY(-1px);
     }
 
     /* The alert editor's title is a sentence, not a name — let it wrap rather
@@ -13618,6 +13590,38 @@ body.handset-device #override-modal .start-confirm-header-room h3{
     z-index: -1;
     background: var(--panel-bg);
     border-radius: 0 0 12px 12px;
+}
+
+/* Once placeEditorFooter (blocking-platform.js) hoists the footer to the bottom of
+   the full-screen sheet it becomes the sheet's footer, like Create focus space:
+   no panel margins or rounded layer, safe-area padding for the home indicator.
+   Keyed on being hoisted rather than on platform, so the phone and narrow-desktop
+   sheets share one rule set instead of drifting apart. */
+#enter-scheduler-modal.mobile-fullscreen-modal .modal-content > #editor-panel-footer{
+    position: static;
+    flex-shrink: 0;
+    margin: 0;
+    padding:
+        12px
+        max(18px, env(safe-area-inset-right, 0px))
+        calc(12px + env(safe-area-inset-bottom, 0px))
+        max(18px, env(safe-area-inset-left, 0px));
+    border-top: 1px solid rgba(225, 220, 214, 0.88);
+    background: var(--app-bg);
+}
+
+#enter-scheduler-modal.mobile-fullscreen-modal .modal-content > #editor-panel-footer::before{
+    display: none;
+}
+
+/* The bar keeps its own box (5794) and the footer grows with it; only its 4px
+   margin-top goes, so it sits centred in the footer. */
+#enter-scheduler-modal.mobile-fullscreen-modal .modal-content > #editor-panel-footer .schedule-pending-bar{
+    margin-top: 0;
+}
+
+#enter-scheduler-modal.mobile-fullscreen-modal .modal-content > #editor-panel-footer .schedule-pending-label{
+    transform: translateY(-1px);
 }
 
 /* Clean: no bar, just the Save button — so drop the padding and margin that
