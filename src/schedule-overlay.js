@@ -462,6 +462,7 @@ export function syncScheduleOverlayMessageFieldHints(blocklist) {
     const appsPreview = getScheduleOverlayAppsPreviewList(blocklist);
     const placeholder = apps.length === 0
         ? tSettings('scheduleOverlayMessagePlaceholderNoApps')
+        // {letsGo} stays literal on purpose: the hint shows the token users can type.
         : tSettingsFmt('scheduleOverlayMessagePlaceholderFmt', { apps: appsPreview });
 
     if (noteEl) {
