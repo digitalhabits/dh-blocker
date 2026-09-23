@@ -3201,6 +3201,35 @@
             }
         }
 
+        // T231: Saving a switch from Manual to a schedule must not start the space.
+        // A space reads as on merely by having an unpaused schedule, so creating
+        // one used to turn it on even with every segment in the past or future.
+        (function T231() {
+            const saved = internals.appData;
+            try {
+                const off = createMockBlocklist({ name: 'Off space' });
+                const on = createMockBlocklist({ name: 'On space' });
+                const now = Date.now();
+                internals.appData = createMockAppData({
+                    blocklists: [off, on],
+                    activeBlocks: [createMockBlock(on.id, now - 1000, now + 60000)],
+                });
+                internals.setupFocusSpaceEditor();
+
+                internals.populateFocusSpaceEditor(off);
+                internals.setWhenToBlockKind('weekly');
+                internals.applyEditorScheduleForBlocklist(off.id);
+                assertEqual(internals.isFocusSpaceOn(off.id), false, 'T231: saving a schedule onto an off space leaves it off');
+
+                internals.populateFocusSpaceEditor(on);
+                internals.setWhenToBlockKind('weekly');
+                internals.applyEditorScheduleForBlocklist(on.id);
+                assertEqual(internals.isFocusSpaceOn(on.id), true, 'T231: a running space stays on');
+            } finally {
+                internals.appData = saved;
+            }
+        })();
+
         // T203/T204: Custom Text sits directly under Method, and the field wraps
         // rather than scrolling sideways (WKWebView does not wrap a long
         // placeholder, so this is not hypothetical).
