@@ -665,3 +665,246 @@ fn live_one_off_pause_suppresses_enforcement() {
         "live pause should suppress apps, got {apps:?}"
     );
 }
+
+/// The predicate that decides allow mode is in force: any block in the
+/// derived payload that is allowlist-mode and carries domains. This is
+/// literally the `allowlist_active` test inside
+/// `web_automation::url_is_blocked`, restated here because that module is
+/// macOS-only (`lib.rs`) and the Windows job must still run these cases.
+fn allow_mode_in_force(blocks: &[BlockInfo]) -> bool {
+    blocks
+        .iter()
+        .any(|b| blocklist_mode_is_allowlist(&b.mode) && !b.domains.is_empty())
+}
+
+/// A paused allowlist one-off must stop allow enforcement, not merely stop
+/// contributing domains.
+///
+/// Allow mode means "block everything except these", so a paused allowlist
+/// left in the payload does not leak one blocklist — it blocks the entire
+/// web for someone who just paused their focus space. That is the worst
+/// direction a failure here can fall, so the pause has to suppress the
+/// block itself rather than its domain list.
+#[test]
+fn live_pause_on_allowlist_one_off_stops_allow_enforcement() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let path = temp_json_path("paused-allowlist-one-off");
+    let data = json!({
+        "blocklists": [{
+            "id": "bl-allow-paused",
+            "name": "Deep Work",
+            "mode": "allowlist",
+            "websites": ["work.invalid"],
+            "apps": ["Mail"]
+        }],
+        "activeBlocks": [{
+            "blocklistId": "bl-allow-paused",
+            "startTime": now.saturating_sub(60_000),
+            "endTime": now + 60_000,
+            "isPaused": true,
+            "pauseEndTime": now + 30_000
+        }],
+        "schedules": [],
+        "settings": {}
+    });
+
+    fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+    let (domains, blocks) = derive_payload(&path);
+    let allowed_apps = derive_allowed_apps(&path);
+    let _ = fs::remove_file(&path);
+
+    assert!(
+        blocks.is_empty(),
+        "a live pause should drop the allowlist block entirely, got {blocks:?}"
+    );
+    assert!(
+        !allow_mode_in_force(&blocks),
+        "a paused allowlist must not keep allow mode in force — every site outside it would stay blocked"
+    );
+    assert!(
+        domains.is_empty(),
+        "a paused allowlist should contribute nothing, got {domains:?}"
+    );
+    assert!(
+        allowed_apps.is_empty(),
+        "a paused allowlist should not keep an allowed-app set alive, got {allowed_apps:?}"
+    );
+    // The decision the macOS enforcement tick actually makes. Gated because
+    // `web_automation` does not compile off macOS; the assertions above are
+    // the same predicate and do run on Windows.
+    #[cfg(target_os = "macos")]
+    assert!(
+        !crate::web_automation::url_is_blocked("https://unrelated.invalid/", &blocks),
+        "an unrelated host must not be blocked once the allowlist is paused"
+    );
+}
+
+/// The same fixture unpaused, so the case above cannot pass merely because
+/// the fixture was malformed. An active allowlist one-off does put allow
+/// mode in force: its own host stays reachable, everything else is blocked.
+#[test]
+fn unpaused_allowlist_one_off_puts_allow_mode_in_force() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let path = temp_json_path("unpaused-allowlist-one-off");
+    let data = json!({
+        "blocklists": [{
+            "id": "bl-allow-paused",
+            "name": "Deep Work",
+            "mode": "allowlist",
+            "websites": ["work.invalid"],
+            "apps": ["Mail"]
+        }],
+        "activeBlocks": [{
+            "blocklistId": "bl-allow-paused",
+            "startTime": now.saturating_sub(60_000),
+            "endTime": now + 60_000
+        }],
+        "schedules": [],
+        "settings": {}
+    });
+
+    fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+    let (_domains, blocks) = derive_payload(&path);
+    let allowed_apps = derive_allowed_apps(&path);
+    let _ = fs::remove_file(&path);
+
+    assert_eq!(blocks.len(), 1, "unpaused allowlist should yield one block");
+    assert_eq!(blocks[0].mode, "allowlist");
+    assert!(
+        allow_mode_in_force(&blocks),
+        "an unpaused allowlist must put allow mode in force, got {blocks:?}"
+    );
+    assert_eq!(
+        allowed_apps,
+        vec!["Mail".to_string()],
+        "an unpaused allowlist should expose its allowed apps"
+    );
+    #[cfg(target_os = "macos")]
+    {
+        assert!(
+            crate::web_automation::url_is_blocked("https://unrelated.invalid/", &blocks),
+            "allow mode should block a host outside the allowlist"
+        );
+        assert!(
+            !crate::web_automation::url_is_blocked("https://work.invalid/", &blocks),
+            "allow mode should leave an allowlisted host reachable"
+        );
+    }
+}
+
+/// The schedule path reaches the same decision through `match_schedule_now`
+/// rather than `one_off_pause_active`, so a paused allowlist *schedule*
+/// needs its own case. Failure falls the same way: allow mode left in force
+/// blocks the whole web for someone who paused the space.
+#[test]
+fn live_pause_on_allowlist_schedule_stops_allow_enforcement() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let path = temp_json_path("paused-allowlist-schedule");
+    let data = json!({
+        "blocklists": [{
+            "id": "bl-allow-sched",
+            "name": "Study",
+            "mode": "allowlist",
+            "websites": ["work.invalid"],
+            "apps": []
+        }],
+        "activeBlocks": [],
+        "schedules": [{
+            "id": "sch-allow-paused",
+            "blocklistId": "bl-allow-sched",
+            "repeatType": "no",
+            // Absolute window, so the case does not depend on the wall-clock
+            // time the suite happens to run at.
+            "resolvedSegments": [{
+                "activeFromTimestampMs": now.saturating_sub(60_000),
+                "activeUntilTimestampMs": now + 60_000
+            }],
+            "isPaused": true,
+            "pauseEndTime": now + 30_000
+        }],
+        "settings": {}
+    });
+
+    fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+    let (domains, blocks) = derive_payload(&path);
+    let _ = fs::remove_file(&path);
+
+    assert!(
+        blocks.is_empty(),
+        "a live pause should drop the allowlist schedule entirely, got {blocks:?}"
+    );
+    assert!(
+        !allow_mode_in_force(&blocks),
+        "a paused allowlist schedule must not keep allow mode in force"
+    );
+    assert!(
+        domains.is_empty(),
+        "a paused allowlist schedule should contribute nothing, got {domains:?}"
+    );
+    #[cfg(target_os = "macos")]
+    assert!(
+        !crate::web_automation::url_is_blocked("https://unrelated.invalid/", &blocks),
+        "an unrelated host must not be blocked once the allowlist schedule is paused"
+    );
+}
+
+/// The schedule control, for the same reason as the one-off control: it
+/// proves the fixture is otherwise live, so the case above would catch a
+/// change in either direction.
+#[test]
+fn unpaused_allowlist_schedule_puts_allow_mode_in_force() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let path = temp_json_path("unpaused-allowlist-schedule");
+    let data = json!({
+        "blocklists": [{
+            "id": "bl-allow-sched",
+            "name": "Study",
+            "mode": "allowlist",
+            "websites": ["work.invalid"],
+            "apps": []
+        }],
+        "activeBlocks": [],
+        "schedules": [{
+            "id": "sch-allow-paused",
+            "blocklistId": "bl-allow-sched",
+            "repeatType": "no",
+            "resolvedSegments": [{
+                "activeFromTimestampMs": now.saturating_sub(60_000),
+                "activeUntilTimestampMs": now + 60_000
+            }]
+        }],
+        "settings": {}
+    });
+
+    fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+    let (_domains, blocks) = derive_payload(&path);
+    let _ = fs::remove_file(&path);
+
+    assert_eq!(
+        blocks.len(),
+        1,
+        "unpaused allowlist schedule should yield one block"
+    );
+    assert_eq!(blocks[0].mode, "allowlist");
+    assert!(
+        allow_mode_in_force(&blocks),
+        "an unpaused allowlist schedule must put allow mode in force, got {blocks:?}"
+    );
+    #[cfg(target_os = "macos")]
+    assert!(
+        crate::web_automation::url_is_blocked("https://unrelated.invalid/", &blocks),
+        "allow mode from a schedule should block a host outside the allowlist"
+    );
+}
