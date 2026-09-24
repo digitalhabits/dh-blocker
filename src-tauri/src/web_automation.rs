@@ -1297,6 +1297,7 @@ const PROTECTED_HOSTS: &[&str] = &[
     "digitalhabits.org",
     "www.digitalhabits.org",
     "ulyngs.github.io",
+    "digitalhabits.github.io",
 ];
 
 fn is_protected_host(host: &str) -> bool {

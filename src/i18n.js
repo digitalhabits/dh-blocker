@@ -486,7 +486,7 @@ export const SETTINGS_TRANSLATIONS = {
             'Closing {apps} now — saving any pending dialogs in them…',
         appBlockingListMoreFmt: '{n} more',
         settingsFeedbackFooterHtml:
-            'Feedback or suggestions? <a href="https://github.com/ulyngs/digital-habits-blocker/issues" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a> or email <a href="mailto:team@digitalhabits.org">team@digitalhabits.org</a>.',
+            'Feedback or suggestions? <a href="https://github.com/digitalhabits/dh-blocker/issues" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a> or email <a href="mailto:team@digitalhabits.org">team@digitalhabits.org</a>.',
         madeWith: 'Made with',
         by: 'by',
         footerOrgLabel: 'digitalhabits.org',
@@ -1387,7 +1387,7 @@ export const SETTINGS_TRANSLATIONS = {
             'Lukker {apps} nu — giver eventuelle åbne dialoger tid i dem…',
         appBlockingListMoreFmt: '{n} flere',
         settingsFeedbackFooterHtml:
-            'Feedback eller forslag? <a href="https://github.com/ulyngs/digital-habits-blocker/issues" target="_blank" rel="noopener noreferrer">Opret et issue på GitHub</a> eller skriv til <a href="mailto:team@digitalhabits.org">team@digitalhabits.org</a>.',
+            'Feedback eller forslag? <a href="https://github.com/digitalhabits/dh-blocker/issues" target="_blank" rel="noopener noreferrer">Opret et issue på GitHub</a> eller skriv til <a href="mailto:team@digitalhabits.org">team@digitalhabits.org</a>.',
         madeWith: 'Lavet med',
         by: 'af',
         footerOrgLabel: 'digitalevaner.dk',

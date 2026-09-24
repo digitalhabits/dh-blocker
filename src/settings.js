@@ -23,7 +23,7 @@ import {
 
 export function setupHelpMenuLinks() {
     tauriAPI.onMenuHelpReportIssue(() => {
-        openExternal('https://github.com/ulyngs/digital-habits-blocker/issues');
+        openExternal('https://github.com/digitalhabits/dh-blocker/issues');
     }).catch(() => { });
 
     tauriAPI.onMenuHelpContactUs(() => {

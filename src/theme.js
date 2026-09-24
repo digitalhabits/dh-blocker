@@ -97,7 +97,7 @@ export function setupTheme() {
 
                     if (!(await resolveMicrosoftStorePackage())) {
                         try {
-                            const response = await fetch(`https://ulyngs.github.io/digital-habits-blocker/latest-versions.json?t=${Date.now()}`);
+                            const response = await fetch(`https://digitalhabits.github.io/dh-blocker/latest-versions.json?t=${Date.now()}`);
                             const versions = await response.json();
                             const latestVersion = versions[getLatestVersionPlatformKey()];
 

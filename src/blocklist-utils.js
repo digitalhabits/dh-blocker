@@ -24,7 +24,7 @@ export const PROTECTED_DOMAINS = [
     'broadcasthost', 'local',
     'reddfocus.org', 'www.reddfocus.org',
     'digitalhabits.org', 'www.digitalhabits.org',
-    'ulyngs.github.io'
+    'ulyngs.github.io', 'digitalhabits.github.io'
 ];
 
 /**

@@ -17,10 +17,9 @@ use tauri::{AppHandle, Emitter};
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
-const GITHUB_RELEASES: &str = "https://github.com/ulyngs/digital-habits-blocker/releases/download";
+const GITHUB_RELEASES: &str = "https://github.com/digitalhabits/dh-blocker/releases/download";
 #[allow(dead_code)] // used on macOS; dead on Windows
-const LATEST_VERSIONS_URL: &str =
-    "https://ulyngs.github.io/digital-habits-blocker/latest-versions.json";
+const LATEST_VERSIONS_URL: &str = "https://digitalhabits.github.io/dh-blocker/latest-versions.json";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

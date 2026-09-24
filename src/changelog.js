@@ -39,8 +39,8 @@ function tagsMatchPlatform(tags, platform) {
 }
 
 const REMOTE_CHANGELOG_URLS = [
-    'https://ulyngs.github.io/digital-habits-blocker/changelog.md',
-    'https://raw.githubusercontent.com/ulyngs/digital-habits-blocker/main/changelog.md',
+    'https://digitalhabits.github.io/dh-blocker/changelog.md',
+    'https://raw.githubusercontent.com/digitalhabits/dh-blocker/main/changelog.md',
 ];
 
 function escapeRegExp(value) {

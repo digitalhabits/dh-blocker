@@ -281,7 +281,7 @@ export async function checkForAppUpdate() {
         const currentVersion = await tauriAPI.getAppVersion();
         if (!currentVersion) return;
 
-        const response = await fetch(`https://ulyngs.github.io/digital-habits-blocker/latest-versions.json?t=${Date.now()}`);
+        const response = await fetch(`https://digitalhabits.github.io/dh-blocker/latest-versions.json?t=${Date.now()}`);
         const manifest = await response.json();
         const platformKey = getLatestVersionPlatformKey();
         const latestVersion = manifest[platformKey];
