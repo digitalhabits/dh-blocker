@@ -683,12 +683,16 @@ jobs:
             --version "${{ steps.meta.outputs.version }}" \
             --macos-pkg "$PKG"
 
-      # Pre-rename clients (<= v3.8.7) still poll the OLD Pages path
-      # https://ulyngs.github.io/redd-block/latest-versions.json (kept in sync
-      # via GitHub Pages rename redirects and/or the ulyngs/ulyngs.github.io
-      # stub). New clients use ulyngs.github.io/digital-habits-blocker/….
-      # Do NOT create a new repo named ulyngs/redd-block — that would break
-      # the release-download redirects those clients rely on.
+      # v3.9+ clients poll digitalhabits.github.io/dh-blocker/latest-versions.json,
+      # served straight from this commit. Older clients poll Pages paths that
+      # did not follow the repo moves:
+      #   <= v3.8.7        ulyngs.github.io/redd-block/…
+      #   v3.8.8–v3.8.11   ulyngs.github.io/digital-habits-blocker/…
+      # Both are mirrored from docs/ by a scheduled workflow (every 6 h) in
+      # ulyngs/ulyngs.github.io — nothing in this workflow pushes there.
+      # Do NOT create repos named ulyngs/redd-block or
+      # ulyngs/digital-habits-blocker — that would break the release-download
+      # redirects those clients rely on.
       - name: Commit latest-versions.json
         if: >-
           (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
