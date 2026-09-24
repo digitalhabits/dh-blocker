@@ -3,7 +3,7 @@ import { usagePingKeyForMonth } from '../../src/usage-ping.js';
 
 // The ping's privacy promise rests on things nothing else checks: the key
 // changes when the month does, the switch in Settings stops it, and it only
-// goes out on a day Blocker is really used.
+// goes out from a release build on a day Blocker is really used.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -52,12 +52,14 @@ describe('usage ping', () => {
         win.onFocus = null;
         fetchMock = vi.fn(async () => ({ ok: true }));
         vi.stubGlobal('fetch', fetchMock);
+        vi.stubEnv('MODE', 'production');
     });
 
     afterEach(() => {
         // Earlier modules keep their document listeners; switch them off.
         state.appData = { settings: { usagePingEnabled: false }, activeBlocks: [], schedules: [] };
         vi.unstubAllGlobals();
+        vi.unstubAllEnvs();
         vi.useRealTimers();
     });
 
@@ -167,6 +169,17 @@ describe('usage ping', () => {
         localStorage.setItem('usagePing', JSON.stringify({ month: today.slice(0, 7), key: 'k', lastDay: today }));
         win.visible = true;
         ping.startUsagePing();
+        await settle();
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    test.each(['development', 'test', 'e2e'])('a %s build never pings', async (mode) => {
+        vi.stubEnv('MODE', mode);
+        win.visible = true;
+        state.appData.activeBlocks = [inForce()];
+        ping.startUsagePing();
+        ping.usagePingTick();
+        await ping.maybeSendUsagePing();
         await settle();
         expect(fetchMock).not.toHaveBeenCalled();
     });

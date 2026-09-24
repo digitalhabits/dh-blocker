@@ -3,7 +3,8 @@
 // At most once per UTC day the app sends { product, platform, key } to the
 // planner, on the first of: the user opens Blocker or brings its window to
 // the front, or one of their blocks or schedules is in force. A hidden login
-// start with nothing in force sends nothing.
+// start with nothing in force sends nothing. Only release builds ping; dev,
+// Tier 0 and the e2e/system-test bundles run in other Vite modes.
 //
 // The key is a random id that is replaced at the start of each calendar
 // month, so no two months of one install can be linked. Nothing about
@@ -77,7 +78,7 @@ function randomUuid() {
 }
 
 export async function maybeSendUsagePing() {
-    if (__ANDROID_BUILD__ || state.isAndroid) return;
+    if (__ANDROID_BUILD__ || import.meta.env.MODE !== 'production' || state.isAndroid) return;
     const today = utcToday();
     if (pingSentDay === today || pingInFlight) return;
     if (!usagePingEnabled()) return;
@@ -120,7 +121,7 @@ export function usagePingTick(now = Date.now()) {
 
 /** Ping when the user brings the window up or a block is in force; retry a failed one hourly. */
 export function startUsagePing() {
-    if (__ANDROID_BUILD__ || pingStarted) return;
+    if (__ANDROID_BUILD__ || import.meta.env.MODE !== 'production' || pingStarted) return;
     pingStarted = true;
     const win = getCurrentWindow();
     // iOS runs this only while the app is open. A desktop login start is
