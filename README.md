@@ -133,7 +133,7 @@ Implementation details and module map: [architecture.md](architecture.md) (v3 cu
 
 ```bash
 # Clone the repository
-git clone https://github.com/ulyngs/digital-habits-blocker.git
+git clone https://github.com/digitalhabits/dh-blocker.git
 cd digital-habits-blocker
 
 # Install dependencies

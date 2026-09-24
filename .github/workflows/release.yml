@@ -31,7 +31,7 @@
 # extract-changelog-section.sh (full markdown including Internal + tags).
 # Store What's new = changelog-to-store-whats-new.js (filtered plain text).
 # Store CI setup: docs/microsoft-store-ci.md
-# Repo: ulyngs/digital-habits-blocker (formerly ulyngs/redd-block; GitHub redirects the old name).
+# Repo: digitalhabits/dh-blocker (formerly ulyngs/digital-habits-blocker, before that ulyngs/redd-block; GitHub redirects both old names).
 #
 # ── GitHub secrets (same AWS names as redd-api) ──
 #   AWS_ACCESS_KEY_ID

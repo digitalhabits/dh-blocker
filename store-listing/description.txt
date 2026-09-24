@@ -16,7 +16,7 @@ Key features:
 • Always Active: Blocks continue running even if you close the app
 
 Digital Habits: Blocker is fully open-source and collects no personal data. It sends one anonymous count a day, with an ID that changes every month, so we know how many people use it. You can turn this off in Settings.
-GitHub: https://github.com/ulyngs/digital-habits-blocker
+GitHub: https://github.com/digitalhabits/dh-blocker
 
 Cheers,
 
