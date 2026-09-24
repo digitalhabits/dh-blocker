@@ -88,6 +88,21 @@ describe('usage ping', () => {
         expect(body.key).toMatch(UUID);
     });
 
+    test('a retry after a lost reply sends the same key', async () => {
+        fetchMock.mockRejectedValueOnce(new Error('reply lost'));
+        await ping.maybeSendUsagePing();
+        await ping.maybeSendUsagePing();
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        const [first, second] = fetchMock.mock.calls.map((call) => JSON.parse(call[1].body).key);
+        expect(second).toBe(first);
+    });
+
+    test('sends nothing when it cannot keep its key', async () => {
+        vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('storage full'); });
+        await ping.maybeSendUsagePing();
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     test('a failing in-force check never throws into the tick', () => {
         ping.startUsagePing();
         state.appData.activeBlocks = null;

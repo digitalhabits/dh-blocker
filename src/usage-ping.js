@@ -50,7 +50,10 @@ function readPingState() {
 function writePingState(value) {
     try {
         localStorage.setItem(PING_STATE_KEY, JSON.stringify(value));
-    } catch { /* localStorage may be disabled; we then ping again tomorrow */ }
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 /**
@@ -90,6 +93,9 @@ export async function maybeSendUsagePing() {
     }
     const month = today.slice(0, 7);
     const key = usagePingKeyForMonth(stored, month);
+    // Keep the key before sending, so a retry after a lost reply reuses it.
+    // An install that cannot keep its key is not counted, not counted twice.
+    if (!writePingState({ month, key })) return;
     pingInFlight = true;
     try {
         const response = await fetch(PING_URL, {
