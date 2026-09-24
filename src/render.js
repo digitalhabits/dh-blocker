@@ -14,6 +14,7 @@ import { handleBlocklistSelect, openOverrideModal, syncSchedulerChromeVisibility
 import { confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, syncEditorFooter } from './focus-space-editor.js';
 import { updateCleanHostsBtnState, updateOverrideAllButtonVisibility } from './settings.js';
 import { formatDuration, formatTime } from './app.js';
+import { usagePingTick } from './usage-ping.js';
 
 export function render() {
     updateOnboardingVisibility();
@@ -769,6 +770,7 @@ export function startTickInterval() {
     startTickInterval._tickFn = async () => {
         const now = Date.now();
         let shouldSyncControls = false;
+        usagePingTick(now);
 
         // Check for future blocks that have now become active
         const newlyActiveBlocks = state.appData.activeBlocks.filter(

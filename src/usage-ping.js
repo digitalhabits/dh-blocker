@@ -1,24 +1,34 @@
 // Anonymous usage ping, so we know roughly how many people use Blocker.
 //
 // At most once per UTC day the app sends { product, platform, key } to the
-// planner. The key is a random id that is replaced at the start of each
-// calendar month, so no two months of one install can be linked. Nothing
-// about blocklists, schedules, sites or apps is sent. The user can turn it
-// off in Settings (`settings.usagePingEnabled`, default on).
+// planner, on the first of: the user opens Blocker or brings its window to
+// the front, or one of their blocks or schedules is in force. A hidden login
+// start with nothing in force sends nothing. Only release builds ping; dev,
+// Tier 0 and the e2e/system-test bundles run in other Vite modes.
+//
+// The key is a random id that is replaced at the start of each calendar
+// month, so no two months of one install can be linked. Nothing about
+// blocklists, schedules, sites or apps is sent. The user can turn it off in
+// Settings (`settings.usagePingEnabled`, default on).
 //
 // The key lives in localStorage, not in the data file: the data file is
 // exported and imported between machines, and two machines must not share
 // a key. Android sends no ping from this code.
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { state } from './state.js';
 import { saveData } from './persistence.js';
+import { hasAnyEnforcedBlocks } from './schedule-engine.js';
 
 const PING_URL = 'https://plan.digitalhabits.org/api/ping';
 const PING_STATE_KEY = 'usagePing';
-const PING_CHECK_MS = 60 * 60_000;
+const PING_RETRY_MS = 60 * 60_000;
 
 let pingSentDay = null;
+let pingDueDay = null;
 let pingInFlight = false;
 let pingStarted = false;
+
+const utcToday = () => new Date().toISOString().slice(0, 10);
 
 export function usagePingEnabled() {
     return state.appData?.settings?.usagePingEnabled !== false;
@@ -40,7 +50,10 @@ function readPingState() {
 function writePingState(value) {
     try {
         localStorage.setItem(PING_STATE_KEY, JSON.stringify(value));
-    } catch { /* localStorage may be disabled; we then ping again tomorrow */ }
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 /**
@@ -68,8 +81,8 @@ function randomUuid() {
 }
 
 export async function maybeSendUsagePing() {
-    if (__ANDROID_BUILD__ || state.isAndroid) return;
-    const today = new Date().toISOString().slice(0, 10);
+    if (__ANDROID_BUILD__ || import.meta.env.MODE !== 'production' || state.isAndroid) return;
+    const today = utcToday();
     if (pingSentDay === today || pingInFlight) return;
     if (!usagePingEnabled()) return;
 
@@ -80,6 +93,9 @@ export async function maybeSendUsagePing() {
     }
     const month = today.slice(0, 7);
     const key = usagePingKeyForMonth(stored, month);
+    // Keep the key before sending, so a retry after a lost reply reuses it.
+    // An install that cannot keep its key is not counted, not counted twice.
+    if (!writePingState({ month, key })) return;
     pingInFlight = true;
     try {
         const response = await fetch(PING_URL, {
@@ -92,21 +108,38 @@ export async function maybeSendUsagePing() {
         writePingState({ month, key, lastDay: today });
         pingSentDay = today;
     } catch {
-        // Offline: the hourly check tries again.
+        // Offline: the hourly retry tries again.
     } finally {
         pingInFlight = false;
     }
 }
 
-/** Ping now, then check hourly and whenever the window comes back. */
-export function startUsagePing() {
-    if (__ANDROID_BUILD__ || pingStarted) return;
-    pingStarted = true;
+function markPingDue() {
+    pingDueDay = utcToday();
     void maybeSendUsagePing();
-    setInterval(() => void maybeSendUsagePing(), PING_CHECK_MS);
+}
+
+/** From the 1 s tick in render.js: a block or schedule in force counts as use. */
+export function usagePingTick(now = Date.now()) {
+    if (__ANDROID_BUILD__ || !pingStarted || pingDueDay === utcToday()) return;
+    try { if (hasAnyEnforcedBlocks(now)) markPingDue(); } catch { /* never disturb the tick */ }
+}
+
+/** Ping when the user brings the window up or a block is in force; retry a failed one hourly. */
+export function startUsagePing() {
+    if (__ANDROID_BUILD__ || import.meta.env.MODE !== 'production' || pingStarted) return;
+    pingStarted = true;
+    const win = getCurrentWindow();
+    // iOS runs this only while the app is open. A desktop login start is
+    // hidden (`--autostart` in lib.rs) and counts once the user shows it.
+    if (state.isIOS) markPingDue();
+    else win.isVisible().then((shown) => { if (shown) markPingDue(); }, () => {});
+    usagePingTick();
+    win.onFocusChanged(({ payload: focused }) => { if (focused) markPingDue(); }).catch(() => {});
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') void maybeSendUsagePing();
+        if (document.visibilityState === 'visible') markPingDue();
     });
+    setInterval(() => { if (pingDueDay === utcToday()) void maybeSendUsagePing(); }, PING_RETRY_MS);
 }
 
 /**
