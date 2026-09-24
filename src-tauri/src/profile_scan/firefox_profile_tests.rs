@@ -77,12 +77,14 @@ fn firefox_install_hash_matches_firefox() {
 
 #[test]
 fn only_this_firefoxs_install_default_counts() {
-    let profiles = firefox_profiles_at(&firefox_fixture("this_copy"), Some(THIS_FIREFOX));
+    let root = firefox_fixture("this_copy");
+    let profiles = firefox_profiles_at(&root, Some(THIS_FIREFOX));
     assert_eq!(defaults(&profiles), ["Profiles/abc.Profile 1"]);
     assert!(default_profile_compliant(&BrowserStatus {
         profiles,
         ..Default::default()
     }));
+    let _ = fs::remove_dir_all(&root);
 }
 
 #[test]
@@ -98,4 +100,18 @@ fn an_unknown_firefox_copy_keeps_every_install_default() {
             ]
         );
     }
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_section_name_without_leading_zeros_still_matches() {
+    // Firefox writes the hash unpadded, so a section name can be 15 digits or fewer.
+    let root = firefox_fixture("short_hash");
+    let ini = PROFILES_INI.replace("2656FF1E876E9973", "6AFDA46A1A8AD48");
+    fs::write(root.join("profiles.ini"), ini).expect("profiles.ini");
+    assert_eq!(
+        defaults(&firefox_profiles_at(&root, Some(0x6AFDA46A1A8AD48))),
+        ["Profiles/abc.Profile 1"]
+    );
+    let _ = fs::remove_dir_all(&root);
 }
