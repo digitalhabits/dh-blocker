@@ -2505,6 +2505,12 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         margin-bottom: calc(16px * var(--ipad-s));
     }
 
+    /* The editor spaces its groups with flex gaps (.editor-section-body, .focus-space-editor);
+       this margin stacked on top and left a blank band under Add App in the create dialog. */
+    body.ios:not(.ios-phone) .modal-overlay :is(.editor-section-body, .focus-space-editor) > .form-group{
+        margin-bottom: 0;
+    }
+
     body.ios:not(.ios-phone) .modal-overlay .form-group > label{
         font-size: calc(13px * var(--ipad-s));
         margin-bottom: calc(6px * var(--ipad-s));
