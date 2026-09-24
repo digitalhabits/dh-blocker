@@ -1,18 +1,17 @@
 Take back your focus. Digital Habits: Blocker is a powerful, open-source focus tool that helps you block distracting apps and websites — on your terms. Built on more than 10 years of research into digital distraction at the University of Oxford, Digital Habits: Blocker is designed to reduce impulsive screen use without taking control away from you.
 
-Create and customise blocklists, choose when and how long to block apps and websites, and hold yourself accountable with tailored override difficulties. 
+Create and customise Focus Spaces, choose when they block apps and websites, and hold yourself accountable with your own stop-early challenge.
 
 Key features:
 • Block Websites: Instantly restrict distracting websites across browsers
-• Block Apps: Temporarily restrict distracting apps while a block is active
-• Allow mode: instead of blocking specific apps / websites, choose what you want to 'allow' and everything else gets restricted automatically
-• Quick start: start simple blocking/allowing sessions in just a few clicks
-• Custom Blocklists: Create multiple blocklists for different contexts — work, study, evenings, deep focus
-• One-Off or Scheduled Blocks: Start a permanent or temporary block instantly, or choose when scheduled blocklists become active and how often they can repeat
-• Visual Timeline: See your blocklists at a glance on a clear 24-hour timeline (larger screens only)
-• Pause & Resume: Pause blocks when truly needed — and resume automatically
-• Stack Blocks: Run multiple blocklists at once without conflicts
-• Override Protection: Choose how difficult it should be to cancel a block early — from simple confirmation to maximum-difficulty challenges
+• Block Apps: Restrict distracting apps while a Focus Space is on
+• Allow only: instead of blocking specific apps / websites, choose what you want to allow and everything else is blocked automatically
+• Focus Spaces: Create a Focus Space for each context — work, study, evenings, deep focus
+• Manual, Daily or Weekly: Switch a Focus Space on whenever you need it, or let it run at set times each day or week — until you stop it, or until a date you choose
+• Week at a Glance: See your schedules on a clear weekly timeline (larger screens only)
+• Turn Back On After: If you stop a Focus Space early, choose whether it switches itself back on later — from 5 minutes to 24 hours — or stays off
+• Run Several at Once: Run multiple Focus Spaces at the same time without conflicts
+• Stop-Early Challenge: Choose how many words you must type to stop early, or write your own text
 • Always Active: Blocks continue running even if you close the app
 
 Digital Habits: Blocker is fully open-source and collects no personal data. It sends one anonymous count a day, with an ID that changes every month, so we know how many people use it. You can turn this off in Settings.
