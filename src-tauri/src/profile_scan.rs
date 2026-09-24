@@ -337,6 +337,19 @@ fn firefox_root() -> Option<PathBuf> {
 
 /// Bundle (or equivalent) on disk, regardless of running state.
 pub fn firefox_app_installed() -> bool {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        firefox_exe_dir().is_some()
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        firefox_root().map(|p| p.exists()).unwrap_or(false)
+    }
+}
+
+/// The folder holding the Firefox executable, which Firefox hashes to name
+/// its `[Install<hash>]` section in profiles.ini.
+fn firefox_exe_dir() -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         let candidates = [
@@ -346,17 +359,30 @@ pub fn firefox_app_installed() -> bool {
                 .unwrap_or_default(),
         ];
         // The register lookup covers any other name or place, e.g. run from the disk image.
-        candidates.iter().any(|p| p.exists())
-            || app_path_for_bundle_id("org.mozilla.firefox").is_some()
+        let app = candidates
+            .into_iter()
+            .find(|p| p.exists())
+            .or_else(|| app_path_for_bundle_id("org.mozilla.firefox"))?;
+        Some(app.join("Contents/MacOS"))
     }
     #[cfg(target_os = "windows")]
     {
-        find_browser_exe("firefox").is_some()
+        find_browser_exe("firefox")?.parent().map(Path::to_path_buf)
     }
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     {
-        firefox_root().map(|p| p.exists()).unwrap_or(false)
+        None
     }
+}
+
+/// Firefox's name for one install: CityHash64 of its executable's folder as UTF-16.
+fn firefox_install_hash(exe_dir: &Path) -> u64 {
+    let utf16: Vec<u8> = exe_dir
+        .to_string_lossy()
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    cityhash::city_hash64(&utf16)
 }
 
 /// Where macOS's app register (Launch Services) has the app with this bundle
@@ -480,7 +506,20 @@ fn scan_firefox() -> Option<BrowserStatus> {
         });
     }
 
-    let (profile_dirs, defaults) = read_firefox_profiles(&root);
+    let own_install = firefox_exe_dir().map(|dir| firefox_install_hash(&dir));
+    Some(BrowserStatus {
+        present: running,
+        installed: true,
+        profiles: firefox_profiles_at(&root, own_install),
+        error: None,
+        duplicate_extensions: None,
+        needs_fda_access: false,
+        native_host_ready: false,
+    })
+}
+
+fn firefox_profiles_at(root: &Path, own_install: Option<u64>) -> Vec<ProfileStatus> {
+    let (profile_dirs, defaults) = read_firefox_profiles(root, own_install);
     let mut profiles = vec![];
     for rel in profile_dirs {
         let dir = root.join(&rel);
@@ -536,16 +575,7 @@ fn scan_firefox() -> Option<BrowserStatus> {
 
         profiles.push(s);
     }
-
-    Some(BrowserStatus {
-        present: running,
-        installed: true,
-        profiles,
-        error: None,
-        duplicate_extensions: None,
-        needs_fda_access: false,
-        native_host_ready: false,
-    })
+    profiles
 }
 
 fn firefox_debug_temp_extension_matches(profile_dir: &Path) -> bool {
@@ -586,22 +616,22 @@ fn parse_firefox_tmp_ext_dir(prefs_js: &str) -> Option<String> {
     serde_json::from_str::<String>(raw).ok()
 }
 
-fn read_firefox_profiles(root: &Path) -> (Vec<String>, Vec<String>) {
+fn read_firefox_profiles(root: &Path, own_install: Option<u64>) -> (Vec<String>, Vec<String>) {
     let ini_path = root.join("profiles.ini");
-    let mut defaults = vec![];
+    let mut defaults: Vec<(String, String)> = vec![];
     let mut profile_dirs = vec![];
 
     if let Ok(ini) = std::fs::read_to_string(&ini_path) {
         // [InstallXXXX] Default=<path> is authoritative for modern Firefox.
-        let mut in_install_block = false;
+        let mut install: Option<String> = None;
         for line in ini.lines() {
             let line = line.trim();
             if line.starts_with('[') && line.ends_with(']') {
-                in_install_block = line.starts_with("[Install");
-            } else if in_install_block {
-                if let Some(rest) = line.strip_prefix("Default=") {
-                    defaults.push(rest.trim().to_string());
-                }
+                install = line
+                    .strip_prefix("[Install")
+                    .map(|h| h.trim_end_matches(']').to_string());
+            } else if let (Some(hash), Some(rest)) = (&install, line.strip_prefix("Default=")) {
+                defaults.push((hash.clone(), rest.trim().to_string()));
             }
             if let Some(rest) = line.strip_prefix("Path=") {
                 profile_dirs.push(rest.trim().to_string());
@@ -616,7 +646,17 @@ fn read_firefox_profiles(root: &Path) -> (Vec<String>, Vec<String>) {
             }
         }
     }
-    (profile_dirs, defaults)
+    // Every Firefox copy that has ever run keeps its own default here (#165), so
+    // only this copy's counts. If we can't tell which copy it is, all of them do,
+    // as before: the first listed may be stale, failing either way.
+    let mine = |hash: &str| own_install.is_some_and(|own| u64::from_str_radix(hash, 16) == Ok(own));
+    if defaults.iter().any(|(hash, _)| mine(hash)) {
+        defaults.retain(|(hash, _)| mine(hash));
+    }
+    (
+        profile_dirs,
+        defaults.into_iter().map(|(_, path)| path).collect(),
+    )
 }
 
 // ---- Chromium (Chrome / Brave / Edge) --------------------------------------
@@ -1482,8 +1522,13 @@ fn safari_profile_passes(p: &ProfileStatus) -> bool {
         && p.website_access_all != Some(false)
 }
 
+mod cityhash;
+
 #[cfg(test)]
 mod firefox_addon_tests;
+
+#[cfg(test)]
+mod firefox_profile_tests;
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests;
