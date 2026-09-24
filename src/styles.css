@@ -13682,6 +13682,13 @@ body.handset-device #override-modal .start-confirm-header-room h3{
     transform: translateY(-1px);
 }
 
+/* The create dialog has its own Cancel / Save. The editor's footer travels in with
+   the form but has nothing to show, and its -16px margin laid an empty strip over
+   the last section. */
+#blocklist-modal #editor-panel-footer{
+    display: none;
+}
+
 /* Clean: no bar, just the Save button — so drop the padding and margin that
    exist to give the "Unsaved changes" bar its box. */
 .schedule-pending-bar.is-clean{
