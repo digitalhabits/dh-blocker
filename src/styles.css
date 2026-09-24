@@ -10187,6 +10187,13 @@ body.ios #focus-space-editor .tags-input-container .browse-btn-caption {
     padding: 20px;
 }
 
+/* Phones and tablets have no title bar, so the scrim covers the whole screen;
+   the 30px offset above left the top strip of the app undimmed on iPad. */
+body.ios .modal-overlay,
+body.android .modal-overlay{
+    top: 0;
+}
+
 /* Phones have no title bar: a dialog scrim covers the whole screen, status
    bar and safe areas included. */
 body.handset-device .modal-overlay{
