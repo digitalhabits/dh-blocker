@@ -382,7 +382,7 @@ fn firefox_install_hash(exe_dir: &Path) -> u64 {
         .encode_utf16()
         .flat_map(u16::to_le_bytes)
         .collect();
-    cityhash::cityhash_1::city_hash_64(&utf16)
+    cityhash::city_hash64(&utf16)
 }
 
 /// Where macOS's app register (Launch Services) has the app with this bundle
@@ -1521,6 +1521,8 @@ fn safari_profile_passes(p: &ProfileStatus) -> bool {
         && p.private_browsing != Some(false)
         && p.website_access_all != Some(false)
 }
+
+mod cityhash;
 
 #[cfg(test)]
 mod firefox_addon_tests;
