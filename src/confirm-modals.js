@@ -1333,7 +1333,7 @@ export function populateBlocklistFormFields(blocklist) {
     state.lastOverrideTypeValue = document.getElementById('override-type').value;
 
     const unlockSelect = document.getElementById('unlock-duration-select');
-    // A new space starts on Never; an existing one shows what it has saved.
+    // A new space starts on 24 hours; an existing one shows what it has saved.
     if (unlockSelect) {
         unlockSelect.value = String(blocklist ? getBlocklistUnlockMinutes(blocklist) : NEW_SPACE_UNLOCK_MINUTES);
     }

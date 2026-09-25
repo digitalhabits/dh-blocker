@@ -3208,13 +3208,13 @@
         console.log('\n🧩 Editor defaults and dialogs');
         const internals = window.__REDDBLOCK_INTERNALS__;
 
-        // T183: auto-start after stop is opt-in, so a new space starts on Never.
+        // T183: a new space starts on a 24-hour auto-start after stop.
         if (typeof internals.openBlocklistModal !== 'function') {
             assert(false, 'T183: openBlocklistModal is exposed to tests');
         } else {
             internals.openBlocklistModal();
             try {
-                assertEqual(document.getElementById('unlock-duration-select')?.value, '0', 'T183: a new focus space starts on Never');
+                assertEqual(document.getElementById('unlock-duration-select')?.value, '1440', 'T183: a new focus space starts on 24 hours');
             } finally {
                 internals.closeBlocklistModal();
             }
