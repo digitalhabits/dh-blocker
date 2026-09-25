@@ -63,6 +63,7 @@ summarized below:
 | `ci.yml` | Frontend bundle | `vite:build`, `vite:build:android`, `verify:android-bundle` | every PR, every push to `main` |
 | `ci.yml` | Tier 0 unit tests | `pnpm test:tier0` — vitest over `test/tier0/**` | every PR, every push to `main` |
 | `ci.yml` | Tier 1 logic tests | `pnpm test:tier1` — `runBlockingTests()` in headless Chromium | every PR, every push to `main` |
+| `ci.yml` | iOS one-off activity timing | Foundation-only `bash scripts/ci/test-ios-activity-timing.sh` on macOS | every PR, every push to `main` |
 | `release.yml` | Checks (lint + Tier 1) | `pnpm lint`, `pnpm test:tier1` — gates all four build jobs | every release run |
 | `release.yml` | macOS (.pkg) | `cargo test --lib` before signing | every release run |
 | `rust-ci.yml` | Rust unit tests | `cargo test --lib` on `macos-latest` | `src-tauri/**` changes, on PRs and `main` |
@@ -122,6 +123,16 @@ Notes on the non-obvious choices:
 the actual Tauri command layer and cannot run on a bare page like Tier 1. See
 "Tier 2 under WebDriver" below. Running it by hand from the dev console still
 works and is unchanged.
+
+### iOS one-off activity timing
+
+`bash scripts/ci/test-ios-activity-timing.sh` compiles
+`OneOffActivityTiming.swift` with the Foundation-only test runner. It covers
+fractional deadlines, five- and ten-minute targets, next-day and
+midnight-crossing components, invalid/non-future inputs, and nil, early, late,
+or wrong-day resolved intervals. It does not exercise Apple's
+`DeviceActivityCenter`; use the physical-device checklist for callback and
+background-lifecycle behavior.
 
 ---
 

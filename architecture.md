@@ -499,6 +499,9 @@ duration:
 - unlock > 0: a **timed pause** — `isPaused` + `pauseEndTime` on the block or
   schedule; the render tick clears it at expiry, iOS additionally registers a
   one-off DeviceActivity so expiry re-evaluates enforcement in the background.
+  On iOS, the pause is staged until the resume payload (manual blocks) and
+  one-off registration both return explicit success; a failed replacement of
+  an older resume monitor restores the space to blocking and re-syncs it.
 - Never: a Manual block is **removed**; a Daily/Weekly schedule is **switched
   off** open-ended (`isPaused` with no `pauseEndTime`), which every enforcement
   layer reads as "off until turned on again".
@@ -618,6 +621,13 @@ Apple Screen Time (FamilyControls, ManagedSettings, DeviceActivity) via
 - **Manual block:** authorize → plugin applies domains/apps → update activeBlocks
 - **Schedules:** `DeviceActivityCenter` + monitor extension applies schedule
   store at window boundaries
+- **Timed pause resume:** one-off activities round deadlines up to whole
+  seconds. Same-day activities keep time-only components; later-day or
+  midnight-crossing activities include full calendar dates. The plugin checks
+  `DeviceActivitySchedule.nextInterval` before replacing an existing monitor,
+  rejecting missing, early, excessively late, or wrong-day resolutions. A schedule-resume
+  activity recomputes the current App Group schedule union at both callback
+  boundaries so newer pauses, off states, and overlaps win.
 - **Override:** app-side challenge only; not a system-level bypass
 
 ```mermaid

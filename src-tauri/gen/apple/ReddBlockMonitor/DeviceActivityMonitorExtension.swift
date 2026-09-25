@@ -22,7 +22,11 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         super.intervalDidStart(for: activity)
         
         let raw = activity.rawValue
-        NSLog("[ReDD Schedule] intervalDidStart raw=%@", raw)
+        NSLog(
+            "[ReDD Schedule] intervalDidStart raw=%@ callbackAt=%f",
+            raw,
+            Date().timeIntervalSince1970
+        )
 
         if raw.hasPrefix("redd-schedule-resume-") {
             recomputeActiveScheduleUnion()
@@ -153,9 +157,21 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         super.intervalDidEnd(for: activity)
         
         let raw = activity.rawValue
-        NSLog("[ReDD Schedule] intervalDidEnd raw=%@", raw)
-        // One-off resume/block-end: we only care about intervalDidStart; do not clear default store when interval ends
-        if raw.hasPrefix("redd-schedule-resume-") || raw.hasPrefix("redd-block-resume-") || raw.hasPrefix("redd-block-end-") {
+        NSLog(
+            "[ReDD Schedule] intervalDidEnd raw=%@ callbackAt=%f",
+            raw,
+            Date().timeIntervalSince1970
+        )
+        // A schedule resume activity has a short interval so it also gets a
+        // second chance at the end boundary. Recompute from current App Group
+        // data: a newer pause/off state or an overlapping schedule may have
+        // changed since intervalDidStart. Manual/block-end one-offs retain
+        // their intervalDidStart-only semantics.
+        if raw.hasPrefix("redd-schedule-resume-") {
+            recomputeActiveScheduleUnion()
+            return
+        }
+        if raw.hasPrefix("redd-block-resume-") || raw.hasPrefix("redd-block-end-") {
             return
         }
         

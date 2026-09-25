@@ -318,6 +318,38 @@ for the availability-guard check.
 - [ ] Re-select in `FamilyActivityPicker`: the reselection marker clears and enforcement resumes
 - [ ] On iOS 16–26.4, startup and schedule transitions remain unchanged (no unavailable-API crash)
 
+### 14.3 Timed automatic resume (physical device only)
+
+These checks are device evidence for Screen Time callbacks. The Foundation
+runner and Tier 1 mocks do not reproduce iOS background delivery, and this
+checklist makes no claim that a simulator or desktop run covers it.
+
+- [ ] Set “Turn back on after” to 10 minutes, stop a running manual block, and
+      verify websites/apps resume blocking after the app is backgrounded.
+- [ ] Repeat the manual block with 24 hours; without reopening the app before
+      the deadline, verify the next-day deadline resumes blocking.
+- [ ] With an active recurring schedule, set “Turn back on after” to 10
+      minutes, stop it, and verify the schedule resumes without reopening the
+      app.
+- [ ] Repeat the recurring schedule case with 24 hours; without reopening the
+      app before the deadline, verify the next-day schedule resumes blocking.
+- [ ] Stop a block shortly before midnight; verify the callback resumes it on
+      the next calendar day rather than at today’s same clock time.
+- [ ] Suspend the app and terminate it after scheduling a 10-minute resume;
+      record whether the activity callback runs while the device is used.
+      Apple documents that `nextInterval` and callbacks depend on device use
+      during the interval: [DeviceActivitySchedule.nextInterval](https://developer.apple.com/documentation/deviceactivity/deviceactivityschedule/nextinterval).
+      Record the known limitation: sleeping through the entire 15-minute
+      activity window can miss both callbacks, so this is not a guarantee of
+      recovery after uninterrupted sleep.
+- [ ] With overlapping schedules, pause one space and verify the other remains
+      enforced when the paused space’s resume callback runs.
+- [ ] Change the unlock duration while a restart is pending; verify the old
+      deadline is replaced and the new deadline is the one that resumes the
+      space.
+- [ ] In a development build, force a rejected/failed native registration and
+      verify the running space stays blocked and the user sees the retry error.
+
 ---
 
 ## 15. Desktop Allowlist (Allow-Mode Focus Spaces)

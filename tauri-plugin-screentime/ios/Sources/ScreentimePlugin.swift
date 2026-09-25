@@ -1203,45 +1203,61 @@ class ScreentimePlugin: Plugin {
     // MARK: - One-off DeviceActivity (pause resume / block end)
     
     /// Register a one-off DeviceActivity that starts at startTimestampMs and ends 15 minutes later.
-    /// The extension will fire intervalDidStart at that time. Activity name e.g. "redd-block-resume-{blockId}" or "redd-block-end-{blockId}".
+    /// The extension receives intervalDidStart when iOS delivers the callback. Activity names are
+    /// intentionally absent from timing logs: the timestamps are enough to
+    /// diagnose a missed registration without logging block identities.
     @objc public func registerOneOffActivity(_ invoke: Invoke) throws {
         guard isAuthorized() else {
             invoke.resolve(["success": false, "error": "Screen Time authorization not granted"])
             return
         }
         let args = try invoke.parseArgs(RegisterOneOffActivityArgs.self)
-        let startDate = Date(timeIntervalSince1970: args.startTimestampMs / 1000.0)
-        let endDate = startDate.addingTimeInterval(15 * 60)
         let calendar = Calendar.current
-        let crossesMidnight = !calendar.isDate(startDate, inSameDayAs: endDate)
-        // Keep the existing same-day path unchanged. Only midnight-crossing one-offs
-        // opt into explicit date components so 23:xx -> 00:xx registrations remain
-        // anchored to the intended day boundary.
-        let components: Set<Calendar.Component> = crossesMidnight
-            ? [.year, .month, .day, .hour, .minute, .second]
-            : [.hour, .minute, .second]
-        let intervalStart = calendar.dateComponents(components, from: startDate)
-        let intervalEnd = calendar.dateComponents(components, from: endDate)
-        if crossesMidnight {
-            NSLog(
-                "[ReDD Schedule] registerOneOffActivity using date-aware midnight path name=%@ start=%@ end=%@",
-                args.activityName,
-                String(describing: intervalStart),
-                String(describing: intervalEnd)
-            )
-        }
-        let schedule = DeviceActivitySchedule(
-            intervalStart: intervalStart,
-            intervalEnd: intervalEnd,
-            repeats: false
-        )
-        let activityName = DeviceActivityName(args.activityName)
+        let now = Date()
         do {
+            let timing = try OneOffActivityTiming.resolve(
+                startTimestampMs: args.startTimestampMs,
+                now: now,
+                calendar: calendar
+            )
+            let schedule = DeviceActivitySchedule(
+                intervalStart: timing.intervalStart,
+                intervalEnd: timing.intervalEnd,
+                repeats: false
+            )
+            let nextInterval = schedule.nextInterval
+            NSLog(
+                "[ReDD Schedule] one-off timing requested=%f resolvedStart=%f resolvedEnd=%f nextStart=%@ nextEnd=%@ fullDate=%@",
+                timing.requestedDate.timeIntervalSince1970,
+                timing.startDate.timeIntervalSince1970,
+                timing.endDate.timeIntervalSince1970,
+                nextInterval.map { String($0.start.timeIntervalSince1970) } ?? "nil",
+                nextInterval.map { String($0.end.timeIntervalSince1970) } ?? "nil",
+                String(timing.usesFullDateComponents)
+            )
+            guard timing.isResolvedIntervalSafe(nextInterval, now: now, calendar: calendar) else {
+                NSLog("[ReDD Schedule] one-off registration failed: resolved interval is nil, early, late, or on the wrong day")
+                invoke.resolve(["success": false, "error": "Screen Time returned an unsafe one-off interval"])
+                return
+            }
+
+            let activityName = DeviceActivityName(args.activityName)
             center.stopMonitoring([activityName])
             try center.startMonitoring(activityName, during: schedule)
+            NSLog(
+                "[ReDD Schedule] one-off registration succeeded requested=%f resolvedStart=%f resolvedEnd=%f",
+                timing.requestedDate.timeIntervalSince1970,
+                timing.startDate.timeIntervalSince1970,
+                timing.endDate.timeIntervalSince1970
+            )
             invoke.resolve(["success": true])
         } catch {
-            invoke.resolve(["success": false, "error": error.localizedDescription])
+            NSLog(
+                "[ReDD Schedule] one-off registration failed requested=%f error=%@",
+                args.startTimestampMs / 1000,
+                String(describing: error)
+            )
+            invoke.resolve(["success": false, "error": String(describing: error)])
         }
     }
     
