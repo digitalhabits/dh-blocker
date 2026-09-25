@@ -8953,8 +8953,9 @@ body.dark-mode #settings-modal .enforcement-switch-tooltip{
     transition: transform 0.25s ease;
 }
 
+/* On is To-Do's teal. */
 .enforcement-switch input:checked + .enforcement-slider{
-    background: #10b981;
+    background: var(--redd-teal);
 }
 
 .enforcement-switch input:checked + .enforcement-slider::before{
@@ -8980,8 +8981,9 @@ body.dark-mode .enforcement-slider::before{
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 
+/* To-Do's dark teal: Blocker's dark --redd-teal (#399e90) is a shade darker. */
 body.dark-mode .enforcement-switch input:checked + .enforcement-slider{
-    background: #34d399;
+    background: #4ec0b0;
 }
 
 body.dark-mode .enforcement-switch input:checked + .enforcement-slider::before{
