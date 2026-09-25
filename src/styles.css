@@ -12783,6 +12783,128 @@ body.windows .settings-panel-rows > #settings-override-all-row:not(.hidden) ~ #w
     min-width: 0;
 }
 
+/* A setting's name with a small picture in front and an info icon after,
+   as in To-Do. */
+.settings-row-label-line{
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+/* A small picture of the feature, in front of its name. */
+.settings-row-icon{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 20px;
+    color: var(--text-secondary);
+}
+
+.settings-row-label-line .settings-row-label{
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.info-toggle-btn{
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease, color 0.2s ease;
+    flex-shrink: 0;
+}
+
+.info-toggle-btn:hover{
+    color: var(--text-primary);
+    background: var(--element-hover-bg);
+}
+
+.info-toggle-btn:focus{
+    outline: none;
+}
+
+.settings-info-btn{
+    margin: 0;
+}
+
+/* The info icon sits as close to its name as the feature icon does on the
+   other side: the button's 4px padding made that gap 2px wider. */
+.settings-row-label-line .settings-info-hover-wrap{
+    margin-left: -2px;
+}
+
+/*
+  The info tooltip of a setting, as in To-Do.
+
+  Only the icon opens it: a pointer beside or above the icon is on the row,
+  and must not read the info of another setting. The tooltip takes no
+  pointer, so it never widens that area. A click on the icon keeps it open
+  (.is-open, from usage-ping.js).
+
+  It hangs from the row, not the icon, 8px over the name. It starts where
+  the row's content starts, and may run to the row's right edge but never
+  past it, at any window width. It is only as wide as its words, up to 20rem.
+*/
+#settings-modal .settings-row:has(.settings-info-hover-wrap){
+    position: relative;
+}
+
+.settings-info-hover-wrap{
+    display: inline-flex;
+    flex-shrink: 0;
+}
+
+.settings-info-hover-wrap .settings-info-tooltip{
+    position: absolute;
+    left: 14px;
+    /* The row's top padding is 12px: 8px over the name is 4px into the row. */
+    bottom: calc(100% - 4px);
+    width: max-content;
+    max-width: min(20rem, calc(100% - 14px));
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color-medium);
+    border-radius: 8px;
+    background: var(--modal-bg);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.45;
+    text-align: left;
+    box-shadow: 0 8px 24px rgba(30, 45, 62, 0.12);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+    z-index: 100;
+}
+
+body.dark-mode .settings-info-hover-wrap .settings-info-tooltip{
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.settings-info-hover-wrap:has(svg:hover) .settings-info-tooltip,
+.settings-info-hover-wrap:has(.settings-info-btn:focus-visible) .settings-info-tooltip,
+.settings-info-hover-wrap.is-open .settings-info-tooltip{
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Lift the open tooltip's section over the sections below it. */
+#settings-modal .settings-section:has(.settings-info-hover-wrap svg:hover),
+#settings-modal .settings-section:has(.settings-info-btn:focus-visible),
+#settings-modal .settings-section:has(.settings-info-hover-wrap.is-open){
+    position: relative;
+    z-index: 10;
+}
+
 #settings-modal .settings-row-control:has(.language-picker),
 #settings-modal .settings-row-control:has(#theme-select),
 #settings-modal .settings-row-control:has(.settings-zoom-control),
