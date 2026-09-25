@@ -9,10 +9,10 @@ import {
 } from '../../src/unlock-duration.js';
 
 describe('new focus spaces', () => {
-    test('a new space starts on 24 hours, which is a real menu option', () => {
-        expect(NEW_SPACE_UNLOCK_MINUTES).toBe(1440);
+    test('a new space starts on 10 minutes, which is a real menu option', () => {
+        expect(NEW_SPACE_UNLOCK_MINUTES).toBe(10);
         expect(UNLOCK_MINUTE_OPTIONS).toContain(NEW_SPACE_UNLOCK_MINUTES);
-        expect(normalizeUnlockMinutes(NEW_SPACE_UNLOCK_MINUTES)).toBe(1440);
+        expect(normalizeUnlockMinutes(NEW_SPACE_UNLOCK_MINUTES)).toBe(10);
     });
 });
 

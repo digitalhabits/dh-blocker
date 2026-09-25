@@ -16,7 +16,7 @@ export const UNLOCK_MINUTE_OPTIONS = Object.freeze([0, 5, 10, 15, 30, 60, 120, 2
 export const DEFAULT_UNLOCK_MINUTES = 1440;
 
 /** What a newly created focus space starts on after an early stop. */
-export const NEW_SPACE_UNLOCK_MINUTES = DEFAULT_UNLOCK_MINUTES;
+export const NEW_SPACE_UNLOCK_MINUTES = 10;
 
 /**
  * Anything that is not exactly one of the menu options falls back to the
