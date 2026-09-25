@@ -16359,6 +16359,17 @@ body.dark-mode .app-blocking-warning-card{
     font-style: italic;
 }
 
+/* Offered under the "no installed app called X" line, so it centres with it and
+   drops the empty state's own 32px so the pair reads as one block. */
+.app-picker-empty:has(+ .app-picker-add-typed){
+    padding-bottom: 8px;
+}
+
+.app-picker-add-typed{
+    display: block;
+    margin: 0 auto 24px;
+}
+
 .app-picker-item{
     display: flex;
     align-items: center;
