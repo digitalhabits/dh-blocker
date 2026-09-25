@@ -9,13 +9,10 @@ import {
 } from '../../src/unlock-duration.js';
 
 describe('new focus spaces', () => {
-    // Auto-start after stop is opt-in: a new space stays off when stopped
-    // until the user picks a duration. Existing spaces with nothing saved keep
-    // the 24-hour fallback (below), so none of them silently becomes permanent.
-    test('a new space starts on Never, which is a real menu option', () => {
-        expect(NEW_SPACE_UNLOCK_MINUTES).toBe(0);
+    test('a new space starts on 10 minutes, which is a real menu option', () => {
+        expect(NEW_SPACE_UNLOCK_MINUTES).toBe(10);
         expect(UNLOCK_MINUTE_OPTIONS).toContain(NEW_SPACE_UNLOCK_MINUTES);
-        expect(normalizeUnlockMinutes(NEW_SPACE_UNLOCK_MINUTES)).toBe(0);
+        expect(normalizeUnlockMinutes(NEW_SPACE_UNLOCK_MINUTES)).toBe(10);
     });
 });
 
