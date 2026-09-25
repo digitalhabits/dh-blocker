@@ -72,17 +72,24 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         guard let resumePayload = SharedManualBlockStore.loadResumePayload(blockId: blockId) else {
             return
         }
+        let save: () -> Bool
         if resumePayload.isAllowlist {
             let base = SharedManualBlockStore.loadManualAllowlistState()
             let merged = taggedAllowlist(mergePayloads(base: base, extra: resumePayload))
-            SharedManualBlockStore.saveManualAllowlistState(merged)
+            save = { SharedManualBlockStore.saveManualAllowlistState(merged) }
         } else {
             let base = SharedManualBlockStore.loadManualBlockState()
             let merged = mergePayloads(base: base, extra: resumePayload)
-            SharedManualBlockStore.saveManualBlockState(merged)
+            save = { SharedManualBlockStore.saveManualBlockState(merged) }
         }
-        reapplyDerivedPolicies()
-        SharedManualBlockStore.removeResumePayload(blockId: blockId)
+        let committed = ManualResumePayloadCommit.commit(
+            save: save,
+            reapply: { reapplyDerivedPolicies() },
+            remove: { SharedManualBlockStore.removeResumePayload(blockId: blockId) }
+        )
+        if !committed {
+            NSLog("[ReDD Schedule] resume payload commit failed; retaining payload")
+        }
     }
 
     /// Handle one-off block end (Option B): subtract this block's payload from the

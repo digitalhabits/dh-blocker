@@ -35,6 +35,10 @@ private func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ minute: 
     ))!
 }
 
+private final class DroppingUserDefaults: UserDefaults {
+    override func set(_ value: Any?, forKey defaultName: String) {}
+}
+
 @main
 struct OneOffActivityTimingTests {
     static func main() throws {
@@ -131,6 +135,46 @@ struct OneOffActivityTimingTests {
             expect(timing.isResolvedIntervalSafe(lateByHalfSecond, now: now, calendar: calendar),
                    "sub-second late scheduling tolerance is accepted")
         }
+
+        let payloadData = Data("resume".utf8)
+        expect(!CheckedUserDefaultsWrite.write(payloadData, key: "payload", defaults: nil),
+               "missing shared defaults report a failed persistence write")
+        expect(!CheckedUserDefaultsWrite.write(payloadData, key: "payload", defaults: DroppingUserDefaults()),
+               "a write that cannot be read back reports a failed persistence write")
+        let suiteName = "OneOffActivityTimingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        expect(CheckedUserDefaultsWrite.write(payloadData, key: "payload", defaults: defaults),
+               "verified UserDefaults writes succeed")
+        expect(defaults.data(forKey: "payload") == payloadData,
+               "verified UserDefaults writes are readable")
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let invalidPayload = ScheduleBlockData(
+            domains: [], appTokenData: [], categoryTokenData: [], days: nil,
+            pauseEndTimestampMs: .nan
+        )
+        expect(!SharedManualBlockStore.saveResumePayload(blockId: "nan", invalidPayload),
+               "resume payload encoding failure is reported")
+        expect(!SharedManualBlockStore.saveManualBlockState(invalidPayload),
+               "manual block state encoding failure is reported")
+        expect(!SharedManualBlockStore.saveManualAllowlistState(invalidPayload),
+               "manual allowlist state encoding failure is reported")
+
+        var didReapply = false
+        var didRemove = false
+        expect(!ManualResumePayloadCommit.commit(
+            save: { false },
+            reapply: { didReapply = true },
+            remove: { didRemove = true }
+        ), "failed resume commits are reported")
+        expect(!didReapply && !didRemove, "failed resume commits retain their payload")
+        expect(ManualResumePayloadCommit.commit(
+            save: { true },
+            reapply: { didReapply = true },
+            remove: { didRemove = true }
+        ), "successful resume commits are reported")
+        expect(didReapply && didRemove, "successful resume commits reapply and consume their payload")
 
         print("OneOffActivityTimingTests: OK")
     }

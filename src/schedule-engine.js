@@ -439,34 +439,33 @@ export function buildIOSScheduleEntries() {
     return flatEntries;
 }
 
-export async function syncSchedulesToHelper() {
+export async function syncSchedulesToHelper({ reportFailure = true } = {}) {
     if (state.isIOS) {
+        let failure = null;
         try {
             const flatEntries = buildIOSScheduleEntries();
             console.log('[syncSchedulesToHelper] iOS: Sending', flatEntries.length, 'segment entries to plugin');
             const result = await tauriAPI.setSchedulesPlugin(flatEntries);
-            if (!result.success) {
-                console.warn('[syncSchedulesToHelper] iOS plugin failed:', result.error);
-                if (!hasShownIOSScheduleSyncError) {
-                    hasShownIOSScheduleSyncError = true;
-                    await message(`iOS schedule sync failed: ${result.error || 'unknown plugin error'}`, {
-                        title: 'Schedule Sync Failed',
-                        kind: 'error'
-                    });
-                }
+            if (result?.success !== true) {
+                failure = result?.error || 'unknown plugin error';
+                console.warn('[syncSchedulesToHelper] iOS plugin failed:', failure);
             }
         } catch (e) {
+            failure = e?.message || String(e);
             console.warn('[syncSchedulesToHelper] iOS error:', e);
-            if (!hasShownIOSScheduleSyncError) {
-                hasShownIOSScheduleSyncError = true;
-                const errorText = e?.message || String(e);
-                await message(`iOS schedule sync threw an error: ${errorText}`, {
-                    title: 'Schedule Sync Error',
+        }
+        if (failure && reportFailure && !hasShownIOSScheduleSyncError) {
+            hasShownIOSScheduleSyncError = true;
+            try {
+                await message(`iOS schedule sync failed: ${failure}`, {
+                    title: 'Schedule Sync Failed',
                     kind: 'error'
                 });
+            } catch (dialogError) {
+                console.warn('[syncSchedulesToHelper] Failed to show iOS sync error:', dialogError);
             }
         }
-        return;
+        return failure ? { success: false, error: failure } : { success: true };
     }
     if (state.isAndroid) {
         try {

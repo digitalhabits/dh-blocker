@@ -1043,7 +1043,10 @@ class ScreentimePlugin: Plugin {
             endHour: args.endHour,
             endMinute: args.endMinute
         )
-        SharedScheduleStore.save(id: scheduleId, data: scheduleData)
+        guard SharedScheduleStore.save(id: scheduleId, data: scheduleData) else {
+            invoke.resolve(["success": false, "error": "Failed to persist schedule data"])
+            return
+        }
         
         let schedule = buildDeviceActivitySchedule(
             startHour: args.startHour,
@@ -1133,7 +1136,10 @@ class ScreentimePlugin: Plugin {
                 blocklistColorHex: entry.blocklistColorHex,
                 mode: entry.mode
             )
-            SharedScheduleStore.save(id: entry.id, data: scheduleData)
+            guard SharedScheduleStore.save(id: entry.id, data: scheduleData) else {
+                errors.append("Schedule \(entry.id): failed to persist schedule data")
+                continue
+            }
             
             let schedule = buildDeviceActivitySchedule(
                 startHour: entry.startHour,
@@ -1252,7 +1258,10 @@ class ScreentimePlugin: Plugin {
             days: nil,
             mode: args.mode
         )
-        SharedManualBlockStore.saveResumePayload(blockId: args.blockId, payload)
+        guard SharedManualBlockStore.saveResumePayload(blockId: args.blockId, payload) else {
+            invoke.resolve(["success": false, "error": "Failed to persist automatic restart payload"])
+            return
+        }
         invoke.resolve(["success": true])
     }
     

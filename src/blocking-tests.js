@@ -2423,6 +2423,7 @@
         const allDay = { startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, days: [0, 1, 2, 3, 4, 5, 6] };
         let events = [], currentTarget = null, registrationDelay = false, registrationThrows = false;
         let registrationResult = { success: true };
+        let scheduleSyncResults = null;
         let registrationPauseState = null;
         let registeredDeadline = null;
 
@@ -2442,7 +2443,10 @@
             api.screentimeStartBlock = async () => { events.push('start-block'); return { success: true }; };
             api.screentimeClearBlock = async () => { events.push('clear-block'); return { success: true }; };
             api.screentimeClearManualBlock = async () => { events.push('clear-manual'); return { success: true }; };
-            api.setSchedulesPlugin = async () => { events.push('schedule-sync'); return { success: true }; };
+            api.setSchedulesPlugin = async () => {
+                events.push('schedule-sync');
+                return scheduleSyncResults?.length ? scheduleSyncResults.shift() : { success: true };
+            };
             api.setBlockedAppsViaHelper = async () => { events.push('desktop-app-sync'); return { success: true }; };
             api.androidSetSchedules = async () => { events.push('android-schedule-sync'); return { success: true }; };
 
@@ -2481,6 +2485,20 @@
             assertEqual(successfulSchedule.pauseEndTime, registeredDeadline, 'T69b: schedule commits registered deadline');
             assert(events.indexOf('register') < events.indexOf('schedule-sync') && !overlappingSchedule.isPaused,
                 'T69b: schedule registration precedes sync and preserves overlap');
+
+            // A native schedule-data persistence failure after registration must
+            // restore the running schedule and report no successful stop.
+            const syncFailureSchedule = createMockSchedule(scheduleBlocklist.id, [allDay]);
+            setSchedules(syncFailureSchedule);
+            events = [];
+            scheduleSyncResults = [
+                { success: false, error: 'schedule sync rejected' },
+                { success: true }
+            ];
+            const syncFailure = await internals.stopFocusSpaceTarget({ schedule: syncFailureSchedule });
+            assert(syncFailure === null && !syncFailureSchedule.isPaused && events.filter(event => event === 'schedule-sync').length >= 2,
+                'T69c: schedule sync failure restores blocking and returns no successful stop');
+            scheduleSyncResults = null;
 
             // Payload rejection leaves a running space untouched and never registers.
             const payloadFailureBlock = makeBlock();

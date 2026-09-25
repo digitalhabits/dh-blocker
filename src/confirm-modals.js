@@ -1592,6 +1592,7 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
     );
     if (!outcome) return null;
     console.log('[stop] Applying stop', { blocklistId, kind: outcome.kind, until: outcome.until || null });
+    let restoreTimedIOSBlocking = null;
 
     // Timed iOS stops are staged until both the resume payload (manual block)
     // and native one-off activity have explicitly succeeded. The deadline in
@@ -1600,7 +1601,7 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
     if (state.isIOS && outcome.kind === 'unlocked') {
         const target = schedule || block;
         const wasPaused = target?.isPaused === true;
-        const restoreBlockingAfterRegistrationFailure = wasPaused ? async () => {
+        const restoreBlockingAfterRegistrationFailure = async () => {
             delete target.isPaused;
             delete target.pauseEndTime;
             try {
@@ -1609,7 +1610,7 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
                 console.error('[iOS] Failed to persist blocking restoration after resume registration failure:', error);
             }
             try {
-                await syncSchedulesToHelper();
+                await syncSchedulesToHelper({ reportFailure: false });
             } catch (error) {
                 console.error('[iOS] Failed to resync schedules after resume registration failure:', error);
             }
@@ -1618,7 +1619,8 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
             } catch (error) {
                 console.error('[iOS] Failed to reapply blocking after resume registration failure:', error);
             }
-        } : null;
+        };
+        restoreTimedIOSBlocking = restoreBlockingAfterRegistrationFailure;
         const iosPayload = block ? getBlocklistIOSPayload(blocklist) : null;
         let registrationAttempted = false;
         try {
@@ -1645,7 +1647,7 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
                 throw new Error(registrationResult?.error || 'Screen Time could not schedule the automatic restart');
             }
         } catch (error) {
-            if (registrationAttempted && restoreBlockingAfterRegistrationFailure) await restoreBlockingAfterRegistrationFailure();
+            if (registrationAttempted && wasPaused) await restoreBlockingAfterRegistrationFailure();
             console.error('[iOS] Timed stop was not applied:', error?.message || String(error));
             alert(tSettings('iosAutomaticRestartFailed'));
             return null;
@@ -1699,7 +1701,15 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
 
     await saveData();
     if (block) await syncActiveBlocksToHelper();
-    await syncSchedulesToHelper();
+    const scheduleSync = state.isIOS && outcome.kind === 'unlocked'
+        ? await syncSchedulesToHelper({ reportFailure: false })
+        : await syncSchedulesToHelper();
+    if (state.isIOS && outcome.kind === 'unlocked' && scheduleSync?.success !== true) {
+        await restoreTimedIOSBlocking?.();
+        console.error('[iOS] Timed stop was not applied:', scheduleSync?.error || 'schedule sync failed');
+        alert(tSettings('iosAutomaticRestartFailed'));
+        return null;
+    }
     // updateHostsFile skips paused blocks' domains.
     await updateHostsFile();
     await updateBlockedApps();
