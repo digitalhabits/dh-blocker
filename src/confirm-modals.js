@@ -1577,14 +1577,84 @@ export async function resumePausedSchedule(schedule) {
  * Flexible schedule between blocks). Applies the space's temporary unlock
  * duration in memory (`applyStopToTarget`) and then syncs every enforcement
  * layer for what actually happened. Returns that outcome, or null when
- * nothing was running.
+ * nothing was running or iOS could not register automatic restart.
  */
 export async function stopFocusSpaceTarget({ block = null, schedule = null } = {}) {
     const blocklistId = schedule?.blocklistId ?? block?.blocklistId ?? null;
     const blocklist = state.appData.blocklists.find(bl => bl.id === blocklistId) || null;
-    const outcome = applyStopToTarget(state.appData, { block, schedule }, getBlocklistUnlockMinutes(blocklist));
+    const unlockMinutes = getBlocklistUnlockMinutes(blocklist);
+    const stageIOSPause = state.isIOS && unlockMinutes > 0 && !!(block || schedule);
+    const stagedTarget = stageIOSPause ? { ...(schedule || block) } : null;
+    const outcome = applyStopToTarget(
+        state.appData,
+        { block: stageIOSPause ? (block ? stagedTarget : null) : block, schedule: stageIOSPause ? (schedule ? stagedTarget : null) : schedule },
+        unlockMinutes,
+    );
     if (!outcome) return null;
     console.log('[stop] Applying stop', { blocklistId, kind: outcome.kind, until: outcome.until || null });
+    let restoreTimedIOSBlocking = null;
+
+    // Timed iOS stops are staged until both the resume payload (manual block)
+    // and native one-off activity have explicitly succeeded. The deadline in
+    // `outcome` is computed once before the await and is the exact timestamp
+    // sent to native registration.
+    if (state.isIOS && outcome.kind === 'unlocked') {
+        const target = schedule || block;
+        const wasPaused = target?.isPaused === true;
+        const restoreBlockingAfterRegistrationFailure = async () => {
+            delete target.isPaused;
+            delete target.pauseEndTime;
+            try {
+                await saveData();
+            } catch (error) {
+                console.error('[iOS] Failed to persist blocking restoration after resume registration failure:', error);
+            }
+            try {
+                await syncSchedulesToHelper({ reportFailure: false });
+            } catch (error) {
+                console.error('[iOS] Failed to resync schedules after resume registration failure:', error);
+            }
+            try {
+                await updateHostsFile();
+            } catch (error) {
+                console.error('[iOS] Failed to reapply blocking after resume registration failure:', error);
+            }
+        };
+        restoreTimedIOSBlocking = restoreBlockingAfterRegistrationFailure;
+        const iosPayload = block ? getBlocklistIOSPayload(blocklist) : null;
+        let registrationAttempted = false;
+        try {
+            if (block) {
+                const payloadResult = await tauriAPI.screentimeSetResumePayload({
+                    blockId: block.id,
+                    domains: blocklist?.websites || [],
+                    appTokenData: iosPayload.appTokenData,
+                    categoryTokenData: iosPayload.categoryTokenData,
+                    // Without this the re-applied state treats an allow-mode
+                    // block's allowed items as blocked ones.
+                    mode: isAllowlistBlocklist(blocklist) ? 'allowlist' : null
+                });
+                if (payloadResult?.success !== true) {
+                    throw new Error(payloadResult?.error || 'Screen Time could not save the automatic restart payload');
+                }
+            }
+            registrationAttempted = true;
+            const registrationResult = await tauriAPI.screentimeRegisterOneOffActivity(
+                schedule ? 'redd-schedule-resume-' + schedule.id : 'redd-block-resume-' + block.id,
+                outcome.until,
+            );
+            if (registrationResult?.success !== true) {
+                throw new Error(registrationResult?.error || 'Screen Time could not schedule the automatic restart');
+            }
+        } catch (error) {
+            if (registrationAttempted && wasPaused) await restoreBlockingAfterRegistrationFailure();
+            console.error('[iOS] Timed stop was not applied:', error?.message || String(error));
+            alert(tSettings('iosAutomaticRestartFailed'));
+            return null;
+        }
+        target.isPaused = true;
+        target.pauseEndTime = outcome.until;
+    }
 
     if (outcome.kind === 'removed') {
         // Never: the Manual block is gone, the same way "Stop" always removed it.
@@ -1631,47 +1701,19 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
 
     await saveData();
     if (block) await syncActiveBlocksToHelper();
-    await syncSchedulesToHelper();
+    const scheduleSync = state.isIOS && outcome.kind === 'unlocked'
+        ? await syncSchedulesToHelper({ reportFailure: false })
+        : await syncSchedulesToHelper();
+    if (state.isIOS && outcome.kind === 'unlocked' && scheduleSync?.success !== true) {
+        await restoreTimedIOSBlocking?.();
+        console.error('[iOS] Timed stop was not applied:', scheduleSync?.error || 'schedule sync failed');
+        alert(tSettings('iosAutomaticRestartFailed'));
+        return null;
+    }
     // updateHostsFile skips paused blocks' domains.
     await updateHostsFile();
     await updateBlockedApps();
 
-    // iOS: register a one-off DeviceActivity so the unlock's expiry re-evaluates
-    // background enforcement even if the app is not running by then.
-    if (outcome.kind === 'unlocked' && state.isIOS) {
-        if (schedule) {
-            try {
-                const res = await tauriAPI.screentimeRegisterOneOffActivity(
-                    'redd-schedule-resume-' + schedule.id,
-                    schedule.pauseEndTime
-                );
-                if (res && res.success === false) {
-                    console.error('[iOS] Schedule pause-resume registration failed:', res.error || 'Unknown error');
-                }
-            } catch (e) {
-                console.warn('[iOS] Schedule pause-resume registration threw:', e);
-            }
-        } else if (block) {
-            try {
-                const iosPayload = getBlocklistIOSPayload(blocklist);
-                await tauriAPI.screentimeSetResumePayload({
-                    blockId: block.id,
-                    domains: blocklist?.websites || [],
-                    appTokenData: iosPayload.appTokenData,
-                    categoryTokenData: iosPayload.categoryTokenData,
-                    // Without this the re-applied state treats an allow-mode
-                    // block's allowed items as blocked ones.
-                    mode: isAllowlistBlocklist(blocklist) ? 'allowlist' : null
-                });
-                const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-resume-' + block.id, block.pauseEndTime);
-                if (res && res.success === false) {
-                    console.error('[iOS] One-off DeviceActivity registration failed:', res.error || 'Unknown error');
-                }
-            } catch (e) {
-                console.warn('[iOS] One-off pause-resume registration failed:', e);
-            }
-        }
-    }
     return outcome;
 }
 
