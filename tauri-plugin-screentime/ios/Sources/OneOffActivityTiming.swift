@@ -1,39 +1,18 @@
 import Foundation
 
-/// The timing contract shared by one-off Screen Time activities and their
-/// Foundation-only regression tests. DeviceActivity accepts calendar
-/// components, so this type resolves the epoch deadline before the native
-/// schedule is constructed and checks Apple's resolved interval afterwards.
-public struct OneOffActivityTiming {
-    public static let activityDuration: TimeInterval = 15 * 60
+/// Resolves one-off Screen Time deadlines before constructing a calendar schedule.
+struct OneOffActivityTiming {
+    static let activityDuration: TimeInterval = 15 * 60
     /// Policy for the resolved interval: accept at most one second late, but
     /// never accept an interval before the rounded deadline.
-    public static let resolvedIntervalTolerance: TimeInterval = 1
+    static let resolvedIntervalTolerance: TimeInterval = 1
 
-    public let requestedDate: Date
-    public let startDate: Date
-    public let endDate: Date
-    public let intervalStart: DateComponents
-    public let intervalEnd: DateComponents
-    public let usesFullDateComponents: Bool
+    let startDate: Date
+    let endDate: Date
+    let intervalStart: DateComponents
+    let intervalEnd: DateComponents
 
-    private init(
-        requestedDate: Date,
-        startDate: Date,
-        endDate: Date,
-        intervalStart: DateComponents,
-        intervalEnd: DateComponents,
-        usesFullDateComponents: Bool
-    ) {
-        self.requestedDate = requestedDate
-        self.startDate = startDate
-        self.endDate = endDate
-        self.intervalStart = intervalStart
-        self.intervalEnd = intervalEnd
-        self.usesFullDateComponents = usesFullDateComponents
-    }
-
-    public static func resolve(
+    static func resolve(
         startTimestampMs: Double,
         now: Date = Date(),
         calendar: Calendar = .current
@@ -53,7 +32,6 @@ public struct OneOffActivityTiming {
             throw OneOffActivityTimingError.deadlineNotInFuture
         }
 
-        let requestedDate = Date(timeIntervalSince1970: requestedSeconds)
         let startDate = Date(timeIntervalSince1970: roundedSeconds)
         let endDate = Date(timeIntervalSince1970: roundedSeconds + activityDuration)
         guard endDate.timeIntervalSince1970.isFinite else {
@@ -78,12 +56,10 @@ public struct OneOffActivityTiming {
         }
 
         return OneOffActivityTiming(
-            requestedDate: requestedDate,
             startDate: startDate,
             endDate: endDate,
             intervalStart: calendar.dateComponents(components, from: startDate),
-            intervalEnd: calendar.dateComponents(components, from: endDate),
-            usesFullDateComponents: usesFullDateComponents
+            intervalEnd: calendar.dateComponents(components, from: endDate)
         )
     }
 
@@ -91,7 +67,7 @@ public struct OneOffActivityTiming {
     /// existing monitor. A nil interval, an interval on another calendar day,
     /// or a materially early/late boundary is unsafe. Only the one-second
     /// rounding tolerance above is accepted.
-    public func isResolvedIntervalSafe(
+    func isResolvedIntervalSafe(
         _ interval: DateInterval?,
         now: Date = Date(),
         calendar: Calendar = .current
@@ -111,7 +87,7 @@ public struct OneOffActivityTiming {
     }
 }
 
-public enum OneOffActivityTimingError: Error, CustomStringConvertible {
+enum OneOffActivityTimingError: Error, CustomStringConvertible {
     case invalidDeadline
     case deadlineNotInFuture
     case invalidCalendarComponents

@@ -1203,9 +1203,7 @@ class ScreentimePlugin: Plugin {
     // MARK: - One-off DeviceActivity (pause resume / block end)
     
     /// Register a one-off DeviceActivity that starts at startTimestampMs and ends 15 minutes later.
-    /// The extension receives intervalDidStart when iOS delivers the callback. Activity names are
-    /// intentionally absent from timing logs: the timestamps are enough to
-    /// diagnose a missed registration without logging block identities.
+    /// The extension will fire intervalDidStart at that time. Activity name e.g. "redd-block-resume-{blockId}" or "redd-block-end-{blockId}".
     @objc public func registerOneOffActivity(_ invoke: Invoke) throws {
         guard isAuthorized() else {
             invoke.resolve(["success": false, "error": "Screen Time authorization not granted"])
@@ -1226,17 +1224,7 @@ class ScreentimePlugin: Plugin {
                 repeats: false
             )
             let nextInterval = schedule.nextInterval
-            NSLog(
-                "[ReDD Schedule] one-off timing requested=%f resolvedStart=%f resolvedEnd=%f nextStart=%@ nextEnd=%@ fullDate=%@",
-                timing.requestedDate.timeIntervalSince1970,
-                timing.startDate.timeIntervalSince1970,
-                timing.endDate.timeIntervalSince1970,
-                nextInterval.map { String($0.start.timeIntervalSince1970) } ?? "nil",
-                nextInterval.map { String($0.end.timeIntervalSince1970) } ?? "nil",
-                String(timing.usesFullDateComponents)
-            )
             guard timing.isResolvedIntervalSafe(nextInterval, now: now, calendar: calendar) else {
-                NSLog("[ReDD Schedule] one-off registration failed: resolved interval is nil, early, late, or on the wrong day")
                 invoke.resolve(["success": false, "error": "Screen Time returned an unsafe one-off interval"])
                 return
             }
@@ -1244,20 +1232,9 @@ class ScreentimePlugin: Plugin {
             let activityName = DeviceActivityName(args.activityName)
             center.stopMonitoring([activityName])
             try center.startMonitoring(activityName, during: schedule)
-            NSLog(
-                "[ReDD Schedule] one-off registration succeeded requested=%f resolvedStart=%f resolvedEnd=%f",
-                timing.requestedDate.timeIntervalSince1970,
-                timing.startDate.timeIntervalSince1970,
-                timing.endDate.timeIntervalSince1970
-            )
             invoke.resolve(["success": true])
         } catch {
-            NSLog(
-                "[ReDD Schedule] one-off registration failed requested=%f error=%@",
-                args.startTimestampMs / 1000,
-                String(describing: error)
-            )
-            invoke.resolve(["success": false, "error": String(describing: error)])
+            invoke.resolve(["success": false, "error": error.localizedDescription])
         }
     }
     

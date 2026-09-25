@@ -124,16 +124,6 @@ the actual Tauri command layer and cannot run on a bare page like Tier 1. See
 "Tier 2 under WebDriver" below. Running it by hand from the dev console still
 works and is unchanged.
 
-### iOS one-off activity timing
-
-`bash scripts/ci/test-ios-activity-timing.sh` compiles
-`OneOffActivityTiming.swift` with the Foundation-only test runner. It covers
-fractional deadlines, five- and ten-minute targets, next-day and
-midnight-crossing components, invalid/non-future inputs, and nil, early, late,
-or wrong-day resolved intervals. It does not exercise Apple's
-`DeviceActivityCenter`; use the physical-device checklist for callback and
-background-lifecycle behavior.
-
 ---
 
 ## Tier 0: Unit Tests

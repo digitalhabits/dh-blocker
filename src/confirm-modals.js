@@ -25,7 +25,6 @@ import {
     snapMinutesToInterval,
 } from './app.js';
 import { NEW_SPACE_UNLOCK_MINUTES, applyStopToTarget, getBlocklistUnlockMinutes } from './unlock-duration.js';
-import { executeIOSResumeStop } from './ios-resume.js';
 import { deriveWhenToBlockKind } from './when-to-block.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
 import {
@@ -1585,12 +1584,7 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
     const blocklist = state.appData.blocklists.find(bl => bl.id === blocklistId) || null;
     const unlockMinutes = getBlocklistUnlockMinutes(blocklist);
     const stageIOSPause = state.isIOS && unlockMinutes > 0 && !!(block || schedule);
-    let stagedTarget = null;
-    if (stageIOSPause) {
-        const stagedBlock = block ? { ...block } : null;
-        const stagedSchedule = schedule ? { ...schedule } : null;
-        stagedTarget = stagedSchedule || stagedBlock;
-    }
+    const stagedTarget = stageIOSPause ? { ...(schedule || block) } : null;
     const outcome = applyStopToTarget(
         state.appData,
         { block: stageIOSPause ? (block ? stagedTarget : null) : block, schedule: stageIOSPause ? (schedule ? stagedTarget : null) : schedule },
@@ -1615,7 +1609,6 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
                 console.error('[iOS] Failed to persist blocking restoration after resume registration failure:', error);
             }
             try {
-                if (block) await syncActiveBlocksToHelper();
                 await syncSchedulesToHelper();
             } catch (error) {
                 console.error('[iOS] Failed to resync schedules after resume registration failure:', error);
@@ -1625,40 +1618,40 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
             } catch (error) {
                 console.error('[iOS] Failed to reapply blocking after resume registration failure:', error);
             }
-            try {
-                await updateBlockedApps();
-            } catch (error) {
-                console.error('[iOS] Failed to restore app blocking after resume registration failure:', error);
-            }
         } : null;
         const iosPayload = block ? getBlocklistIOSPayload(blocklist) : null;
-        const registration = await executeIOSResumeStop({
-            tauriAPI,
-            activityName: schedule
-                ? 'redd-schedule-resume-' + schedule.id
-                : 'redd-block-resume-' + block.id,
-            startTimestampMs: outcome.until,
-            resumePayload: block ? {
-                blockId: block.id,
-                domains: blocklist?.websites || [],
-                appTokenData: iosPayload.appTokenData,
-                categoryTokenData: iosPayload.categoryTokenData,
-                // Without this the re-applied state treats an allow-mode
-                // block's allowed items as blocked ones.
-                mode: isAllowlistBlocklist(blocklist) ? 'allowlist' : null
-            } : null,
-            commit: async () => {
-                target.isPaused = stagedTarget.isPaused;
-                if (stagedTarget.pauseEndTime === undefined) delete target.pauseEndTime;
-                else target.pauseEndTime = stagedTarget.pauseEndTime;
-            },
-            restoreOnRegistrationFailure: restoreBlockingAfterRegistrationFailure,
-        });
-        if (!registration.success) {
-            console.error('[iOS] Timed stop was not applied:', registration.error);
+        let registrationAttempted = false;
+        try {
+            if (block) {
+                const payloadResult = await tauriAPI.screentimeSetResumePayload({
+                    blockId: block.id,
+                    domains: blocklist?.websites || [],
+                    appTokenData: iosPayload.appTokenData,
+                    categoryTokenData: iosPayload.categoryTokenData,
+                    // Without this the re-applied state treats an allow-mode
+                    // block's allowed items as blocked ones.
+                    mode: isAllowlistBlocklist(blocklist) ? 'allowlist' : null
+                });
+                if (payloadResult?.success !== true) {
+                    throw new Error(payloadResult?.error || 'Screen Time could not save the automatic restart payload');
+                }
+            }
+            registrationAttempted = true;
+            const registrationResult = await tauriAPI.screentimeRegisterOneOffActivity(
+                schedule ? 'redd-schedule-resume-' + schedule.id : 'redd-block-resume-' + block.id,
+                outcome.until,
+            );
+            if (registrationResult?.success !== true) {
+                throw new Error(registrationResult?.error || 'Screen Time could not schedule the automatic restart');
+            }
+        } catch (error) {
+            if (registrationAttempted && restoreBlockingAfterRegistrationFailure) await restoreBlockingAfterRegistrationFailure();
+            console.error('[iOS] Timed stop was not applied:', error?.message || String(error));
             alert(tSettings('iosAutomaticRestartFailed'));
             return null;
         }
+        target.isPaused = true;
+        target.pauseEndTime = outcome.until;
     }
 
     if (outcome.kind === 'removed') {

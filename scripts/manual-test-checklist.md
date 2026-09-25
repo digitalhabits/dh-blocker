@@ -320,35 +320,19 @@ for the availability-guard check.
 
 ### 14.3 Timed automatic resume (physical device only)
 
-These checks are device evidence for Screen Time callbacks. The Foundation
-runner and Tier 1 mocks do not reproduce iOS background delivery, and this
-checklist makes no claim that a simulator or desktop run covers it.
-
-- [ ] Set “Turn back on after” to 10 minutes, stop a running manual block, and
-      verify websites/apps resume blocking after the app is backgrounded.
-- [ ] Repeat the manual block with 24 hours; without reopening the app before
-      the deadline, verify the next-day deadline resumes blocking.
-- [ ] With an active recurring schedule, set “Turn back on after” to 10
-      minutes, stop it, and verify the schedule resumes without reopening the
-      app.
-- [ ] Repeat the recurring schedule case with 24 hours; without reopening the
-      app before the deadline, verify the next-day schedule resumes blocking.
-- [ ] Stop a block shortly before midnight; verify the callback resumes it on
-      the next calendar day rather than at today’s same clock time.
-- [ ] Suspend the app and terminate it after scheduling a 10-minute resume;
-      record whether the activity callback runs while the device is used.
-      Apple documents that `nextInterval` and callbacks depend on device use
-      during the interval: [DeviceActivitySchedule.nextInterval](https://developer.apple.com/documentation/deviceactivity/deviceactivityschedule/nextinterval).
-      Record the known limitation: sleeping through the entire 15-minute
-      activity window can miss both callbacks, so this is not a guarantee of
-      recovery after uninterrupted sleep.
-- [ ] With overlapping schedules, pause one space and verify the other remains
-      enforced when the paused space’s resume callback runs.
-- [ ] Change the unlock duration while a restart is pending; verify the old
-      deadline is replaced and the new deadline is the one that resumes the
-      space.
-- [ ] In a development build, force a rejected/failed native registration and
-      verify the running space stays blocked and the user sees the retry error.
+- [ ] On a physical device, verify 10-minute re-enable for a manual block and
+      an active recurring schedule while the app is backgrounded.
+- [ ] Repeat both cases at 24 hours; without reopening the app before the
+      deadline, verify next-day blocking resumes.
+- [ ] Test deadlines just before and after midnight; verify the intended date.
+      With overlapping schedules, verify the other space remains enforced.
+- [ ] Change a pending restart deadline and verify only the new deadline wins.
+- [ ] Suspend or terminate the app and record callback delivery while the
+      device is used. Apple documents this boundary in
+      [DeviceActivitySchedule.nextInterval](https://developer.apple.com/documentation/deviceactivity/deviceactivityschedule/nextinterval): sleeping through the entire 15-minute window can miss callbacks.
+- [ ] Force native registration failure in a development build; verify the
+      running space stays blocked and the retry error is shown. Foundation and
+      Tier 1 tests do not cover device callback delivery.
 
 ---
 
