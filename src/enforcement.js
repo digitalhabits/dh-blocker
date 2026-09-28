@@ -2,6 +2,7 @@
 // behaviour banner, enforcer action banners, web-automation watcher.
 // Extracted verbatim from app.js.
 import { state, appState } from './state.js';
+import { preferredBrowserProfile } from './browser-profile-selection.js';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask } from '@tauri-apps/plugin-dialog';
@@ -776,7 +777,7 @@ export function effectiveBrowserComplianceStatus(key, browsers) {
 export function browserComplianceStatus(key, b) {
     if (!b || !b.installed) return null;
     const profiles = b.profiles || [];
-    const def = profiles.find(p => p.isDefault) || profiles[0];
+    const def = preferredBrowserProfile(b);
     if (key === 'safari') {
         if (b.duplicateExtensions?.detected) return 'needs-deduplicate';
         if (b.needsFdaAccess || profiles.some(p => /Full Disk Access/i.test(p.note || ''))) {

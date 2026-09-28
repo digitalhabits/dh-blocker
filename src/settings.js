@@ -1,6 +1,7 @@
 // Settings surface: help links, helper status, diagnostics modal, grace
 // period, override-all, and in-app uninstall flows. Extracted verbatim from app.js.
 import { state } from './state.js';
+import { preferredBrowserProfile } from './browser-profile-selection.js';
 import { getChallengeController } from './challenge-controller.js';
 import { startHelperUiRefreshLoop, stopHelperUiRefreshLoop, isModalVisible } from './modal-manager.js';
 import { saveData, updateHostsFile } from './persistence.js';
@@ -494,7 +495,7 @@ export function diagnosticsTriState(values) {
 export function diagnosticsBrowserProfiles(key, b) {
     const profiles = b?.profiles || [];
     if (key === 'safari') return profiles;
-    const def = profiles.find(p => p.isDefault) || profiles[0];
+    const def = preferredBrowserProfile(b);
     return def ? [def] : [];
 }
 

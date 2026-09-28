@@ -34,6 +34,42 @@ fn status(profiles: Vec<ProfileStatus>) -> BrowserStatus {
 // ---- compliance verdict -----------------------------------------
 
 #[test]
+fn configured_install_default_is_not_hidden_by_a_stale_default() {
+    let mut stale = profile("old-install", true);
+    stale.installed = false;
+    stale.enabled = Some(false);
+    stale.private_browsing = Some(false);
+    let current = profile("current-install", true);
+    for profiles in [
+        vec![stale.clone(), current.clone()],
+        vec![current.clone(), stale.clone()],
+    ] {
+        assert!(default_profile_passes(&status(profiles)));
+    }
+}
+
+#[test]
+fn diagnosis_uses_the_best_configured_install_default() {
+    let mut stale = profile("old-install", true);
+    stale.installed = false;
+    let mut current = profile("current-install", true);
+    current.private_browsing = Some(false);
+    assert_eq!(
+        diagnose_issue(&status(vec![stale, current])),
+        ExtensionIssue::Private
+    );
+}
+
+#[test]
+fn configured_non_default_does_not_hide_a_broken_default() {
+    let mut broken = profile("default", true);
+    broken.installed = false;
+    let browser = status(vec![broken, profile("secondary", false)]);
+    assert!(!default_profile_passes(&browser));
+    assert_eq!(diagnose_issue(&browser), ExtensionIssue::Missing);
+}
+
+#[test]
 fn a_healthy_default_profile_passes() {
     assert!(default_profile_passes(&status(vec![profile(
         "default", true

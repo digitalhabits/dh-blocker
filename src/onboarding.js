@@ -1,6 +1,7 @@
 // Onboarding: welcome screen, EULA acceptance/persistence, desktop
 // migration overlay wiring. Extracted verbatim from app.js.
 import { state, appState } from './state.js';
+import { preferredBrowserProfile } from './browser-profile-selection.js';
 import { invoke } from '@tauri-apps/api/core';
 import { tSettings } from './i18n.js';
 import { hasSeenAnyOnboarding, saveData } from './persistence.js';
@@ -540,7 +541,7 @@ export function hadLegacyAutomationBrowserExtension(state) {
             if (profiles.some((p) => p.installed)) return true;
             continue;
         }
-        const def = profiles.find((p) => p.isDefault) || profiles[0];
+        const def = preferredBrowserProfile(b);
         if (def?.installed) return true;
     }
     return false;

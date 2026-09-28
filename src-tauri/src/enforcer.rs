@@ -640,11 +640,7 @@ fn default_profile_passes(b: &BrowserStatus) -> bool {
                     && p.website_access_all == Some(true)
             });
     }
-    let def: Option<&ProfileStatus> = b
-        .profiles
-        .iter()
-        .find(|p| p.is_default)
-        .or_else(|| b.profiles.first());
+    let def: Option<&ProfileStatus> = profile_scan::preferred_non_safari_profile(b);
     match def {
         Some(p) => {
             p.installed
@@ -770,12 +766,8 @@ fn diagnose_issue(b: &BrowserStatus) -> ExtensionIssue {
         }
         return ExtensionIssue::Unknown;
     }
-    // Standard Chromium / Firefox: check the default profile.
-    let def = b
-        .profiles
-        .iter()
-        .find(|p| p.is_default)
-        .or_else(|| b.profiles.first());
+    // Standard Chromium / Firefox: use the same default as setup/diagnostics.
+    let def = profile_scan::preferred_non_safari_profile(b);
     match def {
         Some(p) => {
             if !p.installed {

@@ -1426,17 +1426,37 @@ fn scan_safari() -> BrowserStatus {
     }
 }
 
+/// Firefox retains one installation default per historical app location, so
+/// several profiles may be marked as default. File order is not evidence of
+/// which installation is current. Prefer the default furthest through extension
+/// setup, keeping the first on ties. This is a setup heuristic, not proof of
+/// the running profile; all consumers must use the same choice.
+pub(crate) fn preferred_non_safari_profile(b: &BrowserStatus) -> Option<&ProfileStatus> {
+    let rank = |p: &ProfileStatus| {
+        u8::from(p.installed) * 4
+            + u8::from(p.enabled == Some(true)) * 2
+            + u8::from(p.private_browsing == Some(true))
+    };
+    b.profiles
+        .iter()
+        .filter(|p| p.is_default)
+        .reduce(|best, candidate| {
+            if rank(candidate) > rank(best) {
+                candidate
+            } else {
+                best
+            }
+        })
+        // Preserve the existing fallback when no default was identified.
+        .or_else(|| b.profiles.first())
+}
+
 /// True if every running-and-present Chromium/Firefox browser has a
 /// compliant default profile. Safari is stricter: every Safari profile
 /// plist we can see must report installed+enabled+privateBrowsing and
 /// all-website access. Used by onboarding to gate the backend switch.
-///
 fn default_profile_compliant(b: &BrowserStatus) -> bool {
-    let def = b
-        .profiles
-        .iter()
-        .find(|p| p.is_default)
-        .or_else(|| b.profiles.first());
+    let def = preferred_non_safari_profile(b);
     matches!(
         def,
         Some(p) if p.installed
