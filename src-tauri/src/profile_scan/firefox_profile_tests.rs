@@ -75,6 +75,56 @@ fn firefox_install_hash_matches_firefox() {
     );
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[test]
+fn running_firefox_path_uses_one_main_install_and_ignores_helpers() {
+    let main_dir = if cfg!(target_os = "macos") {
+        PathBuf::from("/Users/test/Applications/Firefox.app/Contents/MacOS")
+    } else {
+        PathBuf::from(r"C:\Users\test\AppData\Local\Mozilla Firefox")
+    };
+    let main_exe = main_dir.join(if cfg!(target_os = "macos") {
+        "firefox"
+    } else {
+        "firefox.exe"
+    });
+    let helper_exe = PathBuf::from(if cfg!(target_os = "macos") {
+        "/Users/test/Applications/Firefox.app/Contents/MacOS/plugin-container"
+    } else {
+        r"C:\Users\test\AppData\Local\Mozilla Firefox\plugin-container.exe"
+    });
+    let main_name = if cfg!(target_os = "macos") {
+        "firefox"
+    } else {
+        "firefox.exe"
+    };
+
+    let mut processes = vec![
+        (main_name.to_string(), Some(main_exe)),
+        ("plugin-container".to_string(), Some(helper_exe)),
+        (main_name.to_string(), None),
+    ];
+    if cfg!(target_os = "macos") {
+        processes.push((
+            "firefox-bin".to_string(),
+            Some(main_dir.join("firefox-bin")),
+        ));
+    }
+    assert_eq!(
+        firefox_exe_dir_from_processes(&processes),
+        Some(main_dir.clone())
+    );
+
+    let ambiguous = vec![
+        (main_name.to_string(), Some(main_dir.join("firefox"))),
+        (
+            main_name.to_string(),
+            Some(main_dir.join("other-install/firefox")),
+        ),
+    ];
+    assert_eq!(firefox_exe_dir_from_processes(&ambiguous), None);
+}
+
 #[test]
 fn only_this_firefoxs_install_default_counts() {
     let root = firefox_fixture("this_copy");
@@ -84,6 +134,63 @@ fn only_this_firefoxs_install_default_counts() {
         profiles,
         ..Default::default()
     }));
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[test]
+fn actual_install_default_without_focus_fails_compliance_even_when_historical_default_has_it() {
+    let root = firefox_fixture("actual_without_focus");
+    let actual = root.join("Profiles/abc.Profile 1");
+    fs::remove_file(actual.join("extensions.json")).expect("remove actual extensions");
+    fs::remove_file(actual.join("extension-preferences.json"))
+        .expect("remove actual extension preferences");
+
+    let historical = root.join("Profiles/old1.default-release");
+    let addons = format!(r#"{{"addons":[{{"id":"{FIREFOX_ID}","active":true}}]}}"#);
+    fs::write(historical.join("extensions.json"), addons).expect("historical extensions.json");
+    let prefs =
+        format!(r#"{{"{FIREFOX_ID}":{{"permissions":["internal:privateBrowsingAllowed"]}}}}"#);
+    fs::write(historical.join("extension-preferences.json"), prefs)
+        .expect("historical extension-preferences.json");
+
+    let actual_dir = if cfg!(target_os = "macos") {
+        PathBuf::from("/Applications/Firefox.app/Contents/MacOS")
+    } else {
+        PathBuf::from(r"C:\Program Files\Mozilla Firefox")
+    };
+    let actual_name = if cfg!(target_os = "macos") {
+        "firefox"
+    } else {
+        "firefox.exe"
+    };
+    let actual_processes = vec![(actual_name.to_string(), Some(actual_dir.join(actual_name)))];
+    let actual_install = firefox_exe_dir_from_processes(&actual_processes)
+        .map(|dir| firefox_install_hash(&dir))
+        .expect("synthetic Firefox main process has an executable path");
+    let ini = fs::read_to_string(root.join("profiles.ini")).expect("profiles.ini");
+    let ini = ini.replace("2656FF1E876E9973", &format!("{actual_install:X}"));
+    fs::write(root.join("profiles.ini"), ini).expect("profiles.ini");
+    let profiles = firefox_profiles_at(&root, Some(actual_install));
+    assert_eq!(defaults(&profiles), ["Profiles/abc.Profile 1"]);
+    assert!(profiles
+        .iter()
+        .find(|p| p.name == "Profiles/old1.default-release")
+        .is_some_and(|p| p.installed && !p.is_default));
+
+    let result = ScanResult {
+        firefox: BrowserStatus {
+            present: true,
+            profiles,
+            native_host_ready: true,
+            ..Default::default()
+        },
+        chrome: BrowserStatus::default(),
+        brave: BrowserStatus::default(),
+        edge: BrowserStatus::default(),
+        safari: BrowserStatus::default(),
+    };
+    assert!(!compliant(&result));
     let _ = fs::remove_dir_all(&root);
 }
 

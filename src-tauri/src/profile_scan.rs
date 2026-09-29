@@ -375,6 +375,65 @@ fn firefox_exe_dir() -> Option<PathBuf> {
     }
 }
 
+/// Return the executable directory when the running Firefox processes agree
+/// on exactly one main executable path. Helper processes and processes whose
+/// executable path is unavailable are deliberately ignored; an ambiguous or
+/// empty observation falls back to the installed-app lookup below.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn firefox_running_exe_dir() -> Option<PathBuf> {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+    );
+    let processes = sys
+        .processes()
+        .values()
+        .map(|process| {
+            (
+                process.name().to_string_lossy().into_owned(),
+                process.exe().map(Path::to_path_buf),
+            )
+        })
+        .collect::<Vec<_>>();
+    firefox_exe_dir_from_processes(&processes)
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+fn firefox_running_exe_dir() -> Option<PathBuf> {
+    None
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn firefox_exe_dir_from_processes(processes: &[(String, Option<PathBuf>)]) -> Option<PathBuf> {
+    let mut dirs = Vec::new();
+    for (name, exe) in processes {
+        if !firefox_main_process_name(name) {
+            continue;
+        }
+        let Some(dir) = exe.as_deref().and_then(Path::parent) else {
+            continue;
+        };
+        if !dirs.iter().any(|seen| seen == dir) {
+            dirs.push(dir.to_path_buf());
+        }
+    }
+    (dirs.len() == 1).then(|| dirs.remove(0))
+}
+
+#[cfg(target_os = "macos")]
+fn firefox_main_process_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("firefox") || name.eq_ignore_ascii_case("firefox-bin")
+}
+
+#[cfg(target_os = "windows")]
+fn firefox_main_process_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("firefox.exe")
+}
+
 /// Firefox's name for one install: CityHash64 of its executable's folder as UTF-16.
 fn firefox_install_hash(exe_dir: &Path) -> u64 {
     let utf16: Vec<u8> = exe_dir
@@ -492,7 +551,8 @@ fn firefox_addon_enabled(addon: &Value) -> bool {
 
 fn scan_firefox() -> Option<BrowserStatus> {
     let running = firefox_app_present();
-    let installed = firefox_app_installed();
+    let running_exe_dir = firefox_running_exe_dir();
+    let installed = running_exe_dir.is_some() || firefox_app_installed();
     let root = firefox_root()?;
     if !installed || !root.exists() {
         return Some(BrowserStatus {
@@ -506,7 +566,9 @@ fn scan_firefox() -> Option<BrowserStatus> {
         });
     }
 
-    let own_install = firefox_exe_dir().map(|dir| firefox_install_hash(&dir));
+    let own_install = running_exe_dir
+        .or_else(firefox_exe_dir)
+        .map(|dir| firefox_install_hash(&dir));
     Some(BrowserStatus {
         present: running,
         installed: true,
