@@ -39,7 +39,9 @@ Several parts of the codebase look like bugs until you apply this:
   user can quit is a blocker the user can bypass. Do not add an escape hatch to
   either guard without a deliberate decision — `commands/uninstall.rs` calls
   `std::process::exit(0)` specifically to bypass both, and in-app uninstall
-  (macOS) or the OS uninstaller (Windows) is the only intended way out.
+  (macOS) or the OS uninstaller (Windows) is the only intended way out. The
+  macOS in-place update also exits that way, but only to reopen the bundle it
+  has just replaced (`relaunch_after_update` in `commands/app_update.rs`).
 - Override challenges (`src/override-challenge.js`) make unblocking
   deliberately effortful. Making them cheaper or skippable is a product
   regression, not an ergonomics win.

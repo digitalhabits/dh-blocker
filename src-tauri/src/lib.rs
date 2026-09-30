@@ -24,9 +24,11 @@ use tauri::Manager;
 // intercepted unconditionally and turned into a hide-window — a blocker the
 // user can quit is a blocker the user can bypass.
 //
-// The one real exit path is in-app uninstall, which calls
-// `std::process::exit(0)` directly (see `commands/uninstall.rs`) and so is not
-// routed through either guard.
+// There are two real exit paths, both calling `std::process::exit(0)` directly
+// so neither is routed through either guard: in-app uninstall (see
+// `commands/uninstall.rs`), and on macOS the relaunch after an in-place update
+// has replaced the bundle (see `relaunch_after_update` in
+// `commands/app_update.rs`).
 
 /// Flip the macOS activation policy between Regular (Dock icon + app
 /// name in the global menu bar, like a normal foreground app) and
@@ -159,8 +161,9 @@ pub mod windows_process;
 /// NSApp delegate's class that always returns `NSTerminateCancel`.
 /// Cmd-Q routes through the AppKit terminate path, which Tauri's
 /// `RunEvent::ExitRequested` does not intercept in accessory mode — so we
-/// hook it at the AppKit layer ourselves. In-app uninstall exits via
-/// `std::process::exit(0)` and so is not routed through here.
+/// hook it at the AppKit layer ourselves. In-app uninstall and the
+/// post-update relaunch exit via `std::process::exit(0)` and so are not
+/// routed through here.
 #[cfg(target_os = "macos")]
 unsafe fn install_terminate_guard(ns_app: cocoa::base::id) {
     use cocoa::base::id;
@@ -270,6 +273,11 @@ pub fn run() {
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     let builder = builder.plugin(tauri_plugin_notification::init());
+
+    // In-place macOS updates. Only Rust drives it (`commands::app_update`);
+    // no capability grants the frontend the plugin's own commands.
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
     // Autostart: launch at login on desktop. The "keep alive" /
     // restart-on-failure behaviour is platform-configured below once

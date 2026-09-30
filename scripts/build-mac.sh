@@ -40,6 +40,28 @@ if [ -n "${APPLE_SIGNING_IDENTITY_OVERRIDE:-}" ]; then
   )
 fi
 
+# In-place updates (tauri-plugin-updater, see src-tauri/src/commands/app_update.rs)
+# need a minisign-signed .app.tar.gz next to the .pkg. Build it only when both
+# halves of the key are present: the private key in the environment and the
+# public key committed in tauri.conf.json (the CLI decodes the latter when it
+# signs). Otherwise the build still produces the .app and the .pkg, and the app
+# falls back to the .pkg. Setup: docs/macos-in-place-updates.md.
+UPDATER_PUBKEY="$(node -p "require('./src-tauri/tauri.conf.json').plugins?.updater?.pubkey ?? ''")"
+BUILD_UPDATER=false
+if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ] && [ -n "$UPDATER_PUBKEY" ]; then
+  BUILD_UPDATER=true
+elif [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+  echo "WARNING: TAURI_SIGNING_PRIVATE_KEY is set but plugins.updater.pubkey is empty; skipping the in-place update archive."
+fi
+if [ "$BUILD_UPDATER" = true ]; then
+  echo "Building the in-place update archive"
+  CONFIG_ARGS+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+  # Tauri copies resource modes as it finds them, and an in-place update runs
+  # none of the .pkg's permission fixes. Safari loads the block page as the
+  # user, so these must be world-readable; git does not record 600 vs 644.
+  chmod 644 src-tauri/blocked/*
+fi
+
 CARGO_TARGET_DIR="$(node -e 'process.stdout.write(require("./scripts/build-env").getCargoTargetDir(process.env))')"
 export CARGO_TARGET_DIR
 TARGET_DIR="${CARGO_TARGET_DIR}/${BUILD_TARGET}/release/bundle"
@@ -58,6 +80,13 @@ mkdir -p for-distribution
 if [ -d "$APP_SOURCE" ]; then
   rm -rf "for-distribution/Digital Habits Blocker.app"
   cp -R "$APP_SOURCE" "for-distribution/Digital Habits Blocker.app"
+fi
+
+if [ "$BUILD_UPDATER" = true ]; then
+  node scripts/stage-macos-updater.js \
+    --bundle-dir "${TARGET_DIR}/macos" \
+    --target "${BUILD_TARGET}" \
+    --out for-distribution
 fi
 
 echo ""

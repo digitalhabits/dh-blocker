@@ -49,6 +49,11 @@
 #   APPLE_INSTALLER_CERTIFICATE_PASSWORD (optional; defaults to APPLE_CERTIFICATE_PASSWORD)
 #   APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
 #
+# ── macOS in-place updates (optional; see docs/macos-in-place-updates.md) ──
+#   TAURI_SIGNING_PRIVATE_KEY           minisign key from `pnpm tauri signer generate`
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+#   Without them the release still ships the .pkg, and the app keeps using it.
+#
 # ── Windows signing (same as local .env) ──
 #   AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID
 #
@@ -212,6 +217,8 @@ jobs:
           APPLE_NOTARIZE_PASS: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH"
@@ -224,7 +231,12 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: macos-installer
-          path: for-distribution/Digital-Habits-Blocker-*.pkg
+          # The update archive and manifest exist only when the updater key is
+          # configured; `error` still fires if the .pkg is missing.
+          path: |
+            for-distribution/Digital-Habits-Blocker-*.pkg
+            for-distribution/Digital-Habits-Blocker-*.app.tar.gz
+            for-distribution/macos-update.json
           if-no-files-found: error
           retention-days: 30
 
@@ -645,6 +657,8 @@ jobs:
         run: |
           mkdir -p for-distribution
           find artifacts -type f -name 'Digital-Habits-Blocker-*.pkg' -exec cp {} for-distribution/ \;
+          find artifacts -type f -name 'Digital-Habits-Blocker-*.app.tar.gz' -exec cp {} for-distribution/ \;
+          find artifacts -type f -name 'macos-update.json' -exec cp {} for-distribution/ \;
           find artifacts -type f -name 'Digital-Habits-Blocker_*-setup.exe' -exec cp {} for-distribution/ \;
           find artifacts -type f -name 'Digital-Habits-Blocker_*.msix' -exec cp {} for-distribution/ \;
           find artifacts -type f -name 'Digital-Habits-Blocker_*.ipa' -exec cp {} for-distribution/ \;
@@ -790,3 +804,24 @@ jobs:
           make_latest: true
           generate_release_notes: false
           fail_on_unmatched_files: true
+
+      # Separate from the step above so a release built without the updater
+      # key (no archive, no manifest) does not trip fail_on_unmatched_files.
+      # The app fetches releases/download/v<version>/macos-update.json and
+      # falls back to the .pkg when it is absent.
+      - name: Attach macOS in-place update files
+        if: >-
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
+          (github.event_name == 'workflow_dispatch' && inputs.create_github_release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f for-distribution/macos-update.json ]]; then
+            echo "No macos-update.json: built without TAURI_SIGNING_PRIVATE_KEY, macOS clients will use the .pkg."
+            exit 0
+          fi
+          gh release upload "${{ steps.meta.outputs.tag }}" \
+            --repo "${{ github.repository }}" --clobber \
+            for-distribution/macos-update.json \
+            for-distribution/Digital-Habits-Blocker-*.app.tar.gz
