@@ -44,8 +44,12 @@ They predate the updater, so they always install the `.pkg`.
 
 ## One-time setup
 
-Until these steps are done, releases ship only the `.pkg` and the app keeps
-using it. Nothing breaks in the meantime.
+The committed key is minisign key ID `14BB729C5BF4A1E1` (the ID appears in the
+first line of the base64-decoded `plugins.updater.pubkey`). The two repository
+secrets below must hold its private half. Until they do, releases ship only the
+`.pkg` and the app keeps using it. Nothing breaks in the meantime.
+
+To set up from scratch, or to rotate the key:
 
 1. Generate the key pair locally, and keep the private key out of the repo:
 
