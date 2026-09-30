@@ -86,6 +86,7 @@ export function getUpdateDownloadCtaLabel() {
 
 export function getUpdateDownloadButtonLabel(state, percent = null) {
     if (state === 'opening') return tSettings('updateBannerOpeningInstaller');
+    if (state === 'restarting') return tSettings('updateBannerRestarting');
     if (state === 'downloading') {
         if (typeof percent === 'number') {
             return tSettingsFmt('updateBannerDownloadingFmt', { percent });
@@ -99,8 +100,9 @@ export function setUpdateDownloadButtonState(state, percent = null) {
     const btn = document.getElementById('update-banner-link');
     if (!btn) return;
     btn.textContent = getUpdateDownloadButtonLabel(state, percent);
-    btn.disabled = state === 'downloading' || state === 'opening';
-    btn.setAttribute('aria-busy', state === 'downloading' || state === 'opening' ? 'true' : 'false');
+    const busy = state === 'downloading' || state === 'opening' || state === 'restarting';
+    btn.disabled = busy;
+    btn.setAttribute('aria-busy', busy ? 'true' : 'false');
 }
 
 export function resetUpdateDownloadButtonState() {
@@ -128,7 +130,13 @@ export async function startUpdateDownload(latestVersion) {
 
     try {
         await ensureUpdateDownloadProgressListener();
-        await tauriAPI.downloadAndRunUpdate(version);
+        const outcome = await tauriAPI.downloadAndRunUpdate(version);
+        if (outcome === 'relaunching') {
+            // macOS in-place update: the backend exits and reopens the new
+            // build in a moment. Leave the button busy until it does.
+            setUpdateDownloadButtonState('restarting');
+            return;
+        }
         setUpdateDownloadButtonState('opening');
         resetUpdateDownloadButtonState();
         if (state.isMacOSDesktop) {

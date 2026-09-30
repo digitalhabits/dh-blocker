@@ -1,4 +1,11 @@
-//! Download a GitHub release installer and open it in the system installer UI.
+//! In-app updates.
+//!
+//! macOS first tries an in-place update through `tauri-plugin-updater`: it
+//! downloads the release's minisign-signed `.app.tar.gz`, swaps the bundle and
+//! relaunches. When that is unavailable (no updater key configured in this
+//! build, no `macos-update.json` on the release, a failed install), it falls
+//! back to downloading the release `.pkg` and opening it in Installer.app.
+//! Windows always downloads the NSIS installer and runs it.
 
 #![allow(deprecated)]
 // The macOS FFI in this module goes through the `cocoa` crate, whose entire
@@ -18,8 +25,22 @@ use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
 const GITHUB_RELEASES: &str = "https://github.com/digitalhabits/dh-blocker/releases/download";
+/// Per-release updater manifest the release workflow attaches next to the
+/// `.pkg` (see `scripts/stage-macos-updater.js`).
+#[allow(dead_code)] // used on macOS; dead on Windows
+const MACOS_UPDATE_MANIFEST: &str = "macos-update.json";
 #[allow(dead_code)] // used on macOS; dead on Windows
 const LATEST_VERSIONS_URL: &str = "https://digitalhabits.github.io/dh-blocker/latest-versions.json";
+
+/// What `download_and_run_update` did, so the frontend knows whether to
+/// expect an installer window or for this process to exit and reopen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UpdateOutcome {
+    InstallerOpened,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    Relaunching,
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -97,6 +118,45 @@ async fn fetch_expected_macos_pkg_sha256(version: &str) -> Result<String, String
         .ok_or_else(|| {
             "Update manifest is missing the macOS installer checksum — try again later".to_string()
         })
+}
+
+/// The updater manifest is pinned to the release the frontend chose from
+/// `latest-versions.json`, rather than a floating "latest" URL, so the
+/// in-place path and the `.pkg` fallback always install the same version.
+#[allow(dead_code)] // used on macOS; dead on Windows
+fn macos_update_manifest_url(version: &str) -> String {
+    format!(
+        "{GITHUB_RELEASES}/v{}/{MACOS_UPDATE_MANIFEST}",
+        normalize_version(version)
+    )
+}
+
+/// `plugins.updater.pubkey` ships empty until the release signing key is set
+/// up (see `docs/macos-in-place-updates.md`); an empty key means this build
+/// cannot verify an update archive, so it must use the `.pkg`.
+#[allow(dead_code)] // used on macOS; dead on Windows
+fn updater_pubkey_configured(updater_config: Option<&serde_json::Value>) -> bool {
+    updater_config
+        .and_then(|c| c.get("pubkey"))
+        .and_then(|k| k.as_str())
+        .is_some_and(|k| !k.trim().is_empty())
+}
+
+/// `/Applications/X.app/Contents/MacOS/redd-block` → `/Applications/X.app`.
+///
+/// `None` for anything not running from inside an `.app` bundle — notably a
+/// `cargo run` / `pnpm dev` binary in `target/debug/`. The updater would treat
+/// that binary's parent directory as the thing to replace, so an unbundled
+/// build must never take the in-place path.
+#[allow(dead_code)] // used on macOS; dead on Windows
+fn app_bundle_from_exe(exe: &Path) -> Option<PathBuf> {
+    let macos_dir = exe.parent()?;
+    let contents = macos_dir.parent()?;
+    let bundle = contents.parent()?;
+    let is_bundle = macos_dir.file_name()? == "MacOS"
+        && contents.file_name()? == "Contents"
+        && bundle.extension()? == "app";
+    is_bundle.then(|| bundle.to_path_buf())
 }
 
 #[allow(clippy::needless_return)] // cfg dispatch: the return is load-bearing on the other platform
@@ -477,9 +537,127 @@ fn launch_installer(app: &AppHandle, path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Download the release's signed `.app.tar.gz` and swap it in place of the
+/// running bundle. Returns the bundle path to relaunch.
+///
+/// Any error leaves the running bundle as it was (the plugin restores it if
+/// the swap fails) and the caller falls back to the `.pkg`. When the bundle is
+/// root-owned — every `.pkg` install is — the plugin asks for an administrator
+/// password to do the swap.
+#[cfg(target_os = "macos")]
+async fn install_in_place(app: &AppHandle, version: &str) -> Result<PathBuf, String> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    let exe = std::env::current_exe().map_err(|e| format!("current exe: {e}"))?;
+    let bundle = app_bundle_from_exe(&exe)
+        .ok_or_else(|| format!("not running from an .app bundle ({})", exe.display()))?;
+
+    if !updater_pubkey_configured(app.config().plugins.0.get("updater")) {
+        return Err("this build has no updater public key".into());
+    }
+
+    let endpoint: tauri::Url = macos_update_manifest_url(version)
+        .parse()
+        .map_err(|e| format!("update manifest url: {e}"))?;
+    let updater = app
+        .updater_builder()
+        .endpoints(vec![endpoint])
+        .map_err(|e| format!("updater endpoints: {e}"))?
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("updater: {e}"))?;
+
+    let update = updater
+        .check()
+        .await
+        .map_err(|e| format!("update check: {e}"))?
+        .ok_or_else(|| format!("{version} is not newer than the running build"))?;
+    if normalize_version(&update.version) != version {
+        return Err(format!(
+            "update manifest version mismatch (manifest {}, requested {version})",
+            update.version
+        ));
+    }
+
+    let mut bytes_received: u64 = 0;
+    let mut last_emit = Instant::now();
+    update
+        .download_and_install(
+            |chunk, total| {
+                bytes_received += chunk as u64;
+                if last_emit.elapsed() >= Duration::from_millis(200) {
+                    emit_progress(app, bytes_received, total);
+                    last_emit = Instant::now();
+                }
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| format!("in-place install: {e}"))?;
+
+    Ok(bundle)
+}
+
+/// Exit and reopen the freshly installed bundle.
+///
+/// This is the second deliberate exit path besides in-app uninstall (see the
+/// note at the top of `lib.rs`): `std::process::exit` bypasses both quit
+/// guards, and it is reachable only after a signature-verified update has
+/// already replaced the bundle. `AppHandle::restart` cannot be used — it goes
+/// through `ExitRequested`, which the guard cancels.
+///
+/// A detached `sh` waits for this PID to disappear before `open`ing the new
+/// bundle; opening it any earlier would hand off to this still-running
+/// instance through the single-instance plugin, and the new build would quit.
+#[cfg(target_os = "macos")]
+fn relaunch_after_update(bundle: &Path) -> Result<(), String> {
+    const RELAUNCH: &str =
+        r#"while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; exec /usr/bin/open "$2""#;
+
+    std::process::Command::new("/bin/sh")
+        .args(["-c", RELAUNCH, "sh"])
+        .arg(std::process::id().to_string())
+        .arg(bundle)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| {
+            format!("The update was installed, but the app could not restart itself ({e}). Reopen Digital Habits: Blocker to finish.")
+        })?;
+
+    // Short delay so the IPC reply reaches the frontend first, as in
+    // `uninstall_self_macos`.
+    std::thread::spawn(|| {
+        std::thread::sleep(Duration::from_millis(300));
+        log::info!("update: exiting to relaunch the updated bundle");
+        std::process::exit(0);
+    });
+    Ok(())
+}
+
 #[tauri::command]
-pub async fn download_and_run_update(app: AppHandle, version: String) -> Result<(), String> {
+pub async fn download_and_run_update(
+    app: AppHandle,
+    version: String,
+) -> Result<UpdateOutcome, String> {
     let version = normalize_version(&version);
+
+    #[cfg(target_os = "macos")]
+    match install_in_place(&app, &version).await {
+        Ok(bundle) => {
+            log::info!(
+                "update: installed {version} in place at {}",
+                bundle.display()
+            );
+            relaunch_after_update(&bundle)?;
+            return Ok(UpdateOutcome::Relaunching);
+        }
+        Err(e) => {
+            log::warn!("update: in-place update unavailable, falling back to the .pkg: {e}");
+        }
+    }
+
     let (url, filename) = release_asset(&version)?;
     let dest = installer_dest_path(&filename);
 
@@ -506,5 +684,63 @@ pub async fn download_and_run_update(app: AppHandle, version: String) -> Result<
     launch_installer(&app, &dest)?;
 
     log::info!("update: opened installer at {}", dest.display());
-    Ok(())
+    Ok(UpdateOutcome::InstallerOpened)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manifest_url_is_pinned_to_the_requested_release() {
+        assert_eq!(
+            macos_update_manifest_url("v3.9.1 "),
+            "https://github.com/digitalhabits/dh-blocker/releases/download/v3.9.1/macos-update.json"
+        );
+    }
+
+    #[test]
+    fn empty_or_missing_pubkey_is_not_configured() {
+        assert!(!updater_pubkey_configured(None));
+        assert!(!updater_pubkey_configured(Some(&serde_json::json!({}))));
+        assert!(!updater_pubkey_configured(Some(
+            &serde_json::json!({ "pubkey": "  " })
+        )));
+        assert!(updater_pubkey_configured(Some(
+            &serde_json::json!({ "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWdu" })
+        )));
+    }
+
+    #[test]
+    fn bundle_is_found_only_inside_an_app() {
+        assert_eq!(
+            app_bundle_from_exe(Path::new(
+                "/Applications/Digital Habits Blocker.app/Contents/MacOS/redd-block"
+            )),
+            Some(PathBuf::from("/Applications/Digital Habits Blocker.app"))
+        );
+        // `cargo run`: replacing the parent directory would delete target/debug.
+        assert_eq!(
+            app_bundle_from_exe(Path::new(
+                "/src/dh-blocker/src-tauri/target/debug/redd-block"
+            )),
+            None
+        );
+        assert_eq!(
+            app_bundle_from_exe(Path::new("/Applications/Foo/Contents/MacOS/redd-block")),
+            None
+        );
+    }
+
+    #[test]
+    fn outcome_serialises_as_the_strings_the_frontend_checks() {
+        assert_eq!(
+            serde_json::to_string(&UpdateOutcome::Relaunching).unwrap(),
+            r#""relaunching""#
+        );
+        assert_eq!(
+            serde_json::to_string(&UpdateOutcome::InstallerOpened).unwrap(),
+            r#""installerOpened""#
+        );
+    }
 }

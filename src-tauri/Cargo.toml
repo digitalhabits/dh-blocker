@@ -102,6 +102,10 @@ plist = "1"
 # windows without stealing focus — same machinery redd-do uses for its
 # pop-out focus panel.
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
+# In-place macOS updates (see `commands/app_update.rs`). Pinned to a minor
+# version: the macOS install path and manifest format are what the release
+# workflow's `macos-update.json` is written against.
+tauri-plugin-updater = "2.12"
 
 [target.'cfg(target_os = "ios")'.dependencies]
 tauri-plugin-screentime = { path = "../tauri-plugin-screentime" }

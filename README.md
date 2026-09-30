@@ -289,7 +289,7 @@ redd-block/
 | Component | Version Location |
 |-----------|------------------|
 | **App** | `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/tauri.android.conf.json`, `src-tauri/Cargo.toml` |
-| **Published versions** | `docs/latest-versions.json` (macOS, Windows, iOS, Android, plus `sha256.macosPkg` and `sizeBytes.macosPkg` for in-app macOS updates) |
+| **Published versions** | `docs/latest-versions.json` (macOS, Windows, iOS, Android, plus `sha256.macosPkg` and `sizeBytes.macosPkg` for the `.pkg` update fallback; in-place updates read each release's `macos-update.json`, see [docs/macos-in-place-updates.md](docs/macos-in-place-updates.md)) |
 
 Use `./scripts/bump-version.sh <version>` to update the app version in all files at once.
 
