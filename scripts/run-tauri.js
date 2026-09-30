@@ -19,14 +19,16 @@ if (missing) {
   console.log(`[run-tauri] Loaded ${count} variable(s) from .env`);
 }
 
-const args = ['tauri', ...process.argv.slice(2)];
-const cmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+// Run the CLI's own entry script with this Node, not through `npx` and a
+// shell. A shell re-parses the joined arguments, so inline JSON such as
+// `--config '{"bundle":{...}}'` lost its quotes and Windows paths with spaces
+// split in two. Without a shell there is no need for `npx.cmd` on Windows.
+const tauriCli = require.resolve('@tauri-apps/cli/tauri.js', { paths: [repoRoot] });
 
-const result = spawnSync(cmd, args, {
+const result = spawnSync(process.execPath, [tauriCli, ...process.argv.slice(2)], {
   cwd: repoRoot,
   env: getBuildEnvironment(process.env),
   stdio: 'inherit',
-  shell: true,
 });
 
 process.exit(result.status === null ? 1 : result.status);

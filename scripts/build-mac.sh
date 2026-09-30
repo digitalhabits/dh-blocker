@@ -55,8 +55,6 @@ elif [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
 fi
 if [ "$BUILD_UPDATER" = true ]; then
   echo "Building the in-place update archive"
-  # A file, not inline JSON: run-tauri.js spawns through a shell, which strips
-  # the quotes out of a JSON argument.
   CONFIG_ARGS+=(--config src-tauri/tauri.updater.conf.json)
   # Tauri copies resource modes as it finds them, and an in-place update runs
   # none of the .pkg's permission fixes. Safari loads the block page as the
