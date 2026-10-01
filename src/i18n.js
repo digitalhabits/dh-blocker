@@ -83,6 +83,7 @@ export const SETTINGS_TRANSLATIONS = {
         iosScreentimeDeniedNote:
             'Screen Time access was denied. Please tap the button again, or enable Digital Habits: Blocker in Settings > Screen Time > Apps With Screen Time Access.',
         iosScreentimeFailedNoteFmt: 'Screen Time access failed: {error}',
+        iosAutomaticRestartFailed: 'Automatic restart could not be scheduled. Please try again.',
         // Android Accessibility permission onboarding
         androidPermissionsOnboardingBody:
             'Digital Habits: Blocker needs the Accessibility permission to detect and block distracting apps and websites.',
@@ -1001,6 +1002,7 @@ export const SETTINGS_TRANSLATIONS = {
         iosScreentimeDeniedNote:
             'Adgang til Screen Time blev nægtet. Tryk på knappen igen, eller slå Digital Habits: Blocker til under Indstillinger > Skærmtid > Apps med skærmtid-adgang.',
         iosScreentimeFailedNoteFmt: 'Screen Time-adgang mislykkedes: {error}',
+        iosAutomaticRestartFailed: 'Automatisk genstart kunne ikke planlægges. Prøv igen.',
         // Android Accessibility permission onboarding
         androidPermissionsOnboardingBody:
             'Digital Habits: Blocker har brug for Accessibility-tilladelse for at registrere og blokere distraherende apps og hjemmesider.',
@@ -1886,6 +1888,7 @@ export const SETTINGS_TRANSLATIONS = {
         iosScreentimeRequestingBtn: '正在请求访问…',
         iosScreentimeDeniedNote: '屏幕使用时间授权被拒绝。请再次点按按钮，或在“设置 > 屏幕使用时间 > 具有屏幕使用时间访问权限的 App”中启用 Digital Habits: Blocker。',
         iosScreentimeFailedNoteFmt: '屏幕使用时间访问失败：{error}',
+        iosAutomaticRestartFailed: '无法安排自动重新启用。请重试。',
         androidPermissionsOnboardingBody: 'Digital Habits: Blocker 需要无障碍权限以检测并阻止分心的应用和网站。',
         androidAccessibilityGrantBtn: '授予无障碍访问权限',
         androidAccessibilityOpeningBtn: '正在打开设置…',

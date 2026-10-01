@@ -2394,6 +2394,180 @@
         }
     }
 
+    // iOS timed-stop orchestration is async because the native payload and
+    // DeviceActivity registration must both settle before the pause commits.
+    // These tests drive the actual stopFocusSpaceTarget path with a mocked
+    // native API; no Screen Time entitlement is involved.
+    async function runIOSResumeOrderingTests() {
+        console.log('\n📱 iOS timed-stop native ordering');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        if (typeof internals.stopFocusSpaceTarget !== 'function') {
+            assert(false, 'T69: stopFocusSpaceTarget is exposed to tests');
+            return;
+        }
+
+        const api = internals.tauriAPI;
+        const methodNames = ['saveData', 'screentimeSetResumePayload', 'screentimeRegisterOneOffActivity',
+            'screentimeStartBlock', 'screentimeClearBlock', 'screentimeClearManualBlock',
+            'setSchedulesPlugin', 'checkHelperStatus', 'setBlockedAppsViaHelper', 'androidSetSchedules'];
+        const savedMethods = Object.fromEntries(methodNames.map(name => [name, api[name]]));
+        const savedAppData = internals.appData;
+        const savedLastBlockedDomains = internals.lastBlockedDomains;
+        const savedIsIOS = internals.isIOS;
+        const savedAlert = window.alert;
+        const forever = 253402300799999;
+        const blocklist = createMockBlocklist({ id: 'bl-ios-resume-order', unlockMinutes: 10, websites: ['resume-order.invalid'] });
+        const makeBlock = (extra = {}) => createMockBlock(blocklist.id, Date.now() - 1000, forever, { isAlwaysOn: true, ...extra });
+        const scheduleBlocklist = createMockBlocklist({ id: 'bl-ios-resume-schedule', unlockMinutes: 10, websites: ['schedule-resume.invalid'] });
+        const overlapBlocklist = createMockBlocklist({ id: 'bl-ios-resume-overlap', unlockMinutes: 10, websites: ['overlap-resume.invalid'] });
+        const allDay = { startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, days: [0, 1, 2, 3, 4, 5, 6] };
+        let events = [], currentTarget = null, registrationDelay = false, registrationThrows = false;
+        let registrationResult = { success: true };
+        let scheduleSyncResults = null;
+        let registrationPauseState = null;
+        let registeredDeadline = null;
+
+        try {
+            internals.isIOS = true;
+            window.alert = () => {};
+            api.saveData = async () => { events.push('save'); return { success: true }; };
+            api.screentimeSetResumePayload = async () => { events.push('payload'); return { success: true }; };
+            api.screentimeRegisterOneOffActivity = async (_name, deadline) => {
+                events.push('register');
+                registrationPauseState = currentTarget?.isPaused;
+                registeredDeadline = deadline;
+                if (registrationDelay) await new Promise(resolve => setTimeout(resolve, 0));
+                if (registrationThrows) throw new Error('registration threw');
+                return registrationResult;
+            };
+            api.screentimeStartBlock = async () => { events.push('start-block'); return { success: true }; };
+            api.screentimeClearBlock = async () => { events.push('clear-block'); return { success: true }; };
+            api.screentimeClearManualBlock = async () => { events.push('clear-manual'); return { success: true }; };
+            api.setSchedulesPlugin = async () => {
+                events.push('schedule-sync');
+                return scheduleSyncResults?.length ? scheduleSyncResults.shift() : { success: true };
+            };
+            api.setBlockedAppsViaHelper = async () => { events.push('desktop-app-sync'); return { success: true }; };
+            api.androidSetSchedules = async () => { events.push('android-schedule-sync'); return { success: true }; };
+
+            const setBlock = (block) => {
+                currentTarget = block;
+                internals.appData = createMockAppData({ blocklists: [blocklist], activeBlocks: [block], schedules: [] });
+            };
+            const setSchedules = (schedule, overlap = null) => {
+                currentTarget = schedule;
+                internals.appData = createMockAppData({
+                    blocklists: [scheduleBlocklist, overlapBlocklist],
+                    activeBlocks: [],
+                    schedules: overlap ? [schedule, overlap] : [schedule],
+                });
+            };
+
+            // Manual success: native sees the running block still protected,
+            // and the commit uses the exact deadline passed to registration.
+            const currentBlock = makeBlock();
+            setBlock(currentBlock);
+            events = [];
+            registrationDelay = true;
+            const success = await internals.stopFocusSpaceTarget({ block: currentBlock });
+            assert(success?.kind === 'unlocked' && registrationPauseState === undefined,
+                'T69: manual registration precedes the pause mutation');
+            assertEqual(currentBlock.pauseEndTime, registeredDeadline, 'T69: committed deadline equals registered deadline');
+            assert(events.indexOf('register') < events.indexOf('save'), 'T69: registration precedes persistence');
+
+            const successfulSchedule = createMockSchedule(scheduleBlocklist.id, [allDay]);
+            const overlappingSchedule = createMockSchedule(overlapBlocklist.id, [allDay]);
+            setSchedules(successfulSchedule, overlappingSchedule);
+            events = [];
+            const scheduleSuccess = await internals.stopFocusSpaceTarget({ schedule: successfulSchedule });
+            assert(scheduleSuccess?.kind === 'unlocked' && registrationPauseState === undefined,
+                'T69b: schedule registration precedes its pause mutation');
+            assertEqual(successfulSchedule.pauseEndTime, registeredDeadline, 'T69b: schedule commits registered deadline');
+            assert(events.indexOf('register') < events.indexOf('schedule-sync') && !overlappingSchedule.isPaused,
+                'T69b: schedule registration precedes sync and preserves overlap');
+
+            // A native schedule-data persistence failure after registration must
+            // restore the running schedule and report no successful stop.
+            const syncFailureSchedule = createMockSchedule(scheduleBlocklist.id, [allDay]);
+            setSchedules(syncFailureSchedule);
+            events = [];
+            scheduleSyncResults = [
+                { success: false, error: 'schedule sync rejected' },
+                { success: true }
+            ];
+            const syncFailure = await internals.stopFocusSpaceTarget({ schedule: syncFailureSchedule });
+            assert(syncFailure === null && !syncFailureSchedule.isPaused && events.filter(event => event === 'schedule-sync').length >= 2,
+                'T69c: schedule sync failure restores blocking and returns no successful stop');
+            scheduleSyncResults = null;
+
+            // Payload rejection leaves a running space untouched and never registers.
+            const payloadFailureBlock = makeBlock();
+            setBlock(payloadFailureBlock);
+            events = [];
+            registrationDelay = false;
+            api.screentimeSetResumePayload = async () => { events.push('payload'); return { success: false, error: 'rejected' }; };
+            const payloadFailure = await internals.stopFocusSpaceTarget({ block: payloadFailureBlock });
+            assert(payloadFailure === null && !payloadFailureBlock.isPaused && !events.includes('register'),
+                'T70: payload rejection preserves the active block');
+            api.screentimeSetResumePayload = async () => { events.push('payload'); return { success: true }; };
+
+            // A thrown registration after replacing a paused manual monitor
+            // restores the manual enforcement path.
+            registrationThrows = true;
+            const pausedBlock = makeBlock({ isPaused: true, pauseEndTime: Date.now() + 60_000 });
+            setBlock(pausedBlock);
+            events = [];
+            const pausedBlockFailure = await internals.stopFocusSpaceTarget({ block: pausedBlock });
+            assert(pausedBlockFailure === null && !pausedBlock.isPaused && events.includes('start-block'),
+                'T70b: failed manual replacement restores and reapplies blocking');
+            registrationThrows = false;
+
+            // An explicit native rejection leaves an active schedule and its
+            // overlapping space unchanged.
+            const activeSchedule = createMockSchedule(scheduleBlocklist.id, [allDay]);
+            const activeOverlap = createMockSchedule(overlapBlocklist.id, [allDay]);
+            setSchedules(activeSchedule, activeOverlap);
+            events = [];
+            registrationResult = { success: false, error: 'schedule rejected' };
+            const activeScheduleFailure = await internals.stopFocusSpaceTarget({ schedule: activeSchedule });
+            assert(activeScheduleFailure === null && !activeSchedule.isPaused && !activeOverlap.isPaused,
+                'T71: registration rejection preserves active and overlapping schedules');
+            assert(!events.includes('schedule-sync') && !events.includes('clear-block'), 'T71: rejection does not resync or clear');
+
+            // A paused schedule is restored if registration replaces its old monitor.
+            const pausedSchedule = createMockSchedule(scheduleBlocklist.id, [allDay], { isPaused: true, pauseEndTime: Date.now() + 60_000 });
+            setSchedules(pausedSchedule);
+            events = [];
+            const pausedScheduleFailure = await internals.stopFocusSpaceTarget({ schedule: pausedSchedule });
+            assert(pausedScheduleFailure === null && !pausedSchedule.isPaused && events.includes('schedule-sync'),
+                'T71b: failed replacement restores and resyncs the paused schedule');
+
+            // Keep the existing non-iOS and Never semantics away from the timed path.
+            registrationResult = { success: true };
+            internals.isIOS = false;
+            const desktopBlock = makeBlock();
+            setBlock(desktopBlock);
+            events = [];
+            api.checkHelperStatus = async () => ({ running: false, version_ok: false });
+            await internals.stopFocusSpaceTarget({ block: desktopBlock });
+            assert(!events.includes('register'), 'T72: non-iOS stop does not register an iOS activity');
+
+            internals.isIOS = true;
+            const neverBlocklist = { ...blocklist, id: 'bl-ios-never', unlockMinutes: 0 };
+            const neverBlock = createMockBlock(neverBlocklist.id, Date.now() - 1000, forever, { isAlwaysOn: true });
+            internals.appData = createMockAppData({ blocklists: [neverBlocklist], activeBlocks: [neverBlock], schedules: [] });
+            events = [];
+            const never = await internals.stopFocusSpaceTarget({ block: neverBlock });
+            assert(never?.kind === 'removed', 'T72: Never keeps the existing removal semantics');
+        } finally {
+            internals.appData = savedAppData;
+            internals.lastBlockedDomains = savedLastBlockedDomains;
+            internals.isIOS = savedIsIOS;
+            window.alert = savedAlert;
+            for (const [name, method] of Object.entries(savedMethods)) api[name] = method;
+        }
+    }
+
     // ========================================
     // CATEGORY 16: CHALLENGE PRIMITIVES (T94-T115)
     // ========================================
@@ -3670,7 +3844,7 @@
         }
     }
 
-    function runAllTests() {
+    async function runAllTests() {
         console.clear();
         console.log('🧪 ReddBlock Blocking Tests');
         console.log('============================');
@@ -3679,6 +3853,7 @@
         resetTestResults();
 
         try {
+            await runIOSResumeOrderingTests();
             runTimeBasedTests();
             runOverlapTests();
             runSharedDomainTests();
@@ -3741,6 +3916,7 @@
         runChallengePrimitiveTests,
         runChallengeControllerTests,
         runTemporaryUnlockTests,
+        runIOSResumeOrderingTests,
         runCompactDesktopCardTapTests
     };
 

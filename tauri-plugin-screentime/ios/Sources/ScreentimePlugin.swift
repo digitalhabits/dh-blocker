@@ -1043,7 +1043,10 @@ class ScreentimePlugin: Plugin {
             endHour: args.endHour,
             endMinute: args.endMinute
         )
-        SharedScheduleStore.save(id: scheduleId, data: scheduleData)
+        guard SharedScheduleStore.save(id: scheduleId, data: scheduleData) else {
+            invoke.resolve(["success": false, "error": "Failed to persist schedule data"])
+            return
+        }
         
         let schedule = buildDeviceActivitySchedule(
             startHour: args.startHour,
@@ -1133,7 +1136,10 @@ class ScreentimePlugin: Plugin {
                 blocklistColorHex: entry.blocklistColorHex,
                 mode: entry.mode
             )
-            SharedScheduleStore.save(id: entry.id, data: scheduleData)
+            guard SharedScheduleStore.save(id: entry.id, data: scheduleData) else {
+                errors.append("Schedule \(entry.id): failed to persist schedule data")
+                continue
+            }
             
             let schedule = buildDeviceActivitySchedule(
                 startHour: entry.startHour,
@@ -1210,33 +1216,26 @@ class ScreentimePlugin: Plugin {
             return
         }
         let args = try invoke.parseArgs(RegisterOneOffActivityArgs.self)
-        let startDate = Date(timeIntervalSince1970: args.startTimestampMs / 1000.0)
-        let endDate = startDate.addingTimeInterval(15 * 60)
         let calendar = Calendar.current
-        let crossesMidnight = !calendar.isDate(startDate, inSameDayAs: endDate)
-        // Keep the existing same-day path unchanged. Only midnight-crossing one-offs
-        // opt into explicit date components so 23:xx -> 00:xx registrations remain
-        // anchored to the intended day boundary.
-        let components: Set<Calendar.Component> = crossesMidnight
-            ? [.year, .month, .day, .hour, .minute, .second]
-            : [.hour, .minute, .second]
-        let intervalStart = calendar.dateComponents(components, from: startDate)
-        let intervalEnd = calendar.dateComponents(components, from: endDate)
-        if crossesMidnight {
-            NSLog(
-                "[ReDD Schedule] registerOneOffActivity using date-aware midnight path name=%@ start=%@ end=%@",
-                args.activityName,
-                String(describing: intervalStart),
-                String(describing: intervalEnd)
-            )
-        }
-        let schedule = DeviceActivitySchedule(
-            intervalStart: intervalStart,
-            intervalEnd: intervalEnd,
-            repeats: false
-        )
-        let activityName = DeviceActivityName(args.activityName)
+        let now = Date()
         do {
+            let timing = try OneOffActivityTiming.resolve(
+                startTimestampMs: args.startTimestampMs,
+                now: now,
+                calendar: calendar
+            )
+            let schedule = DeviceActivitySchedule(
+                intervalStart: timing.intervalStart,
+                intervalEnd: timing.intervalEnd,
+                repeats: false
+            )
+            let nextInterval = schedule.nextInterval
+            guard timing.isResolvedIntervalSafe(nextInterval, now: now, calendar: calendar) else {
+                invoke.resolve(["success": false, "error": "Screen Time returned an unsafe one-off interval"])
+                return
+            }
+
+            let activityName = DeviceActivityName(args.activityName)
             center.stopMonitoring([activityName])
             try center.startMonitoring(activityName, during: schedule)
             invoke.resolve(["success": true])
@@ -1259,7 +1258,10 @@ class ScreentimePlugin: Plugin {
             days: nil,
             mode: args.mode
         )
-        SharedManualBlockStore.saveResumePayload(blockId: args.blockId, payload)
+        guard SharedManualBlockStore.saveResumePayload(blockId: args.blockId, payload) else {
+            invoke.resolve(["success": false, "error": "Failed to persist automatic restart payload"])
+            return
+        }
         invoke.resolve(["success": true])
     }
     

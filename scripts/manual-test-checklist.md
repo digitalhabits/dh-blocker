@@ -318,6 +318,22 @@ for the availability-guard check.
 - [ ] Re-select in `FamilyActivityPicker`: the reselection marker clears and enforcement resumes
 - [ ] On iOS 16–26.4, startup and schedule transitions remain unchanged (no unavailable-API crash)
 
+### 14.3 Timed automatic resume (physical device only)
+
+- [ ] On a physical device, verify 10-minute re-enable for a manual block and
+      an active recurring schedule while the app is backgrounded.
+- [ ] Repeat both cases at 24 hours; without reopening the app before the
+      deadline, verify next-day blocking resumes.
+- [ ] Test deadlines just before and after midnight; verify the intended date.
+      With overlapping schedules, verify the other space remains enforced.
+- [ ] Change a pending restart deadline and verify only the new deadline wins.
+- [ ] Suspend or terminate the app and record callback delivery while the
+      device is used. Apple documents this boundary in
+      [DeviceActivitySchedule.nextInterval](https://developer.apple.com/documentation/deviceactivity/deviceactivityschedule/nextinterval): sleeping through the entire 15-minute window can miss callbacks.
+- [ ] Force native registration failure in a development build; verify the
+      running space stays blocked and the retry error is shown. Foundation and
+      Tier 1 tests do not cover device callback delivery.
+
 ---
 
 ## 15. Desktop Allowlist (Allow-Mode Focus Spaces)

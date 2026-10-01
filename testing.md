@@ -63,6 +63,7 @@ summarized below:
 | `ci.yml` | Frontend bundle | `vite:build`, `vite:build:android`, `verify:android-bundle` | every PR, every push to `main` |
 | `ci.yml` | Tier 0 unit tests | `pnpm test:tier0` — vitest over `test/tier0/**` | every PR, every push to `main` |
 | `ci.yml` | Tier 1 logic tests | `pnpm test:tier1` — `runBlockingTests()` in headless Chromium | every PR, every push to `main` |
+| `ci.yml` | iOS one-off activity timing | Foundation-only `bash scripts/ci/test-ios-activity-timing.sh` on macOS | every PR, every push to `main` |
 | `release.yml` | Checks (lint + Tier 1) | `pnpm lint`, `pnpm test:tier1` — gates all four build jobs | every release run |
 | `release.yml` | macOS (.pkg) | `cargo test --lib` before signing | every release run |
 | `rust-ci.yml` | Rust unit tests | `cargo test --lib` on `macos-latest` | `src-tauri/**` changes, on PRs and `main` |

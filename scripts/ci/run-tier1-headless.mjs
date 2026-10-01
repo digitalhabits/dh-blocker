@@ -70,8 +70,8 @@ async function main() {
 
         log('running runBlockingTests()');
         page.setDefaultTimeout(TEST_TIMEOUT_MS);
-        const results = await page.evaluate(() => {
-            window.ReddBlockTests.runAllTests();
+        const results = await page.evaluate(async () => {
+            await window.ReddBlockTests.runAllTests();
             const r = window.ReddBlockTestUtils.testResults;
             return { passed: r.passed, failed: r.failed, errors: r.errors };
         });
