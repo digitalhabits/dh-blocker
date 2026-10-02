@@ -199,7 +199,16 @@ class ReddBlockMonitor: DeviceActivityMonitor {
     /// method owns clearing when nothing is active and the shield snapshot
     /// (the writer partitions blocklist rows vs the allowlist fallback itself).
     private func recomputeActiveScheduleUnion(now: Date = Date()) {
-        let allSchedules = SharedScheduleStore.loadAll()
+        // A read that failed is not evidence that nothing should be blocked, and
+        // everything below this point can clear shields — so stop here instead.
+        // Falls toward blocking: a stale shield outlives its window until the next
+        // callback, where clearing wrongly leaves the user unblocked until they
+        // next open the app.
+        let read = SharedScheduleStore.loadAllResult()
+        guard case .loaded(let allSchedules) = read else {
+            logLine("schedule store read=\(read.label); leaving every shield untouched")
+            return
+        }
         logLine("recomputeActiveScheduleUnion schedules=\(allSchedules.count)")
         var activePairs: [(String, ScheduleBlockData)] = []
 

@@ -154,17 +154,21 @@ struct SharedScheduleStore {
         return loadAll()[id]
     }
     
-    /// Load all schedule data entries.
+    /// Read the store and report what was found, so a caller that would otherwise
+    /// clear shields can tell an unreadable container from one holding no schedules.
+    static func loadAllResult() -> ScheduleStoreRead<ScheduleBlockData> {
+        guard let defaults = sharedDefaults else { return .unavailable }
+        return interpretScheduleStore(
+            multiData: defaults.data(forKey: multiScheduleDataKey),
+            legacyData: defaults.data(forKey: scheduleDataKey)
+        )
+    }
+
+    /// Load all schedule data entries. A failed read is indistinguishable from an
+    /// empty store here; callers that act on emptiness must use `loadAllResult`.
     static func loadAll() -> [String: ScheduleBlockData] {
-        guard let defaults = sharedDefaults,
-              let data = defaults.data(forKey: multiScheduleDataKey) else {
-            // Fall back to legacy single-schedule key for backward compatibility
-            if let legacyData = loadLegacy() {
-                return ["default": legacyData]
-            }
-            return [:]
-        }
-        return (try? JSONDecoder().decode([String: ScheduleBlockData].self, from: data)) ?? [:]
+        if case .loaded(let all) = loadAllResult() { return all }
+        return [:]
     }
     
     /// Remove a specific schedule by ID.
