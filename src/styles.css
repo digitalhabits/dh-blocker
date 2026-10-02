@@ -12480,7 +12480,8 @@ body.dark-mode .modal-btn.black-btn:hover{
 }
 
 /* Error character highlighting — avoid bold (can shift monospace glyph width). */
-.challenge-text .error-char{
+.challenge-text .error-char,
+.challenge-current-word .error-char{
     color: #ef4444;
     background: rgba(239, 68, 68, 0.18);
     border-radius: 2px;
@@ -12597,6 +12598,44 @@ body.dark-mode .modal-btn.black-btn:hover{
 .override-challenge .challenge-word-input{
     min-height: 0;
     height: 48px;
+}
+
+/* Word mode (phones): swap the instruction, and the passage starts at the word
+   being typed — finished words fade out and collapse, later ones are dimmed. */
+.override-challenge .challenge-word-instruction,
+.override-challenge.challenge-word-mode .challenge-char-instruction{
+    display: none;
+}
+.override-challenge.challenge-word-mode .challenge-word-instruction{
+    display: block;
+}
+.challenge-text .challenge-word-current{
+    font-weight: 700;
+}
+.challenge-text .challenge-word-upcoming{
+    opacity: 0.5;
+}
+.challenge-text .challenge-word-done{
+    display: inline-block;
+    overflow: hidden;
+    white-space: pre;
+    vertical-align: bottom;
+    animation: challenge-word-out 0.2s ease-out forwards;
+}
+/* Fade, slide and the next word's emphasis all run together. */
+.challenge-text .challenge-word-arriving{
+    animation: challenge-word-in 0.2s ease-out;
+}
+@keyframes challenge-word-out{
+    from{ opacity: 1; max-width: var(--word-width, 6ch); }
+    to{ opacity: 0; max-width: 0; }
+}
+@keyframes challenge-word-in{
+    from{ opacity: 0.5; }
+}
+@media (prefers-reduced-motion: reduce){
+    .challenge-text .challenge-word-done{ display: none; }
+    .challenge-text .challenge-word-arriving{ animation: none; }
 }
 
 .override-challenge .challenge-progress{

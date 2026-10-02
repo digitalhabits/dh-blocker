@@ -2836,6 +2836,49 @@
             assertEqual(h.elements.wordProgressEl.textContent, 'Word 2 of 3', 'T131: and tracks the current word');
         })();
 
+        (function T237() {
+            // Phones type one word at a time; the passage must read that way.
+            const h = makeHarness();
+            h.controller.open({ text: 'alpha beta gamma', wordMode: true });
+            const text = h.elements.textEl;
+            assertEqual(text.querySelector('.challenge-word-current')?.textContent, 'alpha', 'T237: the passage starts with the current word, marked');
+            assertEqual(text.querySelector('.challenge-word-upcoming')?.textContent, 'beta gamma', 'T237: later words are marked upcoming');
+            typeWord(h, 'alpha');
+            h.controller.handleConfirm();
+            assertEqual(text.querySelector('.challenge-word-done')?.textContent, 'alpha ', 'T237: the finished word is marked to fade out');
+            assertEqual(text.querySelector('.challenge-word-current')?.textContent, 'beta', 'T237: the next word becomes current');
+            assertEqual(text.querySelector('.challenge-word-upcoming')?.textContent, 'gamma', 'T237: and only later words stay upcoming');
+            assert(h.elements.modalContentEl.classList.contains('challenge-word-mode'), 'T237: the sheet is flagged word mode for the instruction swap');
+            h.controller.open({ text: 'alpha beta' });
+            assert(!h.elements.modalContentEl.classList.contains('challenge-word-mode'), 'T237: char mode clears the word-mode flag');
+        })();
+
+        (function T238() {
+            const h = makeHarness();
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            typeWord(h, 'alpha beta');
+            assertEqual(h.elements.wordInputEl.value, 'alphabeta', 'T238: the word input never keeps a space');
+            const ev = new KeyboardEvent('keydown', { key: ' ', cancelable: true });
+            h.elements.wordInputEl.dispatchEvent(ev);
+            assert(ev.defaultPrevented, 'T238: the space key is blocked in the word input');
+        })();
+
+        (function T239() {
+            const h = makeHarness();
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            const mark = () => h.elements.currentWordEl.querySelector('.error-char');
+            typeWord(h, 'alp');
+            assert(!mark(), 'T239: a correct prefix shows no error');
+            typeWord(h, 'alx');
+            assertEqual(mark()?.textContent, 'p', 'T239: a wrong letter marks the expected letter');
+            typeWord(h, 'alphas');
+            assertEqual(mark()?.textContent, 'a', 'T239: typing past the word marks its last letter');
+            assertEqual(h.elements.currentWordEl.textContent, 'alpha', 'T239: without changing the word shown');
+            typeWord(h, 'alpha');
+            h.controller.handleConfirm();
+            assert(!mark(), 'T239: the next word starts clean');
+        })();
+
         // ---- skipChallenge ----
         (function T132() {
             // Bug 2: override-all's skip path left stale text in a now-hidden

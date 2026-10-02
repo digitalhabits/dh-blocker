@@ -94,6 +94,7 @@ export function createChallengeController(elements) {
         currentWordEl?.classList.toggle('hidden', hideAll || !word);
         wordInputEl?.classList.toggle('hidden', hideAll || !word);
         inputEl?.classList.toggle('hidden', hideAll || word);
+        modalContentEl?.classList.toggle('challenge-word-mode', word);
         // Visibility is driven by the `hidden` class alone. override-all used to
         // mix in inline style.display and never clear it, so an element could
         // stay hidden no matter what the class said — clear any such leftovers.
@@ -112,9 +113,23 @@ export function createChallengeController(elements) {
         renderChallengeReferenceText(textEl, targetText, { errorIndex, cursorIndex });
     };
 
-    const renderWordState = () => {
+    /** @param {boolean} [leaving] - fade out the word just finished rather than dropping it */
+    const renderWordState = (leaving = false) => {
         if (!wordState) return;
         const currentWord = getCurrentChallengeWord(wordState);
+        const { words, currentIndex } = wordState;
+        const span = (className, textContent) => Object.assign(document.createElement('span'), { className, textContent });
+        const rest = words.slice(currentIndex + 1).join(' ');
+        const done = leaving ? span('challenge-word-done', `${words[currentIndex - 1]} `) : null;
+        // Collapse from the word's real width, so the slide starts with the fade.
+        done?.style.setProperty('--word-width', `${done.textContent.length}ch`);
+        textEl?.replaceChildren(
+            ...(done ? [done] : []),
+            span(leaving ? 'challenge-word-current challenge-word-arriving' : 'challenge-word-current', currentWord),
+            ...(rest ? [' ', span('challenge-word-upcoming', rest)] : []),
+        );
+        textEl?.removeAttribute('data-challenge-render');
+        if (textEl) textEl.scrollTop = 0;
         // Only finished words count: the bar starts empty, not on the word still to type.
         const completed = getCompletedChallengeText(wordState);
         if (wordProgressEl) {
@@ -155,11 +170,20 @@ export function createChallengeController(elements) {
 
     const onWordInput = () => {
         if (!wordState || !currentWordEl) return;
-        currentWordEl.textContent = getCurrentChallengeWord(wordState);
+        // One word at a time: a space is never part of the answer. Stripped here
+        // as well as blocked on keydown, for the iOS predictive bar's "word ".
+        if (/\s/.test(wordInputEl.value)) wordInputEl.value = wordInputEl.value.replace(/\s+/g, '');
+        const expected = getCurrentChallengeWord(wordState);
+        const typed = normalizeChallengeComparableText(wordInputEl.value);
+        const correct = countCorrectChallengeChars(typed, expected);
+        const wrong = correct < typed.length;
+        // Typed past the end: mark the last letter rather than nothing.
+        renderChallengeReferenceText(currentWordEl, expected,
+            { errorIndex: wrong ? Math.min(correct, expected.length - 1) : -1 });
     };
 
     const onKeyDown = (e) => {
-        if (shouldBlockChallengeSpaceKey(e.currentTarget, e)) {
+        if ((e.currentTarget === wordInputEl && e.key === ' ') || shouldBlockChallengeSpaceKey(e.currentTarget, e)) {
             e.preventDefault();
             return;
         }
@@ -272,7 +296,7 @@ export function createChallengeController(elements) {
                 // the pause copy only wrote it on the final word.
                 wordState.typedText = done ? targetText : getCompletedChallengeText(wordState);
                 if (!done) {
-                    renderWordState();
+                    renderWordState(true);
                     wordInputEl?.focus({ preventScroll: true });
                     return { status: 'advanced' };
                 }

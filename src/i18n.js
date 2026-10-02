@@ -626,6 +626,7 @@ export const SETTINGS_TRANSLATIONS = {
         editBlocklist: 'Edit focus space',
         /** Word-by-word challenge counter (mobile). */
         challengeWordProgressFmt: 'Word {current} of {total}',
+        challengeWordInstruction: 'Type each word on its own, one at a time.',
         name: 'Name',
         blocklistModeLabel: 'Mode',
         blocklistModeSentenceBefore: 'When this list is active,',
@@ -1525,6 +1526,7 @@ export const SETTINGS_TRANSLATIONS = {
         allowlistScopeAppsActiveOneHtml: 'Alle apps er blokeret undtagen <strong>denne ene</strong>.',
         editBlocklist: 'Rediger rum',
         challengeWordProgressFmt: 'Ord {current} af {total}',
+        challengeWordInstruction: 'Skriv hvert ord for sig, ét ad gangen.',
         name: 'Navn',
         blocklistModeLabel: 'Tilstand',
         blocklistModeSentenceBefore: 'Når denne blokering er aktiv,',
@@ -2401,6 +2403,7 @@ export const SETTINGS_TRANSLATIONS = {
         allowlistScopeAppsActiveOneHtml: '除<strong>这一个</strong>外，其他应用均被屏蔽。',
         editBlocklist: '编辑专注空间',
         challengeWordProgressFmt: '第 {current} 个词，共 {total} 个',
+        challengeWordInstruction: '请逐个输入每个词，一次一个。',
         name: '名称',
         blocklistModeLabel: '模式',
         blocklistModeSentenceBefore: '此列表生效时，',
