@@ -734,6 +734,33 @@ enum EntryOrigin {
     Allowlist,
 }
 
+/// Re-evaluate tracked apps against the effective policy, rather than the
+/// focus space that originally enrolled them. Explicit blocks win over
+/// allowed apps; otherwise ending allow mode or allowing the app cancels
+/// its pending quit. This also preserves enforcement from overlapping spaces.
+fn current_entry_origin(
+    blocked: &[String],
+    allowed: &[String],
+    allowlist_on: bool,
+    proc_name: &str,
+    proc_exe: Option<&std::path::Path>,
+) -> Option<EntryOrigin> {
+    if blocked
+        .iter()
+        .any(|label| process_matches_blocked(label, proc_name, proc_exe))
+    {
+        Some(EntryOrigin::Blocklist)
+    } else if allowlist_on
+        && !allowed.is_empty()
+        && !process_is_allowed(allowed, proc_name, proc_exe)
+        && !is_allow_mode_exempt(proc_name, proc_exe)
+    {
+        Some(EntryOrigin::Allowlist)
+    } else {
+        None
+    }
+}
+
 impl From<EntryOrigin> for WarningOrigin {
     fn from(origin: EntryOrigin) -> Self {
         match origin {
@@ -854,8 +881,7 @@ struct PidEntry {
     /// The user-list name we matched against this process — emitted
     /// to the UI so the warning shows "Microsoft Word" instead of
     /// the kernel binary name. Stays stable across the entry's
-    /// lifetime even if the user later removes the app from the
-    /// blocklist (we still need to honour the in-flight warning).
+    /// lifetime; the effective policy is checked before advancing it.
     matched_name: String,
     phase: PidPhase,
     /// `true` iff this PID's lifecycle started with a `warning-show`
@@ -1012,6 +1038,35 @@ fn sweep(
         true,
         ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
     );
+
+    // Cancel obsolete warnings/timers BEFORE acknowledging or advancing any
+    // phase. The fallback loop below must follow a still-blocked app into the
+    // background, but must not follow an app whose block was stopped/paused.
+    // A missing process is resolved too; there is nothing left to close.
+    entries.retain(|pid, entry| {
+        let origin = if entry.intention_only {
+            (allowlist_on && !allowed.is_empty()).then_some(EntryOrigin::Allowlist)
+        } else {
+            sys.process(*pid).and_then(|proc_| {
+                current_entry_origin(
+                    &blocked,
+                    &allowed,
+                    allowlist_on,
+                    &proc_.name().to_string_lossy(),
+                    proc_.exe(),
+                )
+            })
+        };
+        if let Some(origin) = origin {
+            entry.origin = origin;
+            true
+        } else {
+            if entry.warning_raised {
+                emit_warning_hide(app, pid.as_u32(), &entry.matched_name, HideReason::Resolved);
+            }
+            false
+        }
+    });
 
     let now = Instant::now();
     let mut still_alive: HashSet<sysinfo::Pid> = HashSet::new();
@@ -1183,7 +1238,7 @@ fn sweep(
         );
     }
 
-    // Advance in-flight allowlist (and any other non-blocklist) entries even
+    // Advance still-blocked in-flight allowlist entries even
     // when they are no longer frontmost — otherwise switching away aborts
     // a polite-quit / SIGKILL timer mid-flight.
     let tracked: Vec<sysinfo::Pid> = entries.keys().copied().collect();
