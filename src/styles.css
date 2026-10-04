@@ -16625,9 +16625,10 @@ body.dark-mode .app-blocking-warning-card{
     justify-content: space-between;
     gap: 8px;
     min-width: 0;
-    /* A little air between the header and the "Focus space name" eyebrow:
-       the container's 16px gap, pulled up 2px. */
-    margin-bottom: -2px;
+    /* The row is as tall as the 34px action buttons, so the container's 16px
+       gap alone leaves the title ~21px above the "Focus space name" eyebrow.
+       Pull up 11px: ~12px from title text to eyebrow. */
+    margin-bottom: -11px;
 }
 
 .editor-panel-title{
@@ -17088,6 +17089,38 @@ body.dark-mode .editor-panel-action-btn--delete:hover{
 
 #enter-scheduler-modal .editor-panel-title{
     display: none;
+}
+
+/* Once openEnterSchedulerModal has moved Duplicate / Delete into the sheet's
+   title bar, the in-form header row is empty: drop it, and drop the handset
+   header's spacer so the actions take the third grid column instead. */
+#enter-scheduler-modal .editor-panel-header:not(:has(.editor-panel-actions)){
+    display: none;
+}
+
+#enter-scheduler-modal .mobile-modal-header--with-actions::after{
+    content: none;
+}
+
+body:not(.handset-device) #enter-scheduler-modal .mobile-modal-header--with-actions .editor-panel-actions{
+    margin-right: -6px;
+}
+
+/* With the actions gone from the form, the "Name" eyebrow is the first thing
+   under the title bar; the sheets' shared 18px top padding (plus the label's
+   own 4px) reads as a gap there. !important to beat the desktop sheet padding
+   shorthand, which carries one to defeat the popup scrollbar hack, and to
+   out-specify its :is(...) form inside the ≤718px query. */
+#enter-scheduler-modal .mobile-modal-header--with-actions + .mobile-modal-scroll-body,
+body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header--with-actions + .mobile-modal-scroll-body{
+    padding-top: 14px !important;
+}
+
+/* The handset header bleeds 18px past each side to cover a padded parent this
+   sheet does not have; harmless on the left, but it would push the actions
+   flush against the screen edge. */
+body.handset-device #enter-scheduler-modal .mobile-modal-header--with-actions{
+    margin-right: 0;
 }
 
 .editor-panel-title-group{

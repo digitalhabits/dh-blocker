@@ -899,6 +899,14 @@ function openEnterSchedulerModal() {
     if (timePicker.parentElement !== scrollBody) {
         scrollBody.appendChild(timePicker);
     }
+    // The sheet's title bar already names the screen, so Duplicate / Delete
+    // join it instead of taking a row of their own above the form.
+    const actions = document.querySelector('#editor-panel-header .editor-panel-actions');
+    const header = modal.querySelector('.mobile-modal-header');
+    if (actions && header) {
+        header.appendChild(actions);
+        header.classList.add('mobile-modal-header--with-actions');
+    }
     modal.classList.remove('hidden');
     document.body.classList.add('enter-scheduler-modal-open');
     resetModalScrollPosition(modal);
@@ -912,6 +920,12 @@ function closeEnterSchedulerModal() {
 
     if (timePicker.parentElement !== home) {
         home.appendChild(timePicker);
+    }
+    const header = modal.querySelector('.mobile-modal-header');
+    const actions = header?.querySelector('.editor-panel-actions');
+    if (actions) {
+        document.getElementById('editor-panel-header')?.appendChild(actions);
+        header.classList.remove('mobile-modal-header--with-actions');
     }
     modal.classList.add('hidden');
     document.body.classList.remove('enter-scheduler-modal-open');
