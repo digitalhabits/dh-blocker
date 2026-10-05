@@ -16,6 +16,17 @@ private func logSchedule(_ message: String) {
     scheduleLog.notice("[ReDD Schedule] \(message, privacy: .public)")
 }
 
+extension ScheduleWindowSignature {
+    init(_ schedule: DeviceActivitySchedule) {
+        self.init(
+            intervalStart: schedule.intervalStart,
+            intervalEnd: schedule.intervalEnd,
+            repeats: schedule.repeats,
+            warningTime: schedule.warningTime
+        )
+    }
+}
+
 // MARK: - Argument Types
 
 class AuthorizationArgs: Decodable {}
@@ -1117,6 +1128,8 @@ class ScreentimePlugin: Plugin {
         
         // Add/update schedules
         var errors: [String] = []
+        let now = Calendar.current.dateComponents([.hour, .minute], from: Date())
+        let nowMinuteOfDay = (now.hour ?? 0) * 60 + (now.minute ?? 0)
         for entry in args.schedules {
             logSchedule(
                 "registering id=\(entry.id)"
@@ -1157,7 +1170,18 @@ class ScreentimePlugin: Plugin {
             )
             
             let activityName = DeviceActivityName("redd-block-\(entry.id)")
-            
+
+            // setSchedules runs on every launch; replacing a registration just before
+            // its start loses that start, so an unchanged one about to start is kept.
+            if leaveRegistrationAlone(
+                held: center.schedule(for: activityName).map(ScheduleWindowSignature.init),
+                desired: ScheduleWindowSignature(schedule),
+                nowMinuteOfDay: nowMinuteOfDay
+            ) {
+                logSchedule("startMonitoring skipped for \(entry.id): unchanged and starting within \(registrationQuietMinutes) min")
+                continue
+            }
+
             do {
                 try center.startMonitoring(activityName, during: schedule)
                 logSchedule("startMonitoring succeeded for \(entry.id)")
