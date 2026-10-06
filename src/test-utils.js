@@ -138,8 +138,9 @@ function isOneOffBlockEnforced(block, now) {
     return !!(block && block.startTime <= now && block.endTime > now && !block.isPaused);
 }
 
+// Same as schedule-engine.js: paused with no end time is off until turned on.
 function isSchedulePausedNow(schedule, now) {
-    return !!(schedule && schedule.isPaused && schedule.pauseEndTime > now);
+    return !!(schedule && schedule.isPaused && (!schedule.pauseEndTime || schedule.pauseEndTime > now));
 }
 
 function isScheduleSegmentActiveNow(schedule, nowDate) {
