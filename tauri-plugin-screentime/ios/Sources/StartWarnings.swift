@@ -256,28 +256,31 @@ enum StartWarningBooker {
     private static func replacePending(config: StartWarningConfig) async -> StartWarningRebuildResult {
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
-        let ours = await center.pendingNotificationRequests()
-            .map(\.identifier)
-            .filter { $0.hasPrefix(startWarningIdPrefix) }
+        let ours = await center.pendingNotificationRequests().filter { $0.identifier.hasPrefix(startWarningIdPrefix) }
         let plan = canDeliver(settings.authorizationStatus)
             ? StartWarningPlanner.plan(entries: SharedScheduleStore.loadAll(), config: config)
             : []
         let planned = Set(plan.map(\.id))
-        center.removePendingNotificationRequests(withIdentifiers: ours.filter { !planned.contains($0) })
+        center.removePendingNotificationRequests(withIdentifiers: ours.map(\.identifier).filter { !planned.contains($0) })
+        let booked = Dictionary(ours.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
 
         var failures: [String] = []
         for warning in plan {
+            // No time zone: the warning follows the phone's wall clock, as DeviceActivity does.
+            let components = Calendar.current.dateComponents(
+                [.year, .month, .day, .hour, .minute, .second],
+                from: warning.fireDate
+            )
+            // Already booked as it should be: leave it, so a rebuild is cheap.
+            if let existing = booked[warning.id], existing.content.title == warning.title,
+               existing.content.body == warning.body,
+               (existing.trigger as? UNCalendarNotificationTrigger)?.dateComponents == components { continue }
             let content = UNMutableNotificationContent()
             content.title = warning.title
             content.body = warning.body
             content.sound = .default
             content.threadIdentifier = "redd-start-warning"
             content.interruptionLevel = .active
-            // No time zone: the warning follows the phone's wall clock, as DeviceActivity does.
-            let components = Calendar.current.dateComponents(
-                [.year, .month, .day, .hour, .minute, .second],
-                from: warning.fireDate
-            )
             let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
             do {
                 // An existing id is replaced, so a rebuild never duplicates a warning.

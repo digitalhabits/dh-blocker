@@ -476,9 +476,9 @@ export async function syncSchedulesToHelper({ reportFailure = true } = {}) {
             console.warn('[syncSchedulesToHelper] iOS error:', e);
         }
         if (failure && reportFailure) await reportIOSScheduleSyncFailure(failure);
-        // After the save, so Swift plans from the schedules just stored. Its own
-        // try/catch: a warning failure never changes this sync's result.
-        await syncIOSStartWarnings();
+        // After the save, so Swift plans from the schedules just stored. Not awaited:
+        // switching a space on must not wait for notifications (Swift runs rebuilds in order).
+        void syncIOSStartWarnings();
         return failure ? { success: false, error: failure, failedSaveIds } : { success: true };
     }
     if (state.isAndroid) {
