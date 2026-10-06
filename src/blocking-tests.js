@@ -29,6 +29,7 @@
  * - T208-T212: Desktop app-watcher payload: allow-mode spaces feed allowedApps, never the kill list
  * - T158b: iOS schedule entries drop protected domains, as the manual payload does
  * - T158c: iOS schedule entries skip a segment with no days, which never applies
+ * - T240-T242: iOS start warnings: entries name their space; the payload's manual resumes and switch
  * - T226-T229: iOS allow-mode 50-item cap counted across every running space
  * - T213-T219, T222-T223: The start card names the space that just started and closes the app; allow mode gets its own card
  * - T220-T221: Diagnostics reports an allow-mode space as allowing, not blocking
@@ -2162,6 +2163,49 @@
                 assertEqual(entries.length, 1, 'T158c: a segment with no days is not sent');
                 assertEqual(entries[0].startHour, 19, 'T158c: the segment with days still is');
                 assert(entries[0].id.endsWith('-1'), 'T158c: and keeps its own segment index in its id');
+            })();
+
+            (function T240() {
+                // Swift groups a space's segments by this id, so touching segments of one
+                // space are not warned twice and two spaces are never merged.
+                const bl = createMockBlocklist({ mode: 'blocklist', websites: ['x.com'] });
+                withData([bl], [createMockSchedule(bl.id, [seg, { ...seg, startHour: 17, endHour: 20 }])]);
+                const entries = build();
+                assert(entries.length === 2 && entries.every((e) => e.blocklistId === bl.id),
+                    'T240: every schedule entry carries its focus space id');
+            })();
+
+            (function T241() {
+                const { buildStartWarningsPayload } = window.__REDDBLOCK_INTERNALS__;
+                const now = Date.now();
+                const bl = createMockBlocklist({ mode: 'blocklist', websites: ['x.com'] });
+                const block = (id, extra) => ({ id, blocklistId: bl.id, startTime: now - 1000, endTime: now + 1e12, ...extra });
+                window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({
+                    blocklists: [bl],
+                    schedules: [],
+                    activeBlocks: [
+                        block('timed', { isPaused: true, pauseEndTime: now + 3600000 }),
+                        block('expired', { isPaused: true, pauseEndTime: now - 1000 }),
+                        block('open', { isPaused: true }),
+                        block('running', {}),
+                    ],
+                });
+                const resumes = buildStartWarningsPayload(now).manualResumes;
+                assertEqual(resumes.length, 1, 'T241: only a manual space stopped until a future time is sent');
+                assertEqual(resumes[0].id, 'timed', 'T241: and it is the timed stop');
+                assertEqual(resumes[0].resumeAtMs, now + 3600000, 'T241: with its resume time');
+                assertEqual(resumes[0].name, bl.name, 'T241: and its name for the wording');
+            })();
+
+            (function T242() {
+                const { buildStartWarningsPayload } = window.__REDDBLOCK_INTERNALS__;
+                withData([], []);
+                const payload = buildStartWarningsPayload();
+                assertEqual(payload.enabled, false, 'T242: without Screen Time access nothing is booked');
+                assert(payload.strings.startTitleFmt.includes('{name}') && payload.strings.blockBodyFmt.includes('{time}'),
+                    'T242: the wording carries the placeholders Swift fills in');
+                window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({ blocklists: [], schedules: [], activeBlocks: [], settings: { startWarningsEnabled: false } });
+                assertEqual(buildStartWarningsPayload().enabled, false, 'T242: the Settings switch turns them off');
             })();
         } finally {
             window.__REDDBLOCK_INTERNALS__.appData = saved;

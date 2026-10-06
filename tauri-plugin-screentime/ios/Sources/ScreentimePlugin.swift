@@ -5,6 +5,8 @@ import SwiftUI
 import FamilyControls
 import ManagedSettings
 import DeviceActivity
+import UserNotifications
+import WebKit
 import os
 
 /// NSLog redacts its `%@` arguments to "<private>" and only reaches Console while
@@ -119,6 +121,8 @@ class ScheduleEntry: Decodable {
     /// "allowlist" when this entry's domains/tokens are ALLOWED items;
     /// nil/"blocklist" = blocked items (legacy semantics).
     let mode: String?
+    /// Focus space id, for start warnings.
+    let blocklistId: String?
 }
 
 class SetSchedulesArgs: Decodable {
@@ -343,6 +347,10 @@ class ScreentimePlugin: Plugin {
     
     private let store = ManagedSettingsStore()
     private let center = DeviceActivityCenter()
+
+    override func load(webview: WKWebView) {
+        UNUserNotificationCenter.current().delegate = StartWarningPresenter.shared
+    }
     
     // Persist the current selection to the App Group's UserDefaults so it survives
     // app restarts AND is accessible to the DeviceActivityMonitor extension.
@@ -1167,7 +1175,8 @@ class ScreentimePlugin: Plugin {
                 blocklistEmoji: entry.blocklistEmoji,
                 blocklistName: entry.blocklistName,
                 blocklistColorHex: entry.blocklistColorHex,
-                mode: entry.mode
+                mode: entry.mode,
+                blocklistId: entry.blocklistId
             )
             guard SharedScheduleStore.save(id: entry.id, data: scheduleData) else {
                 errors.append("Schedule \(entry.id): failed to persist schedule data")
@@ -1376,7 +1385,8 @@ class ScreentimePlugin: Plugin {
         blocklistEmoji: String? = nil,
         blocklistName: String? = nil,
         blocklistColorHex: String? = nil,
-        mode: String? = nil
+        mode: String? = nil,
+        blocklistId: String? = nil
     ) -> ScheduleBlockData {
         return ScheduleBlockData(
             domains: domains ?? [],
@@ -1394,7 +1404,8 @@ class ScreentimePlugin: Plugin {
             blocklistEmoji: blocklistEmoji,
             blocklistName: blocklistName,
             blocklistColorHex: blocklistColorHex,
-            mode: mode
+            mode: mode,
+            blocklistId: blocklistId
         )
     }
 
@@ -1481,6 +1492,66 @@ class ScreentimePlugin: Plugin {
         IOSAppPolicyApplier.reapplyAppPolicy(now: now)
     }
     
+    // MARK: - Start warnings (notifications before a focus space starts)
+
+    /// Rebuilds the pending warnings from the saved schedules and this config.
+    /// Never touches blocking, and never changes the set_schedules result.
+    @objc public func setStartWarnings(_ invoke: Invoke) throws {
+        let config = try invoke.parseArgs(StartWarningConfig.self)
+        Task { @MainActor in
+            let result = await StartWarningBooker.rebuild(config: config)
+            logSchedule(
+                "start warnings rebuilt enabled=\(config.enabled) status=\(result.status)"
+                + " scheduled=\(result.scheduled) error=\(result.error ?? "none")"
+            )
+            var response: [String: Any] = [
+                "success": result.error == nil,
+                "status": result.status,
+                "scheduled": result.scheduled
+            ]
+            if let error = result.error { response["error"] = error }
+            invoke.resolve(response)
+        }
+    }
+
+    @objc public func checkNotificationPermission(_ invoke: Invoke) throws {
+        Task {
+            let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+            invoke.resolve([
+                "status": StartWarningBooker.statusString(status),
+                "granted": StartWarningBooker.canDeliver(status)
+            ])
+        }
+    }
+
+    /// Shows the iOS prompt only while iOS has never asked; afterwards it just reports.
+    @objc public func requestNotificationPermission(_ invoke: Invoke) throws {
+        Task {
+            let center = UNUserNotificationCenter.current()
+            do {
+                _ = try await center.requestAuthorization(options: [.alert, .sound])
+            } catch {
+                logSchedule("notification permission request failed: \(error.localizedDescription)")
+            }
+            let status = await center.notificationSettings().authorizationStatus
+            invoke.resolve([
+                "status": StartWarningBooker.statusString(status),
+                "granted": StartWarningBooker.canDeliver(status)
+            ])
+        }
+    }
+
+    @objc public func openNotificationSettings(_ invoke: Invoke) throws {
+        DispatchQueue.main.async {
+            guard let url = URL(string: UIApplication.openNotificationSettingsURLString) else {
+                invoke.resolve(["success": false, "error": "No notification settings link"])
+                return
+            }
+            UIApplication.shared.open(url)
+            invoke.resolve(["success": true])
+        }
+    }
+
     private func statusString(_ status: AuthorizationStatus) -> String {
         switch status {
         case .notDetermined:

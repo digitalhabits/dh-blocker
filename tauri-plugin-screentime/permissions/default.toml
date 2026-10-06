@@ -18,5 +18,9 @@ permissions = [
     "allow-register-one-off-activity",
     "allow-set-resume-payload",
     "allow-set-block-end-state",
-    "allow-show-activity-picker"
+    "allow-show-activity-picker",
+    "allow-set-start-warnings",
+    "allow-check-notification-permission",
+    "allow-request-notification-permission",
+    "allow-open-notification-settings"
 ]

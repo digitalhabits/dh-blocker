@@ -157,6 +157,41 @@ impl<R: Runtime> Screentime<R> {
             .map_err(Into::into)
     }
 
+    // --- Start warnings ---
+
+    pub fn set_start_warnings(
+        &self,
+        payload: SetStartWarningsRequest,
+    ) -> crate::Result<StartWarningsResponse> {
+        self.0
+            .run_mobile_plugin("setStartWarnings", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn check_notification_permission(&self) -> crate::Result<NotificationPermissionResponse> {
+        self.0
+            .run_mobile_plugin(
+                "checkNotificationPermission",
+                NotificationPermissionRequest {},
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn request_notification_permission(&self) -> crate::Result<NotificationPermissionResponse> {
+        self.0
+            .run_mobile_plugin(
+                "requestNotificationPermission",
+                NotificationPermissionRequest {},
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn open_notification_settings(&self) -> crate::Result<SuccessResponse> {
+        self.0
+            .run_mobile_plugin("openNotificationSettings", NotificationPermissionRequest {})
+            .map_err(Into::into)
+    }
+
     // --- Activity Picker ---
 
     pub fn show_activity_picker(

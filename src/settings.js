@@ -8,7 +8,7 @@ import { render } from './render.js';
 import { handleBlocklistSelect, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
 import { updateBlockedApps, openExternal, isHelperInstallCancelled, checkHelperStatus, requestScreentimeAuth } from './blocking-platform.js';
 import { attachCopyChipHandlers, extensionsUrlChipHtml, restartOnboardingFromSettings, BROWSER_STORE_LINKS, MAC_BLOCKING_METHOD_KEYS, browserBlockingMethod, browserIconUrl, browserUsesAutomation, lastOnboardingState, openExtensionSetupOverlay, updateGraceSettingLock } from './enforcement.js';
-import { hasAnyBlockingStateToClear, hasAnyEnforcedBlocks, isOneOffBlockStillActive, refreshDesktopHelperStatus, scheduleCanStillBecomeActive } from './schedule-engine.js';
+import { hasAnyBlockingStateToClear, hasAnyEnforcedBlocks, isOneOffBlockStillActive, refreshDesktopHelperStatus, scheduleCanStillBecomeActive, syncSchedulesToHelper } from './schedule-engine.js';
 import { tauriAPI, openUrl } from './tauri-api.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage } from './i18n.js';
 import { invoke } from '@tauri-apps/api/core';
@@ -1396,6 +1396,30 @@ export function compareDifficulties(a, b) {
     return withEffectiveCount(winner);
 }
 
+/**
+ * The info icons in Settings: a tap or click on the icon opens its tooltip and
+ * another closes it. On a touch screen the tap that closes an open tooltip does
+ * nothing else, so it can never press the control the tooltip was covering.
+ * On the window, in the capture phase, so it runs before any other click handler.
+ */
+export function setupSettingsInfoTooltips() {
+    const closeAll = () => document.querySelectorAll('.settings-info-hover-wrap.is-open')
+        .forEach((wrap) => wrap.classList.remove('is-open'));
+    window.addEventListener('click', (event) => {
+        const wrap = event.target.closest?.('.settings-info-btn')?.closest('.settings-info-hover-wrap');
+        if (wrap) {
+            const wasOpen = wrap.classList.contains('is-open');
+            closeAll();
+            wrap.classList.toggle('is-open', !wasOpen);
+            return;
+        }
+        if (!document.querySelector('.settings-info-hover-wrap.is-open') || !matchMedia('(hover: none)').matches) return;
+        closeAll();
+        event.preventDefault();
+        event.stopPropagation();
+    }, true);
+}
+
 // Perform the actual override-all operation
 export async function performOverrideAll() {
     try {
@@ -1415,6 +1439,8 @@ export async function performOverrideAll() {
         // Full cleanup on the helper side
         if (state.isIOS) {
             await tauriAPI.screentimeClearBlock();
+            // Also drops every start warning, now that no schedule is left.
+            await syncSchedulesToHelper({ reportFailure: false });
         } else if (state.isAndroid) {
             for (const id of androidManualBlockIds) {
                 try {

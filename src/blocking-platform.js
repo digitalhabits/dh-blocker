@@ -1285,6 +1285,8 @@ export function updateOnboardingVisibility() {
     const main = document.getElementById('main-content');
     const showEula = !hasAcceptedEula();
     const showScreentime = state.isIOS && !showEula && state.screentimeAuthChecked && !state.screentimeAuthorized;
+    const showNotifications = state.isIOS && !showEula && state.screentimeAuthorized && state.iosNotificationOnboardingPending;
+    const notificationsOverlay = document.getElementById('ios-notifications-onboarding');
     const showAndroidPermissions = state.isAndroid && !showEula && state.androidPermissionsGranted === false;
     const keepEulaVisibleForPendingSetup = !state.isIOS
         && !state.isAndroid
@@ -1293,12 +1295,14 @@ export function updateOnboardingVisibility() {
     const showEulaScreen = showEula || keepEulaVisibleForPendingSetup;
     const blockMainUi = showEulaScreen
         || showScreentime
+        || showNotifications
         || showAndroidPermissions
         || state.migrationOnboardingActive
         || (!state.isIOS && !state.isAndroid && isFirstRunOnboardingInProgress());
 
     eulaOverlay?.classList.toggle('hidden', !showEulaScreen);
     screentimeOverlay?.classList.toggle('hidden', !showScreentime);
+    notificationsOverlay?.classList.toggle('hidden', !showNotifications);
     androidOverlay?.classList.toggle('hidden', !showAndroidPermissions);
     main?.classList.toggle('hidden', blockMainUi);
     if (showAndroidPermissions) {
@@ -1328,6 +1332,7 @@ export function showExclusiveOnboardingScreen(activeId) {
         'fda-onboarding',
         'migration-onboarding',
         'ios-screentime-onboarding',
+        'ios-notifications-onboarding',
         'android-permissions-onboarding',
     ];
     screenIds.forEach((id) => {

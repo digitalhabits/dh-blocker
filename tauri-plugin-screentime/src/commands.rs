@@ -208,6 +208,37 @@ pub(crate) async fn set_block_end_state<R: Runtime>(
         })
 }
 
+// --- Start warnings ---
+
+#[command]
+pub(crate) async fn set_start_warnings<R: Runtime>(
+    app: AppHandle<R>,
+    payload: SetStartWarningsRequest,
+) -> Result<StartWarningsResponse> {
+    app.screentime().set_start_warnings(payload)
+}
+
+#[command]
+pub(crate) async fn check_notification_permission<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<NotificationPermissionResponse> {
+    app.screentime().check_notification_permission()
+}
+
+#[command]
+pub(crate) async fn request_notification_permission<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<NotificationPermissionResponse> {
+    app.screentime().request_notification_permission()
+}
+
+#[command]
+pub(crate) async fn open_notification_settings<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<SuccessResponse> {
+    app.screentime().open_notification_settings()
+}
+
 // --- Activity Picker ---
 
 #[command]

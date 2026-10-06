@@ -334,6 +334,86 @@ for the availability-guard check.
       running space stays blocked and the retry error is shown. Foundation and
       Tier 1 tests do not cover device callback delivery.
 
+### 14.4 Pre-start notifications (start warnings)
+
+A local notification 2 minutes before a scheduled focus space starts, or before
+a paused/stopped space (scheduled or manual) comes back on. At most 64 are
+booked, soonest first, rebuilt on every schedule sync, app foreground, language
+change and Settings switch change. Times follow the phone's 12/24-hour setting.
+Diagnostics: Console.app, subsystem `com.reddblock.app`, line
+`[ReDD Schedule] start warnings rebuilt enabled=… status=… scheduled=…`.
+Physical device, Screen Time authorized, app closed (swiped away) unless a step
+says otherwise.
+
+Onboarding and permission:
+
+- [ ] Fresh install → grant Screen Time: "Get a heads-up before blocks start"
+      appears straight after, with "Turn on notifications" and "Not now"
+- [ ] "Turn on notifications" → iOS prompt → Allow: main UI shows; Settings ›
+      General › "Warn me before blocks start" is on
+- [ ] Reinstall, "Not now": main UI shows, no iOS prompt; the switch reads off;
+      turning it on shows the iOS prompt
+- [ ] Existing install upgraded: never sees the onboarding screen; only the
+      Settings switch (off until iOS has granted permission)
+- [ ] Deny at the iOS prompt: the switch is replaced by the "turned off in iOS
+      Settings" note and "Open iOS Settings"; the button opens the app's page
+      there; allow notifications, return to the app: the switch shows on and
+      the log reads `status=authorized` with `scheduled` > 0
+- [ ] Settings switch off: log `enabled=false scheduled=0`, nothing arrives;
+      back on: `enabled=true`, warnings return
+
+Wording and delivery:
+
+- [ ] Block space scheduled ~5 min ahead: at T−2 "<emoji> <name> starts in 2
+      minutes" / "Time to wrap up. From <time>, your blocked apps and websites
+      won't open."; block enforces at T
+- [ ] Allow-mode space: body reads "…only the apps and websites you've allowed
+      will open."
+- [ ] App open in front at T−2: banner still shows
+- [ ] Tap the notification with the app fully closed: the app opens, nothing
+      else happens
+- [ ] Two spaces starting the same minute: one notification, "2 focus spaces
+      start in 2 minutes", body lists both names and the time
+- [ ] Switch the phone between 12- and 24-hour time, reopen the app: the next
+      warning's time follows it
+- [ ] Language → Dansk, close the app: later warnings read "… starter om 2
+      minutter" / "Tid til at runde af. Fra kl. …"
+
+Pause and stop (resume warning):
+
+- [ ] Pause a running schedule for 10 min: at 8 min "<name> is back on in 2
+      minutes" / "Your pause ends at <time>…"; blocking resumes at the time
+- [ ] Same with a manual block stopped for 10 min (block's end is later than
+      the resume): same resume warning
+- [ ] Pause/stop for 24 h: resume warning arrives next day, 2 min before the
+      pause ends (schedule: only if its window is open at that moment)
+- [ ] Paused or switched-off space: no start warning for occurrences it skips
+
+Schedule edits (each rebuilds the booking; check the log line):
+
+- [ ] Switch a schedule off: its pending warning is gone; on again: back
+- [ ] Delete a space: its warning never arrives
+- [ ] Edit the start time: the warning moves to the new T−2, not the old one
+- [ ] Remove today from its days: no warning today; date range ended: none
+- [ ] Stop all: no warnings arrive afterwards (log `scheduled=0`)
+
+No warning expected:
+
+- [ ] Space A ends as space B starts: B still warns (different spaces always do)
+- [ ] One space with touching segments (e.g. 09:00–10:00 and 10:00–11:00): only
+      09:00 warns; overnight carry-over and consecutive all-day days likewise
+      warn once, at the first start
+- [ ] Space switched on 90 s before its start: no warning (time already past),
+      block still starts
+- [ ] Start at 00:01: warning arrives at 23:59 the previous day
+
+Persistence and time zone:
+
+- [ ] Force-quit after booking, and separately reboot: warnings still arrive
+      without opening the app
+- [ ] Change time zone in iOS Settings (Date & Time, automatic off), reopen the
+      app: warnings follow the new wall clock (rebuilt on foreground)
+
 ---
 
 ## 15. Desktop Allowlist (Allow-Mode Focus Spaces)
