@@ -31,6 +31,7 @@
  * - T158c: iOS schedule entries skip a segment with no days, which never applies
  * - T240-T242: iOS start warnings: entries name their space; the payload's manual resumes and switch
  * - T243-T245: iOS cancels a Manual space's pending restart when it is resumed early, stopped with Never or cleared by Stop all
+ * - T246: a space switched off with a restart time can be deleted; the delete cancels the restart once undo has passed
  * - T226-T229: iOS allow-mode 50-item cap counted across every running space
  * - T213-T219, T222-T223: The start card names the space that just started and closes the app; allow mode gets its own card
  * - T220-T221: Diagnostics reports an allow-mode space as allowing, not blocking
@@ -2664,6 +2665,20 @@
             events = [];
             await internals.performOverrideAll();
             assert(events.includes(`cancel:${stoppedBlock.id}`), 'T245: Stop all cancels the restart of a stopped Manual space');
+
+            // The switch reads off, so the space can go; only a running one is refused.
+            const runningBlock = makeBlock();
+            setBlock(runningBlock);
+            await internals.deleteBlocklist(blocklist.id);
+            assertEqual(internals.appData.activeBlocks.length, 1, 'T246: a running Manual space still cannot be deleted');
+            const deletedBlock = makeBlock({ isPaused: true, pauseEndTime: Date.now() + 60_000 });
+            setBlock(deletedBlock);
+            events = [];
+            await internals.deleteBlocklist(blocklist.id);
+            assertEqual(internals.appData.activeBlocks.length, 0, 'T246: a Manual space switched off with a restart time can be deleted');
+            assert(!events.some(event => event.startsWith('cancel:')), 'T246: its restart is kept while the delete can still be undone');
+            internals.commitDelete();
+            assert(events.includes(`cancel:${deletedBlock.id}`), 'T246: committing the delete cancels its restart');
         } finally {
             internals.appData = savedAppData;
             internals.lastBlockedDomains = savedLastBlockedDomains;

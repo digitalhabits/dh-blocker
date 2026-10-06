@@ -1560,8 +1560,8 @@ export function initializeOverrideModalChallenge(difficulty, progressColor = nul
 /**
  * Cancels a Manual space's automatic restart on iOS. The booked wake-up re-applies
  * the space's saved apps without asking the app, so it must go whenever the
- * restart is no longer wanted: switched on early, stopped with Never, or cleared by
- * Stop all.
+ * restart is no longer wanted: switched on early, stopped with Never, deleted or
+ * cleared by Stop all.
  */
 export async function cancelIOSRestart(block) {
     if (!state.isIOS || !block?.id) return;

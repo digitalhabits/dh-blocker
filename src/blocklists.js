@@ -21,7 +21,7 @@ import {
     generateId,
 } from './app.js';
 import { buildBlocklistCardMetaHtml, buildBlocklistCardDetailsHtml, blocklistCardHasExpandableSummary } from './list-presentation.js';
-import { cloneOverrideDifficulty, deselectBlocklist, handleBlocklistSelect, isBlocklistCardVisuallySelected, isEnterSchedulerModalOpen, openBlocklistModal } from './confirm-modals.js';
+import { cancelIOSRestart, cloneOverrideDifficulty, deselectBlocklist, handleBlocklistSelect, isBlocklistCardVisuallySelected, isEnterSchedulerModalOpen, openBlocklistModal } from './confirm-modals.js';
 import { appBlockingWarningSnoozedUntilMs, formatAppBlockingSnoozeStartsIn, getActiveAppBlockingSnoozeBlocklistIds } from './blocking-platform.js';
 
 function getVisibleBlocklists() {
@@ -746,8 +746,9 @@ export async function deleteBlocklist(id) {
 
     // Check if this blocklist has an active block or schedule running
     const now = Date.now();
+    // A Manual space stopped until a set time reads off, so it can go like any off space.
     const hasActiveBlock = state.appData.activeBlocks.some(
-        block => block.blocklistId === id && block.startTime <= now && block.endTime > now
+        block => block.blocklistId === id && block.startTime <= now && block.endTime > now && !isOneOffPauseActive(block, now)
     );
     // Deliberately NOT isBlocklistEditFrictionRequired: deleting is refused for
     // any schedule that is switched on, with no allowEditsBetweenBlocks
@@ -815,6 +816,8 @@ export async function deleteBlocklist(id) {
 export function commitDelete() {
     if (!pendingDelete) return;
 
+    // Only once undo is gone: an undone delete keeps its stopped space's restart.
+    pendingDelete.activeBlocks.forEach((block) => void cancelIOSRestart(block));
     if (pendingDelete.activeBlocks.length > 0) {
         updateHostsFile();
     }

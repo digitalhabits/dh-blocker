@@ -35,7 +35,7 @@ import {
 } from './blocking-platform.js';
 import { CURRENT_EULA_REVISION } from './onboarding.js';
 import { render, isClockTickRunning } from './render.js';
-import { duplicateBlocklist, getNextCopyName, isBlocklistEditFrictionRequired } from './blocklists.js';
+import { commitDelete, deleteBlocklist, duplicateBlocklist, getNextCopyName, isBlocklistEditFrictionRequired } from './blocklists.js';
 import { getMaxOverrideCountForType, getMaxOverrideWords } from './override-challenge.js';
 import {
     collectActiveIOSEnforcementSources,
@@ -133,6 +133,8 @@ window.__REDDBLOCK_INTERNALS__ = {
     resumePausedBlock,
     stopFocusSpaceTarget,
     performOverrideAll,
+    deleteBlocklist,
+    commitDelete,
     openScheduleOverrideModal,
     closeStartConfirmModal,
     turnFocusSpaceOn,
