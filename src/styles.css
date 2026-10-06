@@ -12940,19 +12940,31 @@ body.dark-mode .settings-info-hover-wrap .settings-info-tooltip{
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
-.settings-info-hover-wrap:has(svg:hover) .settings-info-tooltip,
-.settings-info-hover-wrap:has(.settings-info-btn:focus-visible) .settings-info-tooltip,
 .settings-info-hover-wrap.is-open .settings-info-tooltip{
     opacity: 1;
     visibility: visible;
 }
 
 /* Lift the open tooltip's section over the sections below it. */
-#settings-modal .settings-section:has(.settings-info-hover-wrap svg:hover),
-#settings-modal .settings-section:has(.settings-info-btn:focus-visible),
 #settings-modal .settings-section:has(.settings-info-hover-wrap.is-open){
     position: relative;
     z-index: 10;
+}
+
+/* Hover only where there is a pointer: a touch screen keeps :hover after a tap,
+   so there the tap alone opens and closes it (setupSettingsInfoTooltips). */
+@media (hover: hover) {
+    .settings-info-hover-wrap:has(svg:hover) .settings-info-tooltip,
+    .settings-info-hover-wrap:has(.settings-info-btn:focus-visible) .settings-info-tooltip{
+        opacity: 1;
+        visibility: visible;
+    }
+
+    #settings-modal .settings-section:has(.settings-info-hover-wrap svg:hover),
+    #settings-modal .settings-section:has(.settings-info-btn:focus-visible){
+        position: relative;
+        z-index: 10;
+    }
 }
 
 #settings-modal .settings-row-control:has(.language-picker),

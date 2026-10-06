@@ -154,11 +154,8 @@ export function setupUsagePingToggle() {
         document.getElementById('settings-usage-ping-row')?.classList.add('hidden');
         return;
     }
-    // The info icon: a click keeps its tooltip open until the next click,
-    // as in To-Do. Settings opens with it closed.
+    // The info icon opens and closes through setupSettingsInfoTooltips. Settings opens with it closed.
     const infoWrap = document.getElementById('settings-usage-ping-info-btn')?.closest('.settings-info-hover-wrap');
-    infoWrap?.querySelector('.settings-info-btn')
-        .addEventListener('click', () => infoWrap.classList.toggle('is-open'));
     const sync = () => {
         input.checked = usagePingEnabled();
         infoWrap?.classList.remove('is-open');

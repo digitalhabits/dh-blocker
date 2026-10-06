@@ -113,7 +113,7 @@ import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHe
 import {
     refreshUninstallButtonState,
     setupGraceSetting, setupMaxOverrideWordsSetting, syncMaxOverrideWordsSetting, setupHelpMenuLinks, setupHelperSettings, setupInAppUninstall,
-    setupOverrideAll, setupSettingsHelpButtons, setupWindowsUninstallGuidance,
+    setupOverrideAll, setupSettingsHelpButtons, setupSettingsInfoTooltips, setupWindowsUninstallGuidance,
     syncUninstallConfirmModal, updateCleanHostsBtnState, updateHelperStatusIndicator,
     updateManageSectionVisibility, updateOverrideAllButtonVisibility,
 } from './settings.js';
@@ -207,6 +207,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupStartWarningsToggle();
     setupStartWarningsOnboarding();
     setupSettingsHelpButtons();
+    setupSettingsInfoTooltips();
     setupBlocklistsImportExportButtons();
     setupAppForegroundRefresh();
     setupOverrideAll();

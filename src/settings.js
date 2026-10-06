@@ -1396,6 +1396,30 @@ export function compareDifficulties(a, b) {
     return withEffectiveCount(winner);
 }
 
+/**
+ * The info icons in Settings: a tap or click on the icon opens its tooltip and
+ * another closes it. On a touch screen the tap that closes an open tooltip does
+ * nothing else, so it can never press the control the tooltip was covering.
+ * On the window, in the capture phase, so it runs before any other click handler.
+ */
+export function setupSettingsInfoTooltips() {
+    const closeAll = () => document.querySelectorAll('.settings-info-hover-wrap.is-open')
+        .forEach((wrap) => wrap.classList.remove('is-open'));
+    window.addEventListener('click', (event) => {
+        const wrap = event.target.closest?.('.settings-info-btn')?.closest('.settings-info-hover-wrap');
+        if (wrap) {
+            const wasOpen = wrap.classList.contains('is-open');
+            closeAll();
+            wrap.classList.toggle('is-open', !wasOpen);
+            return;
+        }
+        if (!document.querySelector('.settings-info-hover-wrap.is-open') || !matchMedia('(hover: none)').matches) return;
+        closeAll();
+        event.preventDefault();
+        event.stopPropagation();
+    }, true);
+}
+
 // Perform the actual override-all operation
 export async function performOverrideAll() {
     try {
