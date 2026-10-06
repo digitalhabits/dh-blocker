@@ -186,6 +186,14 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         recomputeActiveScheduleUnion()
     }
 
+    /// The one-minute usage event: the start may never have arrived, so recompute.
+    /// In a window that started correctly, or is paused, this changes nothing.
+    override func eventDidReachThreshold(_ event: DeviceActivityEvent.Name, activity: DeviceActivityName) {
+        super.eventDidReachThreshold(event, activity: activity)
+        logLine("eventDidReachThreshold event=\(event.rawValue) activity=\(activity.rawValue)")
+        recomputeActiveScheduleUnion()
+    }
+
     /// Called before a padded short interval ends. We use this to recompute at
     /// the schedule's real end time when the registered DeviceActivity interval
     /// had to be stretched to Apple's 15-minute minimum.
