@@ -13592,7 +13592,6 @@ body.dark-mode #settings-modal .settings-feedback-footer{
     white-space: nowrap;
 }
 
-body.ios #current-app-version,
 body.android #current-app-version,
 body.ios #settings-latest-version-wrap,
 body.android #settings-latest-version-wrap {

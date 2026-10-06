@@ -294,7 +294,7 @@ export function buildDiagnosticsReport(diag) {
     const osName = getDiagValue(diag, 'os_name', 'osName')
         || (navigator.platform?.startsWith('Mac') ? 'macOS' : navigator.platform?.startsWith('Win') ? 'Windows' : 'unknown');
     const arch = getDiagValue(diag, 'arch') || 'unknown';
-    const appVersion = document.getElementById('settings-version')?.textContent || '';
+    const appVersion = document.getElementById('current-app-version')?.dataset.appVersion || '';
     const installed = !!getDiagValue(diag, 'helper_installed', 'helperInstalled');
     const running = !!getDiagValue(diag, 'helper_running', 'helperRunning');
     const version = getDiagValue(diag, 'helper_version', 'helperVersion') || 'Unknown';
