@@ -12600,42 +12600,28 @@ body.dark-mode .modal-btn.black-btn:hover{
     height: 48px;
 }
 
-/* Word mode (phones): swap the instruction, and the passage starts at the word
-   being typed — finished words fade out and collapse, later ones are dimmed. */
+/* Word mode (phones): the passage is hidden, and the instruction becomes a
+   centred "N words remaining" heading over "Type one word at a time". */
 .override-challenge .challenge-word-instruction,
 .override-challenge.challenge-word-mode .challenge-char-instruction{
     display: none;
 }
 .override-challenge.challenge-word-mode .challenge-word-instruction{
     display: block;
+    text-align: center;
+    margin: 28px 0 16px;
+    /* Same type as the sheet's status line (.start-confirm-subtitle). */
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.45;
+    color: var(--text-muted);
 }
-.challenge-text .challenge-word-current{
-    font-weight: 700;
-}
-.challenge-text .challenge-word-upcoming{
-    opacity: 0.5;
-}
-.challenge-text .challenge-word-done{
-    display: inline-block;
-    overflow: hidden;
-    white-space: pre;
-    vertical-align: bottom;
-    animation: challenge-word-out 0.2s ease-out forwards;
-}
-/* Fade, slide and the next word's emphasis all run together. */
-.challenge-text .challenge-word-arriving{
-    animation: challenge-word-in 0.2s ease-out;
-}
-@keyframes challenge-word-out{
-    from{ opacity: 1; max-width: var(--word-width, 6ch); }
-    to{ opacity: 0; max-width: 0; }
-}
-@keyframes challenge-word-in{
-    from{ opacity: 0.5; }
-}
-@media (prefers-reduced-motion: reduce){
-    .challenge-text .challenge-word-done{ display: none; }
-    .challenge-text .challenge-word-arriving{ animation: none; }
+.challenge-words-remaining{
+    display: block;
+    margin-bottom: 4px;
+    font-size: 24px;
+    line-height: 1.25;
+    color: var(--text-primary);
 }
 
 .override-challenge .challenge-progress{

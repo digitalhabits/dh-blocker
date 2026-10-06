@@ -285,6 +285,19 @@ export const screens = [
         },
     },
     {
+        // Phones type one word at a time: "N words remaining" heading, no passage.
+        name: 'stop-modal-iphone',
+        fixture: fixtures.manualRunning,
+        platform: 'iphone',
+        viewport: IPHONE,
+        clip: '#override-modal .modal-content',
+        prepare: async (page) => {
+            await page.evaluate(() => { window.__REDDBLOCK_INTERNALS__.isIOS = true; });
+            await page.click('.blocklist-card[data-id="bl-manual"] .blocklist-switch');
+            await page.waitForSelector('#override-modal .challenge-word-mode');
+        },
+    },
+    {
         name: 'stop-modal-flexible',
         fixture: fixtures.flexibleBetweenBlocks,
         platform: 'mac',

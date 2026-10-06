@@ -65,14 +65,14 @@ export function challengeProgressPercent(doneLength, totalLength) {
 
 /**
  * @param {object} elements - textEl, inputEl, wordInputEl, wordProgressEl,
- *   currentWordEl, progressBarEl, confirmBtnEl, modalContentEl. Passed as a map
+ *   wordsRemainingEl, currentWordEl, progressBarEl, confirmBtnEl, modalContentEl. Passed as a map
  *   because the three modals use three unrelated id conventions (pause drops the
  *   `challenge-` infix, override-all renames the progress bar) — there is no
  *   mechanical prefix rule to derive them from.
  */
 export function createChallengeController(elements) {
     const {
-        textEl, inputEl, wordInputEl, wordProgressEl,
+        textEl, inputEl, wordInputEl, wordProgressEl, wordsRemainingEl,
         currentWordEl, progressBarEl, confirmBtnEl, modalContentEl,
     } = elements;
 
@@ -89,7 +89,8 @@ export function createChallengeController(elements) {
     const setStackMode = (mode) => {
         const hideAll = mode === 'none';
         const word = mode === 'word';
-        textEl?.classList.toggle('hidden', hideAll);
+        // Word mode shows only the current word, never the whole passage.
+        textEl?.classList.toggle('hidden', hideAll || word);
         wordProgressEl?.classList.toggle('hidden', hideAll || !word);
         currentWordEl?.classList.toggle('hidden', hideAll || !word);
         wordInputEl?.classList.toggle('hidden', hideAll || !word);
@@ -113,23 +114,13 @@ export function createChallengeController(elements) {
         renderChallengeReferenceText(textEl, targetText, { errorIndex, cursorIndex });
     };
 
-    /** @param {boolean} [leaving] - fade out the word just finished rather than dropping it */
-    const renderWordState = (leaving = false) => {
+    const renderWordState = () => {
         if (!wordState) return;
         const currentWord = getCurrentChallengeWord(wordState);
-        const { words, currentIndex } = wordState;
-        const span = (className, textContent) => Object.assign(document.createElement('span'), { className, textContent });
-        const rest = words.slice(currentIndex + 1).join(' ');
-        const done = leaving ? span('challenge-word-done', `${words[currentIndex - 1]} `) : null;
-        // Collapse from the word's real width, so the slide starts with the fade.
-        done?.style.setProperty('--word-width', `${done.textContent.length}ch`);
-        textEl?.replaceChildren(
-            ...(done ? [done] : []),
-            span(leaving ? 'challenge-word-current challenge-word-arriving' : 'challenge-word-current', currentWord),
-            ...(rest ? [' ', span('challenge-word-upcoming', rest)] : []),
-        );
-        textEl?.removeAttribute('data-challenge-render');
-        if (textEl) textEl.scrollTop = 0;
+        const remaining = wordState.words.length - wordState.currentIndex;
+        if (wordsRemainingEl) {
+            wordsRemainingEl.textContent = tSettingsFmt(remaining === 1 ? 'challengeWordsRemainingOneFmt' : 'challengeWordsRemainingFmt', { count: remaining });
+        }
         // Only finished words count: the bar starts empty, not on the word still to type.
         const completed = getCompletedChallengeText(wordState);
         if (wordProgressEl) {
@@ -296,7 +287,7 @@ export function createChallengeController(elements) {
                 // the pause copy only wrote it on the final word.
                 wordState.typedText = done ? targetText : getCompletedChallengeText(wordState);
                 if (!done) {
-                    renderWordState(true);
+                    renderWordState();
                     wordInputEl?.focus({ preventScroll: true });
                     return { status: 'advanced' };
                 }
@@ -347,6 +338,7 @@ const CHALLENGE_ELEMENT_IDS = {
         inputEl: 'challenge-input',
         wordInputEl: 'challenge-word-input',
         wordProgressEl: 'challenge-word-progress',
+        wordsRemainingEl: 'challenge-words-remaining',
         currentWordEl: 'challenge-current-word',
         progressBarEl: 'challenge-progress-bar',
         confirmBtnEl: 'confirm-override-btn',
@@ -357,6 +349,7 @@ const CHALLENGE_ELEMENT_IDS = {
         inputEl: 'override-all-challenge-input',
         wordInputEl: 'override-all-challenge-word-input',
         wordProgressEl: 'override-all-word-progress',
+        wordsRemainingEl: 'override-all-words-remaining',
         currentWordEl: 'override-all-current-word',
         progressBarEl: 'override-all-progress-bar',
         confirmBtnEl: 'confirm-override-all-btn',

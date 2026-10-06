@@ -2832,6 +2832,7 @@
             root.innerHTML = `
                 <div class="modal-content">
                     <div data-el="text" class="challenge-text"></div>
+                    <strong data-el="wordsRemaining" class="challenge-words-remaining"></strong>
                     <div data-el="wordProgress" class="challenge-word-progress hidden"></div>
                     <div data-el="currentWord" class="challenge-current-word hidden"></div>
                     <input data-el="wordInput" class="challenge-input challenge-word-input hidden">
@@ -2845,6 +2846,7 @@
                 inputEl: pick('input'),
                 wordInputEl: pick('wordInput'),
                 wordProgressEl: pick('wordProgress'),
+                wordsRemainingEl: pick('wordsRemaining'),
                 currentWordEl: pick('currentWord'),
                 progressBarEl: pick('progressBar'),
                 confirmBtnEl: pick('confirmBtn'),
@@ -3054,17 +3056,14 @@
         })();
 
         (function T237() {
-            // Phones type one word at a time; the passage must read that way.
+            // Phones type one word at a time: no passage, just a count of words left.
             const h = makeHarness();
-            h.controller.open({ text: 'alpha beta gamma', wordMode: true });
-            const text = h.elements.textEl;
-            assertEqual(text.querySelector('.challenge-word-current')?.textContent, 'alpha', 'T237: the passage starts with the current word, marked');
-            assertEqual(text.querySelector('.challenge-word-upcoming')?.textContent, 'beta gamma', 'T237: later words are marked upcoming');
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            assert(h.elements.textEl.classList.contains('hidden'), 'T237: word mode hides the passage');
+            assertEqual(h.elements.wordsRemainingEl.textContent, '2 words remaining', 'T237: the heading counts the current word as remaining');
             typeWord(h, 'alpha');
             h.controller.handleConfirm();
-            assertEqual(text.querySelector('.challenge-word-done')?.textContent, 'alpha ', 'T237: the finished word is marked to fade out');
-            assertEqual(text.querySelector('.challenge-word-current')?.textContent, 'beta', 'T237: the next word becomes current');
-            assertEqual(text.querySelector('.challenge-word-upcoming')?.textContent, 'gamma', 'T237: and only later words stay upcoming');
+            assertEqual(h.elements.wordsRemainingEl.textContent, '1 word remaining', 'T237: and is singular for the last word');
             assert(h.elements.modalContentEl.classList.contains('challenge-word-mode'), 'T237: the sheet is flagged word mode for the instruction swap');
             h.controller.open({ text: 'alpha beta' });
             assert(!h.elements.modalContentEl.classList.contains('challenge-word-mode'), 'T237: char mode clears the word-mode flag');
