@@ -30,6 +30,7 @@
  * - T158b: iOS schedule entries drop protected domains, as the manual payload does
  * - T158c: iOS schedule entries skip a segment with no days, which never applies
  * - T240-T242: iOS start warnings: entries name their space; the payload's manual resumes and switch
+ * - T243-T245: iOS cancels a Manual space's pending restart when it is resumed early, stopped with Never or cleared by Stop all
  * - T226-T229: iOS allow-mode 50-item cap counted across every running space
  * - T213-T219, T222-T223: The start card names the space that just started and closes the app; allow mode gets its own card
  * - T220-T221: Diagnostics reports an allow-mode space as allowing, not blocking
@@ -2466,7 +2467,7 @@
         }
 
         const api = internals.tauriAPI;
-        const methodNames = ['saveData', 'screentimeSetResumePayload', 'screentimeRegisterOneOffActivity',
+        const methodNames = ['saveData', 'screentimeSetResumePayload', 'screentimeRegisterOneOffActivity', 'screentimeCancelResume',
             'screentimeStartBlock', 'screentimeClearBlock', 'screentimeClearManualBlock',
             'setSchedulesPlugin', 'checkHelperStatus', 'setBlockedAppsViaHelper', 'androidSetSchedules'];
         const savedMethods = Object.fromEntries(methodNames.map(name => [name, api[name]]));
@@ -2499,6 +2500,7 @@
                 if (registrationThrows) throw new Error('registration threw');
                 return registrationResult;
             };
+            api.screentimeCancelResume = async (blockId) => { events.push(`cancel:${blockId}`); return { success: true }; };
             api.screentimeStartBlock = async () => { events.push('start-block'); return { success: true }; };
             api.screentimeClearBlock = async () => { events.push('clear-block'); return { success: true }; };
             api.screentimeClearManualBlock = async () => { events.push('clear-manual'); return { success: true }; };
@@ -2646,6 +2648,22 @@
             events = [];
             const never = await internals.stopFocusSpaceTarget({ block: neverBlock });
             assert(never?.kind === 'removed', 'T72: Never keeps the existing removal semantics');
+
+            // A Manual space's restart is booked with iOS and re-applies its saved apps
+            // on its own, so every way it stops being wanted must cancel it.
+            assert(events.includes(`cancel:${neverBlock.id}`), 'T243: stopping with Never cancels a restart left from an earlier timed stop');
+
+            const earlyBlock = makeBlock({ isPaused: true, pauseEndTime: Date.now() + 60_000 });
+            setBlock(earlyBlock);
+            events = [];
+            await internals.resumePausedBlock(earlyBlock);
+            assert(events.includes(`cancel:${earlyBlock.id}`), 'T244: switching a stopped Manual space on early cancels its restart');
+
+            const stoppedBlock = makeBlock({ isPaused: true, pauseEndTime: Date.now() + 60_000 });
+            setBlock(stoppedBlock);
+            events = [];
+            await internals.performOverrideAll();
+            assert(events.includes(`cancel:${stoppedBlock.id}`), 'T245: Stop all cancels the restart of a stopped Manual space');
         } finally {
             internals.appData = savedAppData;
             internals.lastBlockedDomains = savedLastBlockedDomains;

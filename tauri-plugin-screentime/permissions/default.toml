@@ -17,6 +17,7 @@ permissions = [
     "allow-unschedule-block",
     "allow-register-one-off-activity",
     "allow-set-resume-payload",
+    "allow-cancel-resume",
     "allow-set-block-end-state",
     "allow-show-activity-picker",
     "allow-set-start-warnings",

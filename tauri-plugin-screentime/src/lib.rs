@@ -52,6 +52,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::unschedule_block,
             commands::register_one_off_activity,
             commands::set_resume_payload,
+            commands::cancel_resume,
             commands::set_block_end_state,
             commands::show_activity_picker,
             commands::set_start_warnings,

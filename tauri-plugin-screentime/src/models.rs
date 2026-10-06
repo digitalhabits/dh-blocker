@@ -219,6 +219,12 @@ pub struct SetResumePayloadRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CancelResumeRequest {
+    pub block_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SetBlockEndStateRequest {
     pub block_id: String,
     pub domains: Vec<String>,

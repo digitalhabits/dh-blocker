@@ -15,6 +15,7 @@ const COMMANDS: &[&str] = &[
     "unschedule_block",
     "register_one_off_activity",
     "set_resume_payload",
+    "cancel_resume",
     "set_block_end_state",
     "show_activity_picker",
     "set_start_warnings",

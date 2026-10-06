@@ -1557,11 +1557,27 @@ export function initializeOverrideModalChallenge(difficulty, progressColor = nul
 
 // ── Pause/Resume Block ──
 
+/**
+ * Cancels a Manual space's automatic restart on iOS. The booked wake-up re-applies
+ * the space's saved apps without asking the app, so it must go whenever the
+ * restart is no longer wanted: switched on early, stopped with Never, or cleared by
+ * Stop all.
+ */
+export async function cancelIOSRestart(block) {
+    if (!state.isIOS || !block?.id) return;
+    try {
+        await tauriAPI.screentimeCancelResume(block.id);
+    } catch (e) {
+        console.warn('[iOS] Cancelling the automatic restart failed:', e);
+    }
+}
+
 /** Turn a paused Manual space back on. No challenge: this falls toward blocking. */
 export async function resumePausedBlock(block) {
     if (!block) return;
     delete block.isPaused;
     delete block.pauseEndTime;
+    await cancelIOSRestart(block);
     await saveData();
     await syncActiveBlocksToHelper();
     await syncSchedulesToHelper();
@@ -1675,6 +1691,7 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
         await saveData();
         if (state.isIOS) {
             // Manual channel only: a running schedule keeps enforcing.
+            await cancelIOSRestart(block);
             await tauriAPI.screentimeClearManualBlock();
             state.lastBlockedDomains = new Set();
             await updateHostsFile();
@@ -1745,14 +1762,8 @@ export async function restopForNewStrictness(blocklistId, now = Date.now()) {
     const block = state.appData.activeBlocks.find(pending) || null;
     const schedule = block ? null : (state.appData.schedules || []).find(pending) || null;
     if (!block && !schedule) return null;
-    const outcome = await stopFocusSpaceTarget({ block, schedule });
-    // iOS keeps the resume it registered at the first stop; empty its payload so it re-applies nothing.
-    if (outcome?.kind === 'removed' && state.isIOS) {
-        const allow = isAllowlistBlocklist(state.appData.blocklists.find(bl => bl.id === blocklistId));
-        await tauriAPI.screentimeSetResumePayload({ blockId: block.id, domains: [], appTokenData: [], categoryTokenData: [], mode: allow ? 'allowlist' : null })
-            .catch((e) => console.warn('[iOS] Emptying the resume payload failed:', e));
-    }
-    return outcome;
+    // Never removes the block, and that path cancels the restart booked at the first stop.
+    return stopFocusSpaceTarget({ block, schedule });
 }
 
 export function updateOverridePreview() {

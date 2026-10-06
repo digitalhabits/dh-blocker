@@ -5,7 +5,7 @@ import { getChallengeController } from './challenge-controller.js';
 import { startHelperUiRefreshLoop, stopHelperUiRefreshLoop, isModalVisible } from './modal-manager.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render } from './render.js';
-import { handleBlocklistSelect, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
+import { cancelIOSRestart, handleBlocklistSelect, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
 import { updateBlockedApps, openExternal, isHelperInstallCancelled, checkHelperStatus, requestScreentimeAuth } from './blocking-platform.js';
 import { attachCopyChipHandlers, extensionsUrlChipHtml, restartOnboardingFromSettings, BROWSER_STORE_LINKS, MAC_BLOCKING_METHOD_KEYS, browserBlockingMethod, browserIconUrl, browserUsesAutomation, lastOnboardingState, openExtensionSetupOverlay, updateGraceSettingLock } from './enforcement.js';
 import { hasAnyBlockingStateToClear, hasAnyEnforcedBlocks, isOneOffBlockStillActive, refreshDesktopHelperStatus, scheduleCanStillBecomeActive, syncSchedulesToHelper } from './schedule-engine.js';
@@ -1426,6 +1426,7 @@ export async function performOverrideAll() {
         const androidManualBlockIds = state.isAndroid
             ? state.appData.activeBlocks.map((block) => block.id).filter(Boolean)
             : [];
+        const clearedBlocks = state.appData.activeBlocks;
 
         // Clear all active blocks
         state.appData.activeBlocks = [];
@@ -1438,6 +1439,7 @@ export async function performOverrideAll() {
 
         // Full cleanup on the helper side
         if (state.isIOS) {
+            for (const block of clearedBlocks) await cancelIOSRestart(block);
             await tauriAPI.screentimeClearBlock();
             // Also drops every start warning, now that no schedule is left.
             await syncSchedulesToHelper({ reportFailure: false });

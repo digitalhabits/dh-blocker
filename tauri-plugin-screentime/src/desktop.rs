@@ -150,6 +150,13 @@ impl<R: Runtime> Screentime<R> {
         })
     }
 
+    pub fn cancel_resume(&self, _payload: CancelResumeRequest) -> crate::Result<SuccessResponse> {
+        Ok(SuccessResponse {
+            success: false,
+            error: Some("Automatic restart is only available on iOS".to_string()),
+        })
+    }
+
     pub fn set_block_end_state(
         &self,
         _payload: SetBlockEndStateRequest,

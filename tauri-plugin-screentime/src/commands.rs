@@ -190,6 +190,15 @@ pub(crate) async fn set_resume_payload<R: Runtime>(
 }
 
 #[command]
+pub(crate) async fn cancel_resume<R: Runtime>(
+    app: AppHandle<R>,
+    block_id: String,
+) -> Result<SuccessResponse> {
+    app.screentime()
+        .cancel_resume(CancelResumeRequest { block_id })
+}
+
+#[command]
 pub(crate) async fn set_block_end_state<R: Runtime>(
     app: AppHandle<R>,
     block_id: String,

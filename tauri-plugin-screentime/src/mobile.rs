@@ -148,6 +148,12 @@ impl<R: Runtime> Screentime<R> {
             .map_err(Into::into)
     }
 
+    pub fn cancel_resume(&self, payload: CancelResumeRequest) -> crate::Result<SuccessResponse> {
+        self.0
+            .run_mobile_plugin("cancelResume", payload)
+            .map_err(Into::into)
+    }
+
     pub fn set_block_end_state(
         &self,
         payload: SetBlockEndStateRequest,
