@@ -1600,6 +1600,9 @@ function setupModalListeners() {
             await updateHostsFile();
             await syncSchedulesToHelper();
             await updateBlockedApps();
+        } else if (state.isIOS) {
+            // Switched to Manual: its old schedule's monitors and start warnings go now.
+            await syncSchedulesToHelper();
         }
 
         // Keep live preview while editing, but don't revert after a confirmed save.

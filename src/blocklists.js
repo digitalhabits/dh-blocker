@@ -11,7 +11,7 @@ import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { escapeHtml, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
 import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, healWwwWebsiteEntries, isAllowlistBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist } from './blocklist-utils.js';
-import { computeNextOneShotOccurrenceMs, computeNextRepeatingOccurrenceMs, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow } from './schedule-engine.js';
+import { computeNextOneShotOccurrenceMs, computeNextRepeatingOccurrenceMs, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render, renderScheduleVisibilityChips } from './render.js';
 import { isFocusSpaceOn, setFocusSpaceEnabled } from './focus-space-switch.js';
@@ -784,6 +784,8 @@ export async function deleteBlocklist(id) {
     state.appData.schedules = (state.appData.schedules || []).filter(s => s.blocklistId !== id);
     expandedBlocklistCardIds.delete(id);
     void saveData();
+    // iOS: drop the space's monitors and start warnings now, not on the next tick.
+    if (state.isIOS) void syncSchedulesToHelper();
 
     // If the deleted blocklist was the selected one, reset the scheduler UI
     if (state.selectedBlocklistId === id) {
