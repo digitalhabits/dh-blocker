@@ -107,3 +107,12 @@ jobs:
       # Boots the Vite dev server, runs runBlockingTests() in headless
       # Chromium, fails on any failed assertion or a mid-suite crash.
       - run: pnpm test:tier1
+
+  ios-activity-timing:
+    name: iOS one-off activity timing
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Foundation-only timing tests do not require Xcode or Screen Time
+      # entitlements, so this stays a small macOS regression job.
+      - run: bash scripts/ci/test-ios-activity-timing.sh
