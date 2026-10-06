@@ -36,6 +36,7 @@ class ReddBlockMonitor: DeviceActivityMonitor {
 
         if raw.hasPrefix("redd-schedule-resume-") {
             recomputeActiveScheduleUnion()
+            releaseFiredOneOff(activity)
             return
         }
 
@@ -43,6 +44,7 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         if raw.hasPrefix("redd-block-resume-") {
             let blockId = String(raw.dropFirst("redd-block-resume-".count))
             handleResumeOneOff(blockId: blockId)
+            releaseFiredOneOff(activity)
             return
         }
         
@@ -61,6 +63,13 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         recomputeActiveScheduleUnion(now: evaluateAt)
     }
     
+    /// Block resumes get a new name per manual start and nothing else stops them,
+    /// so they would pile toward iOS's ~20-activity limit. intervalDidEnd ignores them.
+    private func releaseFiredOneOff(_ activity: DeviceActivityName) {
+        DeviceActivityCenter().stopMonitoring([activity])
+        logLine("stopped fired one-off \(activity.rawValue)")
+    }
+
     /// Re-tag a merged/subtracted payload as allowlist so the record keeps its semantics.
     private func taggedAllowlist(_ payload: ManualBlockStatePayload) -> ManualBlockStatePayload {
         ManualBlockStatePayload(
