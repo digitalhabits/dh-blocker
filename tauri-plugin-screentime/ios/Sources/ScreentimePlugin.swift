@@ -16,6 +16,8 @@ private func logSchedule(_ message: String) {
     scheduleLog.notice("[ReDD Schedule] \(message, privacy: .public)")
 }
 
+private let scheduleRecheckEvent = DeviceActivityEvent.Name("redd-recheck")
+
 extension ScheduleWindowSignature {
     init(_ schedule: DeviceActivitySchedule) {
         self.init(
@@ -1014,6 +1016,10 @@ class ScreentimePlugin: Plugin {
             replaceAllowlistFallback: true,
             allowlistFallback: nil
         )
+        // The schedule store's allow exceptions include the manual allowlist just
+        // cleared; re-derive them, as every other writer does.
+        IOSWebPolicyApplier.reapplyWebPolicy()
+        IOSAppPolicyApplier.reapplyAppPolicy()
     }
 
     /// Clear only the named "schedule" store — the OS-level shields the
@@ -1191,7 +1197,7 @@ class ScreentimePlugin: Plugin {
             }
 
             do {
-                try center.startMonitoring(activityName, during: schedule)
+                try startScheduleMonitoring(activityName, during: schedule, watching: scheduleData)
                 logSchedule("startMonitoring succeeded for \(entry.id)")
             } catch {
                 logSchedule("startMonitoring failed for \(entry.id): \(error.localizedDescription)")
@@ -1217,6 +1223,32 @@ class ScreentimePlugin: Plugin {
         }
     }
     
+    /// Adds a one-minute usage event so a start iOS never delivers is recovered by
+    /// use. Block mode watches the blocked apps; allow mode names none, meant to count
+    /// all use (logged, as that reading is undocumented). Falls back to no event.
+    private func startScheduleMonitoring(
+        _ name: DeviceActivityName,
+        during schedule: DeviceActivitySchedule,
+        watching scheduleData: ScheduleBlockData
+    ) throws {
+        let watchBlocked = !scheduleData.isAllowlist
+        let recheck = DeviceActivityEvent(
+            applications: watchBlocked ? decodeApplicationTokens(scheduleData.appTokenData) : [],
+            categories: watchBlocked ? decodeCategoryTokens(scheduleData.categoryTokenData) : [],
+            threshold: DateComponents(minute: 1)
+        )
+        do {
+            try center.startMonitoring(name, during: schedule, events: [scheduleRecheckEvent: recheck])
+            logSchedule(
+                "recheck event registered for \(name.rawValue) apps=\(recheck.applications.count)"
+                + " categories=\(recheck.categories.count) includesAllActivity=\(recheck.includesAllActivity)"
+            )
+        } catch {
+            logSchedule("recheck event refused for \(name.rawValue): \(error.localizedDescription); registering without it")
+            try center.startMonitoring(name, during: schedule)
+        }
+    }
+
     @objc public func unscheduleBlock(_ invoke: Invoke) throws {
         // Try to parse args to check if a specific ID was provided
         let args = try? invoke.parseArgs(UnscheduleBlockArgs.self)

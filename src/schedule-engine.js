@@ -412,6 +412,8 @@ export function buildIOSScheduleEntries() {
         }
         for (let segIdx = 0; segIdx < schedule.segments.length; segIdx++) {
             const seg = schedule.segments[segIdx];
+            // No days means never active here; Swift would read [] as every day.
+            if (!seg.days?.length) continue;
             const window = getIOSScheduleEntryWindow(schedule, seg);
             flatEntries.push({
                 id: `${schedule.id}-${segIdx}`,

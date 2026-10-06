@@ -28,6 +28,7 @@
  * - T207: colour-swatch tick / + are inked against the swatch's own colour
  * - T208-T212: Desktop app-watcher payload: allow-mode spaces feed allowedApps, never the kill list
  * - T158b: iOS schedule entries drop protected domains, as the manual payload does
+ * - T158c: iOS schedule entries skip a segment with no days, which never applies
  * - T226-T229: iOS allow-mode 50-item cap counted across every running space
  * - T213-T219, T222-T223: The start card names the space that just started and closes the app; allow mode gets its own card
  * - T220-T221: Diagnostics reports an allow-mode space as allowing, not blocking
@@ -2046,7 +2047,8 @@
         const { buildIOSScheduleEntries: build } = window.__REDDBLOCK_INTERNALS__;
         const saved = window.__REDDBLOCK_INTERNALS__.appData;
 
-        const seg = { startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, days: [] };
+        // Every day: a segment with no days never applies and is not sent (T158c).
+        const seg = { startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, days: [0, 1, 2, 3, 4, 5, 6] };
         const withData = (blocklists, schedules) => {
             window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({ blocklists, schedules, activeBlocks: [] });
         };
@@ -2147,6 +2149,19 @@
                 assertEqual(entries.length, 1, 'T158b: the schedule produces an entry');
                 assert(!entries[0].domains.includes(protectedDomain), 'T158b: a protected domain never ships in a schedule entry');
                 assert(entries[0].domains.includes('x.com'), 'T158b: ordinary domains still ship');
+            })();
+
+            (function T158c() {
+                // The editor lets a segment keep no days, and the app reads it as never
+                // active. Swift reads an empty day list as "every day", so a shipped
+                // entry blocked daily while the app was closed and the app stripped it
+                // again once opened.
+                const bl = createMockBlocklist({ mode: 'blocklist', websites: ['x.com'] });
+                withData([bl], [createMockSchedule(bl.id, [{ ...seg, days: [] }, { ...seg, startHour: 19, endHour: 20 }])]);
+                const entries = build();
+                assertEqual(entries.length, 1, 'T158c: a segment with no days is not sent');
+                assertEqual(entries[0].startHour, 19, 'T158c: the segment with days still is');
+                assert(entries[0].id.endsWith('-1'), 'T158c: and keeps its own segment index in its id');
             })();
         } finally {
             window.__REDDBLOCK_INTERNALS__.appData = saved;

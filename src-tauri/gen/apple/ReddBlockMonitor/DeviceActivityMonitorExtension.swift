@@ -36,13 +36,15 @@ class ReddBlockMonitor: DeviceActivityMonitor {
 
         if raw.hasPrefix("redd-schedule-resume-") {
             recomputeActiveScheduleUnion()
+            releaseFiredOneOff(activity)
             return
         }
-        
+
         // One-off: pause resume — merge manual state + resume payload and apply to default store
         if raw.hasPrefix("redd-block-resume-") {
             let blockId = String(raw.dropFirst("redd-block-resume-".count))
             handleResumeOneOff(blockId: blockId)
+            releaseFiredOneOff(activity)
             return
         }
         
@@ -54,9 +56,20 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         }
         
         // Regular schedule segment
-        recomputeActiveScheduleUnion()
+        let now = Date()
+        let evaluateAt = SharedScheduleStore.load(id: extractScheduleId(from: activity))?
+            .startCallbackEvaluationTime(now: now) ?? now
+        if evaluateAt != now { logLine("start arrived early; evaluating at the start") }
+        recomputeActiveScheduleUnion(now: evaluateAt)
     }
     
+    /// Block resumes get a new name per manual start and nothing else stops them,
+    /// so they would pile toward iOS's ~20-activity limit. intervalDidEnd ignores them.
+    private func releaseFiredOneOff(_ activity: DeviceActivityName) {
+        DeviceActivityCenter().stopMonitoring([activity])
+        logLine("stopped fired one-off \(activity.rawValue)")
+    }
+
     /// Re-tag a merged/subtracted payload as allowlist so the record keeps its semantics.
     private func taggedAllowlist(_ payload: ManualBlockStatePayload) -> ManualBlockStatePayload {
         ManualBlockStatePayload(
@@ -179,6 +192,14 @@ class ReddBlockMonitor: DeviceActivityMonitor {
             return
         }
         
+        recomputeActiveScheduleUnion()
+    }
+
+    /// The one-minute usage event: the start may never have arrived, so recompute.
+    /// In a window that started correctly, or is paused, this changes nothing.
+    override func eventDidReachThreshold(_ event: DeviceActivityEvent.Name, activity: DeviceActivityName) {
+        super.eventDidReachThreshold(event, activity: activity)
+        logLine("eventDidReachThreshold event=\(event.rawValue) activity=\(activity.rawValue)")
         recomputeActiveScheduleUnion()
     }
 
