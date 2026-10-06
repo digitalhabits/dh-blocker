@@ -143,9 +143,9 @@ export function startUsagePing() {
 }
 
 /**
- * The "Send anonymous usage count" switch in Settings. It reads the
- * setting each time Settings opens, because the data file loads after the
- * listeners are set up. Android hides the row.
+ * The "Send anonymous usage count" switch in Settings, and its info icon.
+ * It reads the setting each time Settings opens, because the data file
+ * loads after the listeners are set up. Android hides the row.
  */
 export function setupUsagePingToggle() {
     const input = document.getElementById('settings-usage-ping-input');
@@ -154,7 +154,15 @@ export function setupUsagePingToggle() {
         document.getElementById('settings-usage-ping-row')?.classList.add('hidden');
         return;
     }
-    const sync = () => { input.checked = usagePingEnabled(); };
+    // The info icon: a click keeps its tooltip open until the next click,
+    // as in To-Do. Settings opens with it closed.
+    const infoWrap = document.getElementById('settings-usage-ping-info-btn')?.closest('.settings-info-hover-wrap');
+    infoWrap?.querySelector('.settings-info-btn')
+        .addEventListener('click', () => infoWrap.classList.toggle('is-open'));
+    const sync = () => {
+        input.checked = usagePingEnabled();
+        infoWrap?.classList.remove('is-open');
+    };
     sync();
     ['settings-btn', 'settings-btn-stack']
         .map((id) => document.getElementById(id))

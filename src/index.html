@@ -677,7 +677,7 @@
 <div class="focus-space-editor" id="focus-space-editor">
 
 <div class="form-group" id="blocklist-name-group">
-    <label for="blocklist-name" id="blocklist-name-label">Focus space name</label>
+    <label for="blocklist-name" id="blocklist-name-label">Name</label>
     <input type="text" id="blocklist-name" maxlength="60" placeholder="e.g., Social Media" class="form-input">
 </div>
 
@@ -1224,7 +1224,8 @@
                         </div>
                     </div>
                 </div>
-                <p id="override-modal-instruction" class="override-challenge-instruction">To stop this focus space early, type the following:</p>
+                <p id="override-modal-instruction" class="override-challenge-instruction challenge-char-instruction">To stop this focus space early, type the following:</p>
+                <p id="override-modal-word-instruction" class="override-challenge-instruction challenge-word-instruction">Type each word on its own, one at a time.</p>
                 <div id="challenge-text" class="challenge-text"></div>
                 <div id="challenge-word-progress" class="challenge-word-progress hidden"></div>
                 <div id="challenge-current-word" class="challenge-current-word hidden"></div>
@@ -1762,8 +1763,27 @@
 
                             <div id="settings-usage-ping-row" class="settings-row">
                                 <div class="settings-row-copy">
-                                    <span id="settings-usage-ping-label" class="settings-row-label">Send anonymous usage count</span>
-                                    <span id="settings-usage-ping-hint" class="settings-row-hint">Once a day, with an ID that changes every month. Nothing about your blocks, sites or apps.</span>
+                                    <div class="settings-row-label-line">
+                                        <span class="settings-row-icon" aria-hidden="true">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                <path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"></path>
+                                            </svg>
+                                        </span>
+                                        <span id="settings-usage-ping-label" class="settings-row-label">Send anonymous usage count</span>
+                                        <div class="settings-info-hover-wrap">
+                                            <button id="settings-usage-ping-info-btn" type="button" class="info-toggle-btn settings-info-btn"
+                                                aria-describedby="settings-usage-ping-hint">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                    <circle cx="12" cy="12" r="10"></circle>
+                                                    <path d="M12 16v-4"></path>
+                                                    <path d="M12 8h.01"></path>
+                                                </svg>
+                                            </button>
+                                            <div id="settings-usage-ping-hint" class="settings-info-tooltip" role="tooltip">Once a day, with an ID that changes every month. Nothing about your blocks, sites or apps.</div>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="settings-row-control">
                                     <label class="enforcement-switch" for="settings-usage-ping-input">
@@ -2124,7 +2144,8 @@
                         app. It will also stop any future
                         scheduled blocking.</p>
                 </div>
-                <p class="override-all-subline" id="override-all-instruction">To do this, type the following:</p>
+                <p class="override-all-subline challenge-char-instruction" id="override-all-instruction">To do this, type the following:</p>
+                <p class="override-all-subline challenge-word-instruction" id="override-all-word-instruction">Type each word on its own, one at a time.</p>
                 <div id="override-all-challenge-text" class="challenge-text"></div>
                 <div id="override-all-word-progress" class="challenge-word-progress hidden"></div>
                 <div id="override-all-current-word" class="challenge-current-word hidden"></div>

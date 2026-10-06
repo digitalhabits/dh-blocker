@@ -2760,6 +2760,7 @@ export function applySettingsLanguage() {
     setText('override-confirm-blocking-label', tSettings('startConfirmBlockingLabel'));
     setText('override-confirm-show-all-blocking', tSettings('showAll'));
     setText('override-modal-instruction', tSettings('overrideInstruction'));
+    setText('override-modal-word-instruction', tSettings('challengeWordInstruction'));
     setText('cancel-override-btn', tSettings('cancel'));
     setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
     setText('confirm-override-header', tSettings('startBlockHoldHeader'));
@@ -2838,6 +2839,7 @@ export function applySettingsLanguage() {
     setText('override-all-warning-strong', tSettings('overrideAllWarningStrong'));
     setText('override-all-warning-body', tSettings('overrideAllWarningBody'));
     setText('override-all-instruction', tSettings('overrideAllInstruction'));
+    setText('override-all-word-instruction', tSettings('challengeWordInstruction'));
     setText('cancel-override-all-btn', tSettings('cancel'));
     setText('confirm-override-all-btn', tSettings('overrideAll'));
 

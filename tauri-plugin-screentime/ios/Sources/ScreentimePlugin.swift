@@ -5,6 +5,27 @@ import SwiftUI
 import FamilyControls
 import ManagedSettings
 import DeviceActivity
+import os
+
+/// NSLog redacts its `%@` arguments to "<private>" and only reaches Console while
+/// something is attached to the process, so a standalone build — every build after
+/// a reboot — logged nothing usable. Log through Logger with public values instead.
+private let scheduleLog = Logger(subsystem: "com.reddblock.app", category: "schedule")
+
+private func logSchedule(_ message: String) {
+    scheduleLog.notice("[ReDD Schedule] \(message, privacy: .public)")
+}
+
+extension ScheduleWindowSignature {
+    init(_ schedule: DeviceActivitySchedule) {
+        self.init(
+            intervalStart: schedule.intervalStart,
+            intervalEnd: schedule.intervalEnd,
+            repeats: schedule.repeats,
+            warningTime: schedule.warningTime
+        )
+    }
+}
 
 // MARK: - Argument Types
 
@@ -1077,7 +1098,15 @@ class ScreentimePlugin: Plugin {
             return
         }
         let args = try invoke.parseArgs(SetSchedulesArgs.self)
-        NSLog("[ReDD Schedule] setSchedules called with %d entries", args.schedules.count)
+        logSchedule("setSchedules called with \(args.schedules.count) entries")
+        // Logged before this call re-registers anything: on the first launch after
+        // a restart this is what the system still holds, so an empty list means
+        // the reboot dropped our monitors and no interval could have fired.
+        let heldActivities = center.activities.map { $0.rawValue }
+        logSchedule(
+            "activities held before re-registering count=\(heldActivities.count)"
+            + " names=\(heldActivities.joined(separator: ","))"
+        )
         
         // Get current schedule IDs to determine which to remove
         let existingIds = Set(SharedScheduleStore.loadAll().keys)
@@ -1102,21 +1131,18 @@ class ScreentimePlugin: Plugin {
         
         // Add/update schedules
         var errors: [String] = []
+        let now = Calendar.current.dateComponents([.hour, .minute], from: Date())
+        let nowMinuteOfDay = (now.hour ?? 0) * 60 + (now.minute ?? 0)
         for entry in args.schedules {
-            NSLog(
-                "[ReDD Schedule] registering id=%@ start=%02d:%02d end=%02d:%02d repeats=%@ from=%@ until=%@ paused=%@ pauseEnd=%@ days=%@ domains=%d",
-                entry.id,
-                entry.startHour,
-                entry.startMinute,
-                entry.endHour,
-                entry.endMinute,
-                String(entry.repeats ?? true),
-                entry.activeFromTimestampMs.map { String($0) } ?? "nil",
-                entry.activeUntilTimestampMs.map { String($0) } ?? "nil",
-                String(entry.isPaused ?? false),
-                entry.pauseEndTimestampMs.map { String($0) } ?? "nil",
-                String(describing: entry.days ?? []),
-                entry.domains?.count ?? 0
+            logSchedule(
+                "registering id=\(entry.id)"
+                + String(format: " start=%02d:%02d end=%02d:%02d", entry.startHour, entry.startMinute, entry.endHour, entry.endMinute)
+                + " repeats=\(entry.repeats ?? true)"
+                + " from=\(entry.activeFromTimestampMs.map { String($0) } ?? "nil")"
+                + " until=\(entry.activeUntilTimestampMs.map { String($0) } ?? "nil")"
+                + " paused=\(entry.isPaused ?? false)"
+                + " pauseEnd=\(entry.pauseEndTimestampMs.map { String($0) } ?? "nil")"
+                + " days=\(entry.days ?? []) domains=\(entry.domains?.count ?? 0)"
             )
             let scheduleData = buildScheduleData(
                 domains: entry.domains,
@@ -1150,12 +1176,23 @@ class ScreentimePlugin: Plugin {
             )
             
             let activityName = DeviceActivityName("redd-block-\(entry.id)")
-            
+
+            // setSchedules runs on every launch; replacing a registration just before
+            // its start loses that start, so an unchanged one about to start is kept.
+            if leaveRegistrationAlone(
+                held: center.schedule(for: activityName).map(ScheduleWindowSignature.init),
+                desired: ScheduleWindowSignature(schedule),
+                nowMinuteOfDay: nowMinuteOfDay
+            ) {
+                logSchedule("startMonitoring skipped for \(entry.id): unchanged and starting within \(registrationQuietMinutes) min")
+                continue
+            }
+
             do {
                 try center.startMonitoring(activityName, during: schedule)
-                NSLog("[ReDD Schedule] startMonitoring succeeded for %@", entry.id)
+                logSchedule("startMonitoring succeeded for \(entry.id)")
             } catch {
-                NSLog("[ReDD Schedule] startMonitoring failed for %@: %@", entry.id, error.localizedDescription)
+                logSchedule("startMonitoring failed for \(entry.id): \(error.localizedDescription)")
                 errors.append("Schedule \(entry.id): \(error.localizedDescription)")
             }
         }
@@ -1358,13 +1395,9 @@ class ScreentimePlugin: Plugin {
         )
         let minutesBeforePaddedEnd = 15 - actualDurationMinutes
 
-        NSLog(
-            "[ReDD Schedule] padding short interval %02d:%02d-%02d:%02d to 15 minutes with warningTime=%d",
-            startHour,
-            startMinute,
-            endHour,
-            endMinute,
-            minutesBeforePaddedEnd
+        logSchedule(
+            String(format: "padding short interval %02d:%02d-%02d:%02d", startHour, startMinute, endHour, endMinute)
+            + " to 15 minutes with warningTime=\(minutesBeforePaddedEnd)"
         )
 
         return DeviceActivitySchedule(

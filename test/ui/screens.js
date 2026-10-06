@@ -333,6 +333,26 @@ export const screens = [
         },
     },
     {
+        // A ≤718px desktop window opens the editor as a full-window sheet:
+        // Duplicate / Delete belong in its title bar, not a row of their own.
+        name: 'editor-edit-sheet-narrow',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'mac',
+        viewport: { width: 520, height: 760 },
+        prepare: async (page) => {
+            await page.click('.blocklist-card');
+        },
+    },
+    {
+        name: 'editor-edit-sheet-iphone',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'iphone',
+        viewport: IPHONE,
+        prepare: async (page) => {
+            await page.click('.blocklist-card');
+        },
+    },
+    {
         // Custom Text: the field sits directly under Method, inside the panel.
         name: 'editor-stop-early-custom',
         fixture: fixtures.weeklyOffPeak,
