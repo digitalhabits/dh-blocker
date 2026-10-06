@@ -38,7 +38,7 @@ class ReddBlockMonitor: DeviceActivityMonitor {
             recomputeActiveScheduleUnion()
             return
         }
-        
+
         // One-off: pause resume — merge manual state + resume payload and apply to default store
         if raw.hasPrefix("redd-block-resume-") {
             let blockId = String(raw.dropFirst("redd-block-resume-".count))
@@ -54,7 +54,11 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         }
         
         // Regular schedule segment
-        recomputeActiveScheduleUnion()
+        let now = Date()
+        let evaluateAt = SharedScheduleStore.load(id: extractScheduleId(from: activity))?
+            .startCallbackEvaluationTime(now: now) ?? now
+        if evaluateAt != now { logLine("start arrived early; evaluating at the start") }
+        recomputeActiveScheduleUnion(now: evaluateAt)
     }
     
     /// Re-tag a merged/subtracted payload as allowlist so the record keeps its semantics.

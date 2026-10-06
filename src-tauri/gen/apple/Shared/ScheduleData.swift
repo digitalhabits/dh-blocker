@@ -373,7 +373,24 @@ extension ScheduleBlockData {
 
         return currentMins >= startMins || currentMins < endMins
     }
+
+    /// iOS can deliver a start a moment before its minute, when the window still
+    /// reads as unopened; a start due within the tolerance is evaluated at the start.
+    func startCallbackEvaluationTime(now: Date, calendar: Calendar = .current) -> Date {
+        guard let startHour, let startMinute,
+              let start = calendar.nextDate(
+                  after: now,
+                  matching: DateComponents(hour: startHour, minute: startMinute, second: 0),
+                  matchingPolicy: .nextTime
+              ),
+              start.timeIntervalSince(now) <= startCallbackToleranceSeconds else { return now }
+        return start
+    }
 }
+
+/// Kept short: a recompute at the real time inside it undoes the shift, and other
+/// entries are judged at the shifted time too.
+let startCallbackToleranceSeconds: TimeInterval = 10
 
 #if os(iOS) && canImport(ManagedSettings)
 
