@@ -17,6 +17,10 @@ const COMMANDS: &[&str] = &[
     "set_resume_payload",
     "set_block_end_state",
     "show_activity_picker",
+    "set_start_warnings",
+    "check_notification_permission",
+    "request_notification_permission",
+    "open_notification_settings",
 ];
 
 fn main() {

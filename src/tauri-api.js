@@ -87,6 +87,10 @@ export const tauriAPI = {
         invoke('plugin:screentime|set_resume_payload', payload),
     screentimeSetBlockEndState: (payload) =>
         invoke('plugin:screentime|set_block_end_state', payload),
+    screentimeSetStartWarnings: (payload) => invoke('plugin:screentime|set_start_warnings', { payload }),
+    screentimeCheckNotificationPermission: () => invoke('plugin:screentime|check_notification_permission'),
+    screentimeRequestNotificationPermission: () => invoke('plugin:screentime|request_notification_permission'),
+    screentimeOpenNotificationSettings: () => invoke('plugin:screentime|open_notification_settings'),
 
     // Android blocking API (Android only - provided by tauri-plugin-android-blocker).
     // All blocking logic runs in Kotlin (AccessibilityService + WorkManager);

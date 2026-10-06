@@ -119,3 +119,4 @@ jobs:
       - run: bash scripts/ci/test-ios-activity-timing.sh
       - run: bash scripts/ci/test-ios-schedule-registration.sh
       - run: bash scripts/ci/test-ios-schedule-data.sh
+      - run: bash scripts/ci/test-ios-start-warnings.sh

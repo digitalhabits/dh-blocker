@@ -7,6 +7,7 @@ import { tSettings } from './i18n.js';
 import { getBlocklistIOSPayload, isAllowlistBlocklist, isProtectedDomain } from './blocklist-utils.js';
 import { formatDateForDisplay, isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { formatTime } from './app.js';
+import { syncIOSStartWarnings } from './ios-start-warnings.js';
 
 let hasShownIOSScheduleSyncError = false;
 
@@ -405,7 +406,8 @@ export function buildIOSScheduleEntries() {
                     blocklistEmoji,
                     blocklistName,
                     blocklistColorHex,
-                    mode
+                    mode,
+                    blocklistId: schedule.blocklistId
                 });
             });
             continue;
@@ -433,7 +435,8 @@ export function buildIOSScheduleEntries() {
                 blocklistEmoji,
                 blocklistName,
                 blocklistColorHex,
-                mode
+                mode,
+                blocklistId: schedule.blocklistId
             });
         }
     }
@@ -473,6 +476,9 @@ export async function syncSchedulesToHelper({ reportFailure = true } = {}) {
             console.warn('[syncSchedulesToHelper] iOS error:', e);
         }
         if (failure && reportFailure) await reportIOSScheduleSyncFailure(failure);
+        // After the save, so Swift plans from the schedules just stored. Its own
+        // try/catch: a warning failure never changes this sync's result.
+        await syncIOSStartWarnings();
         return failure ? { success: false, error: failure, failedSaveIds } : { success: true };
     }
     if (state.isAndroid) {

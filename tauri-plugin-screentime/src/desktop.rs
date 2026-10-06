@@ -160,6 +160,36 @@ impl<R: Runtime> Screentime<R> {
         })
     }
 
+    pub fn set_start_warnings(
+        &self,
+        _payload: SetStartWarningsRequest,
+    ) -> crate::Result<StartWarningsResponse> {
+        Ok(StartWarningsResponse {
+            success: false,
+            status: "unsupported".to_string(),
+            scheduled: 0,
+            error: Some("Start warnings are only available on iOS".to_string()),
+        })
+    }
+
+    pub fn check_notification_permission(&self) -> crate::Result<NotificationPermissionResponse> {
+        Ok(NotificationPermissionResponse {
+            status: "unsupported".to_string(),
+            granted: false,
+        })
+    }
+
+    pub fn request_notification_permission(&self) -> crate::Result<NotificationPermissionResponse> {
+        self.check_notification_permission()
+    }
+
+    pub fn open_notification_settings(&self) -> crate::Result<SuccessResponse> {
+        Ok(SuccessResponse {
+            success: false,
+            error: Some("Notification settings are only available on iOS".to_string()),
+        })
+    }
+
     pub fn show_activity_picker(
         &self,
         _payload: ActivityPickerRequest,

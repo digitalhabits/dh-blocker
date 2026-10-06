@@ -36,6 +36,10 @@ export const state = {
     /// authorization centre is still resolving (Android does the same with a
     /// null androidPermissionsGranted).
     screentimeAuthChecked: false,
+    /** iOS notification permission for start warnings: 'notDetermined', 'denied', 'authorized', … or null before the first check. */
+    notificationPermission: null,
+    /** True from a Screen Time grant until the start-warnings screen is answered. Not saved: every grant shows it. */
+    iosNotificationOnboardingPending: false,
     // null = not checked yet. Avoid showing the Android Accessibility
     // onboarding screen during startup before the native permission check
     // has had a chance to answer.

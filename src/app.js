@@ -123,6 +123,7 @@ import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, getEf
 import { checkForAppUpdate, getLatestVersionPlatformKey, isVersionHigher, resolveMicrosoftStorePackage, updateBannerWhatsNewButtonHtml } from './update-banner.js';
 import { updateDownloadInProgress } from './update-banner.js';
 import { setupUsagePingToggle, startUsagePing } from './usage-ping.js';
+import { applyStartWarningsLanguage, setupStartWarningsOnboarding, setupStartWarningsToggle, syncIOSStartWarnings } from './ios-start-warnings.js';
 import { getChallengeController } from './challenge-controller.js';
 import { getMaxOverrideCountForType, getOverrideEstimatedMinutes, getTypingCharsPerMinuteForType, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
 import { escapeHtml, cleanUrlForDisplay, parseRgbFromColorString, rgbToHex, rgbToHsl, hslToRgb, getRelativeLuminance, getEnteringChipColor, getContrastTextColor } from './utils.js';
@@ -203,6 +204,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupHelpMenuLinks();
     setupHelperSettings();
     setupUsagePingToggle();
+    setupStartWarningsToggle();
+    setupStartWarningsOnboarding();
     setupSettingsHelpButtons();
     setupBlocklistsImportExportButtons();
     setupAppForegroundRefresh();
@@ -448,6 +451,8 @@ function setupEventListeners() {
         const result = await requestScreentimeAuth();
 
         if (result.granted) {
+            // Every grant asks about start warnings next, so a fresh dev install always shows it.
+            state.iosNotificationOnboardingPending = true;
             updateOnboardingVisibility();
             try {
                 await initializeIOSBlockingState();
@@ -508,7 +513,9 @@ function setupEventListeners() {
         // its Accessibility permission here. Without this the app keeps showing
         // focus spaces as on after access is revoked, until the next launch.
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') void checkScreentimeAuth();
+            // Also rebuilds start warnings: notification permission and the time zone
+            // can both change in iOS Settings while the app is away.
+            if (document.visibilityState === 'visible') void checkScreentimeAuth().then(syncIOSStartWarnings);
         });
     }
 
@@ -2088,6 +2095,7 @@ function switchLanguageSetting(next) {
     applySettingsLanguage();
     saveData();
     if (!state.isIOS && !state.isAndroid) void refreshBehaviourBannerIfStale({ force: true });
+    if (state.isIOS) void syncIOSStartWarnings(); // the booked wording is in the old language
     closeAllLanguagePickers();
 }
 
@@ -2960,6 +2968,7 @@ export function applySettingsLanguage() {
     applyRebrandOnboardingLanguage();
     applySafariFdaOnboardingLanguage();
     applyIosScreentimeOnboardingLanguage();
+    applyStartWarningsLanguage();
     applyAndroidPermissionsOnboardingLanguage();
 
     if (state.migrationOnboardingActive && state.lastMigrationBrowserState) {

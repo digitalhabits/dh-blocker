@@ -179,6 +179,9 @@ pub struct ScheduleEntryRequest {
     /// absent/"blocklist" = blocked items (legacy semantics).
     #[serde(default)]
     pub mode: Option<String>,
+    /// Focus space id, so start warnings can tell one space carrying on from another starting.
+    #[serde(default)]
+    pub blocklist_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -226,6 +229,64 @@ pub struct SetBlockEndStateRequest {
     pub mode: Option<String>,
 }
 
+// --- Start warnings (notifications before a focus space starts) ---
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartWarningStrings {
+    pub start_title_fmt: String,
+    pub block_body_fmt: String,
+    pub allow_body_fmt: String,
+    pub resume_title_fmt: String,
+    pub multi_title_fmt: String,
+    pub multi_body_fmt: String,
+    pub unnamed_space: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManualResumeWarning {
+    pub id: String,
+    pub name: Option<String>,
+    pub emoji: Option<String>,
+    pub mode: Option<String>,
+    pub resume_at_ms: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetStartWarningsRequest {
+    pub enabled: bool,
+    pub locale: String,
+    pub strings: StartWarningStrings,
+    #[serde(default)]
+    pub manual_resumes: Vec<ManualResumeWarning>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartWarningsResponse {
+    pub success: bool,
+    /// Notification permission status.
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub scheduled: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NotificationPermissionRequest {}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationPermissionResponse {
+    pub status: String,
+    #[serde(default)]
+    pub granted: bool,
+}
+
 // --- Activity Picker ---
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -253,4 +314,73 @@ pub struct ActivityPickerResponse {
     pub category_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tauri::ipc::{InvokeResponseBody, IpcResponse};
+
+    // Round-trips through Tauri's own IPC JSON path, so no serde_json dev-dependency is needed.
+    fn from_json<T: serde::de::DeserializeOwned>(json: &str) -> T {
+        InvokeResponseBody::Json(json.to_string())
+            .deserialize()
+            .unwrap()
+    }
+
+    fn to_json<T: Serialize>(value: T) -> String {
+        match value.body().unwrap() {
+            InvokeResponseBody::Json(s) => s,
+            InvokeResponseBody::Raw(_) => panic!("expected JSON"),
+        }
+    }
+
+    const STRINGS: &str = r#"{"startTitleFmt":"a","blockBodyFmt":"b","allowBodyFmt":"c","resumeTitleFmt":"d","multiTitleFmt":"e","multiBodyFmt":"f","unnamedSpace":"g"}"#;
+
+    #[test]
+    fn set_start_warnings_request_reads_camel_case_and_defaults_manual_resumes() {
+        let req: SetStartWarningsRequest = from_json(&format!(
+            r#"{{"enabled":true,"locale":"pt-PT","strings":{STRINGS}}}"#
+        ));
+        assert!(req.enabled);
+        assert_eq!(req.locale, "pt-PT");
+        assert_eq!(req.strings.start_title_fmt, "a");
+        assert_eq!(req.strings.unnamed_space, "g");
+        assert!(req.manual_resumes.is_empty());
+
+        let req: SetStartWarningsRequest = from_json(&format!(
+            r#"{{"enabled":false,"locale":"en","strings":{STRINGS},"manualResumes":[{{"id":"x","name":"Work","emoji":null,"mode":"allowlist","resumeAtMs":1700000000000}}]}}"#
+        ));
+        assert_eq!(req.manual_resumes.len(), 1);
+        assert_eq!(req.manual_resumes[0].id, "x");
+        assert_eq!(req.manual_resumes[0].mode.as_deref(), Some("allowlist"));
+        assert_eq!(req.manual_resumes[0].resume_at_ms, 1_700_000_000_000.0);
+    }
+
+    #[test]
+    fn schedule_entry_keeps_blocklist_id() {
+        let entry: ScheduleEntryRequest = from_json(
+            r#"{"id":"s1","startHour":9,"startMinute":0,"endHour":17,"endMinute":0,"blocklistId":"space-1"}"#,
+        );
+        assert_eq!(entry.blocklist_id.as_deref(), Some("space-1"));
+        assert!(to_json(entry).contains(r#""blocklistId":"space-1""#));
+    }
+
+    #[test]
+    fn start_warnings_response_serializes_camel_case() {
+        let json = to_json(StartWarningsResponse {
+            success: true,
+            status: "authorized".into(),
+            scheduled: 3,
+            error: None,
+        });
+        assert!(json.contains(r#""scheduled":3"#));
+        assert!(json.contains(r#""status":"authorized""#));
+        assert!(!json.contains("error"));
+
+        let resp: StartWarningsResponse = from_json(r#"{"success":true}"#);
+        assert_eq!((resp.status.as_str(), resp.scheduled), ("", 0));
+        let perm: NotificationPermissionResponse = from_json(r#"{"status":"denied"}"#);
+        assert!(!perm.granted);
+    }
 }
