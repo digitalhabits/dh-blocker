@@ -59,6 +59,9 @@ export function getFocusSpaceOffUntil(blocklistId, now = Date.now()) {
     return null;
 }
 
+/** Spaces whose switch-on is still saving; a second press is ignored until it lands. */
+const turningOn = new Set();
+
 /**
  * Flip the switch. Returns true when the change was applied immediately;
  * false when a modal was opened instead (the start confirmation, or the
@@ -69,7 +72,7 @@ export async function setFocusSpaceEnabled(blocklistId, on, now = Date.now()) {
     if (!blocklist) return false;
 
     if (on) {
-        if (isFocusSpaceOn(blocklistId, now)) return false;
+        if (turningOn.has(blocklistId) || isFocusSpaceOn(blocklistId, now)) return false;
         openStartConfirmModal(blocklistId);
         return false;
     }
@@ -93,6 +96,16 @@ export async function setFocusSpaceEnabled(blocklistId, on, now = Date.now()) {
  * toward blocking. Returns true when the space is now on.
  */
 export async function turnFocusSpaceOn(blocklistId, now = Date.now()) {
+    if (turningOn.has(blocklistId)) return false;
+    turningOn.add(blocklistId);
+    try {
+        return await applyTurnOn(blocklistId, now);
+    } finally {
+        turningOn.delete(blocklistId);
+    }
+}
+
+async function applyTurnOn(blocklistId, now) {
     const blocklist = state.appData.blocklists.find((bl) => bl.id === blocklistId);
     if (!blocklist) return false;
     const schedule = scheduleFor(blocklistId);
