@@ -1016,6 +1016,10 @@ class ScreentimePlugin: Plugin {
             replaceAllowlistFallback: true,
             allowlistFallback: nil
         )
+        // The schedule store's allow exceptions include the manual allowlist just
+        // cleared; re-derive them, as every other writer does.
+        IOSWebPolicyApplier.reapplyWebPolicy()
+        IOSAppPolicyApplier.reapplyAppPolicy()
     }
 
     /// Clear only the named "schedule" store — the OS-level shields the
