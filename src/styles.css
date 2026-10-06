@@ -12600,6 +12600,19 @@ body.dark-mode .modal-btn.black-btn:hover{
     height: 48px;
 }
 
+/* iPhone keyboard up on a stop challenge: the whole sheet scrolls, with room for
+   the keyboard below (fitStopChallengeAboveKeyboard in theme.js). */
+body.ios-phone :is(#override-modal, #override-all-modal).mobile-fullscreen-modal .modal-content.keyboard-up{
+    overflow-y: auto;
+    /* No rubber-band: pulling past the top would drag the header down over blank space. */
+    overscroll-behavior: none;
+}
+body.ios-phone :is(#override-modal, #override-all-modal).mobile-fullscreen-modal .keyboard-up .mobile-modal-scroll-body{
+    flex: none;
+    overflow: visible;
+    padding-bottom: calc(var(--keyboard-height, 0px) + 12px);
+}
+
 /* iOS draws its system-blue focus ring otherwise; match .form-input:focus. */
 body.ios .override-challenge .challenge-input:focus{
     outline: none;

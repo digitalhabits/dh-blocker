@@ -259,6 +259,84 @@ export function setupHandsetViewportGuard() {
         if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
         heal();
     }, { passive: true });
+
+    if (state.isIOS) {
+        window.visualViewport?.addEventListener('resize', fitStopChallengeAboveKeyboard, { passive: true });
+        window.visualViewport?.addEventListener('scroll', fitStopChallengeAboveKeyboard, { passive: true });
+        window.addEventListener('scroll', fitStopChallengeAboveKeyboard, { passive: true });
+        fitStopChallengeAboveKeyboard(); // record the keyboard-less height
+        // Re-measure just before the keyboard rises, in case the zoom changed.
+        document.addEventListener('focusin', fitStopChallengeAboveKeyboard);
+        // A tap lets iOS pan the page to the field, unpredictably far; focusing
+        // it ourselves without scrolling leaves the placement to the fit above.
+        // Also suppresses the Paste / AutoFill callout on a second tap.
+        document.addEventListener('touchend', (e) => {
+            const input = e.target.closest?.('#override-modal .challenge-input, #override-all-modal .challenge-input');
+            if (!input) return;
+            e.preventDefault();
+            input.focus({ preventScroll: true });
+        }, { passive: false });
+    }
+}
+
+/**
+ * When the keyboard opens on a stop challenge, the sheet scrolls as one page
+ * (header included) with room for the keyboard below, starting where the input
+ * clears the keyboard, then the word to type and the heading stay in view if
+ * they fit, then Cancel / Stop sit on the keyboard if there is room.
+ */
+let fullViewport = { width: 0, height: 0, scale: 1 };
+let fittedViewportHeight = 0;
+function fitStopChallengeAboveKeyboard() {
+    const vv = window.visualViewport;
+    // innerHeight shrinks with the keyboard too, so measure against the tallest
+    // viewport seen at this width (reset when the phone rotates). Whether the
+    // viewport reports zoomed or unzoomed px varies by iOS version, so record
+    // the ratio to element boxes while the keyboard is down.
+    if (vv.width !== fullViewport.width) fullViewport = { width: vv.width, height: 0, scale: 1 };
+    if (vv.height >= fullViewport.height) {
+        fullViewport.height = vv.height;
+        fullViewport.scale = document.documentElement.getBoundingClientRect().height / vv.height;
+    }
+    const keyboardUp = vv.height < fullViewport.height - 100;
+    for (const sheet of document.querySelectorAll('#override-modal .modal-content, #override-all-modal .modal-content')) {
+        const input = sheet.querySelector('.challenge-input:not(.hidden)');
+        if (!input || !keyboardUp || !sheet.contains(document.activeElement)) {
+            if (sheet.classList.contains('keyboard-up')) {
+                sheet.classList.remove('keyboard-up');
+                sheet.scrollTop = 0;
+            }
+            continue;
+        }
+        // Only reposition when the keyboard changes, never while the user scrolls.
+        if (sheet.classList.contains('keyboard-up') && vv.height === fittedViewportHeight) continue;
+        fittedViewportHeight = vv.height;
+        const keyboardHeight = (fullViewport.height - vv.height) * fullViewport.scale;
+        sheet.style.setProperty('--keyboard-height', `${keyboardHeight}px`);
+        sheet.classList.add('keyboard-up');
+        sheet.scrollTop = 0;
+        const keyboardTop = vv.height * fullViewport.scale - 12;
+        // Positions within the sheet, measured unscrolled.
+        const origin = sheet.getBoundingClientRect().top;
+        const top = (el) => el.getBoundingClientRect().top - origin;
+        const bottom = (el) => el.getBoundingClientRect().bottom - origin;
+        const header = sheet.querySelector('.mobile-modal-header');
+        // Below the notch: where the header's own content starts.
+        const safeTop = header ? Math.min(...[...header.children].map(top)) : 0;
+        const heading = sheet.querySelector('.challenge-word-mode .challenge-word-instruction, .override-challenge:not(.challenge-word-mode) .challenge-char-instruction');
+        const word = sheet.querySelector('.challenge-current-word:not(.hidden)') ?? input;
+        const buttons = sheet.querySelector('.modal-buttons');
+        const keep = heading && bottom(input) - top(heading) <= keyboardTop - safeTop ? heading : word;
+        let scroll = Math.max(0, bottom(buttons ?? input) - keyboardTop);
+        scroll = Math.min(scroll, top(keep) - safeTop);
+        scroll = Math.max(0, scroll, bottom(input) - keyboardTop);
+        // Older WebKit scrolls in CSS px but reports boxes zoomed; probe how far a
+        // scroll actually moves the content rather than trust either unit.
+        const inputTop = top(input);
+        sheet.scrollTop = scroll;
+        const moved = inputTop - top(input);
+        if (moved > 0 && sheet.scrollTop > 0) sheet.scrollTop = scroll * sheet.scrollTop / moved;
+    }
 }
 
 export function getActiveUiZoomScale() {
