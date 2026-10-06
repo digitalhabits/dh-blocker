@@ -361,6 +361,9 @@ extension ScheduleBlockData {
             return currentMins >= startMins && currentMins < endMins
         }
 
+        // Equal start and end is all day on its days, as the app reads it.
+        if endMins == startMins { return !hasDayFilter || includesToday }
+
         // Cross-midnight segment
         let yesterday = today == 0 ? 6 : today - 1
         let includesYesterday = days?.contains(yesterday) ?? true

@@ -1,10 +1,12 @@
 // Foundation-only tests for ScheduleBlockData's time rules, which the monitor
 // extension enforces. Run by scripts/ci/test-ios-schedule-data.sh.
 //
-// What these protect: a start callback can arrive a moment before its minute;
-// read then, the window looked unopened and the block was cleared with no retry.
-// A start within the tolerance must be evaluated at the start; pauses and windows
-// are unchanged.
+// What these protect:
+// - A start callback can arrive a moment before its minute; read then, the window
+//   looked unopened and the block was cleared with no retry. A start within the
+//   tolerance must be evaluated at the start; pauses and windows are unchanged.
+// - Equal start and end is "all day on its days" in the app (shown as 24/7); the
+//   extension read it as overnight.
 
 import Foundation
 
@@ -41,6 +43,7 @@ struct ScheduleDataTests {
     }
 
     static func main() {
+        // Start-callback tolerance
         let morning = entry((11, 0), (13, 0))
         check(enforcesOnStart(morning, now: at(10, 59, 59, ns: 800_000_000)), "start 0.2 s early enforces")
         check(enforcesOnStart(morning, now: at(10, 59, 51)), "start 9 s early enforces")
@@ -56,6 +59,24 @@ struct ScheduleDataTests {
               "early start does not override a pause")
         check(entry(nil, nil).startCallbackEvaluationTime(now: at(10, 59, 59)) == at(10, 59, 59),
               "entry without a window is evaluated at the callback time")
+
+        // Equal start and end
+        let mondayAllDay = entry((9, 0), (9, 0), days: [0])
+        check(mondayAllDay.isActiveNow(now: at(8, 0, day: 5)), "equal times: active before the time on its day")
+        check(mondayAllDay.isActiveNow(now: at(20, 0, day: 5)), "equal times: active after the time on its day")
+        check(!mondayAllDay.isActiveNow(now: at(8, 0, day: 6)), "equal times: not active the next morning")
+        check(entry((0, 0), (0, 0), days: [0, 1, 2, 3, 4, 5, 6]).isActiveNow(now: at(13, 30, day: 7)),
+              "00:00 to 00:00 every day: active at any time")
+        check(entry((9, 0), (9, 0), days: []).isActiveNow(now: at(8, 0, day: 6)),
+              "equal times without a day filter: active")
+
+        // Unchanged windows, so the equal-times rule cannot leak into them
+        let office = entry((9, 0), (17, 0), days: [0])
+        check(office.isActiveNow(now: at(12, 0, day: 5)), "same-day window: active inside")
+        check(!office.isActiveNow(now: at(18, 0, day: 5)), "same-day window: inactive after")
+        let overnight = entry((22, 0), (6, 0), days: [0])
+        check(overnight.isActiveNow(now: at(5, 0, day: 6)), "overnight window: active the next morning")
+        check(!overnight.isActiveNow(now: at(7, 0, day: 6)), "overnight window: inactive after its end")
 
         print("\(checks - failures)/\(checks) passed")
         if failures > 0 { exit(1) }
