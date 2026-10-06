@@ -439,33 +439,39 @@ export function buildIOSScheduleEntries() {
     return flatEntries;
 }
 
+/** The iOS schedule-sync warning, shown once per session. */
+export async function reportIOSScheduleSyncFailure(failure) {
+    if (hasShownIOSScheduleSyncError) return;
+    hasShownIOSScheduleSyncError = true;
+    try {
+        await message(`iOS schedule sync failed: ${failure}`, {
+            title: 'Schedule Sync Failed',
+            kind: 'error'
+        });
+    } catch (dialogError) {
+        console.warn('[syncSchedulesToHelper] Failed to show iOS sync error:', dialogError);
+    }
+}
+
 export async function syncSchedulesToHelper({ reportFailure = true } = {}) {
     if (state.isIOS) {
         let failure = null;
+        let failedSaveIds;
         try {
             const flatEntries = buildIOSScheduleEntries();
             console.log('[syncSchedulesToHelper] iOS: Sending', flatEntries.length, 'segment entries to plugin');
             const result = await tauriAPI.setSchedulesPlugin(flatEntries);
             if (result?.success !== true) {
                 failure = result?.error || 'unknown plugin error';
+                failedSaveIds = result?.failedSaveIds;
                 console.warn('[syncSchedulesToHelper] iOS plugin failed:', failure);
             }
         } catch (e) {
             failure = e?.message || String(e);
             console.warn('[syncSchedulesToHelper] iOS error:', e);
         }
-        if (failure && reportFailure && !hasShownIOSScheduleSyncError) {
-            hasShownIOSScheduleSyncError = true;
-            try {
-                await message(`iOS schedule sync failed: ${failure}`, {
-                    title: 'Schedule Sync Failed',
-                    kind: 'error'
-                });
-            } catch (dialogError) {
-                console.warn('[syncSchedulesToHelper] Failed to show iOS sync error:', dialogError);
-            }
-        }
-        return failure ? { success: false, error: failure } : { success: true };
+        if (failure && reportFailure) await reportIOSScheduleSyncFailure(failure);
+        return failure ? { success: false, error: failure, failedSaveIds } : { success: true };
     }
     if (state.isAndroid) {
         try {

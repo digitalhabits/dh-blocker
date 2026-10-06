@@ -7,7 +7,7 @@ import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipCo
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
 import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn } from './blocklist-utils.js';
 import { DEFAULT_OVERRIDE_WORDS, generateOverrideChallengeText, getMaxOverrideCountForType, getMaxOverrideWords, getMinOverrideCountForType, getOverrideWordsSliderMax, getOverrideEstimatedMinutes, isMobileOverrideChallengePlatform, migrateOverrideDifficultyToWords, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType, sanitizeChallengeTargetText } from './override-challenge.js';
-import { isAndroidAllowlistUnsupported, isSchedulePausedNow, refreshDesktopHelperStatus, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
+import { isAndroidAllowlistUnsupported, isSchedulePausedNow, refreshDesktopHelperStatus, reportIOSScheduleSyncFailure, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
 import { isBlocklistEditFrictionRequired,renderBlocklists, truncateBlocklistName } from './blocklists.js';
@@ -24,7 +24,7 @@ import {
     formatMinutesAsHHMM, formatTime, generateId,
     snapMinutesToInterval,
 } from './app.js';
-import { NEW_SPACE_UNLOCK_MINUTES, applyStopToTarget, getBlocklistUnlockMinutes } from './unlock-duration.js';
+import { NEW_SPACE_UNLOCK_MINUTES, applyStopToTarget, getBlocklistUnlockMinutes, timedStopLostOwnPause } from './unlock-duration.js';
 import { deriveWhenToBlockKind } from './when-to-block.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
 import {
@@ -1719,10 +1719,14 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
         ? await syncSchedulesToHelper({ reportFailure: false })
         : await syncSchedulesToHelper();
     if (state.isIOS && outcome.kind === 'unlocked' && scheduleSync?.success !== true) {
-        await restoreTimedIOSBlocking?.();
-        console.error('[iOS] Timed stop was not applied:', scheduleSync?.error || 'schedule sync failed');
-        alert(tSettings('iosAutomaticRestartFailed'));
-        return null;
+        if (timedStopLostOwnPause(scheduleSync, schedule)) {
+            await restoreTimedIOSBlocking?.();
+            console.error('[iOS] Timed stop was not applied:', scheduleSync?.error || 'schedule sync failed');
+            alert(tSettings('iosAutomaticRestartFailed'));
+            return null;
+        }
+        // This stop's pause is saved and its restart booked; only another space failed.
+        await reportIOSScheduleSyncFailure(scheduleSync.error);
     }
     // updateHostsFile skips paused blocks' domains.
     await updateHostsFile();

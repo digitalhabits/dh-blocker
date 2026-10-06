@@ -63,3 +63,17 @@ export function applyStopToTarget(appData, { block = null, schedule = null } = {
     }
     return null;
 }
+
+/**
+ * Whether a failed iOS schedule sync lost a timed stop's own pause. Only the
+ * stopped schedule's own entries carry its pause to the monitor, so a manual
+ * block never depends on this sync and another space's failure is irrelevant.
+ * Without per-entry detail the pause may not have been saved, so that still
+ * counts as lost and the stop is undone.
+ */
+export function timedStopLostOwnPause(scheduleSync, schedule) {
+    if (!schedule) return false;
+    const failedSaveIds = scheduleSync?.failedSaveIds;
+    if (!Array.isArray(failedSaveIds)) return true;
+    return failedSaveIds.some(id => id.startsWith(`${schedule.id}-`));
+}

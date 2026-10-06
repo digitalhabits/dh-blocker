@@ -1131,6 +1131,7 @@ class ScreentimePlugin: Plugin {
         
         // Add/update schedules
         var errors: [String] = []
+        var failedSaveIds: [String] = []
         let now = Calendar.current.dateComponents([.hour, .minute], from: Date())
         let nowMinuteOfDay = (now.hour ?? 0) * 60 + (now.minute ?? 0)
         for entry in args.schedules {
@@ -1164,6 +1165,7 @@ class ScreentimePlugin: Plugin {
             )
             guard SharedScheduleStore.save(id: entry.id, data: scheduleData) else {
                 errors.append("Schedule \(entry.id): failed to persist schedule data")
+                failedSaveIds.append(entry.id)
                 continue
             }
             
@@ -1205,9 +1207,12 @@ class ScreentimePlugin: Plugin {
                 "scheduledCount": args.schedules.count
             ])
         } else {
+            // Per-entry save failures let a timed stop tell its own lost pause from
+            // another space's failure; registration failures do not affect a pause.
             invoke.resolve([
                 "success": false,
-                "error": errors.joined(separator: "; ")
+                "error": errors.joined(separator: "; "),
+                "failedSaveIds": failedSaveIds
             ])
         }
     }

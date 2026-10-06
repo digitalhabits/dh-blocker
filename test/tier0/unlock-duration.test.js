@@ -6,6 +6,7 @@ import {
     applyStopToTarget,
     getBlocklistUnlockMinutes,
     normalizeUnlockMinutes,
+    timedStopLostOwnPause,
 } from '../../src/unlock-duration.js';
 
 describe('new focus spaces', () => {
@@ -96,5 +97,34 @@ describe('applyStopToTarget', () => {
         const before = JSON.stringify(data);
         expect(applyStopToTarget(data, {}, 10, now)).toBeNull();
         expect(JSON.stringify(data)).toBe(before);
+    });
+});
+
+describe('timedStopLostOwnPause', () => {
+    const schedule = { id: 'sched-a' };
+    const failed = (failedSaveIds) => ({ success: false, error: 'sync failed', failedSaveIds });
+
+    test('a manual block stop never depends on the schedule sync', () => {
+        expect(timedStopLostOwnPause(failed(undefined), null)).toBe(false);
+        expect(timedStopLostOwnPause(failed(['sched-a-0']), null)).toBe(false);
+    });
+
+    test('a failure with no per-schedule detail counts as losing the pause', () => {
+        expect(timedStopLostOwnPause(failed(undefined), schedule)).toBe(true);
+        expect(timedStopLostOwnPause({ success: false }, schedule)).toBe(true);
+    });
+
+    test("the stopped schedule's own failed save loses the pause", () => {
+        expect(timedStopLostOwnPause(failed(['sched-a-0']), schedule)).toBe(true);
+        expect(timedStopLostOwnPause(failed(['other-0', 'sched-a-1-2']), schedule)).toBe(true);
+    });
+
+    test("another schedule's failed save does not", () => {
+        expect(timedStopLostOwnPause(failed(['other-0']), schedule)).toBe(false);
+        expect(timedStopLostOwnPause(failed([]), schedule)).toBe(false);
+    });
+
+    test('a schedule whose id merely starts the same way is not mistaken for this one', () => {
+        expect(timedStopLostOwnPause(failed(['sched-ab-0']), schedule)).toBe(false);
     });
 });

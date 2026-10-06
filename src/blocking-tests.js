@@ -2500,6 +2500,34 @@
                 'T69c: schedule sync failure restores blocking and returns no successful stop');
             scheduleSyncResults = null;
 
+            // Only the stopped schedule's own failed save can lose its pause.
+            const otherFailureSchedule = createMockSchedule(scheduleBlocklist.id, [allDay]);
+            setSchedules(otherFailureSchedule);
+            scheduleSyncResults = [{ success: false, error: 'another space failed', failedSaveIds: ['some-other-schedule-0'] }];
+            const otherFailure = await internals.stopFocusSpaceTarget({ schedule: otherFailureSchedule });
+            assert(otherFailure?.kind === 'unlocked' && otherFailureSchedule.isPaused === true,
+                "T69d: another schedule's failed save does not undo this schedule's timed stop");
+            scheduleSyncResults = null;
+
+            const ownFailureSchedule = createMockSchedule(scheduleBlocklist.id, [allDay]);
+            setSchedules(ownFailureSchedule);
+            scheduleSyncResults = [
+                { success: false, error: 'own save failed', failedSaveIds: [`${ownFailureSchedule.id}-0`] },
+                { success: true }
+            ];
+            const ownFailure = await internals.stopFocusSpaceTarget({ schedule: ownFailureSchedule });
+            assert(ownFailure === null && !ownFailureSchedule.isPaused,
+                "T69e: the stopped schedule's own failed save still restores blocking");
+            scheduleSyncResults = null;
+
+            const unrelatedSyncBlock = makeBlock();
+            setBlock(unrelatedSyncBlock);
+            scheduleSyncResults = [{ success: false, error: 'schedule sync rejected' }];
+            const blockStop = await internals.stopFocusSpaceTarget({ block: unrelatedSyncBlock });
+            assert(blockStop?.kind === 'unlocked' && unrelatedSyncBlock.isPaused === true,
+                'T69f: a schedule sync failure does not undo a manual block timed stop');
+            scheduleSyncResults = null;
+
             // Payload rejection leaves a running space untouched and never registers.
             const payloadFailureBlock = makeBlock();
             setBlock(payloadFailureBlock);
