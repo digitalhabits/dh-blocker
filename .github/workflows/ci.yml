@@ -113,6 +113,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
-      # Foundation-only timing tests do not require Xcode or Screen Time
-      # entitlements, so this stays a small macOS regression job.
+      # Foundation-only Swift tests do not require Xcode or Screen Time
+      # entitlements, so this stays a small macOS regression job. The job name
+      # is unchanged in case branch protection requires this check by name.
       - run: bash scripts/ci/test-ios-activity-timing.sh
+      - run: bash scripts/ci/test-ios-schedule-registration.sh

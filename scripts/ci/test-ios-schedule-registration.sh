@@ -9,6 +9,7 @@ temporary_dir="$(mktemp -d)"
 trap 'rm -rf "$temporary_dir"' EXIT
 
 swiftc \
+  -module-cache-path "$temporary_dir/module-cache" \
   -o "$temporary_dir/schedule-registration-tests" \
   "$repository_root/tauri-plugin-screentime/ios/Sources/ScheduleRegistration.swift" \
   "$repository_root/test/ios/ScheduleRegistrationTests.swift"

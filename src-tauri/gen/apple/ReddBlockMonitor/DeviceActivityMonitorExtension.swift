@@ -100,7 +100,7 @@ class ReddBlockMonitor: DeviceActivityMonitor {
             remove: { SharedManualBlockStore.removeResumePayload(blockId: blockId) }
         )
         if !committed {
-            NSLog("[ReDD Schedule] resume payload commit failed; retaining payload")
+            logLine("resume one-off \(blockId) payload commit failed; retaining payload")
         }
     }
 
