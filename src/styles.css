@@ -12600,6 +12600,13 @@ body.dark-mode .modal-btn.black-btn:hover{
     height: 48px;
 }
 
+/* iOS draws its system-blue focus ring otherwise; match .form-input:focus. */
+body.ios .override-challenge .challenge-input:focus{
+    outline: none;
+    border-color: var(--redd-teal);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--redd-teal) 20%, transparent);
+}
+
 /* Word mode (phones): the passage is hidden, and the instruction becomes a
    centred "N words remaining" heading over "Type one word at a time". */
 .override-challenge .challenge-word-instruction,
