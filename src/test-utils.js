@@ -430,7 +430,10 @@ function findHardestChallengeAtTime(appData, now) {
  */
 function simulateOverrideAll(appData) {
     appData.activeBlocks = [];
-    appData.schedules = [];
+    for (const schedule of appData.schedules) {
+        schedule.isPaused = true;
+        delete schedule.pauseEndTime;
+    }
     return appData;
 }
 

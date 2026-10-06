@@ -767,7 +767,9 @@ export function formatTitleBarScheduleStartWhen(date, nowMs = Date.now()) {
 export function hasAnyBlockingStateToClear(now = Date.now(), nowDate = new Date(now)) {
     const hasOneOffState = state.appData.activeBlocks.some(block => isOneOffBlockStillActive(block, now));
     if (hasOneOffState) return true;
-    return !!state.appData.schedules?.some(schedule => scheduleCanStillBecomeActive(schedule, nowDate));
+    // A schedule switched off with no end time stays off until turned on, so there is nothing to stop.
+    return !!state.appData.schedules?.some(schedule =>
+        !(schedule.isPaused && !schedule.pauseEndTime) && scheduleCanStillBecomeActive(schedule, nowDate));
 }
 
 export async function refreshDesktopHelperStatus() {

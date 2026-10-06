@@ -32,6 +32,7 @@
  * - T240-T242: iOS start warnings: entries name their space; the payload's manual resumes and switch
  * - T243-T245: iOS cancels a Manual space's pending restart when it is resumed early, stopped with Never or cleared by Stop all
  * - T246: a space switched off with a restart time can be deleted; the delete cancels the restart once undo has passed
+ * - T247: Stop all switches every schedule off and keeps its days and times
  * - T226-T229: iOS allow-mode 50-item cap counted across every running space
  * - T213-T219, T222-T223: The start card names the space that just started and closes the app; allow mode gets its own card
  * - T220-T221: Diagnostics reports an allow-mode space as allowing, not blocking
@@ -1132,7 +1133,7 @@
             assertEqual(appData.activeBlocks.length, 0, 'T40: Override all → zero active blocks');
         })();
 
-        // T41: Only schedules → after override, schedules array empty
+        // T41: Only schedules → after override, every schedule is off but kept
         (function T41() {
             const bl = createMockBlocklist({ websites: ['youtube.com'] });
             const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
@@ -1146,7 +1147,8 @@
             });
 
             simulateOverrideAll(appData);
-            assertEqual(appData.schedules.length, 0, 'T41: Override all → zero schedules');
+            assert(appData.schedules.length === 2 && appData.schedules.every(s => s.isPaused && !s.pauseEndTime),
+                'T41: Override all → every schedule switched off, none deleted');
         })();
 
         // T42: Override all preserves blocklists (doesn't delete user's lists)
@@ -2679,6 +2681,18 @@
             assert(!events.some(event => event.startsWith('cancel:')), 'T246: its restart is kept while the delete can still be undone');
             internals.commitDelete();
             assert(events.includes(`cancel:${deletedBlock.id}`), 'T246: committing the delete cancels its restart');
+
+            const keptSchedule = createMockSchedule(scheduleBlocklist.id, [allDay]);
+            const timedSchedule = createMockSchedule(overlapBlocklist.id, [allDay], { isPaused: true, pauseEndTime: Date.now() + 60_000 });
+            setSchedules(keptSchedule, timedSchedule);
+            assert(internals.hasAnyBlockingStateToClear(), 'T247: running and timed-off schedules count for Stop all');
+            events = [];
+            await internals.performOverrideAll();
+            const kept = internals.appData.schedules;
+            assert(kept.length === 2 && kept.every(s => s.isPaused && !s.pauseEndTime && s.segments.length === 1),
+                'T247: Stop all switches every schedule off and keeps its days and times');
+            assert(events.includes('schedule-sync'), 'T247: and syncs the switched-off schedules to iOS');
+            assert(!internals.hasAnyBlockingStateToClear(), 'T247: after which Stop all has nothing left to stop');
         } finally {
             internals.appData = savedAppData;
             internals.lastBlockedDomains = savedLastBlockedDomains;

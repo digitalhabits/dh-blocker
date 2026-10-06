@@ -1431,8 +1431,11 @@ export async function performOverrideAll() {
         // Clear all active blocks
         state.appData.activeBlocks = [];
 
-        // Clear all schedules
-        state.appData.schedules = [];
+        // Switch every schedule off, keeping its days and times: paused with no end time is off.
+        for (const schedule of state.appData.schedules || []) {
+            schedule.isPaused = true;
+            delete schedule.pauseEndTime;
+        }
 
         // Save the data
         await saveData();
@@ -1441,8 +1444,6 @@ export async function performOverrideAll() {
         if (state.isIOS) {
             for (const block of clearedBlocks) await cancelIOSRestart(block);
             await tauriAPI.screentimeClearBlock();
-            // Also drops every start warning, now that no schedule is left.
-            await syncSchedulesToHelper({ reportFailure: false });
         } else if (state.isAndroid) {
             for (const id of androidManualBlockIds) {
                 try {
@@ -1451,22 +1452,19 @@ export async function performOverrideAll() {
                     console.warn('Failed to clear Android manual block:', e);
                 }
             }
-            try {
-                await tauriAPI.androidSetSchedules([]);
-            } catch (e) {
-                console.warn('Failed to clear Android schedules:', e);
-            }
         } else {
             const status = await refreshDesktopHelperStatus();
             if (status.helperReady) {
                 // Atomically set everything to empty — helper will know nothing should be blocked
                 try { await tauriAPI.setBlocksViaHelper([]); } catch (e) { console.warn('Failed to clear blocks:', e); }
-                try { await tauriAPI.setSchedulesViaHelper([]); } catch (e) { console.warn('Failed to clear schedules:', e); }
                 try { await tauriAPI.setBlockedAppsViaHelper([]); } catch (e) { console.warn('Failed to clear apps:', e); }
             }
             // Always clean the hosts file as a safety net, even if the helper is stopped or stale.
             try { await tauriAPI.cleanHostsFile(); } catch (e) { console.warn('Failed to clean hosts file:', e); }
         }
+
+        // Every platform learns the schedules are off the same way a single stop tells it.
+        await syncSchedulesToHelper({ reportFailure: false });
 
         // Update blocked apps (will stop watcher if no apps to block)
         await updateBlockedApps();

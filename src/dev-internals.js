@@ -8,7 +8,7 @@ import { state } from './state.js';
 import { canEnableAllowEditsBetweenBlocks } from './schedule-editor.js';
 import { tauriAPI } from './tauri-api.js';
 import { PROTECTED_APP_NAMES, PROTECTED_DOMAINS, isAllowlistBlocklist, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
-import { buildAndroidScheduleEntries, buildIOSScheduleEntries, isAndroidAllowlistUnsupported, isSchedulePausedNow } from './schedule-engine.js';
+import { buildAndroidScheduleEntries, buildIOSScheduleEntries, hasAnyBlockingStateToClear, isAndroidAllowlistUnsupported, isSchedulePausedNow } from './schedule-engine.js';
 import { buildStartWarningsPayload } from './ios-start-warnings.js';
 import { isFocusSpaceOn, setFocusSpaceEnabled, turnFocusSpaceOn } from './focus-space-switch.js';
 import {
@@ -135,6 +135,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     performOverrideAll,
     deleteBlocklist,
     commitDelete,
+    hasAnyBlockingStateToClear,
     openScheduleOverrideModal,
     closeStartConfirmModal,
     turnFocusSpaceOn,
