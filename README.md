@@ -1,6 +1,6 @@
 # Digital Habits: Blocker
 
-Block distracting websites and apps with scheduled or one-off blocks and customisable difficulty to override. Stay focused on what matters.
+Block distracting websites and apps with manual or scheduled Focus Spaces and customisable difficulty to override. Stay focused on what matters.
 
 Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and the University of Maastricht (Dr Konrad Kollnig), as part of the Centre for Digital Habits ([digitalhabits.org](https://digitalhabits.org)).
 
@@ -9,12 +9,12 @@ Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and th
 - **Cross-Platform** — Works on macOS 11+, Windows 10+, iOS (iPad/iPhone), and Android from the same Tauri UI codebase.
 - **Website Blocking** — Digital Habits: Blocker decides what to block. On **macOS**, Safari/Chrome/Brave/Edge use **Automation** (no extension); **Firefox** uses the Digital Habits: Focus extension. On **Windows**, Chrome/Brave/Edge/Firefox use the extension. On **iOS**, blocking uses Screen Time. On **Android**, blocking is enforced by the native AccessibilityService plugin.
 - **App Blocking** — Closes distracting apps on desktop (warning overlay → save window → polite quit → force-close if needed), uses Screen Time shield overlays on iOS, and uses the Android AccessibilityService/friction gate on Android.
-- **Flexible Blocklists** — Create multiple lists with custom names, colors, and emojis
-- **One-Off Blocks** — Quick blocks for immediate focus sessions
-- **Scheduled Blocks** — Set recurring blocks on specific days/times (e.g., block social media Mon-Fri 9am-5pm)
-- **Visual Calendar** — See all your scheduled and active blocks on an interactive weekly timeline
-- **Override Protection** — Configurable typing challenges prevent impulsive unblocking
-- **Background Operation** — Blocks continue even when the app is closed
+- **Focus Spaces** — Create multiple Focus Spaces with custom names, colors, and emojis, each blocking or allowing only what you choose
+- **Manual Focus Spaces** — Switch a Focus Space on whenever you need it; it runs until you turn it off
+- **Scheduled Focus Spaces** — Run a Focus Space daily or weekly at set times (e.g., block social media Mon-Fri 9am-5pm), until you stop it or until a date you choose
+- **Week Schedule** — See all your scheduled and active Focus Spaces on an interactive weekly timeline
+- **Stop-Early Challenge** — Type random words or your own text to stop a Focus Space early, so you can't stop one on impulse
+- **Background Operation** — Focus Spaces continue even when the app is closed
 - **Theme Options** — Auto, light, or dark mode
 
 ## How it works
@@ -134,7 +134,7 @@ Implementation details and module map: [architecture.md](architecture.md) (v3 cu
 ```bash
 # Clone the repository
 git clone https://github.com/digitalhabits/dh-blocker.git
-cd digital-habits-blocker
+cd dh-blocker
 
 # Install dependencies
 pnpm install
