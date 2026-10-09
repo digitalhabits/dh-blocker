@@ -911,11 +911,13 @@ class ScreentimePlugin: Plugin {
         
         // Allowlist exceptions: never truncate — clamping an allow list over-blocks.
         // JS pre-validates; this is the native double-check.
+        // The sign-in domains always ride along, so they take room in the cap.
         let allowedDomains = args.allowedDomains ?? []
-        guard allowedDomains.count <= IOSWebPolicyApplier.exceptionLimit else {
+        let allowedDomainLimit = IOSWebPolicyApplier.exceptionLimit - IOSSignInDomains.domains.count
+        guard Set(allowedDomains).subtracting(IOSSignInDomains.domains).count <= allowedDomainLimit else {
             invoke.resolve([
                 "success": false,
-                "error": "Allow lists support up to 50 websites on iOS (\(allowedDomains.count) allowed)."
+                "error": "Allow lists support up to \(allowedDomainLimit) websites on iOS (\(allowedDomains.count) allowed)."
             ])
             return
         }

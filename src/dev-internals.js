@@ -44,6 +44,7 @@ import {
     deriveIOSEffectiveAppPolicy,
     validateIOSAllowlistLimits,
     IOS_ALLOWLIST_EXCEPTION_LIMIT,
+    IOS_SIGN_IN_DOMAINS,
 } from './allowlist-ios.js';
 import {
     DEFAULT_UNLOCK_MINUTES,
@@ -101,6 +102,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     deriveIOSEffectiveAppPolicy,
     validateIOSAllowlistLimits,
     IOS_ALLOWLIST_EXCEPTION_LIMIT,
+    IOS_SIGN_IN_DOMAINS,
     // Lets the e2e harness pre-accept the EULA on a fresh machine. Without an
     // accepted revision the app stops at the gate and never reaches
     // runPostAcceptanceStartup(), so the 1 s tick that expires paused blocks

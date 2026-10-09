@@ -402,6 +402,23 @@ extension ScheduleBlockData {
 /// entries are judged at the shifted time too.
 let startCallbackToleranceSeconds: TimeInterval = 10
 
+/// Sign-in pages an allow-mode policy never blocks. The web filter covers every
+/// web view on the device, including the sheet another app opens for "Sign in
+/// with Google/Apple/Microsoft", so an allow-only space that did not list these
+/// broke signing in to unrelated apps. Hosts, not whole sites. Mirrors
+/// `IOS_SIGN_IN_DOMAINS` in src/allowlist-ios.js (Tier 0 compares the lists);
+/// they take room in the 50-exception cap.
+enum IOSSignInDomains {
+    static let domains: Set<String> = [
+        "accounts.google.com",
+        "accounts.youtube.com",
+        "appleid.apple.com",
+        "idmsa.apple.com",
+        "login.microsoftonline.com",
+        "login.live.com",
+    ]
+}
+
 #if os(iOS) && canImport(ManagedSettings)
 
 // MARK: - Effective web policy (allowlist-aware, cross-channel)
@@ -457,7 +474,8 @@ enum IOSPolicyResolver {
             }
         }
         if allowed.isEmpty { return .specificBlock }
-        return .allExcept(allowed.subtracting(blocked))
+        // Added after the subtraction: sign-in survives a blocklist naming it.
+        return .allExcept(allowed.subtracting(blocked).union(IOSSignInDomains.domains))
     }
 
     static func effectiveAppPolicy(entries: [ScheduleBlockData]) -> EffectiveAppPolicy {
@@ -519,7 +537,10 @@ enum IOSWebPolicyApplier {
                     "[ReDD Allowlist] exception set of %d exceeds the 50-domain Screen Time cap; clamping (over-blocking)",
                     exceptions.count
                 )
-                exceptions = Set(exceptions.sorted().prefix(exceptionLimit))
+                let userExceptions = exceptions.subtracting(IOSSignInDomains.domains)
+                exceptions = IOSSignInDomains.domains.union(
+                    userExceptions.sorted().prefix(exceptionLimit - IOSSignInDomains.domains.count)
+                )
             }
             let webExceptions = Set(exceptions.map { WebDomain(domain: $0) })
             // A store whose own channel has no active allowlist keeps its legacy

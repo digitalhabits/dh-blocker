@@ -657,6 +657,18 @@ The resolver exists twice, deliberately mirrored: JS
 and Swift (`IOSPolicyResolver` + `IOSWebPolicyApplier` / `IOSAppPolicyApplier`
 in the shared `ScheduleData.swift`, used for enforcement).
 
+**Sign-in pages are always exceptions.** The web filter covers every web view
+on the device, including the sheet another app opens for "Sign in with
+Google/Apple/Microsoft", so an all-except policy that did not list
+`accounts.google.com` broke signing in to unrelated apps. Both resolvers add
+the hosts in `IOS_SIGN_IN_DOMAINS` / `IOSSignInDomains` to every all-except set,
+after the blocklist subtraction, so they survive a blocklist naming them. They
+take room in the 50-exception cap (the user gets 50 minus their count), and a
+Tier 0 test checks that the JS list matches both copies of the Swift one.
+Specific-block mode cannot carve them out: `.specific` has no exceptions, so
+blocking `youtube.com` still blocks `accounts.youtube.com`, which Google's
+sign-in passes through.
+
 **Two-store stacking rule.** ManagedSettings stacks restrictively — a store can
 never make another store less restrictive, so two different `.all(except:)`
 sets enforce their INTERSECTION. Whenever a channel applies an allowlist

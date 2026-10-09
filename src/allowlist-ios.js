@@ -16,6 +16,23 @@ import { isSchedulePausedNow } from './schedule-engine.js';
 /** Apple caps `.all(except:)` exceptions at 50 domains / 50 tokens per store. */
 export const IOS_ALLOWLIST_EXCEPTION_LIMIT = 50;
 
+/** Sign-in pages an allow-mode space never blocks. Screen Time's web filter
+ *  covers every web view on the phone, including the sheet another app opens
+ *  for "Sign in with Google/Apple/Microsoft", so an allow-only space that did
+ *  not list these broke signing in to unrelated apps. Hosts only, never whole
+ *  sites: `google.com` would let search through, `accounts.google.com` does
+ *  not. `accounts.youtube.com` is on Google's sign-in redirect chain.
+ *  Mirrored by `IOSSignInDomains` in ScheduleData.swift (Tier 0 checks both
+ *  copies), and they take room in the 50-exception cap. */
+export const IOS_SIGN_IN_DOMAINS = [
+    'accounts.google.com',
+    'accounts.youtube.com',
+    'appleid.apple.com',
+    'idmsa.apple.com',
+    'login.microsoftonline.com',
+    'login.live.com',
+];
+
 export async function ensureIOSAllowlistStartable(blocklist) {
     if (!state.isIOS || !isBlocklistAllowlistMode(blocklist)) return true;
     const selection = getBlocklistIOSScreenTimeSelection(blocklist);
@@ -32,7 +49,7 @@ export async function ensureIOSAllowlistStartable(blocklist) {
     }
     const breach = iosAllowlistUnionBreach(blocklist);
     if (breach) {
-        await message(tSettings(breach.key).replace('{n}', String(breach.count)), {
+        await message(tSettings(breach.key).replace('{n}', String(breach.count)).replace('{max}', String(breach.max)), {
             title: tSettings(`${breach.key}Title`),
             kind: 'warning',
         });
@@ -69,7 +86,7 @@ export function iosAllowlistUnionBreach(blocklist, now = Date.now()) {
         { kind: 'manual', blocklist },
     ];
     const sites = validateIOSAllowlistLimits(deriveIOSEffectiveWebsitePolicy(union));
-    if (!sites.ok) return { key: 'allowlistIosDomainLimit', count: sites.count };
+    if (!sites.ok) return { key: 'allowlistIosDomainLimit', count: sites.count, max: sites.max };
     const apps = validateIOSAllowlistLimits(deriveIOSEffectiveAppPolicy(union));
     if (!apps.ok) return { key: 'allowlistIosTokenLimit', count: apps.count };
     return null;
@@ -108,6 +125,8 @@ export function deriveIOSEffectiveWebsitePolicy(sources) {
         return { kind: 'specific-block', domains: Array.from(blocked).sort() };
     }
     for (const domain of blocked) allowed.delete(domain);
+    // After the blocklist subtraction: sign-in survives a blocklist naming it.
+    for (const domain of IOS_SIGN_IN_DOMAINS) allowed.add(domain);
     return { kind: 'all-except', domains: Array.from(allowed).sort() };
 }
 
@@ -137,9 +156,15 @@ export function deriveIOSEffectiveAppPolicy(sources) {
 
 export function validateIOSAllowlistLimits(policy) {
     if (!policy || policy.kind !== 'all-except') return { ok: true };
+    // The sign-in domains are always in the set; report the user's share.
     const domainCount = policy.domains?.length ?? 0;
     if (domainCount > IOS_ALLOWLIST_EXCEPTION_LIMIT) {
-        return { ok: false, reason: 'domains', count: domainCount };
+        return {
+            ok: false,
+            reason: 'domains',
+            count: domainCount - IOS_SIGN_IN_DOMAINS.length,
+            max: IOS_ALLOWLIST_EXCEPTION_LIMIT - IOS_SIGN_IN_DOMAINS.length,
+        };
     }
     const tokenCount = policy.appTokenData?.length ?? 0;
     if (tokenCount > IOS_ALLOWLIST_EXCEPTION_LIMIT) {

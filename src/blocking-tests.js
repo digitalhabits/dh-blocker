@@ -1459,8 +1459,11 @@
             deriveIOSEffectiveWebsitePolicy,
             deriveIOSEffectiveAppPolicy,
             validateIOSAllowlistLimits,
-            IOS_ALLOWLIST_EXCEPTION_LIMIT
+            IOS_ALLOWLIST_EXCEPTION_LIMIT,
+            IOS_SIGN_IN_DOMAINS
         } = window.__REDDBLOCK_INTERNALS__;
+        // All-except policies always carry the sign-in pages as exceptions.
+        const withSignIn = (domains) => [...domains, ...IOS_SIGN_IN_DOMAINS];
 
         const blockSource = (overrides = {}) => ({
             blocklist: createMockBlocklist({ mode: 'blocklist', ...overrides })
@@ -1489,7 +1492,7 @@
                 allowSource({ websites: ['github.com', 'wikipedia.org'] })
             ]);
             assertEqual(policy.kind, 'all-except', 'T56: allow-only → all-except');
-            assertSetEquals(new Set(policy.domains), ['github.com', 'wikipedia.org'], 'T56: allowed set');
+            assertSetEquals(new Set(policy.domains), withSignIn(['github.com', 'wikipedia.org']), 'T56: allowed set plus sign-in pages');
         })();
 
         // T57: Two concurrent allowlists union their exceptions
@@ -1499,7 +1502,7 @@
                 allowSource({ websites: ['wikipedia.org'] })
             ]);
             assertEqual(policy.kind, 'all-except', 'T57: two allowlists → all-except');
-            assertSetEquals(new Set(policy.domains), ['github.com', 'wikipedia.org'], 'T57: exception union');
+            assertSetEquals(new Set(policy.domains), withSignIn(['github.com', 'wikipedia.org']), 'T57: exception union');
         })();
 
         // T58: Blocklist wins on overlap — blocked domain removed from exceptions
@@ -1509,7 +1512,7 @@
                 blockSource({ websites: ['github.com'] })
             ]);
             assertEqual(policy.kind, 'all-except', 'T58: mixed → all-except');
-            assertSetEquals(new Set(policy.domains), ['wikipedia.org'], 'T58: blocklist wins on overlap');
+            assertSetEquals(new Set(policy.domains), withSignIn(['wikipedia.org']), 'T58: blocklist wins on overlap');
         })();
 
         // T59: Empty exception set stays all-except (block everything), never
@@ -1520,12 +1523,12 @@
                 blockSource({ websites: ['github.com'] })
             ]);
             assertEqual(policy.kind, 'all-except', 'T59: fully-overlapped allowlist stays all-except');
-            assertSetEmpty(new Set(policy.domains), 'T59: empty exception set is legal');
+            assertSetEquals(new Set(policy.domains), withSignIn([]), 'T59: empty exception set is legal, bar the sign-in pages');
 
             const protectedPolicy = deriveIOSEffectiveWebsitePolicy([
                 allowSource({ websites: ['reddfocus.org', 'github.com'] })
             ]);
-            assertSetEquals(new Set(protectedPolicy.domains), ['github.com'], 'T59: protected domains filtered from exceptions');
+            assertSetEquals(new Set(protectedPolicy.domains), withSignIn(['github.com']), 'T59: protected domains filtered from exceptions');
         })();
 
         // T60: App policy — allow-only tokens → all-except; categories never
@@ -1566,7 +1569,7 @@
                 deriveIOSEffectiveWebsitePolicy([allowSource({ websites: manyDomains })])
             );
             assert(over.ok === false && over.reason === 'domains', 'T62: 51 allowed domains fails validation');
-            assertEqual(over.count, IOS_ALLOWLIST_EXCEPTION_LIMIT + 1, 'T62: failure reports the offending count');
+            assertEqual(over.count, IOS_ALLOWLIST_EXCEPTION_LIMIT + 1, 'T62: failure reports the user\'s count, not the sign-in pages');
 
             const manyTokens = Array.from({ length: IOS_ALLOWLIST_EXCEPTION_LIMIT + 1 }, (_, i) => `tok${i}`);
             const overTokens = validateIOSAllowlistLimits(
