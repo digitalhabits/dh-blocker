@@ -151,6 +151,8 @@ pub mod watchdog;
 #[cfg(target_os = "macos")]
 pub mod web_automation;
 #[cfg(target_os = "windows")]
+mod windows_icon;
+#[cfg(target_os = "windows")]
 pub mod windows_login;
 #[cfg(target_os = "windows")]
 pub mod windows_process;
@@ -641,10 +643,15 @@ pub fn run() {
                     .min_inner_size(400.0, 360.0)
                     .resizable(true)
                     .decorations(false)
-                    .icon(tauri::include_image!("icons/128x128.png"))?
                     .center();
 
-                win_builder.build()?;
+                let window = win_builder.build()?;
+                // Not `.icon(...)`: tao's RGBA-to-HICON conversion corrupts
+                // the transparency mask (red fringes on the rounded
+                // corners). See `windows_icon`.
+                if let Ok(hwnd) = window.hwnd() {
+                    windows_icon::apply_embedded_icon(hwnd);
+                }
             }
 
             // Create main window on iOS — full screen webview
