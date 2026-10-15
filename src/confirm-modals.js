@@ -214,10 +214,6 @@ export function openStartConfirmModal(blocklistId) {
     setStartConfirmRoomChip(blocklist);
     const titleEl = document.getElementById('start-block-confirm-title');
     if (titleEl) titleEl.textContent = tSettings('startThisBlock');
-    const subtitleEl = document.getElementById('start-confirm-subtitle');
-    if (subtitleEl) {
-        subtitleEl.textContent = tSettings(schedule ? 'startConfirmSubtitleSchedule' : 'startConfirmSubtitleManual');
-    }
 
     setConfirmModalBlockingLabel(blocklist, 'start-confirm-blocking-label');
     renderStartConfirmBlockingDetails(
