@@ -434,6 +434,8 @@ fn firefox_main_process_name(name: &str) -> bool {
     name.eq_ignore_ascii_case("firefox.exe")
 }
 
+mod cityhash;
+
 /// Firefox's name for one install: CityHash64 of its executable's folder as UTF-16.
 fn firefox_install_hash(exe_dir: &Path) -> u64 {
     let utf16: Vec<u8> = exe_dir
@@ -441,7 +443,7 @@ fn firefox_install_hash(exe_dir: &Path) -> u64 {
         .encode_utf16()
         .flat_map(u16::to_le_bytes)
         .collect();
-    cityhash::cityhash_1::city_hash_64(&utf16)
+    cityhash::city_hash_64(&utf16)
 }
 
 /// Where macOS's app register (Launch Services) has the app with this bundle
