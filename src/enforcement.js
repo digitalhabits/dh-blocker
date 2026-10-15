@@ -1845,7 +1845,12 @@ export function setupAppForegroundRefresh() {
     // Keep the setup banner in sync when extension state changes
     // without a window focus (e.g. user toggles an extension while
     // ReDD Blocker stays visible). Matches enforcer tick (~5 s).
+    // Skip while hidden: the app lives in the tray for as long as the
+    // machine is on, and on macOS each refresh spawns osascript per running
+    // browser and rescans profiles — a constant idle CPU cost for a banner
+    // nobody can see. The visibilitychange listener above refreshes on show.
     setInterval(() => {
+        if (document.visibilityState !== 'visible') return;
         if (!state.startupInitializationComplete || state.migrationOnboardingActive) return;
         if (!hasAcceptedEula()) return;
         void refreshBehaviourBannerIfStale();
@@ -2146,6 +2151,8 @@ export function ensureEnforcerClosedBannerPoll() {
     void syncEnforcerClosedBannersWithCompliance();
     if (enforcerClosedBannerPollInterval) return;
     enforcerClosedBannerPollInterval = setInterval(() => {
+        // Same tray cost as the banner refresh; onAppForeground resyncs on show.
+        if (document.visibilityState !== 'visible') return;
         void syncEnforcerClosedBannersWithCompliance();
     }, ENFORCER_CLOSED_BANNER_POLL_MS);
 }
