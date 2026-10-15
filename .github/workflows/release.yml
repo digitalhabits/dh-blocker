@@ -142,7 +142,7 @@ jobs:
         run: pnpm lint
 
       - name: Install Chromium
-        run: pnpm dlx playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps chromium
 
       # Boots the Vite dev server and runs runBlockingTests() headlessly.
       - name: Tier 1 logic tests
