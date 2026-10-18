@@ -22,7 +22,6 @@ import {
     formatDateForDisplay,
     formatDateForInput,
     getDefaultScheduleSegments,
-    getInitialExpandedScheduleSegmentIndex,
     getSelectedSchedule,
     isAllowEditsBetweenBlocksOn,
     rebuildScheduleSegments,
@@ -115,7 +114,6 @@ export function setWhenToBlockKind(kind, { fromUser = false } = {}) {
 
     if (next !== 'manual') {
         state.scheduleSegments = segmentsForKind(next, state.scheduleSegments, getDefaultScheduleSegments);
-        if (next === 'daily') state.expandedScheduleSegmentIndex = 0;
         rebuildScheduleSegments();
     }
 
@@ -331,7 +329,6 @@ export function populateFocusSpaceEditor(blocklist, { mode = null } = {}) {
         state.scheduleRepeatDate = null;
         state.draftAllowEditsBetweenBlocks = false;
     }
-    state.expandedScheduleSegmentIndex = getInitialExpandedScheduleSegmentIndex();
 
     setWhenToBlockKind(deriveWhenToBlockKind(schedule));
     setUntilMode(state.scheduleRepeatType);
@@ -425,6 +422,7 @@ export function formatScheduleWhenSummary(kind, schedule, options) {
         dayNames: weekdayAbbrevMon0List(),
         everyDay: tSettings('segmentDaysEveryDay'),
         noDays: tSettings('segmentDaysNone'),
+        allDay: tSettings('segmentAllDay'),
     }, options);
 }
 

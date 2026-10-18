@@ -419,9 +419,7 @@ body.handset-device #settings-modal .language-picker-trigger .language-picker-co
    block duration row). Wrapping these is a broader safety net beyond
    any single component fix — new unwrapped rows are easy to add by
    accident in a codebase this size. */
-body.android .time-pickers-row{
-    flex-wrap: wrap;
-}
+
 
 /* App Container */
 .app-container{
@@ -2082,9 +2080,6 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
 
     
 
-    body.ios:not(.ios-phone) .main-content .time-label{
-        font-size: 14px;
-    }
 
     
 
@@ -2100,13 +2095,6 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
 
     
 
-    body.ios:not(.ios-phone) .main-content .time-pickers-row{
-        gap: 18px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .time-picker-group{
-        gap: 6px;
-    }
 
     
 
@@ -2127,27 +2115,6 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
         min-width: 58px;
     }
 
-    body.ios:not(.ios-phone) .main-content .time-part{
-        padding: 6px 6px;
-        font-size: 19px;
-        min-width: 42px;
-        border-radius: 8px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .when-times .schedule-start-display input.time-part,
-body.ios:not(.ios-phone) .main-content .when-times .schedule-end-display input.time-part{
-        min-width: 42px;
-        max-width: 54px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .when-times .time-picker-row{
-        min-height: 42px;
-    }
-
-
-    body.ios:not(.ios-phone) .main-content .time-colon{
-        font-size: 22px;
-    }
 
     body.ios:not(.ios-phone) .main-content .next-day-badge{
         padding: 5px 10px;
@@ -2175,27 +2142,12 @@ body.ios:not(.ios-phone) .main-content .when-times .schedule-end-display input.t
     
 
     body.ios:not(.ios-phone) .main-content .schedule-segments{
-        gap: 12px;
-        --schedule-segments-gap: 12px;
+        --schedule-segments-gap: 10px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-segment-expanded{
-        padding: var(--schedule-segment-pad-y, 6px) var(--schedule-segment-pad-x, 14px);
-        border-radius: 12px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .segment-summary-btn{
-        padding: 14px 16px;
-        font-size: 16px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .schedule-segment{
-        --schedule-segment-label-size: 13px;
-        --schedule-segment-remove-size: 30px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .segment-row{
-        gap: 14px 18px;
+    body.ios:not(.ios-phone) .main-content .segment-time-field{
+        height: 42px;
+        font-size: 17px;
     }
 
 
@@ -2203,25 +2155,13 @@ body.ios:not(.ios-phone) .main-content .when-times .schedule-end-display input.t
         gap: 6px;
     }
 
-    body.ios:not(.ios-phone) .main-content .segment-days-group{
-        gap: 4px;
-    }
 
     body.ios:not(.ios-phone) .main-content .when-times .segment-days{
         min-height: 42px;
     }
 
     body.ios:not(.ios-phone) .main-content .add-segment-btn{
-        gap: 8px;
-        padding: 14px 18px;
         font-size: 16px;
-        border-radius: 14px;
-        width: auto;
-    }
-
-    body.ios:not(.ios-phone) .main-content .add-segment-btn svg{
-        width: 16px;
-        height: 16px;
     }
 
     body.ios:not(.ios-phone) .main-content .schedule-repeat-section{
@@ -4347,12 +4287,7 @@ body.dark-mode .no-active-blocks.clickable:hover{
 /* Timed controls wrapper (for smooth show/hide) */
 
 /* Time Pickers Row */
-.time-pickers-row{
-    display: flex;
-    align-items: flex-end;
-    gap: 16px;
-    justify-content: flex-start;
-}
+
 
 /* Long duration / schedule prompts read better in sentence case than all-caps. */
 #quick-select-label{
@@ -4360,34 +4295,9 @@ body.dark-mode .no-active-blocks.clickable:hover{
     letter-spacing: normal;
 }
 
-.time-picker-group{
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
 
 /* Keep Duration and End labels aligned in one-off timed controls */
 
-.time-label{
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--header-text);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.time-label-row{
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.time-picker-row{
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    position: relative;
-}
 
 .now-btn{
     padding: 8px 16px;
@@ -4444,11 +4354,6 @@ body.dark-mode .no-active-blocks.clickable:hover{
     box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
 }
 
-.time-colon{
-    font-size: 17px;
-    font-weight: 600;
-    color: hsl(215, 20%, 50%);
-}
 
 .time-input{
     padding: 8px 10px;
@@ -4499,87 +4404,9 @@ body.dark-mode .next-day-badge{
 }
 
 /* Custom time display */
-.time-display{
-    display: flex;
-    align-items: center;
-    gap: 2px;
-}
 
-.time-part{
-    padding: 4px 4px;
-    font-size: 17px;
-    font-weight: 600;
-    background: var(--input-bg);
-    border: 1px solid var(--input-border);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    min-width: 36px;
-    text-align: center;
-    color: var(--text-secondary);
-}
-
-.time-part:hover{
-    border-color: #bdb7af;
-    background: var(--redd-warm-grey);
-}
-
-body.dark-mode .time-part:hover{
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.3);
-    color: var(--text-primary);
-}
-
-.time-part:focus{
-    outline: none;
-    border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
-}
-
-.time-part.active{
-    border-color: var(--accent-color);
-    background: hsl(220, 70%, 98%);
-}
-
-body.dark-mode .time-part.active{
-    background: rgba(129, 140, 248, 0.15);
-    color: var(--accent-color);
-}
-
-.time-colon{
-    font-size: 20px;
-    font-weight: 600;
-    color: hsl(215, 20%, 50%);
-    padding: 0 2px;
-}
-
-.time-part-wrapper{
-    position: relative;
-    display: flex;
-    flex: 0 0 auto;
-}
 
 /* Compact instant end HH:MM — same footprint as legacy buttons; editable + opens list on click. */
-
-/* Schedule segments: match instant end-time compact editable pills */
-.when-times .schedule-start-display,
-.when-times .schedule-end-display{
-    flex: 0 1 auto;
-    min-width: 0;
-}
-
-.when-times .schedule-start-display input.time-part,
-.when-times .schedule-end-display input.time-part{
-    box-sizing: border-box;
-    flex: 0 0 auto;
-    width: 2.55em;
-    min-width: 36px;
-    max-width: 48px;
-    cursor: text;
-    -webkit-appearance: none;
-    appearance: none;
-    margin: 0;
-}
 
 /* Time popover */
 .time-popover{
@@ -4739,385 +4566,225 @@ body.ios:not(.ios-phone) .main-content .when-times{
     display: none;
 }
 
-/* Schedule Segments */
+/* Schedule Segments: one card per time range — start – end with × on the
+   right, the day circles underneath in Weekly. Laid out like Mail's account
+   hours: no field labels, the two HH:MM fields and the dash read as a range. */
 .schedule-segments{
     display: flex;
     flex-direction: column;
-    gap: var(--schedule-segments-gap, 10px);
+    gap: var(--schedule-segments-gap, 8px);
 }
 
-/* Four or more segments: scroll inside a viewport cap; rows keep natural height. */
-.schedule-segments:has(.schedule-segment:nth-child(4)){
+/* Five or more ranges: scroll inside a viewport cap; cards keep natural height. */
+.schedule-segments:has(.schedule-segment:nth-child(5)){
     max-height: min(52vh, 420px);
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: 0;
 }
 
 .schedule-segment{
     position: relative;
-    display: block;
-    width: 100%;
-    box-sizing: border-box;
-    flex-shrink: 0;
-    padding: 0;
-    border-radius: 0;
-    background: transparent;
-    --schedule-segment-pad-y: 0;
-    --schedule-segment-label-size: 12px;
-    --schedule-segment-label-line-height: 1.25;
-    --schedule-segment-remove-size: 30px;
-}
-
-.schedule-segment-expanded{
-    /* Tighter above and below than at the sides: the section header already
-       gives the row air, the side inset is what Add times lines up with. */
-    --schedule-segment-pad-y: 6px;
-    padding: var(--schedule-segment-pad-y, 6px) var(--schedule-segment-pad-x, 14px);
-    border: none;
-    border-radius: 12px;
-    background: var(--app-bg);
-}
-
-.schedule-segment-collapsed{
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    background: var(--panel-bg);
-    overflow: hidden;
-}
-
-.schedule-segment-collapsed.segment-locked{
-    opacity: 0.72;
-}
-
-.segment-summary-btn{
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: 10px;
     width: 100%;
-    padding: 12px 14px;
-    border: none;
-    background: transparent;
-    color: var(--text-primary);
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
+    min-width: 0;
     box-sizing: border-box;
-}
-
-.segment-summary-btn:hover:not(:disabled){
-    background: var(--element-hover-bg);
-}
-
-.segment-summary-clock{
     flex-shrink: 0;
-    color: var(--text-muted);
+    padding: 10px var(--schedule-segment-pad-x, 12px);
+    border-radius: 12px;
+    /* A tint of the text colour rather than a surface token: the section
+       behind is --app-bg already, and this reads as a card in both themes. */
+    background: color-mix(in srgb, var(--text-primary) 4%, transparent);
 }
 
-.segment-summary-time{
-    flex: 0 0 auto;
-    min-width: 0;
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--text-primary);
-    white-space: nowrap;
-}
-
-.segment-summary-days{
-    flex: 1 1 auto;
-    min-width: 0;
-    margin-left: 10px;
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--accent-color);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.segment-summary-chevron{
-    flex-shrink: 0;
-    margin-left: 8px;
-    color: var(--text-muted);
-}
-
-.segment-editor-footer{
+.segment-times{
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-top: 14px;
-    padding-top: 0;
+    gap: 8px;
+    min-width: 0;
 }
 
-.segment-delete-btn{
+/* "All day" and × sit at the right edge, as in Mail; on a narrow card they
+   wrap under the times together rather than squeezing the fields. */
+.segment-all-day{
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    margin: -6px -10px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: hsl(0, 65%, 48%);
+    gap: 8px;
+    margin-left: auto;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.segment-all-day:has(input:disabled){
+    cursor: default;
+}
+
+.segment-all-day + .remove-segment-btn{
+    margin-left: 0;
+}
+
+.segment-all-day-on .segment-time-field{
+    color: var(--text-muted);
+}
+
+.segment-time-anchor{
+    position: relative;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.segment-time-field{
+    box-sizing: border-box;
+    width: 5.4em;
+    max-width: 100%;
+    height: 36px;
+    margin: 0;
+    padding: 0 10px;
+    font: inherit;
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    cursor: text;
+    -webkit-appearance: none;
+    appearance: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.segment-time-field:hover:not(:disabled){
+    border-color: #bdb7af;
+}
+
+body.dark-mode .segment-time-field:hover:not(:disabled){
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.segment-time-field:focus{
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
+}
+
+.segment-time-field:disabled{
+    cursor: default;
+}
+
+.segment-time-dash{
+    flex-shrink: 0;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+/* Hour and minute lists side by side under the field. */
+.schedule-time-popover{
+    left: 0;
+}
+
+.popover-columns{
+    display: flex;
+}
+
+.schedule-time-popover .popover-scroll{
+    max-height: 216px;
+}
+
+.schedule-time-popover .popover-scroll + .popover-scroll{
+    border-left: 1px solid var(--popover-border);
+}
+
+/* Remove Segment Button */
+.remove-segment-btn{
+    width: 30px;
+    height: 30px;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
     cursor: pointer;
     transition: background 0.15s ease, color 0.15s ease;
 }
 
-body:not(.ios) .segment-delete-btn:hover:not(:disabled){
-    background: rgba(239, 68, 68, 0.1);
-    color: #dc2626;
+.remove-segment-btn:hover:not(:disabled){
+    background: hsl(0, 80%, 95%);
+    color: hsl(0, 70%, 50%);
 }
 
-body:not(.ios) .segment-delete-btn:focus-visible{
-    outline: 2px solid color-mix(in srgb, #ef4444 35%, transparent);
-    outline-offset: 2px;
+body.dark-mode .remove-segment-btn:hover:not(:disabled){
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
 }
 
-.segment-done-btn{
-    padding: 8px 18px;
+/* "Until": smaller and denser than the rest of the form, like the Android
+   app's field labels. */
+.when-times .editor-inline-label{
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    color: var(--text-muted);
+}
+
+body.ios .when-times .editor-inline-label{
+    font-size: 13px;
+}
+
+/* Add Segment Button: a quiet text link under the cards, like Mail's
+   "+ Add more hours". */
+.add-segment-btn{
+    display: inline-flex;
+    align-self: flex-start;
+    align-items: center;
+    gap: 6px;
+    /* Pull the text, not the hover pad, into line with the fields above. */
+    margin: -4px 0 0 calc(var(--schedule-segment-pad-x, 12px) - 6px);
+    padding: 4px 6px;
     border: none;
-    border-radius: 999px;
-    background: var(--accent-color);
-    color: #fff;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--redd-teal-hover);
+    font: inherit;
     font-size: 15px;
     font-weight: 700;
     cursor: pointer;
     transition: background 0.15s ease;
 }
 
-.segment-done-btn:hover:not(:disabled){
-    filter: brightness(0.95);
-}
-
-body:not(.ios) .schedule-segment{
-    container-type: inline-size;
-}
-
-.schedule-segment:has(.remove-segment-btn){
-    padding-right: 44px;
-}
-
-.schedule-segment .time-pickers-row{
-    gap: 28px;
-}
-
-/* Center the start→end arrow on the time input row (labels sit above). */
-.when-times .time-picker-row{
-    min-height: 36px;
-}
-
-
-/* iOS: schedule-segment delete clearance + vertically centered start→end arrow.
-   Portrait iPad rules in the @media block below scale these same values up further. */
-body.ios .main-content .schedule-segment .time-pickers-row {
-    align-items: center;
-    gap: 8px;
-}
-
-body.ios .when-times .time-picker-row {
-    min-height: 42px;
-}
-
-
-body.ios .schedule-segment {
-    --schedule-segment-label-size: 13px;
-    --schedule-segment-remove-size: 30px;
-}
-
-body.ios .schedule-segment .remove-segment-btn {
-    right: 6px;
-}
-
-/* iPad landscape / two-column: match iPad spacing (portrait iPad rules
-   live in the portrait-only @media above; do not override those here). */
-
-/* Remove Segment Button */
-.remove-segment-btn{
-    width: 30px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    opacity: 0.55;
-    transition: all 0.15s ease;
-    flex-shrink: 0;
-}
-
-/* Start time / End time / Days / Until: smaller and denser than the rest of
-   the form, like the Android app's field labels. */
-.when-times .time-label,
-.when-times .editor-inline-label{
-    font-size: var(--schedule-segment-label-size, 12px);
-    font-weight: 600;
-    line-height: var(--schedule-segment-label-line-height, 1.25);
-    letter-spacing: 0.02em;
-    text-transform: none;
-    color: var(--text-muted);
-}
-
-.schedule-segment .remove-segment-btn{
-    position: absolute;
-    top: calc(
-        var(--schedule-segment-pad-y) +
-        (var(--schedule-segment-label-size) * var(--schedule-segment-label-line-height) - var(--schedule-segment-remove-size)) / 2
-    );
-    right: 10px;
-    z-index: 1;
-    margin-left: 0;
-}
-
-.schedule-segment:hover .remove-segment-btn,
-.schedule-segment .remove-segment-btn:hover{
-    opacity: 1;
-}
-
-.remove-segment-btn svg{
-    width: 18px;
-    height: 18px;
-}
-
-.remove-segment-btn:hover{
-    background: hsl(0, 80%, 95%);
-    color: hsl(0, 70%, 50%);
-}
-
-/* Add Segment Button */
-.add-segment-btn{
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    /* 12px vertical matches .segment-summary-btn so collapsed cards and this button are equal height */
-    padding: 12px 18px;
-    border: 1px dashed color-mix(in srgb, var(--border-color) 88%, transparent);
-    border-radius: 14px;
-    background: color-mix(in srgb, var(--redd-teal-soft) 38%, var(--panel-bg));
-    color: var(--redd-teal-hover);
-    font-size: 15px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-    width: auto;
-    margin: 0 var(--schedule-segment-pad-x, 14px) 8px;
-    box-sizing: border-box;
-}
-
-.add-segment-btn svg{
-    flex-shrink: 0;
-    opacity: 0.92;
-}
-
 .add-segment-btn:hover{
-    border-color: color-mix(in srgb, var(--accent-color) 22%, var(--border-color));
-    color: var(--redd-teal-hover);
-    background: color-mix(in srgb, var(--redd-teal-soft) 52%, var(--panel-bg));
+    background: color-mix(in srgb, var(--redd-teal-soft) 45%, transparent);
 }
 
 body.dark-mode .add-segment-btn{
-    border-color: rgba(255, 255, 255, 0.14);
-    background: color-mix(in srgb, var(--redd-teal-soft) 18%, var(--panel-bg));
     color: color-mix(in srgb, var(--accent-color) 78%, white);
 }
 
-body.dark-mode .add-segment-btn:hover{
-    border-color: rgba(255, 255, 255, 0.22);
-    background: color-mix(in srgb, var(--redd-teal-soft) 28%, var(--panel-bg));
-}
-
-/* Segment Row - times on top, days full-width below (schedule enter panel). */
-.when-times .segment-row{
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-}
-
-.when-times .segment-row > .time-pickers-row,
-.when-times .segment-row > .segment-days-group{
-    width: 100%;
-}
-
-.segment-row{
-    display: flex;
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 12px 16px;
-}
-
-body:not(.ios) .segment-row > .time-pickers-row{
-    min-width: 0;
-}
-
-@container (max-width: 260px) {
-    body:not(.ios) .schedule-segment .time-pickers-row {
-        flex-wrap: wrap;
-        row-gap: 6px;
-    }
-
-
-    body:not(.ios) .schedule-segment .time-picker-group:last-child {
-        flex-basis: 100%;
-    }
-}
-
-  @media (max-width: 718px) {
-    .segment-row{
-        gap: 8px;
-    }
+.add-segment-btn.hidden{
+    display: none;
 }
 
 @media (orientation: landscape) {
-    body.handset-device .scheduler-content,
-body.handset-device .time-picker-container,
-body.handset-device .when-times,
-body.handset-device .schedule-segments,
-body.handset-device .schedule-segment,
-body.handset-device .segment-row,
-body.handset-device .time-pickers-row,
-body.handset-device .segment-days-group{
+    body.handset-device .when-times,
+    body.handset-device .schedule-segments,
+    body.handset-device .segment-times{
         min-width: 0;
-    }
-
-    body.handset-device .schedule-segment{
-        display: block;
-        width: 100%;
-    }
-
-    body.handset-device .segment-row{
-        display: flex;
-        flex-wrap: wrap;
-        column-gap: 0;
-        row-gap: 8px;
-        align-items: flex-start;
-    }
-
-    body.handset-device .segment-row>.time-pickers-row{
-        min-width: 0;
-        width: 100%;
-    }
-
-    body.handset-device .segment-days-group{
-        width: max-content;
-        max-width: 100%;
     }
 
     body.handset-device .segment-days{
         flex-wrap: nowrap;
     }
-}
-
-/* Segment Days Group - contains label and day toggles */
-.segment-days-group{
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
 }
 
 .when-times .segment-days{
@@ -10860,10 +10527,6 @@ body.mobile-phone-home #enter-scheduler-modal.mobile-fullscreen-modal .time-pick
 }
 
 /* Enter sheet schedule segments: two rows (time, then days); touch-sized natural-width day pills. */
-body.mobile-phone-home #enter-scheduler-modal .when-times .segment-row > .time-pickers-row,
-body.mobile-phone-home #enter-scheduler-modal .when-times .segment-row > .segment-days-group{
-    width: 100%;
-}
 
 
 body.mobile-phone-home #enter-scheduler-modal .segment-days{
@@ -10875,11 +10538,7 @@ body.mobile-phone-home #enter-scheduler-modal .segment-days{
 }
 
 /* Mobile phones: weekday pills use natural width everywhere (like desktop), never stretch to fill. */
-body.mobile-phone-home .segment-days,
-
-
-body.mobile-phone-home .segment-row > .segment-days-group,
-body.mobile-phone-home .when-times .segment-row > .segment-days-group{
+body.mobile-phone-home .segment-days{
     width: 100%;
     max-width: 100%;
 }
@@ -14865,12 +14524,12 @@ body.dark-mode #editor-discard-modal .modal-btn.cancel-btn:hover{
 }
 
 .blocklists-container::-webkit-scrollbar-thumb,
-.schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-thumb{
+.schedule-segments:has(.schedule-segment:nth-child(5))::-webkit-scrollbar-thumb{
     background: var(--scrollbar-thumb);
 }
 
 .blocklists-container::-webkit-scrollbar-thumb:hover,
-.schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-thumb:hover{
+.schedule-segments:has(.schedule-segment:nth-child(5))::-webkit-scrollbar-thumb:hover{
     background: var(--scrollbar-thumb-hover);
 }
 
@@ -14887,40 +14546,35 @@ body.handset-device *::-webkit-scrollbar{
 
 /* Phone exceptions: thin scrollbars on long blocklist / schedule-segment lists */
 body.handset-device .blocklists-container,
-body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4)){
+body.handset-device .schedule-segments:has(.schedule-segment:nth-child(5)){
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 body.handset-device .blocklists-container::-webkit-scrollbar,
-body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar{
+body.handset-device .schedule-segments:has(.schedule-segment:nth-child(5))::-webkit-scrollbar{
     display: block;
     width: 6px;
     height: 6px;
 }
 
 body.handset-device .blocklists-container::-webkit-scrollbar-track,
-body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-track{
+body.handset-device .schedule-segments:has(.schedule-segment:nth-child(5))::-webkit-scrollbar-track{
     background: transparent;
 }
 
 body.handset-device .blocklists-container::-webkit-scrollbar-thumb,
-body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-thumb{
+body.handset-device .schedule-segments:has(.schedule-segment:nth-child(5))::-webkit-scrollbar-thumb{
     background: var(--scrollbar-thumb);
     border-radius: 3px;
 }
 
 body.handset-device .blocklists-container::-webkit-scrollbar-thumb:hover,
-body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-thumb:hover{
+body.handset-device .schedule-segments:has(.schedule-segment:nth-child(5))::-webkit-scrollbar-thumb:hover{
     background: var(--scrollbar-thumb-hover);
 }
 
 /* Non-mobile-phone handsets: larger schedule/time controls; compact day pills fill row when stacked below time. */
-body.handset-device:not(.ios-phone):not(.mobile-phone-home) .main-content .segment-row > .segment-days-group{
-    flex: 1 1 100%;
-    width: 100%;
-    min-width: 100%;
-}
 
 
 body.handset-device .main-content .segment-days{
@@ -14933,20 +14587,15 @@ body.handset-device .main-content .when-times .segment-days{
     min-height: 34px;
 }
 
+/* Touch-sized, but still a text link rather than a button-shaped card. */
 body.handset-device .main-content .add-segment-btn{
-    gap: 8px;
-    padding: 14px 18px;
+    min-height: 44px;
     font-size: 16px;
-    min-height: 48px;
-    border-radius: 14px;
-    width: auto;
-    box-sizing: border-box;
 }
 
-body.handset-device .main-content .add-segment-btn svg{
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
+body.handset-device .main-content .segment-time-field{
+    height: 44px;
+    font-size: 17px;
 }
 
 body.handset-device .main-content .schedule-repeat-section,
@@ -14984,20 +14633,6 @@ body.handset-device .main-content .repeat-date-overlay{
     font-size: 16px;
 }
 
-body.handset-device .main-content .time-part{
-    padding: 8px 6px;
-    font-size: 18px;
-    min-width: 44px;
-    min-height: 44px;
-    border-radius: 8px;
-    box-sizing: border-box;
-}
-
-body.handset-device .main-content .when-times .schedule-start-display input.time-part,
-body.handset-device .main-content .when-times .schedule-end-display input.time-part{
-    min-width: 44px;
-    max-width: 56px;
-}
 
 body.handset-device .main-content .now-btn{
     padding: 10px 18px;
@@ -15007,14 +14642,6 @@ body.handset-device .main-content .now-btn{
     box-sizing: border-box;
 }
 
-body.handset-device .main-content .when-times .time-picker-row{
-    min-height: 44px;
-}
-
-
-body.handset-device .main-content .time-colon{
-    font-size: 18px;
-}
 
 body.handset-device .main-content .popover-option{
     padding: 10px 14px;
@@ -16860,8 +16487,8 @@ body.dark-mode .app-blocking-warning-card{
     display: none;
 }
 
-/* "Until" is a heading over its buttons, like Start time / End time, with a
-   clear break from the times above it. */
+/* "Until" is a heading over its buttons, with a clear break from the times
+   above it. */
 .when-until{
     display: flex;
     align-items: center;
@@ -16869,7 +16496,7 @@ body.dark-mode .app-blocking-warning-card{
     flex-wrap: wrap;
     padding-top: 12px;
     /* Same inset as the segment's own content, so "Until" lines up with
-       "Start time" rather than sitting proud of it. */
+       the time fields rather than sitting proud of them. */
     padding-left: var(--schedule-segment-pad-x, 14px);
     padding-right: var(--schedule-segment-pad-x, 14px);
 }

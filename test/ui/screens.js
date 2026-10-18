@@ -336,6 +336,56 @@ export const screens = [
         },
     },
     {
+        // Two ranges: each a compact card (HH:MM – HH:MM, ×, day circles),
+        // then the "Add times" link — the Mail account-hours layout.
+        name: 'editor-weekly-two-ranges',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#editor-section-when',
+        prepare: async (page) => {
+            await page.click('#editor-section-when-header');
+            await page.click('#add-segment-btn');
+        },
+    },
+    {
+        // Clicking a time opens the hour and minute lists side by side.
+        name: 'editor-time-list-open',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'mac',
+        viewport: DESKTOP,
+        prepare: async (page) => {
+            await page.click('#editor-section-when-header');
+            await page.click('.segment-time-field[data-edge="start"]');
+            await page.waitForSelector('.schedule-time-popover');
+        },
+    },
+    {
+        // "All day" on the first range: times greyed out, switch on.
+        name: 'editor-weekly-all-day',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#editor-section-when',
+        prepare: async (page) => {
+            await page.click('#editor-section-when-header');
+            await page.click('#add-segment-btn');
+            await page.click('.schedule-segment .segment-all-day');
+        },
+    },
+    {
+        // Daily: one range, no day circles, no ×, no Add times.
+        name: 'editor-daily-range',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#editor-section-when',
+        prepare: async (page) => {
+            await page.click('#editor-section-when-header');
+            await page.click('#when-kind-daily');
+        },
+    },
+    {
         name: 'editor-weekly-days-iphone',
         fixture: fixtures.weeklyOffPeak,
         platform: 'iphone',

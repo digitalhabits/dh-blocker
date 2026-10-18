@@ -532,7 +532,7 @@ function setupEventListeners() {
     const KEEP_SELECTION_WITHIN = [
         '.blocklist-card', '.scheduler-section', '.time-picker-container', '.schedule-block-panel',
         '.repeat-dropdown-wrapper', '.repeat-dropdown-menu', '.modal-overlay', '.section-header',
-        '.footer', '.title-bar', '.week-calendar-section', '.time-popover', '.time-part',
+        '.footer', '.title-bar', '.week-calendar-section', '.time-popover', '.segment-time-field',
         '.undo-toast', '.zoom-toast',
     ].join(',');
     document.addEventListener('click', (e) => {

@@ -7,12 +7,32 @@ export function pad(num) {
     return num.toString().padStart(2, '0');
 }
 
-export function parseEndTimeBoundedInt(raw, min, max) {
-    const digits = String(raw ?? '').replace(/\D/g, '');
-    if (digits === '') return null;
-    const n = parseInt(digits, 10);
-    if (Number.isNaN(n)) return null;
-    return Math.min(max, Math.max(min, n));
+export function formatTimeOfDay(hour, minute) {
+    return `${pad(hour)}:${pad(minute)}`;
+}
+
+/**
+ * Read a typed time of day: "8", "830", "0830", "8:30", "8.30", "8 30".
+ * Returns { hour, minute }, or null for anything unreadable or out of range —
+ * the caller puts the field back rather than clamping a typo into a real time.
+ */
+export function parseTimeOfDay(raw) {
+    const text = String(raw ?? '').trim();
+    let hourText;
+    let minuteText;
+    const separated = text.match(/^(\d{1,2})\s*[:.\s]\s*(\d{0,2})$/);
+    if (separated) {
+        [, hourText, minuteText] = separated;
+    } else if (/^\d{1,4}$/.test(text)) {
+        hourText = text.length <= 2 ? text : text.slice(0, text.length - 2);
+        minuteText = text.length <= 2 ? '' : text.slice(-2);
+    } else {
+        return null;
+    }
+    const hour = parseInt(hourText, 10);
+    const minute = minuteText === '' ? 0 : parseInt(minuteText, 10);
+    if (hour > 23 || minute > 59) return null;
+    return { hour, minute };
 }
 
 export function scrollPopoverOptionIntoView(scrollContainer, option) {
@@ -50,7 +70,7 @@ export function readRootCssPx(varName) {
 export function closeAllPopovers() {
     document.querySelectorAll('.time-popover:not(.schedule-time-popover)').forEach(p => p.classList.add('hidden'));
     document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
-    document.querySelectorAll('.time-part.active, .time-popover-anchor.active').forEach(el =>
+    document.querySelectorAll('.time-popover-anchor.active').forEach(el =>
         el.classList.remove('active'));
 }
 
@@ -59,10 +79,8 @@ export function handlePopoverOutsideClick(e) {
     if (
         e.target.closest('.time-popover') ||
         e.target.closest('.time-popover-anchor') ||
-        e.target.closest('.schedule-start-display input.time-part') ||
-        e.target.closest('.schedule-end-display input.time-part') ||
-        e.target.closest('input.time-part.time-popover-anchor') ||
-        e.target.closest('button.time-part')
+        e.target.closest('.segment-time-field') ||
+        e.target.closest('.time-popover-anchor')
     ) {
         return;
     }
