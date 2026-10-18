@@ -2157,7 +2157,7 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
 
 
     body.ios:not(.ios-phone) .main-content .when-times .segment-days{
-        min-height: 42px;
+        min-height: 36px;
     }
 
     body.ios:not(.ios-phone) .main-content .add-segment-btn{
@@ -4788,7 +4788,7 @@ body.dark-mode .add-segment-btn{
 }
 
 .when-times .segment-days{
-    min-height: 36px;
+    min-height: 32px;
     align-items: center;
 }
 
@@ -4804,8 +4804,8 @@ body.dark-mode .add-segment-btn{
    size rule for every platform; phones get a slightly larger touch target. */
 .segment-day-toggle{
     flex: 0 0 auto;
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     min-width: 0;
     padding: 0;
     display: flex;
@@ -4827,9 +4827,9 @@ body.dark-mode .add-segment-btn{
 
 body.ios .segment-day-toggle,
 body.android .segment-day-toggle{
-    width: 40px;
-    height: 40px;
-    font-size: 15px;
+    width: 36px;
+    height: 36px;
+    font-size: 14px;
 }
 
 .segment-day-toggle:disabled,
