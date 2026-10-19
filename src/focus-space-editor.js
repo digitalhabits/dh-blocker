@@ -12,6 +12,7 @@
 import { state } from './state.js';
 import { tSettings, tSettingsFmt, weekdayAbbrevMon0List } from './i18n.js';
 import { formatEditorItemCounts } from './list-presentation.js';
+import { formatSpaceTitleLabel } from './blocklist-utils.js';
 import {
     WHEN_TO_BLOCK_KINDS,
     deriveWhenToBlockKind,
@@ -384,10 +385,14 @@ function updateEditorTitles(isCreate, mode) {
     if (modalTitle) {
         modalTitle.textContent = tSettings(mode === 'allowlist' ? 'newFocusSpaceAllow' : 'newFocusSpaceBlock');
     }
+    const blocklist = state.appData.blocklists.find(bl => bl.id === state.editingBlocklistId);
+    const editTitle = blocklist
+        ? tSettingsFmt('editSpaceTitleFmt', { space: formatSpaceTitleLabel(blocklist) })
+        : tSettings('editFocusSpace');
     const panelTitle = document.getElementById('editor-panel-title');
-    if (panelTitle) panelTitle.textContent = tSettings('editFocusSpace');
+    if (panelTitle) panelTitle.textContent = editTitle;
     const sheetTitle = document.getElementById('enter-scheduler-modal-title');
-    if (sheetTitle && !isCreate) sheetTitle.textContent = tSettings('editFocusSpace');
+    if (sheetTitle && !isCreate) sheetTitle.textContent = editTitle;
 }
 
 // ── Summaries + footer ────────────────────────────────────────────────────

@@ -5,13 +5,13 @@ import { getChallengeController } from './challenge-controller.js';
 import { tauriAPI } from './tauri-api.js';
 import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
-import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn } from './blocklist-utils.js';
+import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn, formatSpaceTitleLabel } from './blocklist-utils.js';
 import { DEFAULT_OVERRIDE_WORDS, generateOverrideChallengeText, getMaxOverrideCountForType, getMaxOverrideWords, getMinOverrideCountForType, getOverrideWordsSliderMax, getOverrideEstimatedMinutes, isMobileOverrideChallengePlatform, migrateOverrideDifficultyToWords, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType, sanitizeChallengeTargetText } from './override-challenge.js';
 import { isAndroidAllowlistUnsupported, isSchedulePausedNow, refreshDesktopHelperStatus, reportIOSScheduleSyncFailure, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
 import { isBlocklistEditFrictionRequired,renderBlocklists, truncateBlocklistName } from './blocklists.js';
-import { areSegmentsEqual, getSelectedSchedule, isScheduleSegmentActiveNow, canEditScheduleBetweenBlocks } from './schedule-editor.js';
+import { areSegmentsEqual, getSelectedSchedule, canEditScheduleBetweenBlocks } from './schedule-editor.js';
 import { pad } from './time-inputs.js';
 import { formatScheduleWhenSummary, formatUnlockDurationLabel, getWhenToBlockKind, isEditorInCreateModal, mountFocusSpaceEditor, notifyEditorChanged, populateFocusSpaceEditor, resyncEditorLockState, returnFocusSpaceEditorToPanel } from './focus-space-editor.js';
 import { resetModalScrollPosition, updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth, isHelperConnectionError } from './blocking-platform.js';
@@ -20,7 +20,7 @@ import { bindUiZoomLayoutObserver, scheduleUiZoomResponsiveLayout, usesStackSett
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
 import {
     IOS_STOP_BTN_META_COLLAPSE_SLACK_PX, MINUTES_PER_DAY, MAX_SAME_DAY_END_MINUTES,
-    clampSameDayMinutes, formatConfirmModalOverrideTypingLine,
+    clampSameDayMinutes, formatBlockTimeRemainingShort, formatConfirmModalOverrideTypingLine,
     formatMinutesAsHHMM, formatTime, generateId,
     snapMinutesToInterval,
 } from './app.js';
@@ -123,65 +123,47 @@ export function renderStartConfirmBlockingDetails(blocklist, listEl, showAllBtn,
     }
 }
 
-export function setStartConfirmRoomChip(blocklist, {
-    chipId = 'start-confirm-room-chip',
-    emojiId = 'start-confirm-room-chip-emoji',
-    nameId = 'start-confirm-room-chip-name',
-} = {}) {
-    const chip = document.getElementById(chipId);
-    const emojiEl = document.getElementById(emojiId);
-    const nameEl = document.getElementById(nameId);
-    if (!chip) return;
-
-    if (emojiEl) emojiEl.textContent = blocklist?.emoji || '🎯';
-    if (nameEl) nameEl.textContent = blocklist?.name || '';
-
-    chip.style.background = '';
-    chip.style.backgroundColor = '';
-    chip.style.color = '';
-    chip.style.borderColor = '';
+/** Shared by Start and Stop: the Times or Duration row, and the If turned off row,
+ *  which is hidden (with its divider) when the space never comes back on. */
+function renderConfirmTimingRows(prefix, blocklist, { schedule = null, block = null } = {}) {
+    const durationLabelEl = document.getElementById(`${prefix}-duration-label`);
+    if (durationLabelEl) {
+        durationLabelEl.textContent = tSettings(schedule ? 'startConfirmTimesLabel' : 'startConfirmDurationLabel');
+    }
+    const durationEl = document.getElementById(`${prefix}-duration`);
+    if (durationEl) {
+        if (schedule) durationEl.textContent = formatScheduleWhenSummary(deriveWhenToBlockKind(schedule), schedule);
+        else if (block && !isBlockAlwaysOn(block)) durationEl.textContent = formatBlockTimeRemainingShort((block.endTime - Date.now()) / 60000);
+        else durationEl.textContent = tSettings('startConfirmDurationManual');
+    }
+    const minutes = getBlocklistUnlockMinutes(blocklist);
+    const unlockRow = document.getElementById(`${prefix}-unlock-row`);
+    unlockRow?.classList.toggle('hidden', minutes <= 0);
+    unlockRow?.previousElementSibling?.classList.toggle('hidden', minutes <= 0);
+    const unlockEl = document.getElementById(`${prefix}-unlock`);
+    if (unlockEl) {
+        unlockEl.textContent = minutes > 0
+            ? tSettingsFmt('startConfirmUnlockLineFmt', { duration: formatUnlockDurationLabel(minutes) })
+            : '';
+    }
 }
 
-export const OVERRIDE_CONFIRM_ROOM_CHIP_IDS = {
-    chipId: 'override-confirm-room-chip',
-    emojiId: 'override-confirm-room-chip-emoji',
-    nameId: 'override-confirm-room-chip-name',
-};
-
-export function formatRemainingDurationLabel(remainingMs) {
-    const remainingMins = Math.max(1, Math.floor(remainingMs / 60000));
-    const hours = Math.floor(remainingMins / 60);
-    const mins = remainingMins % 60;
-    if (hours > 0 && mins > 0) return `${hours}h ${mins}m`;
-    if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''}`;
-    return `${mins} minute${mins > 1 ? 's' : ''}`;
+/** The schedule a space runs on, if any (a Manual space has none). */
+function findBlocklistSchedule(blocklistId) {
+    return (state.appData.schedules || []).find(s => s.blocklistId === blocklistId && s.segments?.length > 0) || null;
 }
 
-export function formatStopBlockSubtitle(block) {
-    if (!block || isBlockAlwaysOn(block)) return tSettings('stopBlockSubtitleAlways');
-    const remaining = formatRemainingDurationLabel(block.endTime - Date.now());
-    return tSettingsFmt('stopBlockSubtitleFmt', { remaining });
-}
-
-export function populateOverrideConfirmModalContent(blocklist, {
-    block = null,
-    isSchedule = false,
-    isScheduleInactive = false,
-} = {}) {
+export function populateOverrideConfirmModalContent(blocklist, { block = null } = {}) {
     if (!blocklist) return;
 
-    setStartConfirmRoomChip(blocklist, OVERRIDE_CONFIRM_ROOM_CHIP_IDS);
-
+    // "Stop 🎯 No Twitter for 24 hours?" when it comes back on by itself.
     const titleEl = document.getElementById('override-modal-title');
-    if (titleEl) titleEl.textContent = tSettings('stopFocusSpaceTitle');
-
-    const subtitleEl = document.getElementById('override-confirm-subtitle');
-    if (subtitleEl) {
-        let base;
-        if (isScheduleInactive) base = tSettings('stopScheduleInactiveSubtitle');
-        else if (isSchedule) base = tSettings('stopScheduleSubtitle');
-        else base = formatStopBlockSubtitle(block);
-        subtitleEl.innerHTML = `${base} ${formatStopOutcomeLine(blocklist)}`;
+    if (titleEl) {
+        const minutes = getBlocklistUnlockMinutes(blocklist);
+        const space = formatSpaceTitleLabel(blocklist);
+        titleEl.textContent = minutes > 0
+            ? tSettingsFmt('stopSpaceForTitleFmt', { space, duration: formatUnlockDurationLabel(minutes) })
+            : tSettingsFmt('stopSpaceTitleFmt', { space });
     }
 
     setConfirmModalBlockingLabel(blocklist, 'override-confirm-blocking-label');
@@ -192,6 +174,10 @@ export function populateOverrideConfirmModalContent(blocklist, {
         document.getElementById('override-confirm-show-all-blocking'),
         document.getElementById('override-confirm-blocking-row'),
     );
+    renderConfirmTimingRows('override-confirm', blocklist, {
+        block,
+        schedule: block ? null : findBlocklistSchedule(blocklist.id),
+    });
 
     setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
 }
@@ -207,13 +193,8 @@ export function openStartConfirmModal(blocklistId) {
     if (!blocklist || !modal) return false;
     state.pendingStartBlocklistId = blocklistId;
 
-    const schedule = (state.appData.schedules || []).find(
-        s => s.blocklistId === blocklistId && s.segments?.length > 0,
-    ) || null;
-
-    setStartConfirmRoomChip(blocklist);
     const titleEl = document.getElementById('start-block-confirm-title');
-    if (titleEl) titleEl.textContent = tSettings('startThisBlock');
+    if (titleEl) titleEl.textContent = tSettingsFmt('startSpaceTitleFmt', { space: formatSpaceTitleLabel(blocklist) });
 
     setConfirmModalBlockingLabel(blocklist, 'start-confirm-blocking-label');
     renderStartConfirmBlockingDetails(
@@ -222,25 +203,7 @@ export function openStartConfirmModal(blocklistId) {
         document.getElementById('start-confirm-show-all-blocking'),
         document.getElementById('start-confirm-blocking-row'),
     );
-
-    const durationLabelEl = document.getElementById('start-confirm-duration-label');
-    const durationEl = document.getElementById('start-confirm-duration');
-    if (durationLabelEl) {
-        durationLabelEl.textContent = tSettings(schedule ? 'startConfirmTimesLabel' : 'startConfirmDurationLabel');
-    }
-    if (durationEl) {
-        durationEl.textContent = schedule
-            ? formatScheduleWhenSummary(deriveWhenToBlockKind(schedule), schedule)
-            : tSettings('startConfirmDurationManual');
-    }
-
-    const unlockEl = document.getElementById('start-confirm-unlock');
-    if (unlockEl) {
-        const minutes = getBlocklistUnlockMinutes(blocklist);
-        unlockEl.innerHTML = minutes > 0
-            ? tSettingsFmt('startConfirmUnlockLineFmt', { duration: formatUnlockDurationLabel(minutes) })
-            : tSettings('startConfirmUnlockNever');
-    }
+    renderConfirmTimingRows('start-confirm', blocklist, { schedule: findBlocklistSchedule(blocklistId) });
 
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: DEFAULT_OVERRIDE_WORDS };
     const type = normalizeOverrideType(difficulty.type);
@@ -264,15 +227,6 @@ export function openStartConfirmModal(blocklistId) {
 export function closeStartConfirmModal() {
     document.getElementById('start-block-confirm-modal')?.classList.add('hidden');
     state.pendingStartBlocklistId = null;
-}
-
-/** "Blocking resumes automatically after 10 minutes." (allow mode names itself) / "It stays off until you turn it on again." */
-export function formatStopOutcomeLine(blocklist) {
-    const minutes = getBlocklistUnlockMinutes(blocklist);
-    if (minutes > 0) {
-        return tSettingsFmt(isAllowlistBlocklist(blocklist) ? 'stopResumesAllowAfterFmt' : 'stopResumesAfterFmt', { duration: formatUnlockDurationLabel(minutes) });
-    }
-    return tSettings('stopStaysOff');
 }
 
 export function applyRoomChipTint(chip, accentColor) {
@@ -313,10 +267,7 @@ export function openScheduleOverrideModal(schedule) {
     // stack is hidden by #override-modal.override-frictionless in CSS and the
     // controller clears both inputs so nothing stale can be submitted.
     const frictionless = canEditScheduleBetweenBlocks(schedule);
-    populateOverrideConfirmModalContent(blocklist, {
-        isSchedule: true,
-        isScheduleInactive: !isScheduleSegmentActiveNow(schedule),
-    });
+    populateOverrideConfirmModalContent(blocklist);
     initializeOverrideModalChallenge(difficulty, blocklist.color, { skipChallenge: frictionless });
 }
 
@@ -815,7 +766,7 @@ function getEnterSchedulerScrollBody() {
 function syncEnterSchedulerModalTitle(blocklist) {
     const titleEl = document.getElementById('enter-scheduler-modal-title');
     if (!titleEl || !blocklist) return;
-    titleEl.textContent = tSettings('editFocusSpace');
+    titleEl.textContent = tSettingsFmt('editSpaceTitleFmt', { space: formatSpaceTitleLabel(blocklist) });
 }
 
 function ensureEnterSchedulerModalChrome() {

@@ -2768,7 +2768,6 @@ export function applySettingsLanguage() {
     setText('save-blocklist-btn', tSettings('save'));
 
     // Modal copy
-    setText('override-modal-title', tSettings('stopFocusSpaceTitle'));
     setText('override-confirm-blocking-label', tSettings('startConfirmBlockingLabel'));
     setText('override-confirm-show-all-blocking', tSettings('showAll'));
     setText('override-modal-instruction', tSettings('overrideInstruction'));
@@ -2776,7 +2775,6 @@ export function applySettingsLanguage() {
     setText('cancel-override-btn', tSettings('cancel'));
     setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
     setText('confirm-override-header', tSettings('startBlockHoldHeader'));
-    setText('start-block-confirm-title', tSettings('startThisBlock'));
     setText('start-confirm-blocking-label', tSettings('startConfirmBlockingLabel'));
     setText('start-confirm-show-all-blocking', tSettings('showAll'));
     setText('start-confirm-unlock-label', tSettings('startConfirmUnlockLabel'));

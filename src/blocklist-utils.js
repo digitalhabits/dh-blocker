@@ -48,6 +48,11 @@ export function isProtectedDomain(domain) {
 }
 
 // Helper: detect always-on blocks by flag OR far-future end time
+/** "🎯 No Twitter": the emoji and name sheet titles are built from. */
+export function formatSpaceTitleLabel(blocklist) {
+    return `${blocklist?.emoji || '🎯'} ${blocklist?.name || ''}`.trim();
+}
+
 export function isBlockAlwaysOn(block) {
     return block.isAlwaysOn === true || block.endTime >= ALWAYS_ON_END_TIME;
 }
