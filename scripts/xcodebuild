@@ -4,7 +4,14 @@
 
 set -euo pipefail
 
-REAL_XCODEBUILD="/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild"
+# Use the Xcode that xcode-select (or DEVELOPER_DIR) points at, so CI's "Select
+# Xcode" step takes effect. A fixed /Applications/Xcode.app path silently ran
+# whatever Xcode the runner shipped as its default.
+REAL_XCODEBUILD="${DEVELOPER_DIR:-$(xcode-select -p)}/usr/bin/xcodebuild"
+if [[ ! -x "$REAL_XCODEBUILD" ]]; then
+  echo "scripts/xcodebuild: no xcodebuild at $REAL_XCODEBUILD; point xcode-select at a full Xcode (sudo xcode-select -s /Applications/Xcode.app)" >&2
+  exit 1
+fi
 
 args=(DEVELOPMENT_TEAM=JD647S9RT6 "$@")
 
