@@ -349,6 +349,18 @@ export const screens = [
         },
     },
     {
+        // Narrowest common phone: times, All day and × on one line, days on one line.
+        name: 'editor-weekly-two-ranges-iphone',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'iphone',
+        viewport: IPHONE,
+        prepare: async (page) => {
+            await page.click('.blocklist-card');
+            await page.click('#editor-section-when-header');
+            await page.click('#add-segment-btn');
+        },
+    },
+    {
         // Clicking a time opens the hour and minute lists side by side.
         name: 'editor-time-list-open',
         fixture: fixtures.weeklyOffPeak,

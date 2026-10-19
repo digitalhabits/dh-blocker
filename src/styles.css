@@ -2145,8 +2145,11 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
         --schedule-segments-gap: 10px;
     }
 
+    body.ios:not(.ios-phone) .main-content .schedule-segment{
+        --segment-field-h: 42px;
+    }
+
     body.ios:not(.ios-phone) .main-content .segment-time-field{
-        height: 42px;
         font-size: 17px;
     }
 
@@ -4586,7 +4589,8 @@ body.ios:not(.ios-phone) .main-content .when-times{
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 14px;
+    --segment-field-h: 36px;
     width: 100%;
     min-width: 0;
     box-sizing: border-box;
@@ -4598,21 +4602,41 @@ body.ios:not(.ios-phone) .main-content .when-times{
     background: color-mix(in srgb, var(--text-primary) 4%, transparent);
 }
 
+/* Full-size controls that wrap rather than shrink: All day drops onto its own
+   line, left-aligned, when it does not fit beside the times. */
 .segment-times{
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 10px 8px;
     min-width: 0;
 }
 
-/* "All day" and × sit at the right edge, as in Mail; on a narrow card they
-   wrap under the times together rather than squeezing the fields. */
+/* On the times line, the space after the end field pushes All day to the
+   right (as in Mail); wrapped onto its own line it starts at the left. */
+.segment-time-dash + .segment-time-anchor{
+    margin-right: auto;
+}
+
+/* × sits outside the flow, pinned top-right and centred on the time fields,
+   its icon as far from the right edge as the fields are from the left. */
+.segment-times.has-remove{
+    padding-right: 30px;
+}
+
+.segment-times .remove-segment-btn{
+    position: absolute;
+    top: 10px;
+    right: calc(var(--schedule-segment-pad-x, 12px) - 7px);
+    height: var(--segment-field-h);
+    margin-left: 0;
+}
+
 .segment-all-day{
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    margin-left: auto;
+    flex-shrink: 0;
     cursor: pointer;
     color: var(--text-secondary);
     font-size: 14px;
@@ -4624,25 +4648,21 @@ body.ios:not(.ios-phone) .main-content .when-times{
     cursor: default;
 }
 
-.segment-all-day + .remove-segment-btn{
-    margin-left: 0;
-}
-
 .segment-all-day-on .segment-time-field{
     color: var(--text-muted);
 }
 
 .segment-time-anchor{
     position: relative;
-    flex: 0 1 auto;
-    min-width: 0;
+    flex: 0 0 auto;
 }
 
 .segment-time-field{
     box-sizing: border-box;
-    width: 5.4em;
+    /* Exactly "00:00" (tabular digits) plus the padding and border: no dead space after the time. */
+    width: calc(5ch + 22px);
     max-width: 100%;
-    height: 36px;
+    height: var(--segment-field-h);
     margin: 0;
     padding: 0 10px;
     font: inherit;
@@ -4786,9 +4806,7 @@ body.dark-mode .add-segment-btn{
         min-width: 0;
     }
 
-    body.handset-device .segment-days{
-        flex-wrap: nowrap;
-    }
+
 }
 
 .when-times .segment-days{
@@ -4796,8 +4814,7 @@ body.dark-mode .add-segment-btn{
     align-items: center;
 }
 
-/* Segment Days - inline day toggles for each segment. Also wraps so the seven pills can
-   break onto a second line when the days-group itself runs out of horizontal room. */
+/* Full-size day circles; they wrap only once the card is narrower than all seven. */
 .segment-days{
     display: flex;
     flex-wrap: wrap;
@@ -10538,7 +10555,6 @@ body.mobile-phone-home #enter-scheduler-modal .segment-days{
     align-items: center;
     width: auto;
     max-width: 100%;
-    flex-wrap: nowrap;
 }
 
 /* Mobile phones: weekday pills use natural width everywhere (like desktop), never stretch to fill. */
@@ -14597,8 +14613,11 @@ body.handset-device .main-content .add-segment-btn{
     font-size: 16px;
 }
 
+body.handset-device .main-content .schedule-segment{
+    --segment-field-h: 44px;
+}
+
 body.handset-device .main-content .segment-time-field{
-    height: 44px;
     font-size: 17px;
 }
 

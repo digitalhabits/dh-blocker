@@ -482,7 +482,7 @@ export function buildScheduleSegmentHtml(seg, index, {
     ).join('');
 
     return `
-        <div class="segment-times">
+        <div class="segment-times${showRemove ? ' has-remove' : ''}">
             ${segmentTimeFieldHtml(seg, index, 'start', labelStart)}
             <span class="segment-time-dash" aria-hidden="true">–</span>
             ${segmentTimeFieldHtml(seg, index, 'end', labelEnd)}
