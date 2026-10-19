@@ -3,6 +3,7 @@ import {
     ALL_DAYS,
     deriveWhenToBlockKind,
     formatWhenToBlockSummary,
+    isAllDaySegment,
     migrateLegacyRepeatType,
     segmentsForKind,
 } from '../../src/when-to-block.js';
@@ -19,6 +20,7 @@ describe('formatWhenToBlockSummary', () => {
         dayNames: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
         everyDay: 'Every day',
         noDays: 'No days',
+        allDay: 'All day',
     };
 
     test('compact shows the first range and counts the rest', () => {
@@ -136,5 +138,33 @@ describe('migrateLegacyRepeatType', () => {
         const schedule = { createdAt: 0, segments: [] };
         expect(migrateLegacyRepeatType(schedule, Date.now())).toBe(true);
         expect(schedule.repeatType).toBe('forever');
+    });
+});
+
+describe('all-day ranges', () => {
+    // Stored as start == end: desktop (native_host) and iOS (ScheduleData)
+    // both enforce that as a full day, so the switch needs no new field.
+    test('start == end is all day, any other range is not', () => {
+        expect(isAllDaySegment(seg(0, 0))).toBe(true);
+        expect(isAllDaySegment({ startHour: 9, startMinute: 30, endHour: 9, endMinute: 30 })).toBe(true);
+        expect(isAllDaySegment(seg(9, 17))).toBe(false);
+        expect(isAllDaySegment({ startHour: 9, startMinute: 0, endHour: 9, endMinute: 30 })).toBe(false);
+        expect(isAllDaySegment(null)).toBe(false);
+    });
+
+    test('summaries say "All day" rather than 00:00 – 00:00', () => {
+        const labels = {
+            manual: 'Manual',
+            dailyFmt: (range) => `Daily ${range}`,
+            weeklyFmt: (days, range) => `${days} · ${range}`,
+            dayNames: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+            everyDay: 'Every day',
+            noDays: 'No days',
+            allDay: 'All day',
+        };
+        expect(formatWhenToBlockSummary('daily', [seg(0, 0)], labels)).toBe('Daily All day');
+        expect(formatWhenToBlockSummary('weekly', [seg(0, 0, [5, 6])], labels)).toBe('Sat, Sun · All day');
+        expect(formatWhenToBlockSummary('weekly', [seg(0, 0, [5, 6]), seg(9, 12, [0])], labels, { full: true }))
+            .toBe('Sat, Sun · All day; Mon · 09:00 – 12:00');
     });
 });

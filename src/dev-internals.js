@@ -5,7 +5,7 @@
 // src/test-utils.js / src/blocking-tests.js / src/integration-tests.js —
 // never rename them.
 import { state } from './state.js';
-import { canEnableAllowEditsBetweenBlocks } from './schedule-editor.js';
+import { addScheduleSegment, canEnableAllowEditsBetweenBlocks } from './schedule-editor.js';
 import { tauriAPI } from './tauri-api.js';
 import { PROTECTED_APP_NAMES, PROTECTED_DOMAINS, isAllowlistBlocklist, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
 import { buildAndroidScheduleEntries, buildIOSScheduleEntries, hasAnyBlockingStateToClear, isAndroidAllowlistUnsupported, isSchedulePausedNow } from './schedule-engine.js';
@@ -143,6 +143,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     applyOverrideTypeUi,
     // The create form (new-space defaults) and the editor's discard dialog.
     openBlocklistModal,
+    addScheduleSegment,
     closeBlocklistModal,
     showEditorDiscardConfirmModal,
     // Idempotent. The headless Tier 1 page has no Tauri transport, so app
