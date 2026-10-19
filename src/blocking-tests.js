@@ -33,7 +33,7 @@
  * - T243-T245: iOS cancels a Manual space's pending restart when it is resumed early, stopped with Never or cleared by Stop all
  * - T246: a space switched off with a restart time can be deleted; the delete cancels the restart once undo has passed
  * - T247: Stop all switches every schedule off and keeps its days and times
- * - T248-T250: "All day" stores start == end, locks the times, and switching it off restores them
+ * - T248-T251: "All day" stores start == end, locks the times, switching it off restores them, and a range keeps its place
  * - T226-T229: iOS allow-mode 50-item cap counted across every running space
  * - T213-T219, T222-T223: The start card names the space that just started and closes the app; allow mode gets its own card
  * - T220-T221: Diagnostics reports an allow-mode space as allowing, not blocking
@@ -3990,7 +3990,7 @@
     }
 
     // ========================================
-    // CATEGORY: ALL-DAY RANGES (T248-T250)
+    // CATEGORY: ALL-DAY RANGES (T248-T251)
     // ========================================
     // "All day" is stored as start == end at 00:00, which desktop
     // (native_host) and iOS (ScheduleData) enforce as a full day.
@@ -4032,6 +4032,17 @@
             assertEqual(fields().map((f) => f.value).join(' – '), before.join(' – '),
                 'T250: switching All day off restores the times it replaced');
             assert(fields().every((f) => !f.disabled), 'T250: the times are editable again');
+
+            // T251: a later range switched to All day stays where it is. Sorting by its
+            // new 00:00 moved it to the top, so the switch seemed to turn on the first range.
+            internals.addScheduleSegment();
+            const switches = () => [...document.querySelectorAll('.schedule-segment .segment-all-day-input')];
+            const flip = (input, on) => { input.checked = on; input.dispatchEvent(new Event('change', { bubbles: true })); };
+            flip(switches()[1], true);
+            assertEqual(switches().map((input) => input.checked).join(','), 'false,true',
+                'T251: All day on the second range turns on the second card, not the first');
+            flip(switches()[1], false);
+            document.querySelectorAll('.schedule-segment .remove-segment-btn')[1]?.click();
 
             // T250: typing times that meet shows the switch on.
             const end = document.querySelector('.segment-time-field[data-edge="end"]');

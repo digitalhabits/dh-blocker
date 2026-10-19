@@ -405,7 +405,13 @@ export function removeScheduleSegment(index) {
 // otherwise a pending segment with an early time could swap places with a committed
 // one and corrupt subsequent saves.
 export function sortScheduleSegments() {
-    const cmp = (a, b) => (a.startHour * 60 + a.startMinute) - (b.startHour * 60 + b.startMinute);
+    // An all-day range sorts by the times it replaced, so switching it on does
+    // not jump it to the top as 00:00 under the user's next tap.
+    const startOf = (seg) => {
+        const t = timesBeforeAllDay.get(seg) || seg;
+        return t.startHour * 60 + t.startMinute;
+    };
+    const cmp = (a, b) => startOf(a) - startOf(b);
     if (state.activeScheduleSegmentCount > 0 && state.scheduleSegments.length > state.activeScheduleSegmentCount) {
         const committed = state.scheduleSegments.slice(0, state.activeScheduleSegmentCount).sort(cmp);
         const pending = state.scheduleSegments.slice(state.activeScheduleSegmentCount).sort(cmp);
