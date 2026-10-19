@@ -12432,6 +12432,12 @@ body.dark-mode .modal-btn.black-btn:hover{
     padding: 0 0.3em;
 }
 
+/* Desktop typing progress: the correctly typed part of the reference text.
+   Colour only, so monospace glyph widths never shift. */
+.challenge-text .challenge-typed{
+    color: var(--redd-teal);
+}
+
 /* Override Challenge */
 /* Override Challenge */
 .override-summary{

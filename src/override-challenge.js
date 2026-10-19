@@ -74,8 +74,8 @@ function scheduleChallengeScroll(scrollFn) {
 /**
  * Render challenge reference text and auto-scroll so the current typing
  * position (or first error) stays in view with upcoming words visible.
- * While typing correctly we keep plain text (no span) so kerning/spacing
- * isn't disturbed; errors still use .error-char.
+ * The correctly typed prefix sits in .challenge-typed (colour only, so the
+ * monospace layout never shifts); errors still use .error-char.
  * @param {HTMLElement|null} el
  * @param {string} text
  * @param {{ cursorIndex?: number, errorIndex?: number }} [opts]
@@ -84,9 +84,8 @@ export function renderChallengeReferenceText(el, text, { cursorIndex = 0, errorI
     if (!el) return;
     const target = typeof text === 'string' ? text : '';
     const hasError = errorIndex >= 0 && errorIndex < target.length;
-    const markIndex = hasError
-        ? errorIndex
-        : Math.min(Math.max(0, Number(cursorIndex) || 0), target.length);
+    const cursor = Math.min(Math.max(0, Number(cursorIndex) || 0), target.length);
+    const markIndex = hasError ? errorIndex : cursor;
 
     if (target.length === 0) {
         el.textContent = '';
@@ -95,7 +94,10 @@ export function renderChallengeReferenceText(el, text, { cursorIndex = 0, errorI
     }
 
     if (hasError) {
-        const before = escapeHtml(target.slice(0, markIndex));
+        // Word mode passes no cursor, so its prefix stays plain.
+        const typedLen = Math.min(cursor, markIndex);
+        const typed = typedLen ? `<span class="challenge-typed">${escapeHtml(target.slice(0, typedLen))}</span>` : '';
+        const before = typed + escapeHtml(target.slice(typedLen, markIndex));
         const rawMark = target[markIndex];
         const isSpace = /\s/.test(rawMark);
         const markChar = isSpace ? ' ' : escapeHtml(rawMark);
@@ -110,7 +112,19 @@ export function renderChallengeReferenceText(el, text, { cursorIndex = 0, errorI
 
     // Avoid rewriting the text node on every keystroke — that + scroll was
     // painting a smeared line in WKWebView until the next input forced a repaint.
-    if (el.getAttribute('data-challenge-render') !== 'plain' || el.textContent !== target) {
+    // With progress, build span + text node once and then only update their text.
+    if (markIndex > 0) {
+        let typed = el.firstChild;
+        if (el.getAttribute('data-challenge-render') !== 'progress' || el.childNodes.length !== 2) {
+            typed = document.createElement('span');
+            typed.className = 'challenge-typed';
+            el.replaceChildren(typed, document.createTextNode(''));
+            el.setAttribute('data-challenge-render', 'progress');
+        }
+        const typedText = target.slice(0, markIndex), rest = target.slice(markIndex);
+        if (typed.textContent !== typedText) typed.textContent = typedText;
+        if (typed.nextSibling.data !== rest) typed.nextSibling.data = rest;
+    } else if (el.getAttribute('data-challenge-render') !== 'plain' || el.textContent !== target) {
         el.textContent = target;
         el.setAttribute('data-challenge-render', 'plain');
     }

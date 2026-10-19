@@ -298,7 +298,8 @@ export function createChallengeController(elements) {
             const typed = getTypedValue();
             if (typed === targetText) return { status: 'ok' };
             wiggle();
-            renderReference(findFirstChallengeMismatch(typed, targetText));
+            const mismatch = findFirstChallengeMismatch(typed, targetText);
+            renderReference(mismatch, mismatch);
             return { status: 'rejected' };
         },
 
