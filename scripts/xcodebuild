@@ -54,4 +54,32 @@ if [[ -n "${XCODEBUILD_EXPORT_OPTIONS_PLIST:-}" ]]; then
   fi
 fi
 
+# With App Store Connect API-key auth (CI), Tauri archives with signing skipped and
+# then signs only the main executable, so the extensions reach export unsigned.
+# Export keeps each bundle's archived entitlements, and 3.9.0 and 3.10.0 shipped
+# extensions with no Family Controls or App Group (tauri-apps/tauri#15663).
+# Sign any extension that arrives without entitlements with its own file first;
+# export then re-signs everything with the real certificate and profiles.
+archive_path=""
+for ((i=0; i<${#args[@]}; i++)); do
+  [[ "${args[$i]}" == "-archivePath" ]] && archive_path="${args[$((i+1))]:-}"
+done
+if [[ " ${args[*]} " == *" -exportArchive "* && -n "$archive_path" ]]; then
+  apple_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../src-tauri/gen/apple" && pwd)"
+  app="$(find "$archive_path/Products/Applications" -maxdepth 1 -name '*.app' | head -1)"
+  resigned=0
+  for appex in "$app"/PlugIns/*.appex; do
+    [[ -d "$appex" ]] || continue
+    codesign -d --entitlements - --xml "$appex" 2>/dev/null | grep -q family-controls && continue
+    name="$(basename "$appex" .appex)"
+    entitlements="$apple_dir/$name/$name.entitlements"
+    [[ -f "$entitlements" ]] || { echo "scripts/xcodebuild: no $entitlements for unsigned $name.appex" >&2; exit 1; }
+    echo "scripts/xcodebuild: signing $name.appex with $name.entitlements before export" >&2
+    codesign --force --sign - --entitlements "$entitlements" "$appex"
+    resigned=1
+  done
+  # The app's signature seals its PlugIns, so reseal it with its own entitlements.
+  [[ $resigned -eq 1 ]] && codesign --force --sign - --preserve-metadata=entitlements "$app"
+fi
+
 exec "$REAL_XCODEBUILD" "${args[@]}"
