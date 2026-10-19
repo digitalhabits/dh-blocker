@@ -4694,6 +4694,10 @@ body.dark-mode .segment-time-field:hover:not(:disabled){
 
 .schedule-time-popover .popover-scroll{
     max-height: 216px;
+    /* Just enough room on the right for macOS's thin scrollbar to sit beside the
+       highlighted hour or minute, never on it; the lists never scroll sideways. */
+    padding-right: 8px;
+    overflow-x: hidden;
 }
 
 .schedule-time-popover .popover-scroll + .popover-scroll{
