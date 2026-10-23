@@ -34,10 +34,9 @@ function scrollChallengeContentToY(container, contentY) {
     container.scrollTop = next;
 }
 
-/** Scroll so character `index` in a plain-text challenge box stays in view. */
-function scrollChallengeToCharIndex(container, index) {
+/** Scroll so character `index` of `textNode` (inside the challenge box) stays in view. */
+function scrollChallengeToCharIndex(container, textNode, index) {
     if (!container) return;
-    const textNode = container.firstChild;
     if (!textNode || textNode.nodeType !== Node.TEXT_NODE || textNode.length === 0) return;
 
     const safeIndex = Math.min(Math.max(0, index), textNode.length);
@@ -133,7 +132,8 @@ export function renderChallengeReferenceText(el, text, { cursorIndex = 0, errorI
         el.scrollTop = el.scrollHeight;
         return;
     }
-    scheduleChallengeScroll(() => scrollChallengeToCharIndex(el, markIndex));
+    // The untyped rest is always the last text node.
+    scheduleChallengeScroll(() => scrollChallengeToCharIndex(el, el.lastChild, 0));
 }
 
 /**
