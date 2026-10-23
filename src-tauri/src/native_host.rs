@@ -72,11 +72,13 @@ pub fn run() -> ! {
     #[cfg(target_os = "windows")]
     crate::windows_process::set_native_host_process_directory();
 
+    // `browser=` stays last: diagnostics reads everything after it.
     log_to_file(&format!(
-        "spawned pid={} exe={:?} argv={:?}",
+        "spawned pid={} exe={:?} argv={:?} browser={}",
         std::process::id(),
         std::env::current_exe().ok(),
-        std::env::args().collect::<Vec<_>>()
+        std::env::args().collect::<Vec<_>>(),
+        launching_browser()
     ));
 
     let data_path = match resolve_data_path() {
@@ -128,6 +130,71 @@ pub fn run() -> ! {
             }
         }
     }
+}
+
+/// The browser that launched us. Chromium on Windows goes through
+/// `cmd.exe /d /s /c`, so step over it; Firefox (and macOS) launch directly.
+/// "unknown" when a parent has gone or its PID was reused (it started after us).
+fn launching_browser() -> String {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+    );
+    let mut pid = Pid::from_u32(std::process::id());
+    for _ in 0..2 {
+        let Some(child) = sys.process(pid) else { break };
+        let Some(parent) = child.parent().and_then(|p| sys.process(p)) else {
+            break;
+        };
+        if parent.start_time() > child.start_time() {
+            break;
+        }
+        let name = parent.name().to_string_lossy().to_lowercase();
+        if name != "cmd.exe" {
+            return format!("{name}{}", exe_version(parent.exe()));
+        }
+        pid = parent.pid();
+    }
+    "unknown".into()
+}
+
+#[cfg(target_os = "windows")]
+fn exe_version(exe: Option<&std::path::Path>) -> String {
+    use windows::core::{w, PCWSTR};
+    use windows::Win32::Storage::FileSystem::{
+        GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW, VS_FIXEDFILEINFO,
+    };
+    let Some(exe) = exe else {
+        return String::new();
+    };
+    let path = crate::native_host_install::to_wide(&exe.to_string_lossy());
+    unsafe {
+        let size = GetFileVersionInfoSizeW(PCWSTR(path.as_ptr()), None);
+        let mut buf = vec![0u8; size as usize];
+        if size == 0
+            || GetFileVersionInfoW(PCWSTR(path.as_ptr()), None, size, buf.as_mut_ptr().cast())
+                .is_err()
+        {
+            return String::new();
+        }
+        let (mut info, mut len) = (std::ptr::null_mut(), 0u32);
+        if !VerQueryValueW(buf.as_ptr().cast(), w!("\\"), &mut info, &mut len).as_bool()
+            || info.is_null()
+        {
+            return String::new();
+        }
+        let f = &*(info as *const VS_FIXEDFILEINFO);
+        let (ms, ls) = (f.dwProductVersionMS, f.dwProductVersionLS);
+        format!(" {}.{}.{}.{}", ms >> 16, ms & 0xffff, ls >> 16, ls & 0xffff)
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn exe_version(_exe: Option<&std::path::Path>) -> String {
+    String::new()
 }
 
 fn spawn_stdin_reader(tx: mpsc::Sender<HostEvent>) {

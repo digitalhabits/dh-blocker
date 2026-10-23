@@ -76,6 +76,49 @@ pub struct NativeHostInfo {
     pub staged_exe_exists: bool,
     /// Last lines from `native-host.log` next to redd-block-data.json.
     pub log_tail: Vec<String>,
+    /// Organisation policies that can stop each browser reaching the host.
+    pub policies: Vec<crate::browser_policy::NativeMessagingPolicy>,
+    /// Newest host launch per browser, from the whole log.
+    pub last_connections: Vec<LastConnection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg(target_os = "windows")]
+pub struct LastConnection {
+    /// Launching browser (`msedge.exe 141.0.1.2`), or for lines logged before
+    /// that was recorded, which store's extension copy connected.
+    pub browser: String,
+    /// Unix seconds.
+    pub at: u64,
+}
+
+/// Newest `spawned` line per browser in `native-host.log`, newest first.
+#[cfg(target_os = "windows")]
+pub fn last_connections(log: &str) -> Vec<LastConnection> {
+    use crate::native_host_install::{CHROMIUM_EXT_ID, EDGE_ADDONS_EXT_ID, FIREFOX_EXT_ID};
+    let mut out: Vec<LastConnection> = Vec::new();
+    for line in log.lines().filter(|l| l.contains("] spawned ")) {
+        let Some(at) = line
+            .strip_prefix('[')
+            .and_then(|l| l.split(']').next()?.parse().ok())
+        else {
+            continue;
+        };
+        let browser = match line.split_once(" browser=") {
+            Some((_, b)) => b,
+            None if line.contains(EDGE_ADDONS_EXT_ID) => "Edge Add-ons extension",
+            None if line.contains(CHROMIUM_EXT_ID) => "Chrome Web Store extension",
+            None if line.contains(FIREFOX_EXT_ID) => "Firefox",
+            None => continue,
+        };
+        out.retain(|c| c.browser != browser);
+        out.push(LastConnection {
+            browser: browser.to_string(),
+            at,
+        });
+    }
+    out.sort_by(|a, b| b.at.cmp(&a.at));
+    out
 }
 
 /// Snapshot of what's actually being enforced right now. The
@@ -279,6 +322,8 @@ fn assemble_system_diagnostics_minimal() -> SystemDiagnostics {
             staged_exe_path: None,
             staged_exe_exists: false,
             log_tail: vec![],
+            policies: vec![],
+            last_connections: vec![],
         },
         recent_log: vec![],
         current_blocking: CurrentBlocking {
@@ -666,7 +711,7 @@ fn collect_native_host_info(app: &tauri::AppHandle) -> NativeHostInfo {
     let staged = crate::native_host_install::staged_native_host_exe();
     let staged_exe_path = staged.as_ref().map(|p| p.display().to_string());
     let staged_exe_exists = staged.is_some_and(|p| p.exists());
-    let mut log_tail = Vec::new();
+    let (mut log_tail, mut connections) = (Vec::new(), Vec::new());
     if let Some(data) = super::canonical_data_path(app) {
         let mut log_path = data;
         log_path.pop();
@@ -675,12 +720,23 @@ fn collect_native_host_info(app: &tauri::AppHandle) -> NativeHostInfo {
             let lines: Vec<&str> = raw.lines().collect();
             let start = lines.len().saturating_sub(30);
             log_tail = lines[start..].iter().map(|s| s.to_string()).collect();
+            connections = last_connections(&raw);
         }
     }
+    use crate::native_host_install::BrowserTarget;
     NativeHostInfo {
         staged_exe_path,
         staged_exe_exists,
         log_tail,
+        policies: [
+            BrowserTarget::Chrome,
+            BrowserTarget::Edge,
+            BrowserTarget::Brave,
+        ]
+        .into_iter()
+        .filter_map(crate::browser_policy::read)
+        .collect(),
+        last_connections: connections,
     }
 }
 

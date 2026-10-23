@@ -689,6 +689,9 @@ export function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) 
     html += `<th>${e(tSettings('diagnosticsThExtInstalled'))}</th>`;
     html += `<th>${e(tSettings('diagnosticsThExtEnabled'))}</th>`;
     html += `<th>${e(tSettings('diagnosticsThExtPrivate'))}</th>`;
+    // Windows only: organisation policy that stops the browser reaching Blocker (none for Firefox/Safari)
+    const policies = d.native_host?.policies;
+    if (policies) html += `<th>${e(tSettings('diagnosticsThPolicy'))}</th>`;
     html += '</tr></thead><tbody>';
     for (const key of extensionBrowserKeys) {
         const b = d.browsers[key];
@@ -700,9 +703,26 @@ export function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) 
         html += `<td>${diagnosticsStatusDot(ext.installed)}</td>`;
         html += `<td>${diagnosticsStatusDot(ext.enabled)}</td>`;
         html += `<td>${diagnosticsStatusDot(ext.privateBrowsing)}</td>`;
+        if (policies) {
+            html += policies.find(p => p.browser === key)?.blocked
+                ? `<td><span class="diag-error">${e(tSettings('diagnosticsPolicyBlocks'))}</span></td>`
+                : `<td><span class="diag-muted">${e(tSettings('diagnosticsPolicyNone'))}</span></td>`;
+        }
         html += '</tr>';
     }
     html += '</tbody></table></div></div>';
+
+    // Windows: newest host launch per browser, from native-host.log
+    const connections = d.native_host?.last_connections;
+    if (connections) {
+        html += '<div class="diagnostics-section">';
+        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsConnectionsSection'))}</div>`;
+        html += '<div class="diagnostics-card">';
+        html += connections.length
+            ? connections.map(c => diagnosticsKvRow(e(c.browser), `<span class="diag-muted">${e(fmtTs(c.at * 1000))}</span>`)).join('')
+            : `<p class="diagnostics-section-desc">${e(tSettings('diagnosticsConnectionsNone'))}</p>`;
+        html += '</div></div>';
+    }
 
     // Enforcement
     html += '<div class="diagnostics-section">';
