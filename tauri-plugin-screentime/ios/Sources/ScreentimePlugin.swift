@@ -344,6 +344,41 @@ struct ActivityPickerView: View {
     }
 }
 
+/// iPad: the inline picker has no search field on iPadOS 26 (Apple FB22855662); Apple's own sheet keeps it.
+@available(iOS 16.0, *)
+struct SystemActivityPickerHost: View {
+    @State private var selection: FamilyActivitySelection
+    @State private var pickerShown = false
+    let onDone: (FamilyActivitySelection) -> Void
+
+    init(initialSelection: FamilyActivitySelection, onDone: @escaping (FamilyActivitySelection) -> Void) {
+        self._selection = State(initialValue: initialSelection)
+        self.onDone = onDone
+    }
+
+    var body: some View {
+        Color.clear
+            .modifier(SystemPickerSheet(isPresented: $pickerShown, selection: $selection))
+            .onAppear { pickerShown = true }
+            .onChange(of: pickerShown) { shown in if !shown { onDone(selection) } }
+    }
+}
+
+/// Apple's picker sheet, titled "Select Apps" where the OS allows it.
+@available(iOS 16.0, *)
+private struct SystemPickerSheet: ViewModifier {
+    @Binding var isPresented: Bool
+    @Binding var selection: FamilyActivitySelection
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.2, *) {
+            content.familyActivityPicker(title: "Select Apps", headerText: nil, footerText: nil, isPresented: $isPresented, selection: $selection)
+        } else {
+            content.familyActivityPicker(isPresented: $isPresented, selection: $selection)
+        }
+    }
+}
+
 // MARK: - Screen Time Plugin
 
 @available(iOS 16.0, *)
@@ -512,10 +547,7 @@ class ScreentimePlugin: Plugin {
                 includeEntireCategory: isAllowMode
             ) ?? (hasExplicitInitialSelection ? FamilyActivitySelection(includeEntireCategory: isAllowMode) : ScreentimePlugin.currentSelection)
 
-            let pickerView = ActivityPickerView(
-                initialSelection: initialSelection,
-                isAllowMode: isAllowMode,
-                onDone: { selection in
+            let finish: (FamilyActivitySelection) -> Void = { selection in
                     // Store the selection
                     ScreentimePlugin.currentSelection = selection
 
@@ -536,17 +568,24 @@ class ScreentimePlugin: Plugin {
                         ]
                         invoke.resolve(response)
                     }
-                },
-                onCancel: {
-                    topVC.dismiss(animated: true) {
-                        invoke.resolve([
-                            "cancelled": true,
-                            "applicationCount": 0,
-                            "categoryCount": 0
-                        ])
-                    }
                 }
-            )
+            let cancel = {
+                topVC.dismiss(animated: true) {
+                    invoke.resolve([
+                        "cancelled": true,
+                        "applicationCount": 0,
+                        "categoryCount": 0
+                    ])
+                }
+            }
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                let host = UIHostingController(rootView: SystemActivityPickerHost(initialSelection: initialSelection, onDone: finish))
+                host.modalPresentationStyle = .overFullScreen
+                host.view.backgroundColor = .clear
+                topVC.present(host, animated: false)
+                return
+            }
+            let pickerView = ActivityPickerView(initialSelection: initialSelection, isAllowMode: isAllowMode, onDone: finish, onCancel: cancel)
             
             let hostingController = UIHostingController(rootView: pickerView)
             hostingController.modalPresentationStyle = .pageSheet
