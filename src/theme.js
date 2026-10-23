@@ -21,7 +21,8 @@ import {
 export const UI_ZOOM_MIN = 0.8;
 export const UI_ZOOM_MAX = 1.8;
 export const UI_ZOOM_MAX_DESKTOP = 1.5;  // cap on macOS/Windows (native webview zoom)
-export const UI_ZOOM_MAX_IOS = 1.4;  // cap on iOS (CSS zoom on phone; transform scale on iPad)
+export const UI_ZOOM_MAX_IOS = 1.4;  // cap on iPad (transform scale)
+export const UI_ZOOM_MAX_IPHONE = 1.2;  // phone text is already large; iOS text size covers more
 /** Layout breakpoints — CSS `zoom` does not affect @media / @container; tiers use effective width. */
 export const UI_ZOOM_LAYOUT_STACK_MAX = 718;
 export const UI_ZOOM_LAYOUT_CRAMPED_MAX = 1024;
@@ -32,6 +33,7 @@ let uiZoomLayoutObserverBound = false;
 let schedTabsIconOnlyEnteredAtWidth = 0;
 export const UI_ZOOM_STEP = 0.1;
 export const DEFAULT_UI_ZOOM = 1.0;
+export const IPAD_DEFAULT_UI_ZOOM = 1.2;
 let zoomToastHideTimeout = null;
 let nativeWebviewZoomSupported = null;
 
@@ -188,7 +190,7 @@ export function applyTheme() {
 }
 
 export function getUiZoomMax() {
-    if (state.isIOS) return UI_ZOOM_MAX_IOS;
+    if (state.isIOS) return isIosTablet() ? UI_ZOOM_MAX_IOS : UI_ZOOM_MAX_IPHONE;
     const isDesktop = document.body.classList.contains('windows') || document.body.classList.contains('mac');
     return isDesktop ? UI_ZOOM_MAX_DESKTOP : UI_ZOOM_MAX;
 }
@@ -198,7 +200,7 @@ export function clampUiZoom(scale) {
 }
 
 export function getDefaultUiZoom() {
-    return DEFAULT_UI_ZOOM;
+    return isIosTablet() ? IPAD_DEFAULT_UI_ZOOM : DEFAULT_UI_ZOOM;
 }
 
 export function getSavedUiZoom() {

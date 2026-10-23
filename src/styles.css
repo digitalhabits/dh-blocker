@@ -3490,6 +3490,17 @@ body.android #blocklists-container{
     display: block;
 }
 
+body.ios:not(.ios-phone) .blocklists-create-btn{
+    min-height: 56px;
+    padding: 10px 16px;
+    gap: 12px;
+    font-size: 18px;
+}
+body.ios:not(.ios-phone) .blocklists-create-btn-icon{
+    width: 34px;
+    height: 34px;
+}
+
 .blocklists-create-btn--primary{
     background: var(--primary-btn-bg);
     color: var(--primary-btn-text);
