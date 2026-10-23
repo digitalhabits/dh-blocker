@@ -3,7 +3,7 @@
 import { state } from './state.js';
 import { getChallengeController } from './challenge-controller.js';
 import { tauriAPI } from './tauri-api.js';
-import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor } from './utils.js';
+import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor, setSpaceTitle } from './utils.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
 import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn, formatSpaceTitleLabel } from './blocklist-utils.js';
 import { DEFAULT_OVERRIDE_WORDS, generateOverrideChallengeText, getMaxOverrideCountForType, getMaxOverrideWords, getMinOverrideCountForType, getOverrideWordsSliderMax, getOverrideEstimatedMinutes, isMobileOverrideChallengePlatform, migrateOverrideDifficultyToWords, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType, sanitizeChallengeTargetText } from './override-challenge.js';
@@ -162,9 +162,9 @@ export function populateOverrideConfirmModalContent(blocklist, { block = null } 
     if (titleEl) {
         const minutes = getBlocklistUnlockMinutes(blocklist);
         const space = formatSpaceTitleLabel(blocklist);
-        titleEl.textContent = minutes > 0
+        setSpaceTitle(titleEl, minutes > 0
             ? tSettingsFmt('stopSpaceForTitleFmt', { space, duration: formatUnlockDurationLabel(minutes) })
-            : tSettingsFmt('stopSpaceTitleFmt', { space });
+            : tSettingsFmt('stopSpaceTitleFmt', { space }), blocklist.name);
     }
 
     setConfirmModalBlockingLabel(blocklist, 'override-confirm-blocking-label');
@@ -195,7 +195,7 @@ export function openStartConfirmModal(blocklistId) {
     state.pendingStartBlocklistId = blocklistId;
 
     const titleEl = document.getElementById('start-block-confirm-title');
-    if (titleEl) titleEl.textContent = tSettingsFmt('startSpaceTitleFmt', { space: formatSpaceTitleLabel(blocklist) });
+    if (titleEl) setSpaceTitle(titleEl, tSettingsFmt('startSpaceTitleFmt', { space: formatSpaceTitleLabel(blocklist) }), blocklist.name);
 
     setConfirmModalBlockingLabel(blocklist, 'start-confirm-blocking-label');
     renderStartConfirmBlockingDetails(
@@ -769,7 +769,7 @@ function getEnterSchedulerScrollBody() {
 function syncEnterSchedulerModalTitle(blocklist) {
     const titleEl = document.getElementById('enter-scheduler-modal-title');
     if (!titleEl || !blocklist) return;
-    titleEl.textContent = tSettingsFmt('editSpaceTitleFmt', { space: formatSpaceTitleLabel(blocklist) });
+    setSpaceTitle(titleEl, tSettingsFmt('editSpaceTitleFmt', { space: formatSpaceTitleLabel(blocklist) }), blocklist.name);
 }
 
 function ensureEnterSchedulerModalChrome() {

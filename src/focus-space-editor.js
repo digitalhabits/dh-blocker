@@ -13,6 +13,7 @@ import { state } from './state.js';
 import { tSettings, tSettingsFmt, weekdayAbbrevMon0List } from './i18n.js';
 import { formatEditorItemCounts } from './list-presentation.js';
 import { formatSpaceTitleLabel } from './blocklist-utils.js';
+import { setSpaceTitle } from './utils.js';
 import {
     WHEN_TO_BLOCK_KINDS,
     deriveWhenToBlockKind,
@@ -387,10 +388,11 @@ function updateEditorTitles(isCreate, mode) {
         ? tSettingsFmt('editSpaceTitleFmt', { space: formatSpaceTitleLabel(blocklist) })
         : tSettings('editFocusSpace');
     const panelTitle = document.getElementById('editor-panel-title');
-    if (panelTitle) panelTitle.textContent = editTitle;
+    if (panelTitle) setSpaceTitle(panelTitle, editTitle, blocklist?.name);
     const sheetTitle = document.getElementById('enter-scheduler-modal-title');
-    if (sheetTitle && !isCreate) sheetTitle.textContent = editTitle;
+    if (sheetTitle && !isCreate) setSpaceTitle(sheetTitle, editTitle, blocklist?.name);
 }
+
 
 // ── Summaries + footer ────────────────────────────────────────────────────
 

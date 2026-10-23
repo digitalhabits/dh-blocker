@@ -11026,6 +11026,9 @@ body:not(.handset-device) .start-confirm-modal{
 
 
 .start-confirm-summary-card{
+    /* Rows are subgrids, so the label column fits the longest label. */
+    display: grid;
+    grid-template-columns: fit-content(50%) minmax(0, 1fr);
     margin-bottom: 16px;
     border: 1px solid var(--border-color);
     border-radius: 14px;
@@ -11045,7 +11048,9 @@ body:not(.handset-device) .start-confirm-modal{
 
 .start-confirm-summary-row{
     display: grid;
-    grid-template-columns: 92px minmax(0, 1fr);
+    grid-column: 1 / -1;
+    grid-template-columns: fit-content(50%) minmax(0, 1fr);
+    grid-template-columns: subgrid;
     gap: 12px;
     padding: var(--start-confirm-row-pad-y) var(--start-confirm-row-pad-x);
     align-items: start;
@@ -11058,6 +11063,7 @@ body:not(.handset-device) .start-confirm-modal{
 }
 
 .start-confirm-summary-divider{
+    grid-column: 1 / -1;
     height: 0;
     margin: 0 16px;
     border-top: 1px dotted var(--border-color);
@@ -13388,14 +13394,8 @@ body.dark-mode.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-bu
     font-weight: 600;
 }
 
-/* Auto-start after stop: what "stop" does to this space (Android's
-   "auto re-enable"). Label + hint stack on the left, the menu sits right. */
-#focus-space-editor .unlock-duration-row{
-    align-items: start;
-}
-
-#focus-space-editor .unlock-duration-row .settings-row-hint{
-    max-width: 34ch;
+#focus-space-editor .exit-difficulty-row{
+    grid-template-columns: minmax(min-content, 1fr) auto;
 }
 
 #focus-space-editor .exit-difficulty-row-control .unlock-duration-select{
@@ -16259,7 +16259,8 @@ body.dark-mode .app-blocking-warning-card{
    ═══════════════════════════════════════════════════════════════════════ */
 .editor-panel-header{
     display: flex;
-    align-items: center;
+    /* A wrapping title grows downward; the buttons stay put. */
+    align-items: flex-start;
     justify-content: space-between;
     gap: 8px;
     min-width: 0;
@@ -16267,6 +16268,45 @@ body.dark-mode .app-blocking-warning-card{
        gap alone leaves the title ~21px above the "Focus space name" eyebrow.
        Pull up 11px: ~12px from title text to eyebrow. */
     margin-bottom: -11px;
+}
+
+/* Turn back on after: label and dropdown on one line, the hint full width below. */
+#unlock-duration-row{
+    display: grid;
+    grid-template-columns: minmax(min-content, 1fr) auto;
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 4px;
+}
+#unlock-duration-row > .settings-row-copy{
+    display: contents;
+}
+#unlock-duration-hint{
+    grid-column: 1 / -1;
+    grid-row: 2;
+}
+#unlock-duration-row > .settings-row-control{
+    grid-column: 2;
+    grid-row: 1;
+}
+
+.title-name-unbroken{
+    word-break: break-all;
+}
+
+/* First title line centred on the 34px action buttons. */
+.editor-panel-title,
+#enter-scheduler-modal .mobile-modal-header--with-actions .mobile-modal-title-source{
+    padding-top: max(0px, calc((34px - 1lh) / 2));
+}
+#enter-scheduler-modal .mobile-modal-header--with-actions{
+    align-items: start;
+}
+.editor-panel-title,
+.mobile-modal-title-source,
+.modal-content h2,
+.modal-content h3{
+    overflow-wrap: anywhere;
 }
 
 .editor-panel-title{
@@ -16446,7 +16486,12 @@ body.dark-mode .app-blocking-warning-card{
 .editor-segmented--compact .editor-segmented-btn{
     flex: 0 0 auto;
     padding: 6px 12px;
-    font-size: 13px;
+    font-size: 15px;
+}
+
+body.ios:not(.ios-phone) .editor-segmented--compact .editor-segmented-btn{
+    padding: 8px 14px;
+    font-size: 16px;
 }
 
 /* The compact toggle is a detail inside a section ("Until"), not the section's
