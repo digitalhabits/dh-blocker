@@ -990,6 +990,18 @@ function setupModalListeners() {
         }, true);
     }
 
+    // Touch: the tap that focuses the name puts the cursor at the end (iOS can land it at the start).
+    const nameInput = document.getElementById('blocklist-name');
+    let nameJustFocused = false;
+    nameInput.addEventListener('focus', () => { nameJustFocused = true; });
+    nameInput.addEventListener('click', () => {
+        if (!nameJustFocused) return;
+        nameJustFocused = false;
+        if (document.body.classList.contains('ios') || document.body.classList.contains('android')) {
+            nameInput.setSelectionRange(nameInput.value.length, nameInput.value.length);
+        }
+    });
+    nameInput.addEventListener('blur', () => { nameJustFocused = false; });
     document.getElementById('blocklist-name').addEventListener('input', () => {
         const nameInput = document.getElementById('blocklist-name');
         nameInput.classList.remove('input-error');
