@@ -1258,6 +1258,35 @@
         });
     }
 
+    // An editor already open when its space starts (here a Manual block added
+    // underneath it, as a schedule would) locks within a tick, in both modes.
+    async function testI8_openEditorLocksWhenSpaceStarts() {
+        return runIsolatedIntegrationTest('I8', async () => {
+            for (const mode of ['allowlist', 'blocklist']) {
+                hideAllIntegrationModals();
+                getInternals().discardFocusSpaceEditor();
+                const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: `I8 ${mode}`, mode });
+                await callSaveData();
+                callRender();
+                document.querySelector(`.blocklist-card[data-id="${bl.id}"]`)?.click();
+                await waitForIntegrationCondition(
+                    () => getInternals().state?.editingBlocklistId === bl.id || document.getElementById('blocklist-select')?.value === bl.id,
+                    `I8 ${mode} editor opens`,
+                );
+                await shortWait(300);
+                assertOrThrow(!document.getElementById('override-type')?.disabled, `I8: ${mode} editor starts unlocked`);
+                addActiveBlock(bl.id, { durationMs: 5 * 60 * 1000 });
+                await waitForIntegrationCondition(() => document.getElementById('override-type')?.disabled, `I8 ${mode} editor locks after start`);
+                assertOrThrow(
+                    !!document.getElementById('modal-website-input')?.disabled === (mode === 'allowlist'),
+                    `I8: adding should be ${mode === 'allowlist' ? 'locked' : 'open'} once a ${mode} space starts`,
+                );
+            }
+            hideAllIntegrationModals();
+            return { passed: true };
+        });
+    }
+
     async function testI6_letsGoAcknowledgesBeforeShellReconcile() {
         const internals = getInternals();
         const tauriAPI = getTauriAPI();
@@ -1311,7 +1340,8 @@
             { group: 'I', name: 'I4: Android back closes topmost modal', fn: testI4_androidBackClosesTopmostModal },
             { group: 'I', name: 'I5: Card switch stop unlocks editor', fn: testI5_switchStopUnlocksEditor },
             { group: 'I', name: 'I6: Let\'s go acknowledges before shell reconcile', fn: testI6_letsGoAcknowledgesBeforeShellReconcile },
-            { group: 'I', name: 'I7: Running allow mode removes down to one', fn: testI7_runningAllowModeRemovesDownToOne }
+            { group: 'I', name: 'I7: Running allow mode removes down to one', fn: testI7_runningAllowModeRemovesDownToOne },
+            { group: 'I', name: 'I8: Open editor locks when its space starts', fn: testI8_openEditorLocksWhenSpaceStarts }
         ];
 
         if (profile === PROFILE_CORE) return coreTests;

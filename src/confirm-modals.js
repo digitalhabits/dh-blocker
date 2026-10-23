@@ -1201,7 +1201,8 @@ export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { prese
 
         const lockedWebsites = allowRunning ? [] : blocklist.websites || [];
         const lockedApps = allowRunning ? [] : getBlocklistModalLockedApps(blocklist);
-        if (preserveModalItems) {
+        // Allow mode resets to saved items, so an unsaved addition can't be saved after the start.
+        if (preserveModalItems && !allowRunning) {
             applyModalLockedItems(lockedWebsites, lockedApps);
         } else {
             window.setModalData?.(
