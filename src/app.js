@@ -29,6 +29,7 @@ import {
     parseLegacyScreenTimeSummary,
     normalizeIOSScreenTimeSelection,
     cloneIOSScreenTimeSelection,
+    isIOSSelectionNarrowing,
     hasUsableIOSScreenTimeSelection,
     formatIOSScreenTimeSelectionLabel,
     getBlocklistIOSScreenTimeSelection,
@@ -701,9 +702,8 @@ function setupModalListeners() {
 
     const getModalLockedAppDisplayItems = () => {
         const screenTimeLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
-        return (window.lockedApps || []).map((app) => (
-            app === screenTimeLabel ? app : displayNameForBlockedApp(app)
-        ));
+        return [...(window.lockedApps || []), ...modalApps.filter(isAppLocked), ...(isAppLocked(screenTimeLabel) ? [screenTimeLabel] : [])]
+            .map((app) => (app === screenTimeLabel ? app : displayNameForBlockedApp(app)));
     };
 
     const modalWebsiteInput = document.getElementById('modal-website-input');
@@ -716,8 +716,11 @@ function setupModalListeners() {
     const selectedWebsites = new Set();
     const selectedApps = new Set();
 
-    const isWebsiteLocked = (w) => Array.isArray(window.lockedWebsites) && window.lockedWebsites.includes(w);
-    const isAppLocked = (a) => Array.isArray(window.lockedApps) && window.lockedApps.includes(a);
+    // Running allow mode (lockLastItems): only the last website/app and the iOS "N apps" tag are locked.
+    const isWebsiteLocked = (w) => (Array.isArray(window.lockedWebsites) && window.lockedWebsites.includes(w))
+        || (!!window.lockLastItems && modalWebsites.length === 1);
+    const isAppLocked = (a) => (Array.isArray(window.lockedApps) && window.lockedApps.includes(a))
+        || (!!window.lockLastItems && !!a && (a === formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection) || modalApps.length === 1));
 
     const clearWebsiteSelection = () => {
         if (selectedWebsites.size === 0) return false;
@@ -756,6 +759,7 @@ function setupModalListeners() {
     const deleteSelectedWebsites = () => {
         if (selectedWebsites.size === 0) return false;
         const toDelete = modalWebsites.filter(w => selectedWebsites.has(w) && !isWebsiteLocked(w));
+        if (window.lockLastItems && toDelete.length === modalWebsites.length) toDelete.pop();
         if (toDelete.length === 0) {
             selectedWebsites.clear();
             window.renderModalTags();
@@ -861,6 +865,7 @@ function setupModalListeners() {
         const toDeleteApps = modalApps.filter(
             a => selectedApps.has(displayNameForBlockedApp(a)) && !isAppLocked(a),
         );
+        if (window.lockLastItems && toDeleteApps.length === modalApps.length) toDeleteApps.pop();
         const shouldDeleteIos = iosLabel && selectedApps.has(iosLabel) && !isAppLocked(iosLabel);
         if (toDeleteApps.length === 0 && !shouldDeleteIos) {
             selectedApps.clear();
@@ -1031,7 +1036,7 @@ function setupModalListeners() {
         if (e.key === 'Backspace' && !modalWebsiteInput.value.length && modalWebsites.length > 0) {
             const lastIdx = modalWebsites.length - 1;
             const last = modalWebsites[lastIdx];
-            if (!window.lockedWebsites || !window.lockedWebsites.includes(last)) {
+            if (!isWebsiteLocked(last)) {
                 pushModalUndo('website', () => {
                     modalWebsites.splice(lastIdx, 0, last);
                     window.renderModalTags();
@@ -1105,7 +1110,7 @@ function setupModalListeners() {
         if (e.key === 'Backspace' && !modalAppInput.value.length && modalApps.length > 0) {
             const lastIdx = modalApps.length - 1;
             const last = modalApps[lastIdx];
-            if (!window.lockedApps || !window.lockedApps.includes(last)) {
+            if (!isAppLocked(last)) {
                 pushModalUndo('app', () => {
                     modalApps.splice(lastIdx, 0, last);
                     window.renderModalTags();
@@ -1182,6 +1187,24 @@ function setupModalListeners() {
                     initialCategoryTokenData: modalIOSScreenTimeSelection?.categoryTokens || [],
                     mode: getSelectedBlocklistModalMode()
                 });
+                // Running allow mode: only a narrowing (no new apps, never none).
+                if (window.lockLastItems && !result.cancelled) {
+                    const picked = normalizeIOSScreenTimeSelection({
+                        applicationTokens: result.applicationTokens || [],
+                        categoryTokens: result.categoryTokens || [],
+                    });
+                    if (!isIOSSelectionNarrowing(modalIOSScreenTimeSelection, picked)) {
+                        alert(tSettings(picked?.applicationTokens.length || picked?.categoryTokens.length ? 'allowlistPickerNoAdditions' : 'allowlistPickerKeepOne'));
+                        return;
+                    }
+                    pushModalUndo('ios-screentime-selection', ((previous) => () => {
+                        modalIOSScreenTimeSelection = previous;
+                        window.renderModalTags();
+                    })(cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection)));
+                    modalIOSScreenTimeSelection = picked;
+                    window.renderModalTags();
+                    return;
+                }
                 // Non-null while enforcing: the picker becomes add-only, so a
                 // deselection inside it is ignored rather than saved.
                 const floor = getEnforcedIOSSelectionFloor();
@@ -1675,7 +1698,7 @@ function setupModalListeners() {
         notifyEditorChanged();
         renderTags(modalWebsitesTags, modalWebsites, (idx) => {
             const value = modalWebsites[idx];
-            if (window.lockedWebsites && window.lockedWebsites.includes(value)) {
+            if (isWebsiteLocked(value)) {
                 return; // Do not remove locked items; do not push undo.
             }
             pushModalUndo('website', () => {
@@ -1684,7 +1707,7 @@ function setupModalListeners() {
             });
             modalWebsites.splice(idx, 1);
             window.renderModalTags();
-        }, window.lockedWebsites, {
+        }, modalWebsites.filter(isWebsiteLocked), {
             selectedItems: selectedWebsites,
             onTagClick: (idx) => {
                 const value = modalWebsites[idx];

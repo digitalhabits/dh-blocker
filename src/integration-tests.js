@@ -1224,6 +1224,40 @@
         });
     }
 
+    // A running allow-mode space takes no new websites but lets them be removed
+    // (stricter) down to the last one: an empty allow list allows everything.
+    async function testI7_runningAllowModeRemovesDownToOne() {
+        return runIsolatedIntegrationTest('I7', async () => {
+            hideAllIntegrationModals();
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.b], name: 'I7 Allow', mode: 'allowlist' });
+            addActiveBlock(bl.id, { durationMs: 5 * 60 * 1000 });
+            await callSaveData();
+            callRender();
+
+            getInternals().discardFocusSpaceEditor(); // an earlier test's unsaved edits would prompt
+            const card = document.querySelector(`.blocklist-card[data-id="${bl.id}"]`);
+            assertOrThrow(card, 'I7: focus-space card missing');
+            card.click();
+            // The card loads the space asynchronously and the panel may already be
+            // showing the previous test's space, so wait for this one's lock.
+            await waitForIntegrationCondition(
+                () => isVisible('time-picker-container') && document.getElementById('override-type')?.disabled,
+                'I7 editor shows the running space',
+            );
+            if (document.getElementById('editor-section-what-header')?.getAttribute('aria-expanded') !== 'true') {
+                document.getElementById('editor-section-what-header')?.click();
+            }
+            const removeButtons = () => document.querySelectorAll('#modal-websites-tags .tag-remove');
+            assertOrThrow(document.getElementById('modal-website-input')?.disabled, 'I7: adding must be locked while running');
+            assertOrThrow(removeButtons().length === 2, `I7: both allowed websites should be removable (got ${removeButtons().length})`);
+            removeButtons()[0].click();
+            assertOrThrow(document.querySelectorAll('#modal-websites-tags .tag').length === 1, 'I7: removing one should leave one');
+            assertOrThrow(removeButtons().length === 0, 'I7: the last allowed website must not be removable');
+            hideAllIntegrationModals();
+            return { passed: true };
+        });
+    }
+
     async function testI6_letsGoAcknowledgesBeforeShellReconcile() {
         const internals = getInternals();
         const tauriAPI = getTauriAPI();
@@ -1276,7 +1310,8 @@
             { group: 'I', name: 'I3: Stop cancel keeps the block', fn: testI3_stopCancelWorkflow },
             { group: 'I', name: 'I4: Android back closes topmost modal', fn: testI4_androidBackClosesTopmostModal },
             { group: 'I', name: 'I5: Card switch stop unlocks editor', fn: testI5_switchStopUnlocksEditor },
-            { group: 'I', name: 'I6: Let\'s go acknowledges before shell reconcile', fn: testI6_letsGoAcknowledgesBeforeShellReconcile }
+            { group: 'I', name: 'I6: Let\'s go acknowledges before shell reconcile', fn: testI6_letsGoAcknowledgesBeforeShellReconcile },
+            { group: 'I', name: 'I7: Running allow mode removes down to one', fn: testI7_runningAllowModeRemovesDownToOne }
         ];
 
         if (profile === PROFILE_CORE) return coreTests;

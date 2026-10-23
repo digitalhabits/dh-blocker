@@ -277,22 +277,31 @@ export function mergeIOSScreenTimeSelectionAdditive(saved, picked) {
     });
 }
 
+/** Whether `candidate` only drops apps from `saved` and keeps at least one (an empty allow list allows all). */
+export function isIOSSelectionNarrowing(saved, candidate) {
+    const tokens = (s) => [...(s?.applicationTokens || []), ...(s?.categoryTokens || [])];
+    const kept = new Set(tokens(saved));
+    const picked = tokens(candidate);
+    return picked.length > 0 && picked.every((t) => kept.has(t));
+}
+
 /**
  * Resolve the Screen Time selection at the final save boundary.
  *
  * The modal candidate can become stale after the picker closes or after undo:
  * a schedule may start, or a pause may expire, before Save is pressed. Reapply
  * the persisted block-mode floor at that moment so every UI path remains
- * additive while edit friction is required. Allow mode deliberately remains
- * replacement-based because adding allowed apps loosens enforcement there.
+ * additive while edit friction is required. Allow mode may only narrow,
+ * because adding allowed apps loosens enforcement there.
  */
 export function resolveIOSScreenTimeSelectionForSave(
     saved,
     candidate,
     { mode = 'blocklist', editFrictionRequired = false } = {},
 ) {
-    if (mode === 'blocklist' && editFrictionRequired) {
-        return mergeIOSScreenTimeSelectionAdditive(saved, candidate);
+    if (editFrictionRequired) {
+        if (mode === 'blocklist') return mergeIOSScreenTimeSelectionAdditive(saved, candidate);
+        return cloneIOSScreenTimeSelection(isIOSSelectionNarrowing(saved, candidate) ? candidate : saved);
     }
     return cloneIOSScreenTimeSelection(candidate);
 }

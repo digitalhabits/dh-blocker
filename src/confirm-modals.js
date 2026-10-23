@@ -1182,6 +1182,13 @@ export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { prese
     const overrideCountWrapperEl = document.getElementById('override-count-wrapper');
     const overrideMethodRowEl = document.getElementById('override-method-row');
     const overrideTimeEstimateEl = document.getElementById('override-count-time-estimate');
+    // Running allow mode: no additions; removals allowed except the last item (iOS picker checks its own).
+    const allowRunning = isActive && isAllowlistBlocklist(blocklist);
+    window.lockLastItems = allowRunning;
+    ['modal-website-input', 'modal-import-websites-btn', 'modal-app-input', ...(state.isIOS ? [] : ['modal-browse-apps-btn'])].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = allowRunning;
+    });
 
     if (isActive) {
         overrideInputs.forEach(el => { if (el) el.disabled = true; });
@@ -1192,15 +1199,17 @@ export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { prese
         overrideMethodRowEl?.classList.add('blocklist-active-locked');
         overrideCountWrapperEl?.classList.add('blocklist-active-locked');
 
+        const lockedWebsites = allowRunning ? [] : blocklist.websites || [];
+        const lockedApps = allowRunning ? [] : getBlocklistModalLockedApps(blocklist);
         if (preserveModalItems) {
-            applyModalLockedItems(blocklist.websites || [], getBlocklistModalLockedApps(blocklist));
+            applyModalLockedItems(lockedWebsites, lockedApps);
         } else {
             window.setModalData?.(
                 blocklist.websites || [],
                 getBlocklistRegularApps(blocklist),
                 getBlocklistIOSScreenTimeSelection(blocklist),
-                blocklist.websites || [],
-                getBlocklistModalLockedApps(blocklist)
+                lockedWebsites,
+                lockedApps
             );
         }
         return;

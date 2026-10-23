@@ -110,6 +110,10 @@ export const SETTINGS_TRANSLATIONS = {
         androidAccessibilityOpenFailedStatusFmt: 'Could not open Accessibility settings: {error}',
         androidAllowlistUnsupported:
             'Allow-mode focus spaces are not supported on Android yet. Choose Block mode or use this focus space on iOS.',
+        allowlistPickerNoAdditions:
+            'This allow-mode focus space is running, so nothing new can be allowed. To allow more apps, stop the focus space first.',
+        allowlistPickerKeepOne:
+            'This allow-mode focus space started with at least one app selected. Removing all apps would allow all apps to be accessed. To remove every app, stop the focus space first.',
         // One-time rename notice for users upgrading from ReDD Blocker
         rebrandNoticeTitleHtml:
             'ReDD Blocker is now <span class="rebrand-onboarding-title-brand">Digital Habits: Blocker</span>',
@@ -1037,6 +1041,10 @@ export const SETTINGS_TRANSLATIONS = {
         androidAccessibilityOpenFailedStatusFmt: 'Kunne ikke åbne Accessibility-indstillinger: {error}',
         androidAllowlistUnsupported:
             'Tilladelsestilstand er endnu ikke understøttet på Android. Vælg Blokering, eller brug dette fokusrum på iOS.',
+        allowlistPickerNoAdditions:
+            'Dette fokusrum i tilladelsestilstand kører, så intet nyt kan tillades. Stop fokusrummet først for at tillade flere apps.',
+        allowlistPickerKeepOne:
+            'Dette fokusrum i tilladelsestilstand startede med mindst én app valgt. Fjernes alle apps, vil alle apps være tilgængelige. Stop fokusrummet først for at fjerne alle apps.',
         // One-time rename notice for users upgrading from ReDD Blocker
         rebrandNoticeTitleHtml:
             'ReDD Blocker hedder nu <span class="rebrand-onboarding-title-brand">Digital Habits: Blocker</span>',
@@ -1926,6 +1934,8 @@ export const SETTINGS_TRANSLATIONS = {
         androidAccessibilityReturnStatus: '在无障碍设置中启用 Digital Habits: Blocker，然后返回此处。',
         androidAccessibilityOpenFailedStatusFmt: '无法打开无障碍设置：{error}',
         androidAllowlistUnsupported: 'Android 目前尚不支持允许模式的专注空间。请选择阻止模式，或在 iOS 上使用此专注空间。',
+        allowlistPickerNoAdditions: '此允许模式专注空间正在运行，因此无法允许新的内容。如需允许更多应用，请先停止此专注空间。',
+        allowlistPickerKeepOne: '此允许模式专注空间启动时至少选择了一个应用。移除所有应用将使所有应用都可访问。如需移除所有应用，请先停止此专注空间。',
         // One-time rename notice for users upgrading from ReDD Blocker
         rebrandNoticeTitleHtml:
             'ReDD Blocker 现已更名为 <span class="rebrand-onboarding-title-brand">Digital Habits: Blocker</span>',

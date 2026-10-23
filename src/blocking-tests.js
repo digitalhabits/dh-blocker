@@ -3607,6 +3607,32 @@
             }
         })();
 
+        // T232: a running allow-mode space cannot take new items (each one lets more
+        // through); a running block-mode space still can (each one blocks more).
+        (function T232() {
+            const saved = internals.appData;
+            const now = Date.now();
+            const addControls = ['modal-website-input', 'modal-import-websites-btn', ...(internals.isIOS ? [] : ['modal-browse-apps-btn'])];
+            try {
+                for (const mode of ['allowlist', 'blocklist']) {
+                    const bl = createMockBlocklist({ mode, websites: ['docs.google.com'] });
+                    internals.appData = createMockAppData({
+                        blocklists: [bl],
+                        activeBlocks: [{ id: `blk-${mode}`, blocklistId: bl.id, startTime: now - 60_000, endTime: now + 3_600_000 }],
+                    });
+                    internals.setupFocusSpaceEditor();
+                    internals.populateFocusSpaceEditor(bl);
+                    for (const id of addControls) {
+                        const el = document.getElementById(id);
+                        if (!el) continue;
+                        assertEqual(el.disabled, mode === 'allowlist', `T232: ${id} is ${mode === 'allowlist' ? 'disabled' : 'enabled'} while a ${mode} space runs`);
+                    }
+                }
+            } finally {
+                internals.appData = saved;
+            }
+        })();
+
         // T231: Saving a switch from Manual to a schedule must not start the space.
         // A space reads as on merely by having an unpaused schedule, so creating
         // one used to turn it on even with every segment in the past or future.
