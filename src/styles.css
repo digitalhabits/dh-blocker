@@ -1980,11 +1980,11 @@ body.dark-mode .app-blocking-closedown-banner{
     }
 }
 
-/* Portrait iPad: same vertical stack as iPhone — blocklists, then scheduler, then
-   week calendar (calendar stays in .main-content below .grid-top-row). */
+/* Portrait iPad: two columns like landscape, with portrait spacing and type. */
   @media (min-width: 719px) and (max-width: 1024px) and (orientation: portrait) {
-    body.ios:not(.ios-phone) .grid-top-row{
-        grid-template-columns: 1fr;
+    body.ios:not(.ios-phone) .grid-top-row,
+    body.ios:not(.ios-phone) .grid-top-row.grid-top-row--blocklist-selected{
+        grid-template-columns: minmax(0, min(400px, 50%)) minmax(0, 1fr);
         gap: 18px;
     }
     
@@ -5651,14 +5651,14 @@ body.dark-mode .schedule-pending-discard:hover{
    panel's row height (grid defaults to align-items:start), keep create
    buttons fixed, and let the card list fill + scroll the rest. */
   @media (min-width: 719px) {
-    body:not(.ios):not(.handset-device) .grid-top-row--blocklist-selected .blocklists-list-stack{
+    body:not(.ios-phone):not(.handset-device):not(.ui-zoom-tier-stack) .grid-top-row--blocklist-selected .blocklists-list-stack{
         align-self: stretch;
         min-height: var(--blocklists-scroll-max-height);
         /* Same bottom gap as .time-picker-container. */
         margin-bottom: 8px;
     }
 
-    body:not(.ios):not(.handset-device) .grid-top-row--blocklist-selected .blocklists-container{
+    body:not(.ios-phone):not(.handset-device):not(.ui-zoom-tier-stack) .grid-top-row--blocklist-selected .blocklists-container{
         flex: 1 1 auto;
         min-height: 0;
         /* Classic flex scroll child: height:0 + flex:1 fills leftover stack space. */
@@ -5976,7 +5976,8 @@ body.android .blocklist-status-line{
 
 .blocklist-meta-items,
 .blocklist-meta-items-btn{
-    flex: 0 0 auto;
+    flex: 0 1 auto;
+    min-width: 0;
     width: auto;
     max-width: 100%;
     overflow: hidden;
@@ -9518,7 +9519,8 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     white-space: nowrap;
 }
 
-body:not(.ios) #focus-space-editor .tags-input-stacked .browse-btn{
+body:not(.ios) #focus-space-editor .tags-input-stacked .browse-btn,
+body.ios:not(.ios-phone) #focus-space-editor .tags-input-stacked .browse-btn{
     gap: 8px;
 }
 
@@ -10030,6 +10032,14 @@ body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal{
     align-items: stretch;
     justify-content: stretch;
     overflow: hidden;
+}
+
+/* iPad has no title bar. */
+body.ios.desktop-compact-layout :is(#enter-scheduler-modal, #blocklist-modal, #settings-modal, #override-modal, #start-block-confirm-modal, #override-all-modal).mobile-fullscreen-modal{
+    top: 0;
+}
+body.ios.desktop-compact-layout :is(#enter-scheduler-modal, #blocklist-modal, #settings-modal, #override-modal, #start-block-confirm-modal, #override-all-modal).mobile-fullscreen-modal .mobile-modal-header{
+    padding-top: calc(6px + env(safe-area-inset-top, 0px));
 }
 
 body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .modal-content,
@@ -13456,6 +13466,11 @@ body.handset-device #override-modal .start-confirm-header-room h3{
     margin: -16px;
     padding: 12px 16px;
     background: var(--container-bg);
+}
+
+/* iPad scales .app-container, so sticky stops above its footer padding. */
+body.ios:not(.ios-phone) #editor-panel-footer{
+    bottom: calc(-1 * var(--app-footer-height) / var(--ui-zoom, 1));
 }
 
 #editor-panel-footer::before{

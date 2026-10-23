@@ -388,10 +388,7 @@ export function syncUiZoomResponsiveLayout() {
 }
 
 export function usesStackSettingsPlacement() {
-    if (window.matchMedia('(max-width: 718px)').matches) return true;
-    return document.body.classList.contains('ios')
-        && !document.body.classList.contains('ios-phone')
-        && window.matchMedia('(min-width: 719px) and (max-width: 1024px) and (orientation: portrait)').matches;
+    return window.matchMedia('(max-width: 718px)').matches;
 }
 
 /** True when labelled Now/Schedule tabs do not fit in the scheduler header row. */

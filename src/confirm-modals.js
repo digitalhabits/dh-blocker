@@ -710,11 +710,13 @@ function usesMobilePhoneEnterSchedulerModal() {
 }
 
 /**
- * Full-screen enter sheet: mobile phones always; desktop when the grid is
- * single-column (≤718px). iPad keeps its existing inline enter UI.
+ * Full-screen enter sheet: mobile phones always; desktop and iPad when the grid
+ * is single-column (≤718px, effective width on a zoomed iPad).
  */
 export function usesEnterSchedulerSheet() {
     if (usesMobilePhoneEnterSchedulerModal()) return true;
+    // iPad narrower than two columns (split view, zoom) uses the sheet too.
+    if (document.body.classList.contains('ios')) return document.body.classList.contains('ui-zoom-tier-stack');
     if (
         document.body.classList.contains('ios')
         || document.body.classList.contains('android')
