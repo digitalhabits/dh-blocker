@@ -8,7 +8,7 @@ import { isBlockAlwaysOn } from './blocklist-utils.js';
 import { isNonRepeatingSchedule, isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
-import { autoSelectSoleBlocklist, isBlocklistEditFrictionRequired, renderBlocklists } from './blocklists.js';
+import { autoSelectSoleBlocklist, isBlocklistEditFrictionRequired, isOneOffPauseActive, renderBlocklists } from './blocklists.js';
 import { updateBlockedApps, updateOnboardingVisibility, updateWindowHeight } from './blocking-platform.js';
 import { handleBlocklistSelect, openOverrideModal, syncSchedulerChromeVisibility, refreshCalendarPreviews, handleTimeChange } from './confirm-modals.js';
 import { confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, resyncEditorLockState, syncEditorFooter } from './focus-space-editor.js';
@@ -360,7 +360,8 @@ export function renderScheduleAlwaysOnRow() {
     const chips = document.getElementById('schedule-always-on-chips');
     if (!row || !chips) return;
 
-    const alwaysOnBlocks = (state.appData.activeBlocks || []).filter(b => isBlockAlwaysOn(b));
+    // A paused block is not on, so it gets no chip.
+    const alwaysOnBlocks = (state.appData.activeBlocks || []).filter(b => isBlockAlwaysOn(b) && !isOneOffPauseActive(b));
 
     if (alwaysOnBlocks.length === 0) {
         row.classList.add('hidden');

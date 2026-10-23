@@ -3633,6 +3633,24 @@
             }
         })();
 
+        // T253: a paused always-on block gets no "Always on" chip, so it cannot open a stop dialog.
+        (function T253() {
+            const saved = internals.appData;
+            const now = Date.now();
+            try {
+                const bl = createMockBlocklist({ name: 'Paused' });
+                internals.appData = createMockAppData({
+                    blocklists: [bl],
+                    activeBlocks: [{ id: 'blk-t253', blocklistId: bl.id, startTime: now - 60_000, endTime: internals.ALWAYS_ON_END_TIME ?? 8640000000000000, isPaused: true, pauseEndTime: now + 600_000 }],
+                });
+                internals.renderScheduleAlwaysOnRow();
+                assertEqual(document.querySelectorAll('#schedule-always-on-chips .always-on-chip').length, 0, 'T253: a paused always-on block has no chip');
+            } finally {
+                internals.appData = saved;
+                internals.renderScheduleAlwaysOnRow();
+            }
+        })();
+
         // T231: Saving a switch from Manual to a schedule must not start the space.
         // A space reads as on merely by having an unpaused schedule, so creating
         // one used to turn it on even with every segment in the past or future.

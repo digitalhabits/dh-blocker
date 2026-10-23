@@ -55,6 +55,7 @@ import { applyOverrideTypeUi, closeBlocklistModal, closeStartConfirmModal, openB
 import { applyEditorScheduleForBlocklist, discardFocusSpaceEditor, populateFocusSpaceEditor, setOpenEditorSection, setWhenToBlockKind, setupFocusSpaceEditor, showEditorDiscardConfirmModal } from './focus-space-editor.js';
 import { enhanceNativeSelects, enhanceSelect } from './custom-select.js';
 import { performOverrideAll, renderDiagnosticsEnforcementSection } from './settings.js';
+import { renderScheduleAlwaysOnRow } from './render.js';
 
 // Expose for integration tests (dev mode only)
 window.__REDDBLOCK_INTERNALS__ = {
@@ -152,6 +153,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     applyEditorScheduleForBlocklist,
     discardFocusSpaceEditor,
     populateFocusSpaceEditor,
+    renderScheduleAlwaysOnRow,
     setOpenEditorSection,
     setWhenToBlockKind,
     setupFocusSpaceEditor,
