@@ -150,13 +150,13 @@ pub fn scan_for_onboarding() -> ScanResult {
             return empty_scan_result();
         }
         let path = crate::commands::canonical_data_path_static();
-        let mut result = scan_filter(|label| match label {
+        let mut result = with_policy(scan_filter(|label| match label {
             "firefox" => true,
             "safari" | "chrome" | "brave" | "edge" => {
                 !crate::blocking_method::uses_automation_at_path(&path, label)
             }
             _ => false,
-        });
+        }));
         if crate::blocking_method::uses_automation_at_path(&path, "chrome") {
             result.chrome = ChromiumBrowser::Chrome.presence_only();
         }
@@ -180,7 +180,7 @@ pub fn scan_for_onboarding() -> ScanResult {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        scan()
+        with_policy(scan())
     }
 }
 
@@ -198,13 +198,13 @@ pub fn scan_for_diagnostics() -> ScanResult {
             return empty_scan_result();
         }
         let path = crate::commands::canonical_data_path_static();
-        let mut result = scan_filter(|label| match label {
+        let mut result = with_policy(scan_filter(|label| match label {
             "firefox" => true,
             "safari" | "chrome" | "brave" | "edge" => {
                 !crate::blocking_method::uses_automation_at_path(&path, label)
             }
             _ => false,
-        });
+        }));
         if crate::blocking_method::uses_automation_at_path(&path, "chrome") {
             result.chrome = ChromiumBrowser::Chrome.presence_only();
         }
@@ -225,7 +225,7 @@ pub fn scan_for_diagnostics() -> ScanResult {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        scan()
+        with_policy(scan())
     }
 }
 
@@ -314,8 +314,6 @@ fn with_native_host_ready(
     browser: crate::native_host_install::BrowserTarget,
 ) -> BrowserStatus {
     status.native_host_ready = crate::native_host_install::native_host_is_current(browser);
-    status.native_host_blocked_by_policy =
-        crate::browser_policy::read(browser).is_some_and(|p| p.blocked);
     status
 }
 
@@ -325,6 +323,25 @@ fn with_native_host_ready(
     _browser: crate::native_host_install::BrowserTarget,
 ) -> BrowserStatus {
     status
+}
+
+/// Organisation policy for each scanned Chromium browser, for the screens that
+/// show it. Kept out of `scan_filter` so the enforcer's 1-5 s tick never pays
+/// for it. Browsers not scanned (macOS Automation ones) are stubs with
+/// `installed: false` and are skipped: the policy does not touch them.
+fn with_policy(mut result: ScanResult) -> ScanResult {
+    use crate::native_host_install::BrowserTarget;
+    for (status, browser) in [
+        (&mut result.chrome, BrowserTarget::Chrome),
+        (&mut result.edge, BrowserTarget::Edge),
+        (&mut result.brave, BrowserTarget::Brave),
+    ] {
+        if status.installed {
+            status.native_host_blocked_by_policy =
+                crate::browser_policy::read(browser).is_some_and(|p| p.blocked);
+        }
+    }
+    result
 }
 
 fn firefox_root() -> Option<PathBuf> {

@@ -1,6 +1,7 @@
 // Organisation browser policies that stop Chromium browsers launching our
 // per-user native-messaging host, so the extension never receives blocks.
 // Only an IT department can change these; we detect them to say so loudly.
+// Windows reads the registry; macOS reads MDM managed preferences.
 
 use serde::Serialize;
 
@@ -41,6 +42,59 @@ pub fn blocks_host(machine: &PolicyLevel, user: &PolicyLevel) -> bool {
     machine.user_level_hosts.or(user.user_level_hosts) == Some(0)
         || (block.iter().any(|h| h == "*" || h == HOST_NAME)
             && !allow.iter().any(|h| h == HOST_NAME))
+}
+
+/// macOS: MDM writes these as managed preferences, device-wide and per user.
+/// A missing file costs one failed open, so unmanaged Macs pay next to nothing.
+/// Per-user values are treated as winning, following the CFPreferences search
+/// order (untested: no managed Mac to try it on). Failures fall towards no warning.
+#[cfg(target_os = "macos")]
+pub fn read(browser: crate::native_host_install::BrowserTarget) -> Option<NativeMessagingPolicy> {
+    use crate::native_host_install::BrowserTarget;
+    let (name, domain) = match browser {
+        BrowserTarget::Chrome => ("chrome", "com.google.Chrome"),
+        BrowserTarget::Edge => ("edge", "com.microsoft.Edge"),
+        BrowserTarget::Brave => ("brave", "com.brave.Browser"),
+        BrowserTarget::Firefox => return None, // Firefox has no such policy
+    };
+    let dir = std::path::Path::new("/Library/Managed Preferences");
+    let file = format!("{domain}.plist");
+    let user = std::env::var("USER")
+        .map(|u| read_plist_level(&dir.join(u).join(&file)))
+        .unwrap_or_default();
+    let machine = read_plist_level(&dir.join(&file));
+    let blocked = blocks_host(&user, &machine);
+    Some(NativeMessagingPolicy {
+        browser: name,
+        machine,
+        user,
+        blocked,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn read_plist_level(path: &std::path::Path) -> PolicyLevel {
+    let Ok(plist::Value::Dictionary(d)) = plist::Value::from_file(path) else {
+        return PolicyLevel::default();
+    };
+    let list = |key: &str| -> Vec<String> {
+        d.get(key)
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_string().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    PolicyLevel {
+        user_level_hosts: d
+            .get("NativeMessagingUserLevelHosts")
+            .and_then(|v| v.as_boolean())
+            .map(u32::from),
+        blocklist: list("NativeMessagingBlocklist"),
+        allowlist: list("NativeMessagingAllowlist"),
+    }
 }
 
 /// Read one browser's policies. A missing key or failed read counts as "no
