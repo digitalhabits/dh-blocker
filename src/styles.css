@@ -7474,7 +7474,7 @@ body.dark-mode #migration-onboarding .migration-setup-ready-banner{
 /* No outer headline in fresh-install post phase; tighten space above checklist “title”. */
 #migration-phase-post:has(#migration-post-title-row.hidden) .migration-card{
     margin-top: 10px;
-    padding-top: 18px;
+    padding-top: 6px; /* plus the card's 12px top band */
 }
 
 #migration-phase-post:has(#migration-post-title-row.hidden)
@@ -8701,12 +8701,71 @@ body.dark-mode .enforcement-switch input:checked + .enforcement-slider::before{
     background: #0f172a;
 }
 
-.migration-post-actions{
+/* Like the start/stop dialog: the setup card never runs past the window, its body
+   scrolls, and the actions sit side by side in a full-width footer stuck to its bottom. */
+#migration-onboarding.onboarding-screen:has(#migration-phase-post:not(.hidden)){
+    padding-block: 2.5vh;
+}
+
+#migration-phase-post:not(.hidden){
     display: flex;
     flex-direction: column;
+    max-height: calc(100vh - var(--title-bar-height) - 5vh); /* the start dialog's 95%, with a 2.5% gap each side */
+}
+
+#migration-phase-post .migration-card{
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: none; /* no elastic bounce past the title or the footer */
+    /* A fixed band above the scrolling body, like the start dialog's, so rows slide under it rather than the card edge */
+    border-top: 12px solid rgba(255, 255, 255, 0.92);
+    background-clip: padding-box;
+    padding-top: 12px;
+}
+
+body.dark-mode #migration-phase-post .migration-card{
+    border-top-color: var(--redd-card);
+}
+
+.migration-post-actions{
+    display: flex;
     align-items: stretch;
     gap: 10px;
-    margin-top: 16px;
+    position: sticky;
+    bottom: -22px; /* sticky offsets count from inside the card's padding; this cancels it so the footer docks flush */
+    z-index: 1;
+    margin: 16px -28px -22px;
+    padding: 16px 28px;
+    background: #ffffff;
+    border-top: 1px solid var(--border-color-medium);
+}
+
+body.dark-mode .migration-post-actions{
+    background: var(--redd-card);
+}
+
+/* Equal halves while there is room; when narrow, Skip gives way so "I'm all set up" stays on one line */
+.migration-post-actions .migration-post-action-row{
+    flex: 1 1 0;
+    min-width: max-content;
+}
+
+.migration-post-actions .migration-done-btn{
+    white-space: nowrap;
+}
+
+/* Skip sits left of the primary action, outlined like a dialog's Cancel */
+#migration-onboarding .migration-post-actions .migration-skip-btn{
+    order: -1;
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto;
+    border-color: var(--border-color);
+    font-size: 15px;
+}
+
+body.dark-mode #migration-onboarding .migration-post-actions .migration-skip-btn{
+    border-color: var(--border-color);
 }
 
 .migration-post-action-row{
@@ -8860,6 +8919,15 @@ body.dark-mode #migration-onboarding .migration-browser-badge.needs-install{
     color: var(--text-muted);
 }
 
+body.dark-mode #migration-onboarding .migration-browser-row.policy-blocked{
+    background: rgba(239, 68, 68, 0.14);
+    border-color: rgba(248, 113, 113, 0.4);
+}
+
+body.dark-mode #migration-onboarding .migration-browser-badge.policy-blocked{
+    color: #fca5a5;
+}
+
 body.dark-mode #migration-onboarding .migration-browser-badge.needs-enable,
 body.dark-mode #migration-onboarding .migration-browser-badge.needs-private,
 body.dark-mode #migration-onboarding .migration-browser-badge.needs-website-access,
@@ -8919,15 +8987,6 @@ body.dark-mode #migration-onboarding .safari-duplicate-help-toggle{
 
 body.dark-mode #migration-onboarding .safari-duplicate-help-toggle:hover{
     color: var(--text-secondary);
-body.dark-mode #migration-onboarding .migration-browser-row.policy-blocked{
-    background: rgba(239, 68, 68, 0.14);
-    border-color: rgba(248, 113, 113, 0.4);
-}
-
-body.dark-mode #migration-onboarding .migration-browser-badge.policy-blocked{
-    color: #fca5a5;
-}
-
 }
 
 body.dark-mode #migration-onboarding .migration-inline-url-btn{
