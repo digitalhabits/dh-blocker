@@ -7961,6 +7961,17 @@ body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:d
     border-color: rgba(245, 158, 11, 0.20);
 }
 
+/* Organisation policy blocks the browser reaching Blocker: louder than any fixable step */
+.migration-browser-row.policy-blocked{
+    background: rgba(220, 38, 38, 0.07);
+    border-color: rgba(220, 38, 38, 0.32);
+}
+
+.migration-browser-badge.policy-blocked{
+    color: #b91c1c;
+    font-weight: 600;
+}
+
 .migration-browser-badge.needs-enable,
 .migration-browser-badge.needs-private,
 .migration-browser-badge.needs-website-access,
@@ -8908,6 +8919,15 @@ body.dark-mode #migration-onboarding .safari-duplicate-help-toggle{
 
 body.dark-mode #migration-onboarding .safari-duplicate-help-toggle:hover{
     color: var(--text-secondary);
+body.dark-mode #migration-onboarding .migration-browser-row.policy-blocked{
+    background: rgba(239, 68, 68, 0.14);
+    border-color: rgba(248, 113, 113, 0.4);
+}
+
+body.dark-mode #migration-onboarding .migration-browser-badge.policy-blocked{
+    color: #fca5a5;
+}
+
 }
 
 body.dark-mode #migration-onboarding .migration-inline-url-btn{

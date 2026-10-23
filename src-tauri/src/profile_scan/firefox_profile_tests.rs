@@ -183,6 +183,7 @@ fn actual_install_default_without_focus_fails_compliance_even_when_historical_de
             present: true,
             profiles,
             native_host_ready: true,
+            native_host_blocked_by_policy: false,
             ..Default::default()
         },
         chrome: BrowserStatus::default(),

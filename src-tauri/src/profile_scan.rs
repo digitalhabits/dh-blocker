@@ -112,6 +112,12 @@ pub struct BrowserStatus {
     /// current ReDD Blocker binary (extension blocking bridge).
     #[serde(rename = "nativeHostReady", default)]
     pub native_host_ready: bool,
+    /// Windows Chromium only: an organisation policy stops the browser
+    /// launching our per-user host (`browser_policy`). Deliberately not
+    /// part of `compliant()`: the enforcer must never force-quit a browser
+    /// the user cannot fix.
+    #[serde(rename = "nativeHostBlockedByPolicy", default)]
+    pub native_host_blocked_by_policy: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -308,6 +314,8 @@ fn with_native_host_ready(
     browser: crate::native_host_install::BrowserTarget,
 ) -> BrowserStatus {
     status.native_host_ready = crate::native_host_install::native_host_is_current(browser);
+    status.native_host_blocked_by_policy =
+        crate::browser_policy::read(browser).is_some_and(|p| p.blocked);
     status
 }
 
@@ -565,6 +573,7 @@ fn scan_firefox() -> Option<BrowserStatus> {
             duplicate_extensions: None,
             needs_fda_access: false,
             native_host_ready: false,
+            native_host_blocked_by_policy: false,
         });
     }
 
@@ -579,6 +588,7 @@ fn scan_firefox() -> Option<BrowserStatus> {
         duplicate_extensions: None,
         needs_fda_access: false,
         native_host_ready: false,
+        native_host_blocked_by_policy: false,
     })
 }
 
@@ -806,6 +816,7 @@ impl ChromiumBrowser {
             duplicate_extensions: None,
             needs_fda_access: false,
             native_host_ready: false,
+            native_host_blocked_by_policy: false,
         }
     }
 
@@ -880,6 +891,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
             duplicate_extensions: None,
             needs_fda_access: false,
             native_host_ready: false,
+            native_host_blocked_by_policy: false,
         });
     }
 
@@ -1023,6 +1035,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
         duplicate_extensions: None,
         needs_fda_access: false,
         native_host_ready: false,
+        native_host_blocked_by_policy: false,
     })
 }
 
@@ -1322,6 +1335,7 @@ fn safari_presence_only() -> BrowserStatus {
         duplicate_extensions: None,
         needs_fda_access: false,
         native_host_ready: false,
+        native_host_blocked_by_policy: false,
     }
 }
 
@@ -1497,6 +1511,7 @@ fn scan_safari() -> BrowserStatus {
         duplicate_extensions,
         needs_fda_access,
         native_host_ready: false,
+        native_host_blocked_by_policy: false,
     }
 }
 
@@ -1527,6 +1542,7 @@ fn scan_safari() -> BrowserStatus {
         duplicate_extensions: None,
         needs_fda_access: false,
         native_host_ready: false,
+        native_host_blocked_by_policy: false,
     }
 }
 

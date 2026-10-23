@@ -775,6 +775,8 @@ export function effectiveBrowserComplianceStatus(key, browsers) {
 // Returns null if the browser itself isn't installed on the machine.
 export function browserComplianceStatus(key, b) {
     if (!b || !b.installed) return null;
+    // Windows: an organisation policy stops the browser reaching Blocker, so nothing else on the row helps.
+    if (b.nativeHostBlockedByPolicy) return 'policy-blocked';
     const profiles = b.profiles || [];
     const def = profiles.find(p => p.isDefault) || profiles[0];
     if (key === 'safari') {
@@ -808,6 +810,7 @@ export function statusLabel(key, status) {
         case 'needs-private': return tSettings('migrationStatusAllowPrivate');
         case 'needs-enable': return tSettings('migrationStatusEnableExtension');
         case 'needs-native-host': return tSettings('migrationStatusNativeHost');
+        case 'policy-blocked': return tSettings('migrationBadgePolicyBlocked');
         case 'needs-install': return tSettings('migrationStatusInstall');
         default: return tSettings('migrationStatusInstall');
     }
@@ -1508,13 +1511,28 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
             case 'needs-native-host': badge.textContent = tSettings('migrationBadgeNativeHost'); break;
             case 'needs-fda': badge.textContent = tSettings('migrationStatusGrantFda'); break;
             case 'needs-website-access': badge.textContent = tSettings('migrationBadgeNoWebsiteAccess'); break;
+            case 'policy-blocked': badge.textContent = tSettings('migrationBadgePolicyBlocked'); break;
             default: badge.textContent = tSettings('migrationBadgeNotInstalled');
         }
         header.appendChild(badge);
 
         row.appendChild(header);
 
-        if (status === 'needs-fda') {
+        if (status === 'policy-blocked') {
+            const hint = document.createElement('div');
+            hint.className = 'migration-browser-hint migration-browser-after-hint';
+            hint.textContent = tSettingsFmt('migrationPolicyBlockedHint', { browser: entry.label });
+            row.appendChild(hint);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'migration-browser-copy';
+            btn.textContent = tSettings('migrationPolicyBlockedLearnMore');
+            btn.addEventListener('click', () => void openUrl(tSettings('managedComputerHelpUrl')).catch(e => console.warn('[policy] open help failed:', e)));
+            const actionsRow = document.createElement('div');
+            actionsRow.className = 'migration-actions-row';
+            actionsRow.appendChild(btn);
+            row.appendChild(actionsRow);
+        } else if (status === 'needs-fda') {
             const hint = document.createElement('div');
             hint.className = 'migration-browser-hint migration-browser-after-hint';
             hint.innerHTML = tSettings('safariFdaSetupHintHtml');
@@ -2013,7 +2031,7 @@ export function buildBannerActionSummary(browsers, detectedKeys) {
         groups.get(status).push(label);
     }
 
-    const order = ['needs-install', 'needs-automation', 'needs-fda', 'needs-native-host', 'needs-enable', 'needs-private', 'needs-website-access'];
+    const order = ['policy-blocked', 'needs-install','needs-automation', 'needs-fda', 'needs-native-host', 'needs-enable', 'needs-private', 'needs-website-access'];
     const phrases = [];
     for (const status of order) {
         const list = groups.get(status);
@@ -2029,6 +2047,8 @@ export function bannerActionPhrase(status) {
             return tSettings('bannerActionInstallIn');
         case 'needs-automation':
             return tSettings('bannerActionAutomationIn');
+        case 'policy-blocked':
+            return tSettings('bannerActionPolicyBlockedIn');
         case 'needs-fda':
             return tSettings('bannerActionGrantFdaIn');
         case 'needs-enable':
