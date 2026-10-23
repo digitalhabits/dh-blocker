@@ -24,7 +24,7 @@ import {
     formatMinutesAsHHMM, formatTime, generateId,
     snapMinutesToInterval,
 } from './app.js';
-import { NEW_SPACE_UNLOCK_MINUTES, applyStopToTarget, getBlocklistUnlockMinutes, timedStopLostOwnPause } from './unlock-duration.js';
+import { NEW_ALLOW_SPACE_UNLOCK_MINUTES, NEW_SPACE_UNLOCK_MINUTES, applyStopToTarget, getBlocklistUnlockMinutes, timedStopLostOwnPause } from './unlock-duration.js';
 import { deriveWhenToBlockKind } from './when-to-block.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
 import {
@@ -32,6 +32,7 @@ import {
     syncBlocklistCreateUi,
     setConfirmModalBlockingLabel,
     isBlocklistAllowlistMode,
+    getSelectedBlocklistModalMode,
 } from './list-mode.js';
 
 export const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
@@ -1294,9 +1295,10 @@ export function populateBlocklistFormFields(blocklist) {
     state.lastOverrideTypeValue = document.getElementById('override-type').value;
 
     const unlockSelect = document.getElementById('unlock-duration-select');
-    // A new space starts on 10 minutes; an existing one shows what it has saved.
+    // A new space starts on 10 minutes (allow-only: Never); an existing one shows what it has saved.
     if (unlockSelect) {
-        unlockSelect.value = String(blocklist ? getBlocklistUnlockMinutes(blocklist) : NEW_SPACE_UNLOCK_MINUTES);
+        const newSpaceMinutes = getSelectedBlocklistModalMode() === 'allowlist' ? NEW_ALLOW_SPACE_UNLOCK_MINUTES : NEW_SPACE_UNLOCK_MINUTES;
+        unlockSelect.value = String(blocklist ? getBlocklistUnlockMinutes(blocklist) : newSpaceMinutes);
     }
 
     // Restore color swatch selection

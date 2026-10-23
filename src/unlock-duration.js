@@ -18,6 +18,9 @@ export const DEFAULT_UNLOCK_MINUTES = 1440;
 /** What a newly created focus space starts on after an early stop. */
 export const NEW_SPACE_UNLOCK_MINUTES = 10;
 
+/** An allow-only space starts on Never: once stopped, it stays off until turned on again. */
+export const NEW_ALLOW_SPACE_UNLOCK_MINUTES = 0;
+
 /**
  * Anything that is not exactly one of the menu options falls back to the
  * default. Falling back to the strict end matters: a stop that used to be

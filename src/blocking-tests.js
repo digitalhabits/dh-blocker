@@ -3569,6 +3569,19 @@
             } finally {
                 internals.closeBlocklistModal();
             }
+            // An allow-only space starts on Never, and a block space opened after it is back on 10.
+            internals.openBlocklistModal(null, { mode: 'allowlist' });
+            try {
+                assertEqual(document.getElementById('unlock-duration-select')?.value, '0', 'T183: a new allow-only space starts on Never');
+            } finally {
+                internals.closeBlocklistModal();
+            }
+            internals.openBlocklistModal();
+            try {
+                assertEqual(document.getElementById('unlock-duration-select')?.value, '10', 'T183: a block space after an allow-only one is back on 10 minutes');
+            } finally {
+                internals.closeBlocklistModal();
+            }
         }
 
         // T230: Discard undoes the fields without collapsing the section you are
