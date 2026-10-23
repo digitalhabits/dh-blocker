@@ -52,6 +52,14 @@ function toggleBlocklistCardExpanded(card, id) {
     setBlocklistCardExpanded(card, id, !expandedBlocklistCardIds.has(id));
 }
 
+/** Expand a card's sites/apps summary, if it has one. */
+export function expandBlocklistCard(id) {
+    const card = document.querySelector(`.blocklist-card[data-id="${id}"]`);
+    if (!card?.querySelector('.blocklist-card-details')) return;
+    setBlocklistCardExpanded(card, id, true);
+    card.scrollIntoView({ block: 'nearest' });
+}
+
 async function openBlocklistEnterFromCard(blocklistId) {
     if (state.selectedBlocklistId === blocklistId) {
         if (isEnterSchedulerModalOpen()) {

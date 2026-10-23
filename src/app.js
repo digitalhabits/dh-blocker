@@ -98,7 +98,7 @@ import {
 } from './schedule-overlay.js';
 import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, isEnterSchedulerModalOpen, openBlocklistModal, openOverrideModal, refreshSelectedBlocklistUi, restopForNewStrictness, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncColorSwatchInk, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
 import { enhanceNativeSelects } from './custom-select.js';
-import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, deleteBlocklist, isBlocklistEditFrictionRequired, pendingDelete, saveBlocklistOrderFromDOM, setUndoToastMessage } from './blocklists.js';
+import { expandBlocklistCard, renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, deleteBlocklist, isBlocklistEditFrictionRequired, pendingDelete, saveBlocklistOrderFromDOM, setUndoToastMessage } from './blocklists.js';
 import {
     getSelectedBlocklistModalMode,
     syncBlocklistCreateUi,
@@ -1660,6 +1660,9 @@ function setupModalListeners() {
                 card.classList.add('blocklist-card-just-created');
                 card.addEventListener('animationend', () => card.classList.remove('blocklist-card-just-created'), { once: true });
             });
+        } else if (isEnterSchedulerModalOpen()) {
+            deselectBlocklist();
+            expandBlocklistCard(blocklist.id);
         } else if (state.selectedBlocklistId) {
             // Edit existing: refresh controls only, never auto-open enter.
             const dropdown = document.getElementById('blocklist-select');
