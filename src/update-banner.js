@@ -122,11 +122,13 @@ export async function startUpdateDownload(latestVersion) {
     const btn = document.getElementById('update-banner-link');
     if (!btn || btn.disabled || updateDownloadInProgress) return;
 
-    const version = normalizeReleaseVersion(latestVersion);
     updateDownloadInProgress = true;
     setUpdateDownloadButtonState('downloading', 0);
 
     try {
+        // The banner may be days old: refresh it so the newest release is shown and installed.
+        await checkForAppUpdate();
+        const version = normalizeReleaseVersion(btn.dataset.latestVersion || latestVersion);
         await ensureUpdateDownloadProgressListener();
         await tauriAPI.downloadAndRunUpdate(version);
         setUpdateDownloadButtonState('opening');
@@ -165,7 +167,7 @@ export function wireUpdateBannerDownloadLink(latestVersion, pkgBytes = null) {
     } else {
         delete btn.dataset.pkgBytes;
     }
-    resetUpdateDownloadButtonState();
+    if (!updateDownloadInProgress) resetUpdateDownloadButtonState();
 
     if (!btn.dataset.wired) {
         btn.dataset.wired = '1';
@@ -227,7 +229,9 @@ export async function showUpdateBanner(latestVersion, currentVersion = '', { pkg
     const notesPanel = document.getElementById('update-banner-notes');
     const notesContent = document.getElementById('update-banner-notes-content');
 
-    if (!banner || !versionEl) return;
+    // Periodic re-checks leave a banner already shown for this version, or dismissed, alone.
+    if (!banner || !versionEl || banner.dataset.shownVersion === latestVersion) return;
+    banner.dataset.shownVersion = latestVersion;
 
     versionEl.textContent = latestVersion;
     wireUpdateBannerDownloadLink(latestVersion, pkgBytes);

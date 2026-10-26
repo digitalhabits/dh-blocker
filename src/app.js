@@ -325,9 +325,11 @@ export async function runPostAcceptanceStartup() {
             startTickInterval();
         }
 
-        // Check for app updates (non-blocking, desktop only)
+        // Check for app updates (non-blocking, desktop only), and re-check
+        // every 6 h: the app can stay open for days past a release.
         if (!state.isIOS && !state.isAndroid) {
             checkForAppUpdate();
+            setInterval(checkForAppUpdate, 6 * 60 * 60 * 1000);
         }
         // Anonymous daily usage ping (Mac, Windows, iOS; off in Settings).
         startUsagePing();
