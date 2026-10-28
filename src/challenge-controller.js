@@ -141,7 +141,8 @@ export function createChallengeController(elements) {
         if (currentWordEl) currentWordEl.textContent = currentWord;
         if (wordInputEl) wordInputEl.value = '';
         setProgress(completed.length);
-        if (confirmBtnEl) confirmBtnEl.disabled = !currentWord;
+        // Muted until the first letter of each word, like the Android friction gate.
+        if (confirmBtnEl) confirmBtnEl.disabled = true;
         setNextWordLabel(remaining > 1);
     };
 
@@ -174,6 +175,7 @@ export function createChallengeController(elements) {
         // One word at a time: a space is never part of the answer. Stripped here
         // as well as blocked on keydown, for the iOS predictive bar's "word ".
         if (/\s/.test(wordInputEl.value)) wordInputEl.value = wordInputEl.value.replace(/\s+/g, '');
+        if (confirmBtnEl) confirmBtnEl.disabled = !wordInputEl.value;
         const expected = getCurrentChallengeWord(wordState);
         const typed = normalizeChallengeComparableText(wordInputEl.value);
         const correct = countCorrectChallengeChars(typed, expected);

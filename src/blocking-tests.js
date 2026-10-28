@@ -3193,6 +3193,25 @@
             assert(tap(), 'T255: char mode leaves the button alone');
         })();
 
+        (function T256() {
+            // Word mode: the button is muted until the current word has a letter in it.
+            const h = makeHarness();
+            const btn = h.elements.confirmBtnEl;
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            assert(btn.disabled, 'T256: muted before anything is typed');
+            typeWord(h, 'a');
+            assert(!btn.disabled, 'T256: enabled by the first letter');
+            typeWord(h, '');
+            assert(btn.disabled, 'T256: muted again when the word is cleared');
+            typeWord(h, 'alpha');
+            h.controller.handleConfirm();
+            assert(btn.disabled, 'T256: muted again for the next word');
+            typeWord(h, 'b');
+            assert(!btn.disabled, 'T256: the last word works the same way');
+            h.controller.open({ text: 'alpha beta' });
+            assert(!btn.disabled, 'T256: char mode never mutes it');
+        })();
+
         (function T238() {
             const h = makeHarness();
             h.controller.open({ text: 'alpha beta', wordMode: true });

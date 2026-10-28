@@ -12166,6 +12166,11 @@ body.dark-mode .modal-btn.black-btn:hover{
     background: var(--primary-btn-bg-hover);
 }
 
+.challenge-word-mode #confirm-override-btn:disabled{
+    opacity: 0.4;
+    transition: none; /* instant on each new word, not .modal-btn's 0.2s fade */
+}
+
 /* Wiggle animation for error */
 @keyframes wiggle {
 
