@@ -28,7 +28,7 @@ import {
     sanitizeChallengeTargetText,
     shouldBlockChallengeSpaceKey,
 } from './override-challenge.js';
-import { tSettingsFmt } from './i18n.js';
+import { tSettings, tSettingsFmt } from './i18n.js';
 
 const DEFAULT_PROGRESS_GRADIENT = 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)';
 
@@ -79,6 +79,15 @@ export function createChallengeController(elements) {
     let targetText = '';
     let wordState = null;
     let skipped = false;
+    // Word mode: the confirm button reads "Next word" until the last word, then its own label again.
+    let stopLabel = null;
+    const setNextWordLabel = (on) => {
+        const labelEl = confirmBtnEl?.querySelector('.start-confirm-primary-label') || confirmBtnEl;
+        if (!labelEl || on === (stopLabel !== null)) return;
+        if (on) [stopLabel, labelEl.textContent] = [labelEl.textContent, tSettings('challengeNextWord')];
+        else [labelEl.textContent, stopLabel] = [stopLabel, null];
+        confirmBtnEl.querySelector('.start-confirm-primary-icon')?.classList.toggle('hidden', on);
+    };
 
     /**
      * @param {'char'|'word'|'none'} mode - 'none' hides the whole stack, for a
@@ -133,6 +142,7 @@ export function createChallengeController(elements) {
         if (wordInputEl) wordInputEl.value = '';
         setProgress(completed.length);
         if (confirmBtnEl) confirmBtnEl.disabled = !currentWord;
+        setNextWordLabel(remaining > 1);
     };
 
     const wiggle = () => {
@@ -188,6 +198,8 @@ export function createChallengeController(elements) {
     };
 
     const blockPaste = (e) => e.preventDefault();
+    // Word mode: tapping the button must not take focus from the word field, or iOS drops the keyboard between words.
+    const keepWordFocus = (e) => { if (wordState) e.preventDefault(); };
 
     inputEl?.addEventListener('input', onTextInput);
     inputEl?.addEventListener('keydown', onKeyDown);
@@ -195,6 +207,7 @@ export function createChallengeController(elements) {
     wordInputEl?.addEventListener('input', onWordInput);
     wordInputEl?.addEventListener('keydown', onKeyDown);
     wordInputEl?.addEventListener('paste', blockPaste);
+    confirmBtnEl?.addEventListener('mousedown', keepWordFocus);
 
     return {
         /**
@@ -209,6 +222,7 @@ export function createChallengeController(elements) {
          */
         open({ difficulty = null, text = null, wordMode = null, progressColor = null, skipChallenge = false } = {}) {
             skipped = !!skipChallenge;
+            setNextWordLabel(false);
 
             if (inputEl) inputEl.value = '';
             if (wordInputEl) wordInputEl.value = '';
@@ -310,6 +324,7 @@ export function createChallengeController(elements) {
             targetText = '';
             wordState = null;
             skipped = false;
+            setNextWordLabel(false);
             if (inputEl) inputEl.value = '';
             if (wordInputEl) wordInputEl.value = '';
             setStackMode('char');
@@ -324,6 +339,7 @@ export function createChallengeController(elements) {
             wordInputEl?.removeEventListener('input', onWordInput);
             wordInputEl?.removeEventListener('keydown', onKeyDown);
             wordInputEl?.removeEventListener('paste', blockPaste);
+            confirmBtnEl?.removeEventListener('mousedown', keepWordFocus);
         },
     };
 }

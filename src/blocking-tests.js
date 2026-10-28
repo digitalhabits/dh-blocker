@@ -3161,6 +3161,38 @@
             assert(!h.elements.modalContentEl.classList.contains('challenge-word-mode'), 'T237: char mode clears the word-mode flag');
         })();
 
+        (function T254() {
+            // Word mode: the button reads "Next word" until the last word, then its own label and icon.
+            const h = makeHarness();
+            h.elements.confirmBtnEl.innerHTML = '<svg class="start-confirm-primary-icon"></svg><span class="start-confirm-primary-label">Stop</span>';
+            const label = h.elements.confirmBtnEl.querySelector('span');
+            const icon = h.elements.confirmBtnEl.querySelector('svg');
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            assertEqual(label.textContent, 'Next word', 'T254: a word that is not the last says Next word');
+            assert(icon.classList.contains('hidden'), 'T254: and hides the stop icon');
+            typeWord(h, 'alpha');
+            h.controller.handleConfirm();
+            assertEqual(label.textContent, 'Stop', 'T254: the last word says Stop');
+            assert(!icon.classList.contains('hidden'), 'T254: with the stop icon back');
+            h.controller.open({ text: 'alpha', wordMode: true });
+            assertEqual(label.textContent, 'Stop', 'T254: a single word says Stop straight away');
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            h.controller.reset();
+            assertEqual(label.textContent, 'Stop', 'T254: reset restores the label');
+            h.controller.open({ text: 'alpha beta' });
+            assertEqual(label.textContent, 'Stop', 'T254: char mode never says Next word');
+        })();
+
+        (function T255() {
+            // iOS drops the keyboard if the tap moves focus off the word field.
+            const h = makeHarness();
+            const tap = () => h.elements.confirmBtnEl.dispatchEvent(new MouseEvent('mousedown', { cancelable: true }));
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            assert(!tap(), 'T255: word mode keeps focus on the word field');
+            h.controller.open({ text: 'alpha beta' });
+            assert(tap(), 'T255: char mode leaves the button alone');
+        })();
+
         (function T238() {
             const h = makeHarness();
             h.controller.open({ text: 'alpha beta', wordMode: true });
