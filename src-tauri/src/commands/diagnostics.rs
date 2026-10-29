@@ -117,7 +117,7 @@ pub fn last_connections(log: &str) -> Vec<LastConnection> {
             at,
         });
     }
-    out.sort_by(|a, b| b.at.cmp(&a.at));
+    out.sort_by_key(|c| std::cmp::Reverse(c.at));
     out
 }
 
