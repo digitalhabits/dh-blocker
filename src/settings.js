@@ -676,7 +676,7 @@ export function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) 
 
     // Browsers (extension)
     const extensionBrowserKeys = state.isMacOSDesktop
-        ? ['firefox', ...MAC_BLOCKING_METHOD_KEYS.filter((k) => browserBlockingMethod(k) === 'extension')]
+        ? MAC_BLOCKING_METHOD_KEYS.filter((k) => browserBlockingMethod(k) === 'extension')
         : ['chrome', 'brave', 'edge', 'firefox', 'safari'];
     const browsersHint = state.isMacOSDesktop
         ? tSettings('diagnosticsBrowsersSectionHintMacExtension')

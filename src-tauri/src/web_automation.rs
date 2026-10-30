@@ -1189,12 +1189,12 @@ fn applescript_string_expr(s: &str) -> String {
 /// the resolved `file://` prefix; the path fallback guards against
 /// browser-specific file-URL normalization that could otherwise cause
 /// an infinite redirect loop.
-fn is_block_page_url(url: &str, block_page_url: &str) -> bool {
+pub(crate) fn is_block_page_url(url: &str, block_page_url: &str) -> bool {
     url.starts_with(block_page_url) || url.contains("blocked/blocked.html")
 }
 
 /// Pull the original site URL back out of a block-page URL's `u` param.
-fn original_url_from_block_page(url: &str) -> Option<String> {
+pub(crate) fn original_url_from_block_page(url: &str) -> Option<String> {
     let query = url.split('?').nth(1)?;
     for pair in query.split('&') {
         let mut kv = pair.splitn(2, '=');
@@ -1223,7 +1223,11 @@ fn block_page_owned_by_system_test(url: &str) -> bool {
 /// Build the block-page URL with as much block metadata as we have, so
 /// the page shows the same pill / countdown / source the extension does.
 /// Mirrors `buildBlockedUrl` in background.js.
-fn build_blocked_url(block_page_url: &str, original_url: &str, blocks: &[BlockInfo]) -> String {
+pub(crate) fn build_blocked_url(
+    block_page_url: &str,
+    original_url: &str,
+    blocks: &[BlockInfo],
+) -> String {
     let mut query = format!("u={}", pct_encode(original_url));
     if let Some(info) = block_info_for_url(original_url, blocks) {
         query.push_str(&format!("&id={}", pct_encode(&info.blocklist_id)));

@@ -215,7 +215,7 @@ export function syncBlockingMethodSelects(methods = getBlockingMethodsMap()) {
     for (const key of MAC_BLOCKING_METHOD_KEYS) {
         const select = document.getElementById(`blocking-method-${key}`);
         if (!select) continue;
-        const value = methods[key] || 'automation';
+        const value = methods[key] || methodDefaultForKey(key);
         select.value = value;
         select.disabled = false;
     }
@@ -254,6 +254,13 @@ export async function wireBlockingMethodSettings() {
                 void onBlockingMethodChange(key, select);
             });
         }
+        const firefoxAxBtn = document.getElementById('settings-firefox-ax-grant-btn');
+        if (firefoxAxBtn && !firefoxAxBtn._firefoxAxWired) {
+            firefoxAxBtn._firefoxAxWired = true;
+            firefoxAxBtn.addEventListener('click', () => {
+                void requestAccessibilityGrant();
+            });
+        }
         const safariFdaBtn = document.getElementById('settings-safari-fda-grant-btn');
         if (safariFdaBtn && !safariFdaBtn._safariFdaWired) {
             safariFdaBtn._safariFdaWired = true;
@@ -270,6 +277,7 @@ export async function wireBlockingMethodSettings() {
         }
     }
     syncSafariFdaSettingsRow();
+    void syncFirefoxAxSettingsRow();
 }
 
 export function safariUsesExtensionMode() {
@@ -525,9 +533,84 @@ export async function syncSafariFdaSettingsRow() {
     if (grantBtn) grantBtn.classList.toggle('hidden', granted);
 }
 
+/// The Accessibility grant row, shown only while Firefox is actually on that
+/// method. Mirrors `syncSafariFdaSettingsRow` — same markup, same shape.
+///
+/// Three states rather than two: a granted-but-not-yet-awake engine is not
+/// the same as a missing grant, and saying so stops the row claiming Firefox
+/// is unprotected for the second or two after the browser launches.
+export async function syncFirefoxAxSettingsRow() {
+    if (__ANDROID_BUILD__) return;
+    const row = document.getElementById('settings-firefox-ax-row');
+    const statusEl = document.getElementById('settings-firefox-ax-status');
+    const grantBtn = document.getElementById('settings-firefox-ax-grant-btn');
+    if (!row || !statusEl) return;
+    if (!browserUsesAccessibility('firefox')) {
+        row.classList.add('hidden');
+        return;
+    }
+    row.classList.remove('hidden');
+    if (grantBtn) grantBtn.textContent = tSettings('firefoxAxSettingsGrantBtn');
+
+    let trusted = false;
+    try {
+        trusted = !!(await invoke('accessibility_trusted'));
+    } catch (e) {
+        console.warn('[firefox-ax] trusted check failed:', e);
+    }
+    let waiting = false;
+    if (trusted) {
+        try {
+            waiting = (await invoke('firefox_ax_status')) === 'waitingForEngine';
+        } catch (_) { /* status is advisory */ }
+    }
+    statusEl.textContent = !trusted
+        ? tSettings('firefoxAxSettingsNotGranted')
+        : waiting
+            ? tSettings('firefoxAxSettingsWaiting')
+            : tSettings('firefoxAxSettingsGranted');
+    if (grantBtn) grantBtn.classList.toggle('hidden', trusted);
+}
+
+/// Nothing in-process can grant Accessibility: the system prompt only
+/// deep-links to System Settings, where the user flips a switch by hand. So
+/// the grant is detected by polling rather than returned by a call.
+const FIREFOX_AX_POLL_TRIES = 60;
+const FIREFOX_AX_POLL_MS = 1000;
+
+export async function pollAccessibilityUntilGranted() {
+    for (let i = 0; i < FIREFOX_AX_POLL_TRIES; i++) {
+        let trusted = false;
+        try {
+            trusted = !!(await invoke('accessibility_trusted'));
+        } catch (_) { /* keep waiting */ }
+        if (trusted) break;
+        await new Promise((resolve) => setTimeout(resolve, FIREFOX_AX_POLL_MS));
+    }
+    await syncFirefoxAxSettingsRow();
+}
+
+/// Show the prompt and open the pane, then wait for the switch.
+export async function requestAccessibilityGrant() {
+    try {
+        const already = await invoke('accessibility_request');
+        if (already) {
+            await syncFirefoxAxSettingsRow();
+            return;
+        }
+    } catch (e) {
+        console.warn('[firefox-ax] permission request failed:', e);
+    }
+    await pollAccessibilityUntilGranted();
+}
+
 export async function onBlockingMethodChange(key, select) {
     const previous = browserBlockingMethod(key);
-    const desired = select.value === 'extension' ? 'extension' : 'automation';
+    // Only methods this browser can actually enforce with: Firefox has no
+    // Automation, the others have no Accessibility.
+    const desired = methodIsValidForKey(key, select.value)
+        ? select.value
+        : methodDefaultForKey(key);
     select.disabled = true;
     try {
         const methods = await tauriAPI.setBlockingMethod(key, desired);
@@ -571,8 +654,22 @@ export async function onBlockingMethodChange(key, select) {
                 await updateBehaviourChangeBanner(fresh);
             }
             if (key === 'safari') syncSafariFdaSettingsRow();
+            if (key === 'firefox') await syncFirefoxAxSettingsRow();
         } else if (key === 'safari') {
             syncSafariFdaSettingsRow();
+        }
+        if (desired === 'accessibility') {
+            // Choosing the method is not the same as being able to enforce
+            // with it, and the user cannot be expected to find a System
+            // Settings pane on their own. Ask straight away; the watcher
+            // reports NotTrusted (and the enforcer treats Firefox as
+            // non-compliant) until the switch is flipped.
+            await syncFirefoxAxSettingsRow();
+            let trusted = false;
+            try {
+                trusted = !!(await invoke('accessibility_trusted'));
+            } catch (_) { /* treat as not granted */ }
+            if (!trusted) await requestAccessibilityGrant();
         }
     } catch (e) {
         console.warn('[blocking-method] set failed:', e);
@@ -646,7 +743,10 @@ export const BROWSER_STORE_LINKS = {
 // grant, not whether ReDD Focus is installed/enabled. Firefox stays on
 // the extension path. Non-macOS keeps the extension model everywhere.
 export const AUTOMATION_BROWSER_KEYS = ['chrome', 'brave', 'edge', 'safari'];
-export const MAC_BLOCKING_METHOD_KEYS = ['safari', 'chrome', 'edge', 'brave'];
+// Browsers that let the user pick a method on macOS. Firefox is in the list
+// but is *not* in AUTOMATION_BROWSER_KEYS: it has no AppleScript dictionary
+// for tabs, so its choice is extension (the default) or accessibility.
+export const MAC_BLOCKING_METHOD_KEYS = ['safari', 'chrome', 'edge', 'brave', 'firefox'];
 /** @deprecated use MAC_BLOCKING_METHOD_KEYS */
 export const MAC_CHROMIUM_BLOCKING_KEYS = MAC_BLOCKING_METHOD_KEYS;
 
@@ -658,21 +758,50 @@ export function getBlockingMethodsMap() {
     return state.appData?.settings?.blockingMethods || {};
 }
 
+// Mirrors `blocking_method::method_for_key_at_path` and
+// `method_is_valid_for_key` in Rust. Enforcement is decided there; this copy
+// exists so the UI can show what will happen without a round-trip. The two
+// must stay in step — a divergence here promises something enforcement will
+// not do (see architecture.md on the iOS resolver pair for the same hazard).
+export function methodDefaultForKey(key) {
+    // Firefox keeps defaulting to the extension, so installs that predate
+    // the accessibility method are untouched.
+    return key === 'firefox' ? 'extension' : 'automation';
+}
+
+export function methodIsValidForKey(key, method) {
+    if (key === 'firefox') return method !== 'automation';
+    return method !== 'accessibility';
+}
+
+/** Methods a browser can actually offer, in the order the UI should show. */
+export function methodOptionsForKey(key) {
+    return key === 'firefox' ? ['extension', 'accessibility'] : ['automation', 'extension'];
+}
+
 export function browserBlockingMethod(key) {
-    if (!state.isMacOSDesktop || !MAC_BLOCKING_METHOD_KEYS.includes(key)) {
-        if (state.isMacOSDesktop && key === 'firefox') return 'extension';
-        return 'extension';
-    }
-    return getBlockingMethodsMap()[key] || 'automation';
+    if (!state.isMacOSDesktop || !MAC_BLOCKING_METHOD_KEYS.includes(key)) return 'extension';
+    const stored = getBlockingMethodsMap()[key];
+    // A method the browser cannot use falls back to its default rather than
+    // reporting something enforcement would ignore.
+    if (stored && methodIsValidForKey(key, stored)) return stored;
+    return methodDefaultForKey(key);
 }
 
 export function browserUsesAutomation(key) {
     if (!state.isMacOSDesktop) return false;
+    // Firefox can never be on Automation, whatever is stored for it.
     if (key === 'firefox') return false;
     if (MAC_BLOCKING_METHOD_KEYS.includes(key)) {
         return browserBlockingMethod(key) === 'automation';
     }
     return false;
+}
+
+/** True only for Firefox on macOS, and only when explicitly selected. */
+export function browserUsesAccessibility(key) {
+    if (!state.isMacOSDesktop) return false;
+    return browserBlockingMethod(key) === 'accessibility';
 }
 
 // key -> 'granted' | 'denied' | 'unknown', refreshed from

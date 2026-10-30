@@ -242,12 +242,16 @@ Implemented in `src-tauri/src/web_automation.rs`.
 | Chrome | Apple Events (`tell application "Google Chrome"`) | No |
 | Brave | Apple Events (`tell application "Brave Browser"`) | No |
 | Edge | Apple Events (`tell application "Microsoft Edge"`) | No |
-| Firefox | Digital Habits: Focus extension + `--native-host` | Yes (manual install) |
+| Firefox | Digital Habits: Focus extension + `--native-host`, or Accessibility | Yes (manual install), or an Accessibility grant |
 
-Firefox has no usable AppleScript dictionary for tab URL control, so it stays
-on the v2 extension path. Safari, Chrome, Brave and Edge can each be opted
-into the extension path per browser (`blocking_method.rs`); Automation is the
-default. Safari's extension mode mirrors the data file into the App Group
+Firefox has no usable AppleScript dictionary for tab URL control — its
+auto-generated Standard Suite has no `tab` class, so a tab-URL script fails to
+*compile* — and it therefore defaults to the v2 extension path. Its opt-in
+alternative is Accessibility (§6.1), not Automation. Safari, Chrome, Brave and
+Edge can each be opted into the extension path per browser
+(`blocking_method.rs`); Automation is the default, and Accessibility is not
+offered to them because Apple Events are faster, cover every tab rather than
+the active one, and need no system-wide input-synthesis grant. Safari's extension mode mirrors the data file into the App Group
 (`app_group.rs`), and the enforcer and profile scan follow the chosen method.
 
 ### 4.2 How blocking works
@@ -370,7 +374,47 @@ Firefox on macOS follows the Windows-style extension + native-messaging model:
   as `src-tauri/src/web_automation.rs` (blocklist wins, then allowlist union);
   only the enforcement location differs
 - enforcer treats Firefox like a Windows browser (extension compliance, not
-  Automation TCC)
+  Automation TCC) — unless Firefox is on the Accessibility method, where the
+  compliance signal is the grant instead (§6.1)
+
+### 6.1) macOS Firefox (Accessibility path, opt-in)
+
+`src-tauri/src/accessibility.rs` + `src-tauri/src/firefox_ax.rs`. Selected per
+user via `settings.blockingMethods.firefox = "accessibility"`; the extension
+stays the default, so existing installs are unaffected.
+
+- **Reads** take `AXWebArea`'s `AXURL` — the document's real URL — rather than
+  the address-bar string, which is a display form with the scheme hidden,
+  `www.` sometimes trimmed and IDN rendered for humans. This is the parsing
+  hazard `BrowserUrlParserTest` exists for on Android, avoided rather than
+  parsed.
+- **The active tab only.** Accessibility exposes the laid-out document, so a
+  blocked page in a background tab is caught when the user switches to it.
+- **Redirects** press Firefox's "Open Location" menu item and type the URL,
+  because CoreGraphics keycodes are physical positions: keycode 37 is `L` on
+  QWERTY and `N` on Dvorak, where a synthesised Cmd+L would open a new window.
+  Events post to the browser's pid, so Firefox is never activated. A redirect
+  **defers** while the address bar has focus rather than clobbering what the
+  user is typing.
+- **Decisions reuse `web_automation`'s helpers verbatim** (`url_is_blocked`,
+  `build_blocked_url`, `is_block_page_url`, `original_url_from_block_page`),
+  so Firefox cannot drift into blocking a different set of URLs than the other
+  browsers. Only the transport differs.
+- **One global grant, not per-browser TCC.** It cannot be self-granted: the
+  system prompt only deep-links to System Settings, so the UI polls for the
+  switch being flipped.
+- **The engine is instantiated lazily** and the documented handshakes are
+  rejected on current builds (`AXEnhancedUserInterface` → -25208,
+  `AXManualAccessibility` → -25205) while the engine comes up anyway shortly
+  after the attempt. Reads therefore answer nothing for a second or two after
+  Firefox launches, and **Firefox is unenforced in that window** — one reason
+  the extension remains the default.
+- **Failures fall closed, then escalate.** A read that returns nothing means
+  "no decision", never "nothing is blocked", so an unidentified tab is left
+  alone. A *missing grant* is different: it is treated as non-compliance
+  (`ExtensionIssue::Accessibility`) and rides the enforcer's grace/force-quit
+  path, exactly as a denied Automation grant does, rather than leaving the user
+  believing Firefox is blocked while it is not.
 
 ---
 

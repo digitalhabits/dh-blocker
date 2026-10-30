@@ -28,6 +28,10 @@ mod overlay_assets;
 pub mod safari_bridge;
 #[cfg(target_os = "macos")]
 pub mod uninstall;
+// Not glob re-exported: its `register` / `auto_start` would collide with
+// `web_automation`'s in the globs below. Call sites use the qualified path.
+#[cfg(target_os = "macos")]
+pub mod firefox_ax;
 #[cfg(target_os = "macos")]
 pub mod web_automation;
 

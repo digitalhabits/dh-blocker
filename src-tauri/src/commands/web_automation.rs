@@ -22,7 +22,7 @@ impl Default for WebAutomationState {
 /// (`bundle.resources` in tauri.conf.json). In `tauri dev` / `pnpm dev`,
 /// `resource_dir()` often fails with "unknown path", so we fall back to the
 /// `src-tauri/blocked/` sources next to this crate.
-fn resolve_block_page_url(app: &AppHandle) -> Option<String> {
+pub(crate) fn resolve_block_page_url(app: &AppHandle) -> Option<String> {
     let bundled = app
         .path()
         .resource_dir()

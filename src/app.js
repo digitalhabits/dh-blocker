@@ -61,6 +61,7 @@ import { CURRENT_EULA_REVISION, applyEnforcementDescCopy, applyMacAutomationIntr
 import {
     MAC_BLOCKING_METHOD_KEYS,
     browserBlockingMethod,
+    methodOptionsForKey,
     invalidateMigrationMacCopyCache,
     migrationExtLinesHtml,
     applySafariFdaOnboardingLanguage,
@@ -2920,16 +2921,22 @@ export function applySettingsLanguage() {
     setText('settings-blocking-method-brave-label', tSettings('settingsBlockingMethodBrave'));
     setText('settings-blocking-method-edge-label', tSettings('settingsBlockingMethodEdge'));
     setText('settings-blocking-method-safari-label', tSettings('settingsBlockingMethodSafari'));
+    setText('settings-blocking-method-firefox-label', tSettings('settingsBlockingMethodFirefox'));
     syncBlockingMethodLabelIcons();
     for (const key of MAC_BLOCKING_METHOD_KEYS) {
         const select = document.getElementById(`blocking-method-${key}`);
         if (!select) continue;
         const current = select.value || browserBlockingMethod(key);
         select.innerHTML = '';
-        for (const [value, labelKey] of [
-            ['automation', 'settingsBlockingMethodAutomation'],
-            ['extension', 'settingsBlockingMethodExtension'],
-        ]) {
+        // Per browser, not one list for all: Firefox offers extension or
+        // accessibility, the others automation or extension.
+        const labelKeys = {
+            automation: 'settingsBlockingMethodAutomation',
+            extension: 'settingsBlockingMethodExtension',
+            accessibility: 'settingsBlockingMethodAccessibility',
+        };
+        for (const value of methodOptionsForKey(key)) {
+            const labelKey = labelKeys[value];
             const opt = document.createElement('option');
             opt.value = value;
             opt.textContent = tSettings(labelKey);
