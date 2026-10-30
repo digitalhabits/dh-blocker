@@ -781,13 +781,6 @@ fn file_url_encodes_spaces() {
         );
 }
 
-/// Fresh, empty cache directory for the compiled-script tests.
-fn scratch_script_dir(name: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("redd-block-test-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
-}
-
 #[test]
 fn parse_tab_rows_keeps_empty_urls_and_skips_malformed_rows() {
     // The joined output has no trailing linefeed, and Safari's empty
@@ -825,57 +818,15 @@ fn join_rows_handler_joins_with_linefeeds() {
 }
 
 #[test]
-fn compiled_script_is_reused_until_its_file_disappears() {
-    let dir = scratch_script_dir("reuse");
-    let mut scripts = CompiledScripts::new(dir.clone());
-    let source = "on run\n  return \"from source\"\nend run";
-
-    assert_eq!(scripts.run("probe", source).unwrap().trim(), "from source");
-    let path = dir.join("probe.scpt");
-    assert!(path.is_file(), "first run leaves a compiled script behind");
-
-    // Swap a different compiled script in under the same name: if the
-    // next run recompiled from `source` it would say "from source".
-    compile_script("on run\n  return \"from cache\"\nend run", &path).unwrap();
-    assert_eq!(scripts.run("probe", source).unwrap().trim(), "from cache");
-
-    // macOS sweeps old files out of caches; a missing file is rebuilt.
-    std::fs::remove_file(&path).unwrap();
-    assert_eq!(scripts.run("probe", source).unwrap().trim(), "from source");
-    assert!(path.is_file());
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn script_that_does_not_compile_falls_back_to_running_source() {
-    let dir = scratch_script_dir("fallback");
-    let mut scripts = CompiledScripts::new(dir.clone());
-    // A syntax error fails both the compile and the source fallback, so
-    // the run reports an error rather than caching a path that does not
-    // exist.
-    let broken = "on run\n  return (\nend run";
-    assert!(matches!(
-        scripts.run("broken", broken),
-        Err(AutomationError::Other(_))
-    ));
-    assert!(!dir.join("broken.scpt").exists());
-    // The failure is remembered, so later ticks do not pay for a second
-    // osacompile on top of the osascript run.
-    assert!(scripts.source_only.contains("broken"));
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn read_tabs_script_compiles_against_safari() {
-    // Safari ships with every macOS, so this checks the real read script
-    // against a real scripting dictionary. Compiling reads Safari's sdef
-    // and sends it no Apple Event, so no Automation prompt is involved.
-    let dir = scratch_script_dir("safari");
-    let path = dir.join("safari.scpt");
-    std::fs::create_dir_all(&dir).unwrap();
-    compile_script(&read_tabs_script(SupportedBrowser::Safari), &path)
-        .expect("read script compiles against Safari's dictionary");
-    let _ = std::fs::remove_dir_all(&dir);
+fn read_tabs_script_runs_against_safari() {
+    // Safari ships with every macOS, so this compiles the real read
+    // script against a real scripting dictionary and runs it. With Safari
+    // closed the `is running` guard sends it no Apple Event, so no
+    // Automation prompt is involved; skip rather than prompt if it is open.
+    if running_supported_browsers().contains(&SupportedBrowser::Safari) {
+        return;
+    }
+    let out = run_osascript(&read_tabs_script(SupportedBrowser::Safari))
+        .expect("read script compiles and runs against Safari's dictionary");
+    assert!(parse_tab_rows(&out).is_empty());
 }

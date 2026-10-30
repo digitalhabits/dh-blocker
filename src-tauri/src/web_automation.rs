@@ -30,8 +30,7 @@
 // `native_host::derive_payload` — the same single source of truth the
 // extension's native host and the enforcer use.
 
-use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -837,9 +836,8 @@ fn read_tabs_script(browser: SupportedBrowser) -> String {
     // Safari reports `missing value` for empty tabs; the `as text`
     // coercion is wrapped in `try` so those rows degrade to "".
     //
-    // The explicit `on run` keeps every variable local: top-level
-    // variables in an implicit run handler are globals, which a compiled
-    // script carries between runs.
+    // The explicit `on run` keeps the variables local; at the top level
+    // of an implicit run handler they would be script globals.
     format!(
         r#"{join}
 
@@ -897,115 +895,9 @@ fn parse_tab_rows(out: &str) -> Vec<Tab> {
     tabs
 }
 
-/// Read scripts compiled once per process and reused every tick, so a
-/// tick no longer pays for compiling the script and loading the
-/// browser's scripting dictionary. `None` when there is no per-user
-/// cache directory; reads then run from source as before.
-static READ_SCRIPTS: OnceLock<Mutex<Option<CompiledScripts>>> = OnceLock::new();
-
 fn read_tabs(browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
-    let source = read_tabs_script(browser);
-    let scripts = READ_SCRIPTS.get_or_init(|| {
-        // Per-user, unlike `/tmp`, so another account cannot plant a
-        // script that would then run with this user's Automation grants.
-        Mutex::new(
-            dirs::cache_dir()
-                .map(|dir| CompiledScripts::new(dir.join("com.reddblock").join("automation"))),
-        )
-    });
-    let mut scripts = scripts
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let out = match scripts.as_mut() {
-        Some(scripts) => scripts.run(browser.settings_key(), &source)?,
-        None => run_osascript(&source)?,
-    };
+    let out = run_osascript(&read_tabs_script(browser))?;
     Ok(parse_tab_rows(&out))
-}
-
-/// Compiled `.scpt` files for scripts whose source never changes within a
-/// run. Each is still run by a fresh `osascript`, which keeps the
-/// timeout-and-kill guard in `run_command`: an in-process `NSAppleScript`
-/// would remove the spawn too, but it is main-thread-only and has no way
-/// to abandon an Apple Event stuck behind an Automation consent prompt.
-struct CompiledScripts {
-    dir: PathBuf,
-    compiled: HashMap<&'static str, PathBuf>,
-    /// Scripts that failed to compile. They run from source from then on
-    /// rather than paying for a failing `osacompile` every tick.
-    source_only: HashSet<&'static str>,
-}
-
-impl CompiledScripts {
-    fn new(dir: PathBuf) -> Self {
-        Self {
-            dir,
-            compiled: HashMap::new(),
-            source_only: HashSet::new(),
-        }
-    }
-
-    /// Run `source` from its compiled form under `name`, compiling it on
-    /// first use and again whenever the file has gone (macOS sweeps old
-    /// files out of caches). Falls back to running the source directly,
-    /// so a compile problem costs the saving, never a read.
-    fn run(&mut self, name: &'static str, source: &str) -> Result<String, AutomationError> {
-        if self.source_only.contains(name) {
-            return run_osascript(source);
-        }
-        let path = match self.compiled.get(name) {
-            Some(path) if path.is_file() => path.clone(),
-            _ => {
-                let path = self.dir.join(format!("{name}.scpt"));
-                if let Err(e) = compile_script(source, &path) {
-                    log::warn!(
-                        "web_automation: compiling the {name} script failed, running it from source: {e:?}"
-                    );
-                    self.compiled.remove(name);
-                    self.source_only.insert(name);
-                    return run_osascript(source);
-                }
-                self.compiled.insert(name, path.clone());
-                path
-            }
-        };
-        let mut cmd = std::process::Command::new("/usr/bin/osascript");
-        cmd.arg(&path);
-        let result = run_command(cmd, "osascript");
-        if matches!(result, Err(AutomationError::Other(_))) {
-            // Could be a damaged file as easily as a busy browser; compile
-            // afresh next time rather than risk failing the same way on
-            // every tick.
-            self.compiled.remove(name);
-        }
-        result
-    }
-}
-
-/// Compile `source` to the compiled script at `dest`. Writes beside it
-/// and renames, so a reader never sees a half-written file.
-fn compile_script(source: &str, dest: &Path) -> Result<(), AutomationError> {
-    let dir = dest
-        .parent()
-        .ok_or_else(|| AutomationError::Other(format!("no parent for {}", dest.display())))?;
-    std::fs::create_dir_all(dir)
-        .map_err(|e| AutomationError::Other(format!("create {}: {e}", dir.display())))?;
-    // `osacompile` picks the output format from the extension, so the
-    // temporary name must still end in `.scpt`.
-    let partial = dest.with_extension(format!("{}.partial.scpt", std::process::id()));
-    let mut cmd = std::process::Command::new("/usr/bin/osacompile");
-    cmd.arg("-o").arg(&partial).arg("-e").arg(source);
-    // Through `run_command` for its timeout, and because compiling a
-    // `tell application` block reads the target's dictionary, which for
-    // some apps means an Apple Event.
-    if let Err(e) = run_command(cmd, "osacompile") {
-        let _ = std::fs::remove_file(&partial);
-        return Err(e);
-    }
-    std::fs::rename(&partial, dest).map_err(|e| {
-        let _ = std::fs::remove_file(&partial);
-        AutomationError::Other(format!("rename to {}: {e}", dest.display()))
-    })
 }
 
 fn apply_actions(
@@ -1038,29 +930,23 @@ end if"#,
 /// Run an AppleScript via osascript, classifying the not-authorized
 /// (Automation TCC) error so the caller can drive the permission UI.
 fn run_osascript(script: &str) -> Result<String, AutomationError> {
-    let mut cmd = std::process::Command::new("/usr/bin/osascript");
-    cmd.arg("-e").arg(script);
-    run_command(cmd, "osascript")
-}
-
-/// Run an `osascript`/`osacompile` command under `APPLE_EVENTS`, killing it
-/// after `OSASCRIPT_TIMEOUT`. `what` names the tool in error messages.
-fn run_command(mut cmd: std::process::Command, what: &str) -> Result<String, AutomationError> {
     let _guard = APPLE_EVENTS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-    let mut child = cmd
+    let mut child = std::process::Command::new("/usr/bin/osascript")
+        .arg("-e")
+        .arg(script)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| AutomationError::Other(format!("spawn {what}: {e}")))?;
+        .map_err(|e| AutomationError::Other(format!("spawn osascript: {e}")))?;
 
     let started = Instant::now();
     loop {
         match child
             .try_wait()
-            .map_err(|e| AutomationError::Other(format!("wait {what}: {e}")))?
+            .map_err(|e| AutomationError::Other(format!("wait osascript: {e}")))?
         {
             Some(status) => {
                 use std::io::Read;
@@ -1086,7 +972,7 @@ fn run_command(mut cmd: std::process::Command, what: &str) -> Result<String, Aut
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(AutomationError::Other(format!(
-                    "{what} timed out after {}s",
+                    "osascript timed out after {}s",
                     OSASCRIPT_TIMEOUT.as_secs()
                 )));
             }
