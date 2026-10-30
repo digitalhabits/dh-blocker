@@ -830,3 +830,97 @@ fn read_tabs_script_runs_against_safari() {
         .expect("read script compiles and runs against Safari's dictionary");
     assert!(parse_tab_rows(&out).is_empty());
 }
+
+#[test]
+fn in_process_script_returns_text_and_maps_errors() {
+    // Pure AppleScript, so no Apple Event and no Automation prompt.
+    let joined = format!(
+        "{JOIN_ROWS_HANDLER}\non run\n  return joinRows({{\"1\" & tab & \"1\" & tab & \"https://a.example/\", \"1\" & tab & \"2\" & tab & \"\"}}, linefeed)\nend run"
+    );
+    let script = in_process::compile(&joined).expect("compiles in process");
+    assert_eq!(
+        in_process::execute(&script).unwrap(),
+        "1\t1\thttps://a.example/\n1\t2\t"
+    );
+
+    let denied = in_process::compile("error \"no\" number -1743").unwrap();
+    assert!(matches!(
+        in_process::execute(&denied),
+        Err(AutomationError::NotAuthorized)
+    ));
+    let other = in_process::compile("error \"boom\" number 42").unwrap();
+    match in_process::execute(&other) {
+        Err(AutomationError::Other(msg)) => assert!(msg.contains("boom"), "{msg}"),
+        r => panic!("expected Other, got {r:?}"),
+    }
+    assert!(in_process::compile("return (").is_err());
+}
+
+#[test]
+fn in_process_reads_wait_for_granted_permission_and_recheck_it() {
+    let mut reads = in_process::Reads::default();
+    let browser = SupportedBrowser::Safari;
+    let t0 = Instant::now();
+    let source = || "return \"read\"".to_string();
+    let checks = std::cell::Cell::new(0);
+    let check = |granted: bool| {
+        checks.set(checks.get() + 1);
+        granted
+    };
+
+    // Not granted: no in-process read, so the caller uses osascript.
+    assert!(reads.read(browser, t0, source, || check(false)).is_none());
+    // The answer is cached until the recheck interval passes.
+    assert!(reads
+        .read(browser, t0 + Duration::from_secs(1), source, || check(true))
+        .is_none());
+    assert_eq!(checks.get(), 1);
+
+    let later = t0 + in_process::PERMISSION_RECHECK;
+    let out = reads.read(browser, later, source, || check(true));
+    assert_eq!(out.unwrap().unwrap(), "read");
+    assert_eq!(checks.get(), 2);
+    let out = reads.read(browser, later + Duration::from_secs(1), source, || {
+        check(true)
+    });
+    assert_eq!(out.unwrap().unwrap(), "read");
+    assert_eq!(
+        checks.get(),
+        2,
+        "granted answer is reused within the interval"
+    );
+}
+
+#[test]
+fn in_process_denial_forces_a_permission_recheck() {
+    let mut reads = in_process::Reads::default();
+    let browser = SupportedBrowser::Chrome;
+    let t0 = Instant::now();
+    let denied = || "error \"no\" number -1743".to_string();
+    let out = reads.read(browser, t0, denied, || true);
+    assert!(matches!(out, Some(Err(AutomationError::NotAuthorized))));
+    // Revoked in System Settings: the next read asks TCC again at once
+    // instead of trusting the cached grant for the rest of the interval.
+    assert!(reads
+        .read(browser, t0 + Duration::from_secs(1), denied, || false)
+        .is_none());
+}
+
+#[test]
+fn in_process_compile_failure_falls_back_to_osascript_for_good() {
+    let mut reads = in_process::Reads::default();
+    let browser = SupportedBrowser::Edge;
+    let t0 = Instant::now();
+    assert!(reads
+        .read(browser, t0, || "return (".to_string(), || true)
+        .is_none());
+    // Not recompiled on later ticks, even once the source would compile.
+    assert!(reads
+        .read(
+            browser,
+            t0 + Duration::from_secs(1),
+            || "return 1".to_string(),
+            || true
+        )
+        .is_none());
+}

@@ -94,7 +94,8 @@ cocoa = "0.26"
 core-foundation = "0.10.1"
 core-graphics = "0.25.0"
 objc = "0.2"
-objc2-foundation = { version = "0.3", default-features = false, features = ["NSError", "NSFileManager", "NSString", "NSURL"] }
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSAppleEventDescriptor", "NSAppleScript", "NSDictionary", "NSError", "NSFileManager", "NSString", "NSURL", "NSValue"] }
 plist = "1"
 # NSPanel-backed main window: lets the blocking-warning shell adopt
 # `NSWindowStyleMaskNonactivatingPanel` + `FullScreenAuxiliary` collection

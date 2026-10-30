@@ -3334,6 +3334,7 @@ dependencies = [
  "libc",
  "log",
  "objc",
+ "objc2",
  "objc2-foundation",
  "plist",
  "reqwest 0.12.28",
