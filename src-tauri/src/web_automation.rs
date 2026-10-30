@@ -30,7 +30,8 @@
 // `native_host::derive_payload` — the same single source of truth the
 // extension's native host and the enforcer use.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -802,12 +803,24 @@ enum AutomationError {
 /// linefeed never appear inside a URL, so parsing back is unambiguous.
 const FIELD_SEP: char = '\t';
 
-fn read_tabs(browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
-    let app_name = browser.applescript_name();
+/// AppleScript handler that joins the read script's rows. Building one
+/// text by `set _out to _out & …` copies everything built so far on every
+/// row, so a read cost grew with the square of the open tab count;
+/// collecting a list and coercing it once under `text item delimiters`
+/// is linear. Shared with the tests, which run it on synthetic rows.
+const JOIN_ROWS_HANDLER: &str = r#"on joinRows(_rows, _eol)
+  set _saved to AppleScript's text item delimiters
+  set AppleScript's text item delimiters to _eol
+  set _out to _rows as text
+  set AppleScript's text item delimiters to _saved
+  return _out
+end joinRows"#;
+
+fn read_tabs_script(browser: SupportedBrowser) -> String {
     // The `is running` guard keeps the read from *launching* the browser
     // if it quit between the sysinfo check and now (referencing the
     // `running` property does not launch the app).
-    // NOTE: `tab` and `linefeed` are resolved at the TOP LEVEL here, before the
+    // NOTE: `tab` and `linefeed` are resolved OUTSIDE the
     // `tell application` block. Inside a browser `tell` block the bare word
     // `tab` binds to the app's `tab` *element class* (Safari/Chrome both define
     // it), so `... & tab & ...` would concatenate the literal text "tab"
@@ -823,38 +836,47 @@ fn read_tabs(browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
     // the `tab <i> of window <w>` addressing `apply_actions` uses.
     // Safari reports `missing value` for empty tabs; the `as text`
     // coercion is wrapped in `try` so those rows degrade to "".
-    let script = format!(
-        r#"set _sep to tab
-set _eol to linefeed
-if application "{app}" is running then
-  tell application "{app}"
-    set _out to ""
-    set _wi to 0
-    repeat with w in windows
-      set _wi to _wi + 1
-      try
-        set _urls to URL of every tab of w
-      on error
-        set _urls to {{}}
-      end try
-      set _ti to 0
-      repeat with _u in _urls
-        set _ti to _ti + 1
-        set _u_text to ""
+    //
+    // The explicit `on run` keeps every variable local: top-level
+    // variables in an implicit run handler are globals, which a compiled
+    // script carries between runs.
+    format!(
+        r#"{join}
+
+on run
+  set _sep to tab
+  set _eol to linefeed
+  set _rows to {{}}
+  if application "{app}" is running then
+    tell application "{app}"
+      set _wi to 0
+      repeat with w in windows
+        set _wi to _wi + 1
         try
-          set _u_text to _u as text
+          set _urls to URL of every tab of w
+        on error
+          set _urls to {{}}
         end try
-        set _out to _out & _wi & _sep & _ti & _sep & _u_text & _eol
+        set _ti to 0
+        repeat with _u in _urls
+          set _ti to _ti + 1
+          set _u_text to ""
+          try
+            set _u_text to _u as text
+          end try
+          set end of _rows to (_wi as text) & _sep & _ti & _sep & _u_text
+        end repeat
       end repeat
-    end repeat
-    return _out
-  end tell
-else
-  return ""
-end if"#,
-        app = app_name
-    );
-    let out = run_osascript(&script)?;
+    end tell
+  end if
+  return joinRows(_rows, _eol)
+end run"#,
+        join = JOIN_ROWS_HANDLER,
+        app = browser.applescript_name()
+    )
+}
+
+fn parse_tab_rows(out: &str) -> Vec<Tab> {
     let mut tabs = Vec::new();
     for line in out.lines() {
         if line.is_empty() {
@@ -872,7 +894,118 @@ end if"#,
             });
         }
     }
-    Ok(tabs)
+    tabs
+}
+
+/// Read scripts compiled once per process and reused every tick, so a
+/// tick no longer pays for compiling the script and loading the
+/// browser's scripting dictionary. `None` when there is no per-user
+/// cache directory; reads then run from source as before.
+static READ_SCRIPTS: OnceLock<Mutex<Option<CompiledScripts>>> = OnceLock::new();
+
+fn read_tabs(browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
+    let source = read_tabs_script(browser);
+    let scripts = READ_SCRIPTS.get_or_init(|| {
+        // Per-user, unlike `/tmp`, so another account cannot plant a
+        // script that would then run with this user's Automation grants.
+        Mutex::new(
+            dirs::cache_dir()
+                .map(|dir| CompiledScripts::new(dir.join("com.reddblock").join("automation"))),
+        )
+    });
+    let mut scripts = scripts
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let out = match scripts.as_mut() {
+        Some(scripts) => scripts.run(browser.settings_key(), &source)?,
+        None => run_osascript(&source)?,
+    };
+    Ok(parse_tab_rows(&out))
+}
+
+/// Compiled `.scpt` files for scripts whose source never changes within a
+/// run. Each is still run by a fresh `osascript`, which keeps the
+/// timeout-and-kill guard in `run_command`: an in-process `NSAppleScript`
+/// would remove the spawn too, but it is main-thread-only and has no way
+/// to abandon an Apple Event stuck behind an Automation consent prompt.
+struct CompiledScripts {
+    dir: PathBuf,
+    compiled: HashMap<&'static str, PathBuf>,
+    /// Scripts that failed to compile. They run from source from then on
+    /// rather than paying for a failing `osacompile` every tick.
+    source_only: HashSet<&'static str>,
+}
+
+impl CompiledScripts {
+    fn new(dir: PathBuf) -> Self {
+        Self {
+            dir,
+            compiled: HashMap::new(),
+            source_only: HashSet::new(),
+        }
+    }
+
+    /// Run `source` from its compiled form under `name`, compiling it on
+    /// first use and again whenever the file has gone (macOS sweeps old
+    /// files out of caches). Falls back to running the source directly,
+    /// so a compile problem costs the saving, never a read.
+    fn run(&mut self, name: &'static str, source: &str) -> Result<String, AutomationError> {
+        if self.source_only.contains(name) {
+            return run_osascript(source);
+        }
+        let path = match self.compiled.get(name) {
+            Some(path) if path.is_file() => path.clone(),
+            _ => {
+                let path = self.dir.join(format!("{name}.scpt"));
+                if let Err(e) = compile_script(source, &path) {
+                    log::warn!(
+                        "web_automation: compiling the {name} script failed, running it from source: {e:?}"
+                    );
+                    self.compiled.remove(name);
+                    self.source_only.insert(name);
+                    return run_osascript(source);
+                }
+                self.compiled.insert(name, path.clone());
+                path
+            }
+        };
+        let mut cmd = std::process::Command::new("/usr/bin/osascript");
+        cmd.arg(&path);
+        let result = run_command(cmd, "osascript");
+        if matches!(result, Err(AutomationError::Other(_))) {
+            // Could be a damaged file as easily as a busy browser; compile
+            // afresh next time rather than risk failing the same way on
+            // every tick.
+            self.compiled.remove(name);
+        }
+        result
+    }
+}
+
+/// Compile `source` to the compiled script at `dest`. Writes beside it
+/// and renames, so a reader never sees a half-written file.
+fn compile_script(source: &str, dest: &Path) -> Result<(), AutomationError> {
+    let dir = dest
+        .parent()
+        .ok_or_else(|| AutomationError::Other(format!("no parent for {}", dest.display())))?;
+    std::fs::create_dir_all(dir)
+        .map_err(|e| AutomationError::Other(format!("create {}: {e}", dir.display())))?;
+    // `osacompile` picks the output format from the extension, so the
+    // temporary name must still end in `.scpt`.
+    let partial = dest.with_extension(format!("{}.partial.scpt", std::process::id()));
+    let mut cmd = std::process::Command::new("/usr/bin/osacompile");
+    cmd.arg("-o").arg(&partial).arg("-e").arg(source);
+    // Through `run_command` for its timeout, and because compiling a
+    // `tell application` block reads the target's dictionary, which for
+    // some apps means an Apple Event.
+    if let Err(e) = run_command(cmd, "osacompile") {
+        let _ = std::fs::remove_file(&partial);
+        return Err(e);
+    }
+    std::fs::rename(&partial, dest).map_err(|e| {
+        let _ = std::fs::remove_file(&partial);
+        AutomationError::Other(format!("rename to {}: {e}", dest.display()))
+    })
 }
 
 fn apply_actions(
@@ -905,23 +1038,29 @@ end if"#,
 /// Run an AppleScript via osascript, classifying the not-authorized
 /// (Automation TCC) error so the caller can drive the permission UI.
 fn run_osascript(script: &str) -> Result<String, AutomationError> {
+    let mut cmd = std::process::Command::new("/usr/bin/osascript");
+    cmd.arg("-e").arg(script);
+    run_command(cmd, "osascript")
+}
+
+/// Run an `osascript`/`osacompile` command under `APPLE_EVENTS`, killing it
+/// after `OSASCRIPT_TIMEOUT`. `what` names the tool in error messages.
+fn run_command(mut cmd: std::process::Command, what: &str) -> Result<String, AutomationError> {
     let _guard = APPLE_EVENTS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-    let mut child = std::process::Command::new("/usr/bin/osascript")
-        .arg("-e")
-        .arg(script)
+    let mut child = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| AutomationError::Other(format!("spawn osascript: {e}")))?;
+        .map_err(|e| AutomationError::Other(format!("spawn {what}: {e}")))?;
 
     let started = Instant::now();
     loop {
         match child
             .try_wait()
-            .map_err(|e| AutomationError::Other(format!("wait osascript: {e}")))?
+            .map_err(|e| AutomationError::Other(format!("wait {what}: {e}")))?
         {
             Some(status) => {
                 use std::io::Read;
@@ -947,7 +1086,7 @@ fn run_osascript(script: &str) -> Result<String, AutomationError> {
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(AutomationError::Other(format!(
-                    "osascript timed out after {}s",
+                    "{what} timed out after {}s",
                     OSASCRIPT_TIMEOUT.as_secs()
                 )));
             }
