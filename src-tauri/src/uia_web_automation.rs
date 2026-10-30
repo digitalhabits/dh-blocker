@@ -1,24 +1,14 @@
-// Website blocking on Windows through UI Automation, for Chromium browsers
-// whose organisation policy stops the extension's native-messaging host.
-//
-// On a managed laptop (a university's, typically) IT can set
-// `NativeMessagingUserLevelHosts = 0` or blocklist our host. The extension
-// then installs fine but never receives a blocklist, so nothing is blocked
-// and nothing says so. macOS sidesteps this with Apple Events
-// (web_automation.rs); Windows has no scripting dictionary for browsers, so
-// this module does the closest equivalent: every TICK it reads the address
-// bar of the foreground browser window through UI Automation and, when it
-// shows a blocked site, types the block page's `file://` URL into it and
-// presses Enter. Parked windows whose site is no longer blocked are sent
-// back the same way. The URL decisions are the shared ones in block_page.rs.
+// Website blocking on Windows through UI Automation. Chrome, Edge, Brave and
+// Firefox default to this method; explicit extension mode skips the watcher.
+// Every tick reads the foreground browser address bar and redirects blocked
+// sites to the bundled page. Parked pages restore when the rule no longer
+// applies. URL decisions are shared with macOS in block_page.rs.
 //
 // UI Automation needs no elevation, no capability in the MSIX manifest and
 // no browser policy, so it works from the Store build on a locked-down PC.
 //
-// Scope, deliberately narrow for now:
-// - Chrome, Edge and Brave only, and only while `browser_policy` says their
-//   native-messaging host is blocked. Everywhere else the extension keeps
-//   the job: it sees background tabs and redirects before the page loads.
+// Scope:
+// - Chrome, Edge, Brave and Firefox, while selected for Automation.
 // - The foreground window only. The address bar shows just the active tab,
 //   and Enter has to go to the focused window: sending it while another
 //   window is foreground would press Enter in that window instead. A blocked
@@ -47,7 +37,9 @@ use windows::Win32::System::Threading::{
 use windows::Win32::System::Variant::VARIANT;
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationValuePattern,
-    TreeScope_Descendants, UIA_ClassNamePropertyId, UIA_ValuePatternId,
+    TreeScope_Children, TreeScope_Descendants, UIA_AutomationIdPropertyId,
+    UIA_ClassNamePropertyId, UIA_ComboBoxControlTypeId, UIA_ControlTypePropertyId,
+    UIA_ToolBarControlTypeId, UIA_ValuePatternId,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
@@ -59,38 +51,63 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::block_page;
 use crate::native_host;
-use crate::native_host_install::BrowserTarget;
+use crate::blocking_method::{self, Method};
 
 /// Same cadence as the macOS Automation watcher.
 const TICK: Duration = Duration::from_millis(1000);
-
-/// How often to re-read the browsers' native-messaging policy. Policy only
-/// changes when IT pushes it, so the registry need not be read every tick.
-const POLICY_REFRESH: Duration = Duration::from_secs(60);
 
 /// After navigating a window, leave it alone this long so the next tick
 /// does not read the address bar before the navigation has committed and
 /// type the block page URL a second time.
 const ACTION_COOLDOWN: Duration = Duration::from_secs(2);
 
-/// Top-level window class of every Chromium browser.
-const CHROMIUM_WINDOW_CLASS: &str = "Chrome_WidgetWin_1";
-
-/// UI Automation class name of Chromium's address bar (the views class).
-/// Matched exactly rather than taking the first edit box, which in a page
-/// with a search field could be the page's own input.
-const OMNIBOX_CLASS: &str = "OmniboxViewViews";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum UiaBrowser {
     Chrome,
     Edge,
     Brave,
+    Firefox,
 }
 
 impl UiaBrowser {
-    fn all() -> [UiaBrowser; 3] {
-        [UiaBrowser::Chrome, UiaBrowser::Edge, UiaBrowser::Brave]
+    fn should_watch(self, method: Method) -> bool {
+        method == Method::Automation
+    }
+
+    fn setting_key(self) -> &'static str {
+        match self {
+            UiaBrowser::Chrome => "chrome",
+            UiaBrowser::Edge => "edge",
+            UiaBrowser::Brave => "brave",
+            UiaBrowser::Firefox => "firefox",
+        }
+    }
+
+    fn window_class(self) -> &'static str {
+        match self {
+            UiaBrowser::Firefox => "MozillaWindowClass",
+            _ => "Chrome_WidgetWin_1",
+        }
+    }
+
+    fn omnibox_class(self) -> &'static str {
+        // Brave exposes its subclass name through UI Automation. Match the
+        // browser's exact class, never an arbitrary edit box in page content.
+        match self {
+            UiaBrowser::Brave => "BraveOmniboxViewViews",
+            UiaBrowser::Chrome | UiaBrowser::Edge => "OmniboxViewViews",
+            // Firefox is selected by toolbar + automation ID, not this class.
+            UiaBrowser::Firefox => "urlbar-input textbox-input",
+        }
+    }
+
+    fn all() -> [UiaBrowser; 4] {
+        [
+            UiaBrowser::Chrome,
+            UiaBrowser::Edge,
+            UiaBrowser::Brave,
+            UiaBrowser::Firefox,
+        ]
     }
 
     fn label(self) -> &'static str {
@@ -98,6 +115,7 @@ impl UiaBrowser {
             UiaBrowser::Chrome => "Chrome",
             UiaBrowser::Edge => "Edge",
             UiaBrowser::Brave => "Brave",
+            UiaBrowser::Firefox => "Firefox",
         }
     }
 
@@ -106,14 +124,7 @@ impl UiaBrowser {
             UiaBrowser::Chrome => "chrome.exe",
             UiaBrowser::Edge => "msedge.exe",
             UiaBrowser::Brave => "brave.exe",
-        }
-    }
-
-    fn policy_target(self) -> BrowserTarget {
-        match self {
-            UiaBrowser::Chrome => BrowserTarget::Chrome,
-            UiaBrowser::Edge => BrowserTarget::Edge,
-            UiaBrowser::Brave => BrowserTarget::Brave,
+            UiaBrowser::Firefox => "firefox.exe",
         }
     }
 
@@ -145,8 +156,6 @@ pub fn start(app: AppHandle, block_page_url: String) {
         let mut watcher = Watcher {
             automation,
             block_page_url,
-            policy_blocked: Vec::new(),
-            policy_read_at: None,
             omnibox: None,
             last_action: HashMap::new(),
             missing_omnibox_logged: HashSet::new(),
@@ -161,9 +170,6 @@ pub fn start(app: AppHandle, block_page_url: String) {
 struct Watcher {
     automation: IUIAutomation,
     block_page_url: String,
-    /// Browsers whose policy blocks our native-messaging host.
-    policy_blocked: Vec<UiaBrowser>,
-    policy_read_at: Option<Instant>,
     /// Address bar of the window it was last found in. Finding it walks the
     /// browser's UI tree, so it is kept until that window stops answering.
     omnibox: Option<(isize, IUIAutomationElement)>,
@@ -176,23 +182,9 @@ struct Watcher {
 impl Watcher {
     fn tick(&mut self, app: &AppHandle) {
         let now = Instant::now();
-        if self
-            .policy_read_at
-            .map_or(true, |t| now.duration_since(t) >= POLICY_REFRESH)
-        {
-            self.refresh_policy();
-            self.policy_read_at = Some(now);
-        }
-        if self.policy_blocked.is_empty() {
-            return;
-        }
-
         let Some((hwnd, browser)) = foreground_browser_window() else {
             return;
         };
-        if !self.policy_blocked.contains(&browser) {
-            return;
-        }
         let key = hwnd.0 as isize;
         if self
             .last_action
@@ -207,6 +199,12 @@ impl Watcher {
         let Some(path) = crate::commands::canonical_data_path(app) else {
             return;
         };
+        if !browser.should_watch(blocking_method::method_for_key_at_path(
+            &path,
+            browser.setting_key(),
+        )) {
+            return;
+        }
         let (_domains, blocks) = native_host::derive_payload(&path);
 
         let Some(omnibox) = self.omnibox_for(hwnd, browser) else {
@@ -249,29 +247,6 @@ impl Watcher {
         }
     }
 
-    fn refresh_policy(&mut self) {
-        let blocked: Vec<UiaBrowser> = UiaBrowser::all()
-            .into_iter()
-            .filter(|b| crate::browser_policy::read(b.policy_target()).is_some_and(|p| p.blocked))
-            .collect();
-        if blocked != self.policy_blocked {
-            log::info!(
-                "uia_web_automation: native messaging blocked by policy for [{}] — {}",
-                blocked
-                    .iter()
-                    .map(|b| b.label())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                if blocked.is_empty() {
-                    "idle"
-                } else {
-                    "blocking through UI Automation"
-                }
-            );
-        }
-        self.policy_blocked = blocked;
-    }
-
     fn omnibox_for(&mut self, hwnd: HWND, browser: UiaBrowser) -> Option<IUIAutomationElement> {
         let key = hwnd.0 as isize;
         if let Some((cached_hwnd, element)) = &self.omnibox {
@@ -279,7 +254,7 @@ impl Watcher {
                 return Some(element.clone());
             }
         }
-        match find_omnibox(&self.automation, hwnd) {
+        match find_omnibox(&self.automation, hwnd, browser) {
             Ok(element) => {
                 self.omnibox = Some((key, element.clone()));
                 self.missing_omnibox_logged.remove(&key);
@@ -299,7 +274,7 @@ impl Watcher {
 }
 
 /// The foreground window, if it is a top-level window of a supported
-/// Chromium browser.
+/// browser. Check both process identity and the browser's window class.
 fn foreground_browser_window() -> Option<(HWND, UiaBrowser)> {
     let hwnd = unsafe { GetForegroundWindow() };
     if hwnd.is_invalid() {
@@ -307,7 +282,11 @@ fn foreground_browser_window() -> Option<(HWND, UiaBrowser)> {
     }
     let mut class = [0u16; 64];
     let len = unsafe { GetClassNameW(hwnd, &mut class) };
-    if len <= 0 || String::from_utf16_lossy(&class[..len as usize]) != CHROMIUM_WINDOW_CLASS {
+    if len <= 0 {
+        return None;
+    }
+    let class = String::from_utf16_lossy(&class[..len as usize]);
+    if class != "Chrome_WidgetWin_1" && class != "MozillaWindowClass" {
         return None;
     }
     let mut pid = 0u32;
@@ -316,7 +295,8 @@ fn foreground_browser_window() -> Option<(HWND, UiaBrowser)> {
         return None;
     }
     let path = process_image_path(pid)?;
-    UiaBrowser::from_exe_path(&path).map(|b| (hwnd, b))
+    let browser = UiaBrowser::from_exe_path(&path)?;
+    (class == browser.window_class()).then_some((hwnd, browser))
 }
 
 fn process_image_path(pid: u32) -> Option<String> {
@@ -339,11 +319,40 @@ fn process_image_path(pid: u32) -> Option<String> {
 fn find_omnibox(
     automation: &IUIAutomation,
     hwnd: HWND,
+    browser: UiaBrowser,
 ) -> windows::core::Result<IUIAutomationElement> {
     unsafe {
         let window = automation.ElementFromHandle(hwnd)?;
-        let condition = automation
-            .CreatePropertyCondition(UIA_ClassNamePropertyId, &VARIANT::from(OMNIBOX_CLASS))?;
+        if browser == UiaBrowser::Firefox {
+            // Observed on Windows Firefox 159: urlbar-input is a ComboBox,
+            // not an Edit. Only search inside the browser's direct-child
+            // navigation toolbar: page content may reuse these DOM IDs.
+            // Missing toolbar/control sends no input (allows this tick).
+            let toolbar_id = automation.CreatePropertyCondition(
+                UIA_AutomationIdPropertyId,
+                &VARIANT::from("nav-bar"),
+            )?;
+            let toolbar_type = automation.CreatePropertyCondition(
+                UIA_ControlTypePropertyId,
+                &VARIANT::from(UIA_ToolBarControlTypeId.0),
+            )?;
+            let toolbar_condition = automation.CreateAndCondition(&toolbar_id, &toolbar_type)?;
+            let toolbar = window.FindFirst(TreeScope_Children, &toolbar_condition)?;
+            let input_id = automation.CreatePropertyCondition(
+                UIA_AutomationIdPropertyId,
+                &VARIANT::from("urlbar-input"),
+            )?;
+            let input_type = automation.CreatePropertyCondition(
+                UIA_ControlTypePropertyId,
+                &VARIANT::from(UIA_ComboBoxControlTypeId.0),
+            )?;
+            let input_condition = automation.CreateAndCondition(&input_id, &input_type)?;
+            return toolbar.FindFirst(TreeScope_Descendants, &input_condition);
+        }
+        let condition = automation.CreatePropertyCondition(
+            UIA_ClassNamePropertyId,
+            &VARIANT::from(browser.omnibox_class()),
+        )?;
         window.FindFirst(TreeScope_Descendants, &condition)
     }
 }
@@ -408,4 +417,37 @@ fn navigate(omnibox: &IUIAutomationElement, hwnd: HWND, url: &str) -> Result<(),
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn watcher_respects_selected_method_for_every_browser() {
+        for browser in UiaBrowser::all() {
+            assert!(browser.should_watch(Method::Automation));
+            assert!(!browser.should_watch(Method::Extension));
+        }
+    }
+
+    #[test]
+    fn firefox_requires_its_own_process_and_window_class() {
+        assert_eq!(
+            UiaBrowser::from_exe_path(r"C:\Program Files\Mozilla Firefox\firefox.exe"),
+            Some(UiaBrowser::Firefox)
+        );
+        assert_eq!(UiaBrowser::Firefox.window_class(), "MozillaWindowClass");
+        assert_eq!(UiaBrowser::Chrome.window_class(), "Chrome_WidgetWin_1");
+        assert_eq!(UiaBrowser::from_exe_path(r"C:\other\not-firefox.exe"), None);
+    }
+
+    #[test]
+    fn address_bar_classes_match_browser_providers() {
+        // Captured on a real Windows Brave window: AutomationId=view_1012.
+        // A generic edit-box fallback must not replace this exact match.
+        assert_eq!(UiaBrowser::Brave.omnibox_class(), "BraveOmniboxViewViews");
+        assert_eq!(UiaBrowser::Chrome.omnibox_class(), "OmniboxViewViews");
+        assert_eq!(UiaBrowser::Edge.omnibox_class(), "OmniboxViewViews");
+    }
 }

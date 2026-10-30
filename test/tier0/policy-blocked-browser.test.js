@@ -53,8 +53,29 @@ describe('policy-blocked browsers on Windows', () => {
         const { state } = await import('../../src/state.js');
         state.isMacOSDesktop = false;
         state.isWindowsDesktop = true;
+        state.appData.settings = { ...state.appData.settings, blockingMethods: {} };
         return import('../../src/enforcement.js');
     };
+
+    test('Windows defaults to automation without extension setup or permission prompts', async () => {
+        const { browserBlockingMethod, effectiveBrowserComplianceStatus, buildBannerActionSummary } = await setUpWindows();
+        const browsers = Object.fromEntries(['chrome', 'edge', 'brave', 'firefox'].map(key => [key, edge({ profiles: [], present: true })]));
+        for (const key of Object.keys(browsers)) {
+            expect(browserBlockingMethod(key)).toBe('automation');
+            expect(effectiveBrowserComplianceStatus(key, browsers)).toBe('compliant');
+        }
+        expect(buildBannerActionSummary(browsers, Object.keys(browsers))).toBe('');
+    });
+
+    test('explicit extension mode restores extension setup, including policy warnings', async () => {
+        const { browserBlockingMethod, effectiveBrowserComplianceStatus } = await setUpWindows();
+        const { state } = await import('../../src/state.js');
+        state.appData.settings.blockingMethods = { chrome: 'extension', firefox: 'extension' };
+        expect(browserBlockingMethod('chrome')).toBe('extension');
+        expect(effectiveBrowserComplianceStatus('chrome', { chrome: edge({ profiles: [] }) })).toBe('needs-install');
+        expect(effectiveBrowserComplianceStatus('chrome', { chrome: edge({ nativeHostBlockedByPolicy: true }) })).toBe('policy-blocked');
+        expect(effectiveBrowserComplianceStatus('firefox', { firefox: edge({ profiles: [] }) })).toBe('needs-install');
+    });
 
     test('Chrome, Edge and Brave count as set up', async () => {
         const { browserComplianceStatus } = await setUpWindows();
@@ -66,11 +87,24 @@ describe('policy-blocked browsers on Windows', () => {
 
     test('the setup banner does not list them', async () => {
         const { buildBannerActionSummary } = await setUpWindows();
+        const { state } = await import('../../src/state.js');
+        state.appData.settings.blockingMethods.chrome = 'extension';
         const summary = buildBannerActionSummary(
             { edge: edge({ nativeHostBlockedByPolicy: true }), chrome: edge({ profiles: [] }) },
             ['chrome', 'edge'],
         );
         expect(summary).toBe('Install in Chrome');
+    });
+
+    test('macOS Firefox and mobile platforms retain extension semantics', async () => {
+        const { browserBlockingMethod } = await setUp();
+        const { state } = await import('../../src/state.js');
+        state.isMacOSDesktop = true;
+        state.appData.settings.blockingMethods = {};
+        expect(browserBlockingMethod('safari')).toBe('automation');
+        expect(browserBlockingMethod('firefox')).toBe('extension');
+        state.isMacOSDesktop = false;
+        expect(browserBlockingMethod('chrome')).toBe('extension');
     });
 
     test('the row explains the address-bar blocking instead of the policy warning', async () => {

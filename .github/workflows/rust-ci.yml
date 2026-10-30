@@ -7,7 +7,7 @@
 # `window_inventory` and `workspace_events` are `#[cfg(target_os = "macos")]`,
 # and the `cfg(not(ios|android))` modules pull macOS/Windows-only dependencies
 # (sysinfo, tauri-plugin-notification), so a Linux runner cannot build the lib
-# at all. No Windows-only module carries tests, so macOS covers the whole suite.
+# at all. The Windows-only UI Automation tests run in the Windows desktop job.
 name: Rust CI
 
 on:
@@ -116,3 +116,7 @@ jobs:
       - name: cargo clippy --lib --bins --tests
         working-directory: src-tauri
         run: cargo clippy --lib --bins --tests --locked -- -D warnings
+      - name: Windows UI Automation regression tests
+        if: runner.os == 'Windows'
+        working-directory: src-tauri
+        run: cargo test --lib --locked uia_web_automation::tests
