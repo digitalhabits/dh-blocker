@@ -184,7 +184,11 @@ fn a_deferred_redirect_is_retried_rather_than_dropped() {
 
 #[test]
 fn restores_a_parked_tab_once_the_block_stops() {
-    let parked = build_blocked_url(BLOCK_PAGE, "https://reddit.com/r/all", &[block(&["reddit.com"])]);
+    let parked = build_blocked_url(
+        BLOCK_PAGE,
+        "https://reddit.com/r/all",
+        &[block(&["reddit.com"])],
+    );
     let mut io = FakeIo {
         // No domains: enforcement is over, as after a stop or an expiry.
         blocks: vec![block(&[])],
@@ -198,7 +202,11 @@ fn restores_a_parked_tab_once_the_block_stops() {
 
 #[test]
 fn keeps_a_parked_tab_parked_while_the_block_is_live() {
-    let parked = build_blocked_url(BLOCK_PAGE, "https://reddit.com/r/all", &[block(&["reddit.com"])]);
+    let parked = build_blocked_url(
+        BLOCK_PAGE,
+        "https://reddit.com/r/all",
+        &[block(&["reddit.com"])],
+    );
     let mut io = FakeIo::watching(&parked, &["reddit.com"]);
     io.url = Some(parked);
     let mut state = TickState::default();
@@ -214,7 +222,11 @@ fn restores_even_when_other_blocks_are_still_active() {
     // Matches the extension's restoreUnblockedTabs and the Automation
     // watcher: a tab parked for a block that no longer covers it comes back
     // even while unrelated enforcement continues.
-    let parked = build_blocked_url(BLOCK_PAGE, "https://reddit.com/r/all", &[block(&["reddit.com"])]);
+    let parked = build_blocked_url(
+        BLOCK_PAGE,
+        "https://reddit.com/r/all",
+        &[block(&["reddit.com"])],
+    );
     let mut io = FakeIo {
         blocks: vec![block(&["news.ycombinator.com"])],
         ..FakeIo::watching(&parked, &["news.ycombinator.com"])

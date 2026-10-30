@@ -39,7 +39,7 @@ use core_foundation::base::{CFGetTypeID, CFRelease, CFTypeRef, TCFType};
 use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::{CFString, CFStringRef};
-use core_foundation::url::{CFURL, CFURLRef};
+use core_foundation::url::{CFURLRef, CFURL};
 use core_graphics::event::{CGEvent, CGEventFlags};
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 use core_graphics::geometry::CGSize;
@@ -95,9 +95,8 @@ impl AxElement {
     fn attr(&self, name: &str) -> Option<CfOwned> {
         let key = CFString::new(name);
         let mut out: CFTypeRef = std::ptr::null();
-        let err = unsafe {
-            AXUIElementCopyAttributeValue(self.0, key.as_concrete_TypeRef(), &mut out)
-        };
+        let err =
+            unsafe { AXUIElementCopyAttributeValue(self.0, key.as_concrete_TypeRef(), &mut out) };
         if err != AX_SUCCESS || out.is_null() {
             return None;
         }
@@ -203,11 +202,7 @@ pub fn nudge_accessibility(pid: i32) {
         let value = CFBoolean::true_value();
         // Return value intentionally unused: see above.
         unsafe {
-            AXUIElementSetAttributeValue(
-                app.0,
-                key.as_concrete_TypeRef(),
-                value.as_CFTypeRef(),
-            )
+            AXUIElementSetAttributeValue(app.0, key.as_concrete_TypeRef(), value.as_CFTypeRef())
         };
     }
 }
@@ -291,8 +286,7 @@ fn walk_for_web_area(element: &AxElement, depth: u32, best: &mut Option<(f64, St
         if let Some(url) = element.attr_url("AXURL") {
             if is_content_url(&url) {
                 let area = web_area_size(element);
-                if area >= MIN_CONTENT_AREA
-                    && best.as_ref().map(|(a, _)| area > *a).unwrap_or(true)
+                if area >= MIN_CONTENT_AREA && best.as_ref().map(|(a, _)| area > *a).unwrap_or(true)
                 {
                     *best = Some((area, url));
                 }
@@ -465,12 +459,7 @@ fn settle() {
     std::thread::sleep(std::time::Duration::from_millis(80));
 }
 
-fn post_key(
-    source: &CGEventSource,
-    pid: i32,
-    keycode: u16,
-    command: bool,
-) -> Result<(), String> {
+fn post_key(source: &CGEventSource, pid: i32, keycode: u16, command: bool) -> Result<(), String> {
     for down in [true, false] {
         let event = CGEvent::new_keyboard_event(source.clone(), keycode, down)
             .map_err(|_| "could not create a keyboard event".to_string())?;
@@ -488,7 +477,9 @@ mod tests {
 
     #[test]
     fn chrome_and_extension_urls_are_not_content() {
-        assert!(!is_content_url("chrome://browser/content/webext-panels.xhtml"));
+        assert!(!is_content_url(
+            "chrome://browser/content/webext-panels.xhtml"
+        ));
         assert!(!is_content_url(
             "moz-extension://74cd033b-a7d4-4fc0-942c-48e552dda363/sidebar/sidebar.html"
         ));
@@ -555,9 +546,8 @@ mod tests {
         println!("original: {original}");
 
         let target = "file:///tmp/redd-block-ax-check.html";
-        assert_eq!(
+        assert!(
             redirect_active_tab(pid, target).expect("redirect failed"),
-            true,
             "redirect was deferred; is the address bar focused?"
         );
         let landed = wait_for_url(pid, |u| u.starts_with("file:///tmp/redd-block-ax-check"))
@@ -587,7 +577,11 @@ mod tests {
     fn firefox_pid() -> Option<i32> {
         use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
         let mut sys = System::new();
-        sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
+        sys.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing(),
+        );
         sys.processes()
             .values()
             .find(|p| p.name().to_string_lossy() == "firefox")
