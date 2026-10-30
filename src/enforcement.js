@@ -1732,6 +1732,10 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
             primaryBtn.textContent = tSettings('migrationOpenExtensionSettings');
             primaryBtn.addEventListener('click', () => {
                 openExtensionSettings(key).catch(e => console.warn('[migration] open ext settings:', e));
+                // On Windows the extension opens the page, so a closed browser or an off/old extension does nothing.
+                if (isSafari) return;
+                primaryBtn.textContent = tSettings('migrationOpenSettingsPending');
+                setTimeout(() => { primaryBtn.textContent = tSettings('migrationOpenExtensionSettings'); }, 6000);
             });
             actionsRow.appendChild(primaryBtn);
 

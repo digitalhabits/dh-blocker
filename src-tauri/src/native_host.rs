@@ -35,8 +35,13 @@ use serde_json::Value;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
 
+/// The app writes a browser key here to ask that browser's extension to open
+/// its own chrome://extensions page: Chromium drops such URLs from the command line.
+pub const OPEN_SETTINGS_FILE: &str = "open-extension-settings";
+
 enum HostEvent {
     Refresh,
+    OpenSettings,
     Recv(String),
     StdinClosed,
     StdinError(String),
@@ -73,12 +78,12 @@ pub fn run() -> ! {
     crate::windows_process::set_native_host_process_directory();
 
     // `browser=` stays last: diagnostics reads everything after it.
+    let launcher = launching_browser();
     log_to_file(&format!(
-        "spawned pid={} exe={:?} argv={:?} browser={}",
+        "spawned pid={} exe={:?} argv={:?} browser={launcher}",
         std::process::id(),
         std::env::current_exe().ok(),
         std::env::args().collect::<Vec<_>>(),
-        launching_browser()
     ));
 
     let data_path = match resolve_data_path() {
@@ -91,7 +96,7 @@ pub fn run() -> ! {
 
     // Push once on connect.
     let (domains, blocks) = derive_payload(&data_path);
-    send_payload(&domains, &blocks);
+    send_payload(&domains, &blocks, false);
 
     // Background refresh: file-watch + 30 s poll. Read stdin on its
     // own thread so native-host updates do not depend on the extension
@@ -100,7 +105,12 @@ pub fn run() -> ! {
     // would otherwise prevent pause/stop updates from ever being
     // pushed until the browser writes something.
     let (tx, rx) = mpsc::channel::<HostEvent>();
-    spawn_file_watcher(&data_path, tx.clone());
+    let settings_path = data_path.with_file_name(OPEN_SETTINGS_FILE);
+    // Blocklist edits are fine at 2 s. The settings request is polled fast:
+    // the app's foreground grant only lasts until the user's next input.
+    let (slow, fast) = (Duration::from_secs(2), Duration::from_millis(250));
+    spawn_file_watcher(&data_path, slow, tx.clone(), || HostEvent::Refresh);
+    spawn_file_watcher(&settings_path, fast, tx.clone(), || HostEvent::OpenSettings);
     spawn_poller(tx.clone());
     spawn_stdin_reader(tx);
 
@@ -111,7 +121,14 @@ pub fn run() -> ! {
             Ok(HostEvent::Refresh) => {
                 log_to_file("refresh signal; deriving payload");
                 let (domains, blocks) = derive_payload(&data_path);
-                send_payload(&domains, &blocks);
+                send_payload(&domains, &blocks, false);
+            }
+            // A full payload, not a bare flag: older extensions replace their
+            // rules with whatever a frame carries.
+            Ok(HostEvent::OpenSettings) => {
+                let key = std::fs::read_to_string(&settings_path).unwrap_or_default();
+                let (domains, blocks) = derive_payload(&data_path);
+                send_payload(&domains, &blocks, opens_settings_for(&key, &launcher));
             }
             Ok(HostEvent::Recv(s)) => {
                 log_to_file(&format!("recv: {s}"));
@@ -252,17 +269,8 @@ fn spawn_stdin_reader(tx: mpsc::Sender<HostEvent>) {
 /// website domains belong there. `blocks` is additive, so allowlist-only
 /// website sessions intentionally serialize as an empty flat `blocklist` plus
 /// one or more allowlist entries in `blocks`.
-fn send_payload(domains: &[String], blocks: &[BlockInfo]) {
-    #[derive(Serialize)]
-    struct Msg<'a> {
-        blocklist: &'a [String],
-        blocks: &'a [BlockInfo],
-    }
-    let msg = Msg {
-        blocklist: domains,
-        blocks,
-    };
-    let body = match serde_json::to_vec(&msg) {
+fn send_payload(domains: &[String], blocks: &[BlockInfo], open_settings: bool) {
+    let body = match payload_json(domains, blocks, open_settings) {
         Ok(b) => b,
         Err(e) => {
             log_to_file(&format!("serialize error: {e}"));
@@ -288,20 +296,57 @@ fn send_payload(domains: &[String], blocks: &[BlockInfo]) {
     ));
 }
 
-fn spawn_file_watcher(path: &std::path::Path, tx: mpsc::Sender<HostEvent>) {
+fn payload_json(
+    domains: &[String],
+    blocks: &[BlockInfo],
+    open_settings: bool,
+) -> serde_json::Result<Vec<u8>> {
+    #[derive(Serialize)]
+    struct Msg<'a> {
+        blocklist: &'a [String],
+        blocks: &'a [BlockInfo],
+        #[serde(
+            rename = "openExtensionSettings",
+            skip_serializing_if = "std::ops::Not::not"
+        )]
+        open_settings: bool,
+    }
+    let msg = Msg {
+        blocklist: domains,
+        blocks,
+        open_settings,
+    };
+    serde_json::to_vec(&msg)
+}
+
+/// Whether the browser key the app wrote names the browser that launched us
+/// (`launcher` is `launching_browser()`, e.g. "msedge.exe 156.0…").
+fn opens_settings_for(key: &str, launcher: &str) -> bool {
+    match key.trim() {
+        "chrome" => launcher.starts_with("chrome.exe"),
+        "edge" => launcher.starts_with("msedge.exe"),
+        "brave" => launcher.starts_with("brave.exe"),
+        _ => false,
+    }
+}
+
+fn spawn_file_watcher(
+    path: &std::path::Path,
+    every: Duration,
+    tx: mpsc::Sender<HostEvent>,
+    event: fn() -> HostEvent,
+) {
     let path = path.to_path_buf();
     // We poll mtime rather than depend on the `notify` crate so this
     // module stays dependency-light and works identically on every OS.
-    // 2 s cadence is fine — blocklist changes are user-driven and not
-    // latency-sensitive at the second level.
     std::thread::spawn(move || {
         let mut last = mtime(&path);
         loop {
-            std::thread::sleep(Duration::from_secs(2));
+            std::thread::sleep(every);
             let current = mtime(&path);
             if current != last {
                 last = current;
-                let _ = tx.send(HostEvent::Refresh);
+                let _ = tx.send(event());
             }
         }
     });

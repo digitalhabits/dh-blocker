@@ -916,3 +916,25 @@ fn read_payload_refuses_oversized_messages_before_reading() {
     assert_eq!(err.kind(), std::io::ErrorKind::Other);
     assert_eq!(read_payload(&mut reader, 4).unwrap(), vec![7u8; 4]);
 }
+
+#[test]
+fn open_settings_request_only_reaches_the_clicked_browser() {
+    assert!(opens_settings_for("chrome", "chrome.exe 154.0.8037.99"));
+    assert!(opens_settings_for("edge\n", "msedge.exe 156.0.4314.50"));
+    assert!(!opens_settings_for("chrome", "msedge.exe 156.0.4314.50"));
+    assert!(!opens_settings_for("edge", "unknown"));
+    assert!(!opens_settings_for("", "chrome.exe"));
+}
+
+#[test]
+fn open_settings_flag_rides_on_a_full_payload() {
+    // Older extensions replace their rules with each frame, so the flag must
+    // never arrive without the blocklist beside it.
+    let domains = vec!["x.com".to_string()];
+    let with: Value = serde_json::from_slice(&payload_json(&domains, &[], true).unwrap()).unwrap();
+    assert_eq!(with["openExtensionSettings"], true);
+    assert_eq!(with["blocklist"], json!(["x.com"]));
+    let without: Value =
+        serde_json::from_slice(&payload_json(&domains, &[], false).unwrap()).unwrap();
+    assert!(without.get("openExtensionSettings").is_none());
+}
