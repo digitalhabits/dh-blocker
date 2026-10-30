@@ -775,8 +775,12 @@ export function effectiveBrowserComplianceStatus(key, browsers) {
 // Returns null if the browser itself isn't installed on the machine.
 export function browserComplianceStatus(key, b) {
     if (!b || !b.installed) return null;
-    // Windows: an organisation policy stops the browser reaching Blocker, so nothing else on the row helps.
-    if (b.nativeHostBlockedByPolicy) return 'policy-blocked';
+    // An organisation policy stops the browser reaching Blocker, so nothing else on the row helps.
+    // On Windows, Chrome, Edge and Brave are then blocked through their address bar instead
+    // (src-tauri/src/uia_web_automation.rs), which leaves the user nothing to do.
+    if (b.nativeHostBlockedByPolicy) {
+        return addressBarBlockingCovers(key, b) ? 'compliant' : 'policy-blocked';
+    }
     const profiles = b.profiles || [];
     const def = profiles.find(p => p.isDefault) || profiles[0];
     if (key === 'safari') {
@@ -799,6 +803,13 @@ export function browserComplianceStatus(key, b) {
         return 'needs-native-host';
     }
     return 'compliant';
+}
+
+// Must match when the Rust watcher acts: Windows, these three browsers, and policy blocking the host.
+const ADDRESS_BAR_BLOCKING_KEYS = new Set(['chrome', 'edge', 'brave']);
+
+export function addressBarBlockingCovers(key, b) {
+    return Boolean(state.isWindowsDesktop && b?.nativeHostBlockedByPolicy && ADDRESS_BAR_BLOCKING_KEYS.has(key));
 }
 
 export function statusLabel(key, status) {
@@ -1476,6 +1487,7 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
         }
 
         const status = browserComplianceStatus(key, browsers[key]) || 'needs-install';
+        const viaAddressBar = addressBarBlockingCovers(key, browsers[key]);
 
         const row = document.createElement('div');
         row.className = `migration-browser-row ${status}`;
@@ -1503,7 +1515,9 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
         const badge = document.createElement('span');
         badge.className = `migration-browser-badge ${status}`;
         switch (status) {
-            case 'compliant': badge.textContent = statusLabel(key, status); break;
+            case 'compliant':
+                badge.textContent = viaAddressBar ? tSettings('migrationBadgeAddressBar') : statusLabel(key, status);
+                break;
             case 'needs-deduplicate': badge.textContent = tSettings('migrationBadgeDuplicateSafari'); break;
             case 'needs-install': badge.textContent = tSettings('migrationBadgeNotInstalled'); break;
             case 'needs-enable': badge.textContent = tSettings('migrationBadgeDisabled'); break;
@@ -1518,7 +1532,12 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
 
         row.appendChild(header);
 
-        if (status === 'policy-blocked') {
+        if (viaAddressBar) {
+            const hint = document.createElement('div');
+            hint.className = 'migration-browser-hint migration-browser-after-hint';
+            hint.textContent = tSettingsFmt('migrationAddressBarHint', { browser: entry.label });
+            row.appendChild(hint);
+        } else if (status === 'policy-blocked') {
             const hint = document.createElement('div');
             hint.className = 'migration-browser-hint migration-browser-after-hint';
             hint.textContent = tSettingsFmt('migrationPolicyBlockedHint', { browser: entry.label });
