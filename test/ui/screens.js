@@ -542,6 +542,29 @@ export const screens = [
         },
     },
     {
+        // Settings → Blocking mechanism, with Firefox on the Accessibility
+        // method. Firefox's options differ from every other browser's
+        // (extension / accessibility, never automation), and the grant row
+        // below it only exists in this state.
+        name: 'settings-blocking-method-firefox-accessibility',
+        fixture: fixtures.firefoxAccessibility,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#settings-blocking-method-section',
+        prepare: async (page) => {
+            await page.click('#settings-btn');
+            await page.waitForSelector('#settings-modal:not(.hidden)');
+            if (await page.getAttribute('#settings-enforcement-section-toggle', 'aria-expanded') !== 'true') {
+                await page.click('#settings-enforcement-section-toggle');
+            }
+            if (await page.getAttribute('#settings-blocking-method-toggle', 'aria-expanded') !== 'true') {
+                await page.click('#settings-blocking-method-toggle');
+            }
+            await page.waitForSelector('#settings-firefox-ax-row:not(.hidden)');
+            await page.locator('#settings-blocking-method-section').scrollIntoViewIfNeeded();
+        },
+    },
+    {
         // The setting was lowered to 50 after this space was set to 800 words:
         // the slider stretches to 800 rather than cutting the challenge.
         name: 'editor-stop-early-above-maximum',
