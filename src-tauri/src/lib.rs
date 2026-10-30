@@ -150,6 +150,10 @@ pub mod profile_scan;
 // alternative to its extension reads the active tab through Accessibility.
 #[cfg(target_os = "macos")]
 pub mod accessibility;
+// Opt-in Firefox blocking on macOS; see `accessibility` for why Firefox
+// cannot use the Automation watcher.
+#[cfg(target_os = "macos")]
+pub mod firefox_ax;
 #[cfg(target_os = "macos")]
 pub mod safari_services;
 #[cfg(target_os = "windows")]

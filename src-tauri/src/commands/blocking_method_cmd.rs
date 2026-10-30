@@ -20,6 +20,10 @@ pub fn set_blocking_method(
 ) -> Result<HashMap<String, String>, String> {
     blocking_method::validate_mac_blocking_method_key(&browser)?;
     let parsed = blocking_method::validate_method(&method)?;
+    // Not every browser can enforce with every method: Firefox has no tab
+    // scripting, and the others have Apple Events and so never need the
+    // Accessibility grant.
+    blocking_method::validate_method_for_key(&browser, parsed)?;
 
     let path = super::canonical_data_path(&app).ok_or_else(|| "no app data path".to_string())?;
     let mut data = read_data(&path).unwrap_or_else(|| Value::Object(serde_json::Map::new()));
@@ -78,6 +82,23 @@ fn apply_side_effects(app: &AppHandle, browser: &str, method: Method) -> Result<
             if let Some(target) = blocking_method::native_host_target(browser) {
                 crate::native_host_install::uninstall_native_host_for(target)
                     .map_err(|e| format!("native-host uninstall for {browser}: {e}"))?;
+            }
+        }
+        // Firefox only, enforced by `validate_method_for_key` above.
+        //
+        // The native-messaging host is deliberately *left installed*. The
+        // add-on may still be in the user's profile, and a host that is gone
+        // turns every message it sends into an error dialog; keeping it costs
+        // a manifest on disk and makes switching back instant. The
+        // Accessibility grant is not requested here either — the UI walks the
+        // user through System Settings, because nothing in-process can flip
+        // that switch.
+        (_, Method::Accessibility) => {
+            if !crate::accessibility::is_trusted() {
+                log::info!(
+                    "blocking_method: {browser} set to accessibility without the grant; \
+                     enforcement waits until the user allows it in System Settings"
+                );
             }
         }
     }
