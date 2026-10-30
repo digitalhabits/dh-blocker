@@ -209,6 +209,13 @@ impl BrowserKey {
         }
     }
 
+    /// macOS: true when this browser is blocked via the Accessibility API.
+    /// Only ever Firefox, and only when the user selected it.
+    #[cfg(target_os = "macos")]
+    fn uses_accessibility_on_macos(self, app: &AppHandle) -> bool {
+        crate::blocking_method::uses_accessibility(app, self.setting_key())
+    }
+
     /// macOS: true when this browser is blocked via Automation (not extension).
     #[cfg(target_os = "macos")]
     fn uses_automation_on_macos(self, app: &AppHandle) -> bool {
@@ -243,6 +250,13 @@ pub enum ExtensionIssue {
     /// extension problem — these browsers no longer use the extension on
     /// macOS — but it rides the same grace/force-close machinery.
     Automation,
+    /// macOS Firefox on the Accessibility method: the system-wide
+    /// Accessibility grant is missing, so the watcher cannot read the active
+    /// tab and Firefox is unenforced. Fix = allow the app under System
+    /// Settings → Privacy & Security → Accessibility. Like `Automation` this
+    /// is a permission problem rather than an extension one, and it rides the
+    /// same grace/force-close machinery.
+    Accessibility,
     Unknown,
 }
 
@@ -818,6 +832,22 @@ fn compliance_issue(
 ) -> Option<ExtensionIssue> {
     #[cfg(target_os = "macos")]
     {
+        // Firefox on the Accessibility method is judged by the grant, not by
+        // the extension scan. Falling through would force-quit Firefox for
+        // lacking an add-on it no longer uses.
+        //
+        // The failure deliberately falls towards escalation, as it does for a
+        // denied Automation grant: a selected method that cannot enforce is
+        // treated as non-compliance rather than quietly allowed, because the
+        // alternative is a user who believes Firefox is blocked while it is
+        // not.
+        if key == BrowserKey::Firefox && key.uses_accessibility_on_macos(app) {
+            return if crate::accessibility::is_trusted() {
+                None
+            } else {
+                Some(ExtensionIssue::Accessibility)
+            };
+        }
         if key.uses_automation_on_macos(app) {
             if let Some(browser) = key.to_web_automation() {
                 let cached = watcher_automation_cache(app, browser);
@@ -868,6 +898,13 @@ fn log_non_compliant_summary(
     if issue == ExtensionIssue::Automation {
         log::info!(
             "enforcer: {} non-compliant: Automation permission denied",
+            key.label()
+        );
+        return;
+    }
+    if issue == ExtensionIssue::Accessibility {
+        log::info!(
+            "enforcer: {} non-compliant: Accessibility permission not granted",
             key.label()
         );
         return;

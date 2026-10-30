@@ -1223,7 +1223,11 @@ fn block_page_owned_by_system_test(url: &str) -> bool {
 /// Build the block-page URL with as much block metadata as we have, so
 /// the page shows the same pill / countdown / source the extension does.
 /// Mirrors `buildBlockedUrl` in background.js.
-pub(crate) fn build_blocked_url(block_page_url: &str, original_url: &str, blocks: &[BlockInfo]) -> String {
+pub(crate) fn build_blocked_url(
+    block_page_url: &str,
+    original_url: &str,
+    blocks: &[BlockInfo],
+) -> String {
     let mut query = format!("u={}", pct_encode(original_url));
     if let Some(info) = block_info_for_url(original_url, blocks) {
         query.push_str(&format!("&id={}", pct_encode(&info.blocklist_id)));

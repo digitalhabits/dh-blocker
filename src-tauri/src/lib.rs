@@ -730,6 +730,10 @@ pub fn run() {
             {
                 commands::web_automation::register(app);
                 commands::web_automation::auto_start(app.handle());
+                // Firefox cannot be scripted, so its opt-in alternative to
+                // the extension runs its own watcher over Accessibility.
+                commands::firefox_ax::register(app);
+                commands::firefox_ax::auto_start(app.handle());
                 if let Some(path) = commands::canonical_data_path(app.handle()) {
                     crate::app_group::ensure_sync_loop(path.clone());
                     // Manifest checks touch browser-owned directories and do
@@ -962,6 +966,12 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::web_automation_start,
         commands::web_automation_pause,
         commands::web_automation_permission_status,
+        commands::firefox_ax::firefox_ax_start,
+        commands::firefox_ax::firefox_ax_pause,
+        commands::firefox_ax::firefox_ax_status,
+        commands::firefox_ax::accessibility_trusted,
+        commands::firefox_ax::accessibility_request,
+        commands::firefox_ax::accessibility_open_settings,
         commands::request_automation_permission,
         commands::open_automation_settings,
         commands::strip_hosts_markers,
