@@ -261,6 +261,10 @@ if (Test-Path $resourceDir) {
     Write-Host "    Copied resources/" -ForegroundColor Gray
 }
 
+# Custom MSIX packaging bypasses Tauri's bundler resource staging. Honor the
+# configured file map explicitly, with destinations relative to redd-block.exe.
+& (Join-Path $PSScriptRoot "stage-msix-resources.ps1") -ProjectRoot $ProjectRoot -StagingDir $stagingDir
+
 Write-Host "  [4/4] Creating MSIX package..." -ForegroundColor Gray
 
 $distDir = Join-Path $ProjectRoot "for-distribution\$target"

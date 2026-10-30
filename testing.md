@@ -102,7 +102,7 @@ Notes on the non-obvious choices:
   `cfg(not(ios|android))` modules depend on macOS/Windows-only crates, so the
   lib does not compile on a Linux runner at all. Windows-only UI Automation
   regression tests run in the Windows desktop clippy job with
-  `cargo test --lib --locked uia_web_automation::tests`.
+  `cargo test --lib --locked uia_web_automation`.
   The job also runs `pnpm vite:build`
   first — `tauri_build::build()` refuses to run when the configured
   `frontendDist` (`../dist`) is missing.
@@ -616,3 +616,13 @@ For release, run the **manual test checklist** (section **14. iOS-Specific**, in
   - confirm the `get_system_diagnostics` command is registered and `tauriAPI.getSystemDiagnostics` exists in `src/app.js`.
 - **Tier 2 failing at setup/teardown:**
   - confirm `window.__REDDBLOCK_INTERNALS__` exports are present from `src/app.js`.
+
+### Windows MSIX resource staging
+
+Run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-msix-resources.ps1`.
+This needs no compiler, Windows SDK or Store credentials. It exercises the same
+staging script as `build-msix.ps1`, checks all three real block-page assets and
+hashes in a path containing spaces, and rejects missing sources and incorrect
+runtime mappings. Windows Rust CI runs it, including on `scripts/*msix*.ps1`
+changes. This does not prove that installed browsers can read `WindowsApps`;
+use the packaged-install checks in `scripts/manual-test-checklist.md`.

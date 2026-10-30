@@ -1,11 +1,11 @@
 // Website blocking on Windows through UI Automation. Chrome, Edge, Brave and
 // Firefox default to this method; explicit extension mode skips the watcher.
-// Every tick reads the foreground browser address bar and redirects blocked
+// Active ticks read the foreground browser address bar and redirect blocked
 // sites to the bundled page. Parked pages restore when the rule no longer
 // applies. URL decisions are shared with macOS in block_page.rs.
 //
-// UI Automation needs no elevation, no capability in the MSIX manifest and
-// no browser policy, so it works from the Store build on a locked-down PC.
+// UI Automation needs no elevation or browser policy. Packaged Store behavior
+// and certification remain to be verified.
 //
 // Scope:
 // - Chrome, Edge, Brave and Firefox, while selected for Automation.
@@ -23,7 +23,12 @@
 // a browser the extension cannot reach anyway.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+mod activity;
+mod pending;
+mod polling;
 
 use tauri::AppHandle;
 use windows::core::BSTR;
@@ -37,9 +42,9 @@ use windows::Win32::System::Threading::{
 use windows::Win32::System::Variant::VARIANT;
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationValuePattern,
-    TreeScope_Children, TreeScope_Descendants, UIA_AutomationIdPropertyId,
-    UIA_ClassNamePropertyId, UIA_ComboBoxControlTypeId, UIA_ControlTypePropertyId,
-    UIA_ToolBarControlTypeId, UIA_ValuePatternId,
+    TreeScope_Children, TreeScope_Descendants, UIA_AutomationIdPropertyId, UIA_ClassNamePropertyId,
+    UIA_ComboBoxControlTypeId, UIA_ControlTypePropertyId, UIA_ToolBarControlTypeId,
+    UIA_ValuePatternId,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
@@ -50,8 +55,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::block_page;
-use crate::native_host;
 use crate::blocking_method::{self, Method};
+use crate::native_host;
 
 /// Same cadence as the macOS Automation watcher.
 const TICK: Duration = Duration::from_millis(1000);
@@ -137,9 +142,10 @@ impl UiaBrowser {
 /// Spawn the watcher. `block_page_url` is the `file://` base URL of the
 /// bundled blocked.html, from `block_page::resolve_block_page_url`.
 ///
-/// There is no pause: the watcher only acts while a block is active, and a
-/// browser the extension cannot reach has no other enforcement to defer to.
+/// Screen-off and locked/disconnected sessions suspend the worker. Idle ticks
+/// never query a browser unless its window has a pending restore.
 pub fn start(app: AppHandle, block_page_url: String) {
+    let activity = activity::start();
     std::thread::spawn(move || {
         // UI Automation clients belong in the multithreaded apartment; this
         // thread is ours alone, so nothing else's COM state is affected.
@@ -153,7 +159,14 @@ pub fn start(app: AppHandle, block_page_url: String) {
                 }
             }
         };
+        let Some(path) = crate::commands::canonical_data_path(&app) else {
+            return;
+        };
+        let pending = pending::Pending::load(path.with_file_name("uia-pending-restores.json"));
         let mut watcher = Watcher {
+            activity: activity.clone(),
+            pending,
+            restoring: HashMap::new(),
             automation,
             block_page_url,
             omnibox: None,
@@ -161,13 +174,16 @@ pub fn start(app: AppHandle, block_page_url: String) {
             missing_omnibox_logged: HashSet::new(),
         };
         loop {
-            std::thread::sleep(TICK);
+            activity.wait_for_tick(TICK);
             watcher.tick(&app);
         }
     });
 }
 
 struct Watcher {
+    activity: Arc<activity::Gate>,
+    pending: pending::Pending,
+    restoring: HashMap<String, String>,
     automation: IUIAutomation,
     block_page_url: String,
     /// Address bar of the window it was last found in. Finding it walks the
@@ -181,6 +197,11 @@ struct Watcher {
 
 impl Watcher {
     fn tick(&mut self, app: &AppHandle) {
+        if self.activity.suspended() {
+            return;
+        }
+        self.pending.retain(live_restore_window);
+        self.restoring.retain(|key, _| live_restore_window(key));
         let now = Instant::now();
         let Some((hwnd, browser)) = foreground_browser_window() else {
             return;
@@ -206,6 +227,14 @@ impl Watcher {
             return;
         }
         let (_domains, blocks) = native_host::derive_payload(&path);
+        let restore_key = restore_window_key(hwnd);
+        if !polling::needs_address_bar(!blocks.is_empty(), self.pending.count(&restore_key)) {
+            self.omnibox = None;
+            return;
+        }
+        if self.activity.suspended() {
+            return;
+        }
 
         let Some(omnibox) = self.omnibox_for(hwnd, browser) else {
             return;
@@ -222,6 +251,12 @@ impl Watcher {
                 return;
             }
         };
+        if let Some(expected) = self.restoring.get(&restore_key) {
+            if block_page::address_bar_text_to_url(&text).as_ref() == Some(expected) {
+                self.pending.restored(&restore_key);
+                self.restoring.remove(&restore_key);
+            }
+        }
         let Some(target) =
             block_page::plan_address_bar_action(&text, &blocks, &self.block_page_url)
         else {
@@ -230,8 +265,18 @@ impl Watcher {
         self.last_action
             .retain(|_, t| now.duration_since(*t) < ACTION_COOLDOWN);
         self.last_action.insert(key, now);
-        match navigate(&omnibox, hwnd, &target) {
-            Ok(()) => log::info!(
+        if self.activity.suspended() {
+            return;
+        }
+        match navigate(&omnibox, hwnd, &target, &self.activity) {
+            Ok(()) => {
+                if block_page::is_block_page_url(&target, &self.block_page_url) {
+                    self.pending.redirected(&restore_key);
+                } else {
+                    // Keep the count until the next tick observes the destination.
+                    self.restoring.insert(restore_key, target.clone());
+                }
+                log::info!(
                 "uia_web_automation: sent {} window to {} (redirect to / restore from block page)",
                 browser.label(),
                 if block_page::is_block_page_url(&target, &self.block_page_url) {
@@ -239,7 +284,8 @@ impl Watcher {
                 } else {
                     "its original site"
                 }
-            ),
+            );
+            }
             Err(e) => log::warn!(
                 "uia_web_automation: navigating {} window failed: {e}",
                 browser.label()
@@ -299,6 +345,29 @@ fn foreground_browser_window() -> Option<(HWND, UiaBrowser)> {
     (class == browser.window_class()).then_some((hwnd, browser))
 }
 
+// PID prevents stale HWNDs from matching a different browser process. Closed
+// tabs cannot be enumerated by this foreground-only watcher: keep their counts
+// conservatively until the window closes, rather than strand another parked tab.
+fn restore_window_key(hwnd: HWND) -> String {
+    let mut pid = 0;
+    unsafe {
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    }
+    format!("{}:{pid}", hwnd.0 as isize)
+}
+
+fn live_restore_window(key: &str) -> bool {
+    let Some((window, _)) = key.split_once(':') else {
+        return false;
+    };
+    let Ok(window) = window.parse::<isize>() else {
+        return false;
+    };
+    let hwnd = HWND(window as *mut std::ffi::c_void);
+    (unsafe { windows::Win32::UI::WindowsAndMessaging::IsWindow(Some(hwnd)).as_bool() })
+        && restore_window_key(hwnd) == key
+}
+
 fn process_image_path(pid: u32) -> Option<String> {
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
@@ -328,10 +397,8 @@ fn find_omnibox(
             // not an Edit. Only search inside the browser's direct-child
             // navigation toolbar: page content may reuse these DOM IDs.
             // Missing toolbar/control sends no input (allows this tick).
-            let toolbar_id = automation.CreatePropertyCondition(
-                UIA_AutomationIdPropertyId,
-                &VARIANT::from("nav-bar"),
-            )?;
+            let toolbar_id = automation
+                .CreatePropertyCondition(UIA_AutomationIdPropertyId, &VARIANT::from("nav-bar"))?;
             let toolbar_type = automation.CreatePropertyCondition(
                 UIA_ControlTypePropertyId,
                 &VARIANT::from(UIA_ToolBarControlTypeId.0),
@@ -379,8 +446,16 @@ fn read_address_bar(omnibox: &IUIAutomationElement) -> windows::core::Result<Add
 /// keyboard focus. So it is sent only after checking that the same browser
 /// window is still in front and its address bar holds focus; otherwise the
 /// text is left in the bar and nothing is pressed.
-fn navigate(omnibox: &IUIAutomationElement, hwnd: HWND, url: &str) -> Result<(), String> {
+fn navigate(
+    omnibox: &IUIAutomationElement,
+    hwnd: HWND,
+    url: &str,
+    activity: &activity::Gate,
+) -> Result<(), String> {
     unsafe {
+        if activity.suspended() {
+            return Err("desktop suspended".into());
+        }
         omnibox.SetFocus().map_err(|e| format!("focus: {e}"))?;
         let value: IUIAutomationValuePattern = omnibox
             .GetCurrentPatternAs(UIA_ValuePatternId)
@@ -411,6 +486,9 @@ fn navigate(omnibox: &IUIAutomationElement, hwnd: HWND, url: &str) -> Result<(),
             },
         };
         let inputs = [key(KEYBD_EVENT_FLAGS(0)), key(KEYEVENTF_KEYUP)];
+        if activity.suspended() {
+            return Err("desktop suspended before Enter".into());
+        }
         let sent = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
         if sent as usize != inputs.len() {
             return Err(format!("SendInput sent {sent} of {} events", inputs.len()));
