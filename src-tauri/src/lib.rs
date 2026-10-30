@@ -718,8 +718,8 @@ pub fn run() {
                 commands::enforcement::auto_start(app.handle());
             }
 
-            // Windows Chromium browsers whose policy blocks our native-messaging
-            // host get UI Automation instead; the watcher idles everywhere else.
+            // Windows browsers default to UI Automation; the watcher checks
+            // each browser's saved blocking method before acting.
             #[cfg(target_os = "windows")]
             if let Some(url) = block_page::resolve_block_page_url(app.handle()) {
                 uia_web_automation::start(app.handle().clone(), url);
@@ -793,20 +793,8 @@ pub fn run() {
                 log::warn!("native-host install on startup failed: {e}");
             }
 
-            #[cfg(all(
-                not(any(target_os = "ios", target_os = "android")),
-                not(target_os = "macos"),
-                not(feature = "system-test")
-            ))]
-            if !extension_install::startup_install_already_done() {
-                if let Err(e) = extension_install::install() {
-                    log::warn!("extension-install hint on startup failed: {e}");
-                } else {
-                    extension_install::mark_startup_install_done();
-                }
-            } else {
-                log::debug!("extension-install: startup auto-install skipped (marker present)");
-            }
+            // Windows defaults to UI Automation. Extension setup is offered
+            // only after an explicit switch to extension mode in Settings.
 
             // Do not create or refresh Windows watchdog tasks: Defender
             // flags the script-based registration command (issue #152).

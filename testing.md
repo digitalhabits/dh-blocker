@@ -49,6 +49,13 @@ layer closer to observed behavior.
   - In app dev console (expanded profile): `runIntegrationTests('full')`
 - **UI shots**: `pnpm ui:shoot` (all screens) or `pnpm ui:shoot --screen=week-crowded --measure`
 - **Rust**: `cd src-tauri && cargo test --lib`
+- **Windows address-bar smoke probe**: in Windows PowerShell, run
+  `powershell -NoProfile -MTA -File scripts/test-windows-address-bar.ps1 -Browser firefox`
+  (also accepts `chrome`, `msedge`, or `brave`), then foreground a disposable
+  `https://example.com/` window and click the page. The probe uses the same
+  UIA selectors via .NET and verifies redirect to a temporary local file and
+  restore. Its page includes lookalike Firefox IDs to exercise toolbar scoping.
+  This does **not** run the Rust watcher or prove policy/schedule/MSIX behavior.
 - **Android Kotlin**: `cd src-tauri/gen/android && ./gradlew :tauri-plugin-android-blocker:testDebugUnitTest`
 
 ---
@@ -93,8 +100,10 @@ Notes on the non-obvious choices:
 - **Rust runs on macOS, not Linux.** `web_automation.rs`, `window_inventory.rs`
   and `workspace_events.rs` are `#[cfg(target_os = "macos")]`, and the
   `cfg(not(ios|android))` modules depend on macOS/Windows-only crates, so the
-  lib does not compile on a Linux runner at all. No Windows-only module carries
-  tests, so macOS covers the whole suite. The job also runs `pnpm vite:build`
+  lib does not compile on a Linux runner at all. Windows-only UI Automation
+  regression tests run in the Windows desktop clippy job with
+  `cargo test --lib --locked uia_web_automation::tests`.
+  The job also runs `pnpm vite:build`
   first — `tauri_build::build()` refuses to run when the configured
   `frontendDist` (`../dist`) is missing.
 - **Kotlin tests run after the APK build, in the same job.** `settings.gradle`

@@ -342,34 +342,36 @@ the same `blocked.js` contract: redirect URLs carry block metadata query params
 (including `mode=allowlist` vs `blocklist`) so subtitle, pill, site, reason,
 and countdown rows render identically on Automation and extension paths.
 
-### 5.3 UI Automation fallback for policy-managed PCs
+### 5.3 Windows UI Automation and extension selection
 
-Organisation policy (`NativeMessagingUserLevelHosts = 0`, or our host on
-`NativeMessagingBlocklist`) stops Chromium launching the per-user host, so the
-extension installs but never receives rules. `browser_policy.rs` detects this.
-For Chrome, Edge and Brave in that state, `uia_web_automation.rs` takes over:
+Chrome, Edge, Brave and Firefox default to UI Automation. Settings exposes
+Automation / Extension per installed browser in `settings.blockingMethods`,
+using the same persisted selection as macOS. Missing or invalid Windows
+values mean Automation; an explicit Extension value stops UI Automation for
+that browser. No organisation-policy prerequisite is used.
 
-- 1 s tick; acts only on the **foreground** window, because Enter is sent with
-  `SendInput` and must land in that window. Background windows are handled
-  when the user switches to them.
-- Finds the address bar by its UI Automation class name (`OmniboxViewViews`),
-  reads it, and normalises Chromium's elided display text
-  (`block_page::address_bar_text_to_url`).
-- Redirects or restores with the same decision as macOS
-  (`block_page::plan_actions`) by setting the bar's value and pressing Enter.
-  The block page is the bundled `blocked.html` reached by `file://`.
-- Fails towards allowing: no recognisable address bar, the user typing in it,
-  or text that is not a URL means no action that tick.
+- The 1 s watcher acts on the foreground window's active tab. Background
+  tabs/windows are handled when brought forward; redirects happen after load.
+- Chrome/Edge use class `OmniboxViewViews`; Brave uses
+  `BraveOmniboxViewViews`. Firefox requires a direct-child `nav-bar` toolbar
+  with a `urlbar-input` combo box, never a matching input in page content.
+- Redirect/restore decisions use `block_page`; navigation uses UIA SetValue
+  then SendInput, guarded by foreground and address-bar focus checks.
+- Failures allow that tick: missing controls, unparseable text or an address
+  bar the user is editing cause no input. No broad input-box fallback exists.
 
-Needs no elevation or MSIX capability, so it works from the Store build.
-Policy is re-read every 60 s. Browsers whose host is not blocked are left to
-the extension.
+Automation needs no extension or permission-grant prompt on Windows. Setup
+and the opt-in compliance enforcer do not require an extension for automation
+browsers. Explicit Extension selection restores extension setup and policy
+warnings and ensures its native host is registered. Startup no longer writes
+extension-install hints. Existing extensions/host registrations are retained;
+an already installed extension may continue providing additional coverage.
+The UI explains that extension mode covers background tabs and blocks before
+pages load. macOS retains its Apple Events permission model, and Firefox on
+macOS still uses the extension. Mobile platforms have no method selector.
 
-The setup screens count these browsers as set up and say they are blocked via
-the address bar (`addressBarBlockingCovers` in `src/enforcement.js`). That
-function repeats the watcher's condition (Windows, Chrome/Edge/Brave, policy
-blocking the host), so change both together. On macOS a policy-blocked
-extension-mode browser still shows the "Blocked by your organisation" warning.
+Standalone probes passed redirect/restore on Chrome, Edge, Brave and Firefox;
+these do not prove Rust app integration, schedule activation or MSIX access.
 
 ### 5.4 Windows watchdog
 
