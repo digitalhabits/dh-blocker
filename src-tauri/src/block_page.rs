@@ -1,9 +1,9 @@
-// Website-blocking decisions for the desktop watchers that drive a browser
-// from outside, rather than through the extension: today Apple Events on
-// macOS (web_automation.rs). Given the URLs a browser is showing, decide
-// which to send to the bundled block page and which parked tabs to restore.
-// Ported from the extension's background.js so both paths block the same
-// URLs and show the same block page.
+// Website-blocking decisions shared by the desktop watchers that drive a
+// browser from outside: Apple Events on macOS (web_automation.rs) and UI
+// Automation on Windows (uia_web_automation.rs). Given the URLs a browser
+// is showing, decide which to send to the bundled block page and which
+// parked tabs to restore. Ported from the extension's background.js so all
+// three paths block the same URLs and show the same block page.
 //
 // Nothing here talks to a browser or the OS; the platform modules read tabs
 // and apply the actions.
@@ -355,15 +355,34 @@ fn hex_val(b: u8) -> Option<u8> {
 /// Turn a filesystem path into a `file://` URL, percent-encoding each
 /// segment (the app bundle path contains a space: "ReDD Blocker.app").
 pub fn path_to_file_url(path: &std::path::Path) -> String {
+    path_str_to_file_url(&path.to_string_lossy())
+}
+
+/// `path_to_file_url` on a string, so the Windows shape can be tested on
+/// macOS too. Backslashes separate segments as well, and a leading drive
+/// letter keeps its colon: `C:\Program Files\x` becomes
+/// `file:///C:/Program%20Files/x`, which is what a browser expects.
+pub(crate) fn path_str_to_file_url(path: &str) -> String {
     let mut url = String::from("file://");
-    for component in path.to_string_lossy().split('/') {
+    let mut first = true;
+    for component in path.split(['/', '\\']) {
         if component.is_empty() {
             continue;
         }
         url.push('/');
-        url.push_str(&pct_encode_path_segment(component));
+        if first && is_drive_letter(component) {
+            url.push_str(component);
+        } else {
+            url.push_str(&pct_encode_path_segment(component));
+        }
+        first = false;
     }
     url
+}
+
+fn is_drive_letter(segment: &str) -> bool {
+    let b = segment.as_bytes();
+    b.len() == 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
 }
 
 /// Like `pct_encode` but also preserves a handful of path-safe sub-delims
@@ -440,4 +459,176 @@ pub fn resolve_block_page_url(app: &AppHandle) -> Option<String> {
         "block_page: no block page URL (resource dir missing and no src-tauri/blocked fallback)"
     );
     None
+}
+
+// ---- Address-bar text (Windows UI Automation) ------------------------------
+
+/// Characters a browser may put in its address bar that are not part of the
+/// URL: bidi marks, zero-width spaces, a BOM. Samsung Internet's invisible
+/// U+200E prefix silently disabled Android blocking until it was stripped;
+/// the same class of bug is possible here, so strip them up front.
+#[cfg(any(target_os = "windows", test))]
+const INVISIBLE_PREFIXES: &[char] = &[
+    '\u{200B}', '\u{200C}', '\u{200D}', '\u{200E}', '\u{200F}', '\u{202A}', '\u{202B}', '\u{202C}',
+    '\u{202D}', '\u{202E}', '\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}', '\u{FEFF}',
+];
+
+/// Turn what a Chromium address bar displays into a URL we can match.
+///
+/// Chromium elides the scheme (and `www.`) for display, so `reddit.com/r/x`
+/// stands for `https://reddit.com/r/x`; the `www.` loss is harmless because
+/// stored domains have it stripped too. Text with a scheme is returned as
+/// is, so the block page's `file://` URL still reaches `plan_actions`.
+///
+/// Failures fall towards allowing: `None` for anything that does not look
+/// like a URL (a half-typed search, an empty bar). That text has not been
+/// navigated to yet; once it is, the bar shows the real URL and the next
+/// tick reads that instead.
+#[cfg(any(target_os = "windows", test))]
+pub(crate) fn address_bar_text_to_url(text: &str) -> Option<String> {
+    let text = text
+        .trim()
+        .trim_start_matches(INVISIBLE_PREFIXES)
+        .trim_end_matches(INVISIBLE_PREFIXES)
+        .trim();
+    if text.is_empty() || text.chars().any(char::is_whitespace) {
+        return None;
+    }
+    if text.contains("://") {
+        return Some(text.to_string());
+    }
+    let host_end = text.find(['/', '?', '#']).unwrap_or(text.len());
+    let host = text[..host_end].split(':').next().unwrap_or("");
+    let looks_like_host = (host.contains('.') && !host.starts_with('.') && !host.ends_with('.'))
+        || host.eq_ignore_ascii_case("localhost")
+        || text.starts_with('[');
+    looks_like_host.then(|| format!("https://{text}"))
+}
+
+/// The URL to send a window's address bar to, if any: the block page for a
+/// blocked site, or the original site for a parked tab that is no longer
+/// blocked. Same decision `plan_actions` makes for an Apple Events tab.
+#[cfg(any(target_os = "windows", test))]
+pub(crate) fn plan_address_bar_action(
+    address_bar_text: &str,
+    blocks: &[BlockInfo],
+    block_page_url: &str,
+) -> Option<String> {
+    let url = address_bar_text_to_url(address_bar_text)?;
+    let tab = Tab {
+        window_index: 1,
+        tab_index: 1,
+        url,
+    };
+    plan_actions(std::slice::from_ref(&tab), blocks, block_page_url)
+        .into_iter()
+        .next()
+        .map(|(_, _, target)| target)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BLOCK_PAGE: &str =
+        "file:///C:/Program%20Files/Digital%20Habits%20Blocker/blocked/blocked.html";
+
+    fn blocklist(domains: &[&str]) -> Vec<BlockInfo> {
+        vec![BlockInfo {
+            blocklist_id: "b1".into(),
+            mode: "blocklist".into(),
+            domains: domains.iter().map(|d| d.to_string()).collect(),
+            apps: vec![],
+            name: None,
+            emoji: None,
+            color: None,
+            source: "manual",
+            ends_at: None,
+            started_at: None,
+        }]
+    }
+
+    #[test]
+    fn windows_paths_become_drive_letter_file_urls() {
+        assert_eq!(
+            path_str_to_file_url(r"C:\Program Files\Digital Habits Blocker\blocked\blocked.html"),
+            BLOCK_PAGE
+        );
+    }
+
+    #[test]
+    fn unix_paths_are_unchanged() {
+        assert_eq!(
+            path_str_to_file_url("/Applications/Digital Habits Blocker.app/x.html"),
+            "file:///Applications/Digital%20Habits%20Blocker.app/x.html"
+        );
+    }
+
+    #[test]
+    fn address_bar_with_elided_scheme_reads_as_https() {
+        assert_eq!(
+            address_bar_text_to_url("reddit.com/r/rust").as_deref(),
+            Some("https://reddit.com/r/rust")
+        );
+        assert_eq!(
+            address_bar_text_to_url("https://reddit.com/").as_deref(),
+            Some("https://reddit.com/")
+        );
+        assert_eq!(
+            address_bar_text_to_url("localhost:3000/x").as_deref(),
+            Some("https://localhost:3000/x")
+        );
+    }
+
+    #[test]
+    fn address_bar_strips_invisible_marks() {
+        assert_eq!(
+            address_bar_text_to_url("\u{200E}reddit.com").as_deref(),
+            Some("https://reddit.com")
+        );
+    }
+
+    #[test]
+    fn address_bar_search_text_is_not_a_url() {
+        assert_eq!(address_bar_text_to_url(""), None);
+        assert_eq!(address_bar_text_to_url("how to quit reddit"), None);
+        assert_eq!(address_bar_text_to_url("reddit"), None);
+        assert_eq!(address_bar_text_to_url("reddit."), None);
+    }
+
+    #[test]
+    fn blocked_site_in_address_bar_goes_to_block_page() {
+        let blocks = blocklist(&["reddit.com"]);
+        let target = plan_address_bar_action("www.reddit.com/r/rust", &blocks, BLOCK_PAGE)
+            .expect("blocked site should redirect");
+        assert!(target.starts_with(&format!("{BLOCK_PAGE}?u=https%3A%2F%2Fwww.reddit.com")));
+        assert_eq!(
+            plan_address_bar_action("example.com", &blocks, BLOCK_PAGE),
+            None
+        );
+    }
+
+    #[test]
+    fn parked_window_is_restored_once_unblocked() {
+        let parked = format!("{BLOCK_PAGE}?u=https%3A%2F%2Freddit.com%2F&id=b1");
+        assert_eq!(
+            plan_address_bar_action(&parked, &blocklist(&["reddit.com"]), BLOCK_PAGE),
+            None
+        );
+        assert_eq!(
+            plan_address_bar_action(&parked, &[], BLOCK_PAGE).as_deref(),
+            Some("https://reddit.com/")
+        );
+    }
+
+    #[test]
+    fn chromium_display_of_the_block_page_is_still_recognised() {
+        // Chromium may unescape the path for display; the path fallback in
+        // `is_block_page_url` must still stop a redirect loop.
+        let shown = "file:///C:/Program Files/Digital Habits Blocker/blocked/blocked.html?u=https%3A%2F%2Freddit.com%2F";
+        assert_eq!(
+            plan_address_bar_action(shown, &blocklist(&["reddit.com"]), BLOCK_PAGE),
+            None
+        );
+    }
 }
