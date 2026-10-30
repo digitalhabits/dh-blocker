@@ -146,6 +146,10 @@ pub mod native_host;
 pub mod native_host_install;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod profile_scan;
+// Firefox on macOS has no AppleScript dictionary for tabs, so the opt-in
+// alternative to its extension reads the active tab through Accessibility.
+#[cfg(target_os = "macos")]
+pub mod accessibility;
 #[cfg(target_os = "macos")]
 pub mod safari_services;
 #[cfg(target_os = "windows")]
