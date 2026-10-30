@@ -197,6 +197,18 @@ fn exe_version(_exe: Option<&std::path::Path>) -> String {
     String::new()
 }
 
+/// The extension only sends small messages; refuse larger ones before allocating.
+const MAX_INBOUND_BYTES: usize = 1 << 20;
+
+fn read_payload(reader: &mut impl Read, len: usize) -> std::io::Result<Vec<u8>> {
+    if len > MAX_INBOUND_BYTES {
+        return Err(std::io::Error::other("message too large"));
+    }
+    let mut payload = vec![0u8; len];
+    reader.read_exact(&mut payload)?;
+    Ok(payload)
+}
+
 fn spawn_stdin_reader(tx: mpsc::Sender<HostEvent>) {
     std::thread::spawn(move || {
         let stdin = std::io::stdin();
@@ -215,11 +227,13 @@ fn spawn_stdin_reader(tx: mpsc::Sender<HostEvent>) {
                 }
             }
             let len = u32::from_le_bytes(len_buf) as usize;
-            let mut payload = vec![0u8; len];
-            if let Err(e) = stdin_lock.read_exact(&mut payload) {
-                let _ = tx.send(HostEvent::StdinError(format!("payload: {e}")));
-                return;
-            }
+            let payload = match read_payload(&mut stdin_lock, len) {
+                Ok(payload) => payload,
+                Err(e) => {
+                    let _ = tx.send(HostEvent::StdinError(format!("payload: {e}")));
+                    return;
+                }
+            };
 
             // We accept but don't currently act on extension -> host
             // messages beyond logging. Heartbeats from the extension

@@ -908,3 +908,11 @@ fn unpaused_allowlist_schedule_puts_allow_mode_in_force() {
         "allow mode from a schedule should block a host outside the allowlist"
     );
 }
+
+#[test]
+fn read_payload_refuses_oversized_messages_before_reading() {
+    let mut reader = std::io::Cursor::new(vec![7u8; 4]);
+    let err = read_payload(&mut reader, MAX_INBOUND_BYTES + 1).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::Other);
+    assert_eq!(read_payload(&mut reader, 4).unwrap(), vec![7u8; 4]);
+}
