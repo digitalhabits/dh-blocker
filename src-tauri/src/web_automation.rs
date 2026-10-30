@@ -30,6 +30,7 @@
 // `native_host::derive_payload` — the same single source of truth the
 // extension's native host and the enforcer use.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -802,12 +803,24 @@ enum AutomationError {
 /// linefeed never appear inside a URL, so parsing back is unambiguous.
 const FIELD_SEP: char = '\t';
 
-fn read_tabs(browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
-    let app_name = browser.applescript_name();
+/// AppleScript handler that joins the read script's rows. Building one
+/// text by `set _out to _out & …` copies everything built so far on every
+/// row, so a read cost grew with the square of the open tab count;
+/// collecting a list and coercing it once under `text item delimiters`
+/// is linear. Shared with the tests, which run it on synthetic rows.
+const JOIN_ROWS_HANDLER: &str = r#"on joinRows(_rows, _eol)
+  set _saved to AppleScript's text item delimiters
+  set AppleScript's text item delimiters to _eol
+  set _out to _rows as text
+  set AppleScript's text item delimiters to _saved
+  return _out
+end joinRows"#;
+
+fn read_tabs_script(browser: SupportedBrowser) -> String {
     // The `is running` guard keeps the read from *launching* the browser
     // if it quit between the sysinfo check and now (referencing the
     // `running` property does not launch the app).
-    // NOTE: `tab` and `linefeed` are resolved at the TOP LEVEL here, before the
+    // NOTE: `tab` and `linefeed` are resolved OUTSIDE the
     // `tell application` block. Inside a browser `tell` block the bare word
     // `tab` binds to the app's `tab` *element class* (Safari/Chrome both define
     // it), so `... & tab & ...` would concatenate the literal text "tab"
@@ -823,38 +836,55 @@ fn read_tabs(browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
     // the `tab <i> of window <w>` addressing `apply_actions` uses.
     // Safari reports `missing value` for empty tabs; the `as text`
     // coercion is wrapped in `try` so those rows degrade to "".
-    let script = format!(
-        r#"set _sep to tab
-set _eol to linefeed
-if application "{app}" is running then
-  tell application "{app}"
-    set _out to ""
-    set _wi to 0
-    repeat with w in windows
-      set _wi to _wi + 1
-      try
-        set _urls to URL of every tab of w
-      on error
-        set _urls to {{}}
-      end try
-      set _ti to 0
-      repeat with _u in _urls
-        set _ti to _ti + 1
-        set _u_text to ""
-        try
-          set _u_text to _u as text
-        end try
-        set _out to _out & _wi & _sep & _ti & _sep & _u_text & _eol
-      end repeat
-    end repeat
-    return _out
-  end tell
-else
-  return ""
-end if"#,
-        app = app_name
-    );
-    let out = run_osascript(&script)?;
+    //
+    // The explicit `on run` keeps the variables local; at the top level
+    // of an implicit run handler they would be script globals.
+    //
+    // `with timeout` bounds each Apple Event, since the in-process runner
+    // has no process to kill. A timeout (-1712) inside the per-window `try`
+    // is rethrown: swallowing it would report a hung window as having no
+    // tabs, and a restore pass would take that as "nothing left parked".
+    format!(
+        r#"{join}
+
+on run
+  set _sep to tab
+  set _eol to linefeed
+  set _rows to {{}}
+  if application "{app}" is running then
+    with timeout of {timeout} seconds
+      tell application "{app}"
+        set _wi to 0
+        repeat with w in windows
+          set _wi to _wi + 1
+          try
+            set _urls to URL of every tab of w
+          on error _msg number _num
+            if _num is -1712 then error _msg number _num
+            set _urls to {{}}
+          end try
+          set _ti to 0
+          repeat with _u in _urls
+            set _ti to _ti + 1
+            set _u_text to ""
+            try
+              set _u_text to _u as text
+            end try
+            set end of _rows to (_wi as text) & _sep & _ti & _sep & _u_text
+          end repeat
+        end repeat
+      end tell
+    end timeout
+  end if
+  return joinRows(_rows, _eol)
+end run"#,
+        join = JOIN_ROWS_HANDLER,
+        app = browser.applescript_name(),
+        timeout = OSASCRIPT_TIMEOUT.as_secs()
+    )
+}
+
+fn parse_tab_rows(out: &str) -> Vec<Tab> {
     let mut tabs = Vec::new();
     for line in out.lines() {
         if line.is_empty() {
@@ -872,7 +902,199 @@ end if"#,
             });
         }
     }
-    Ok(tabs)
+    tabs
+}
+
+thread_local! {
+    /// Owned by whichever thread reads tabs — in practice the watcher
+    /// thread — so each `NSAppleScript` is created, compiled and run on one
+    /// thread only, and never on the main thread, where a slow browser
+    /// would freeze the UI.
+    static IN_PROCESS_READS: RefCell<in_process::Reads> = RefCell::new(in_process::Reads::default());
+}
+
+fn read_tabs(browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
+    let in_process = IN_PROCESS_READS.with(|reads| {
+        reads.borrow_mut().read(
+            browser,
+            Instant::now(),
+            || read_tabs_script(browser),
+            || query_automation_permission(browser) == PermState::Granted,
+        )
+    });
+    let out = match in_process {
+        Some(result) => result?,
+        None => run_osascript(&read_tabs_script(browser))?,
+    };
+    Ok(parse_tab_rows(&out))
+}
+
+/// Runs the per-tick read script inside this process with `NSAppleScript`:
+/// compiled once per browser and kept, so a tick costs the Apple Events
+/// and nothing else — no `osascript` launch, no compile, no dictionary
+/// load.
+///
+/// Only once TCC already reports the Automation grant. An in-process call
+/// cannot be killed the way `run_osascript` kills a stuck `osascript`, and
+/// the one wait no AppleScript timeout is known to cover is the consent
+/// prompt, which a decided grant rules out. Until then, and for good if
+/// the script will not compile, reads go through `osascript` as before.
+mod in_process {
+    use super::{AutomationError, SupportedBrowser, APPLE_EVENTS};
+    use objc2::rc::{autoreleasepool, Retained};
+    use objc2::runtime::AnyObject;
+    use objc2::{msg_send, AllocAnyThread};
+    use objc2_foundation::{
+        NSAppleEventDescriptor, NSAppleScript, NSAppleScriptErrorMessage, NSAppleScriptErrorNumber,
+        NSDictionary, NSNumber, NSString,
+    };
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+
+    /// How long a TCC answer is trusted before asking again. A denial seen
+    /// by a read forces an immediate recheck, so this only bounds how soon
+    /// a new grant moves reads in-process.
+    pub(super) const PERMISSION_RECHECK: Duration = Duration::from_secs(30);
+
+    #[derive(Default)]
+    pub(super) struct Reads {
+        browsers: HashMap<SupportedBrowser, Read>,
+    }
+
+    #[derive(Default)]
+    struct Read {
+        script: Script,
+        granted: Option<(bool, Instant)>,
+    }
+
+    #[derive(Default)]
+    enum Script {
+        #[default]
+        NotCompiled,
+        Ready(Retained<NSAppleScript>),
+        Failed,
+    }
+
+    impl Reads {
+        /// `None` means "use `osascript`": not granted yet, or the script
+        /// does not compile in process. `granted` is
+        /// `query_automation_permission` in production.
+        pub(super) fn read(
+            &mut self,
+            browser: SupportedBrowser,
+            now: Instant,
+            source: impl FnOnce() -> String,
+            granted: impl FnOnce() -> bool,
+        ) -> Option<Result<String, AutomationError>> {
+            let read = self.browsers.entry(browser).or_default();
+            if matches!(read.script, Script::Failed) {
+                return None;
+            }
+            let is_granted = match read.granted {
+                Some((g, at)) if now.saturating_duration_since(at) < PERMISSION_RECHECK => g,
+                _ => {
+                    let g = granted();
+                    read.granted = Some((g, now));
+                    g
+                }
+            };
+            if !is_granted {
+                return None;
+            }
+            if matches!(read.script, Script::NotCompiled) {
+                read.script = match compile(&source()) {
+                    Ok(script) => Script::Ready(script),
+                    Err(e) => {
+                        log::warn!(
+                            "web_automation: {} read script will not compile in process, staying on osascript: {e:?}",
+                            browser.label()
+                        );
+                        Script::Failed
+                    }
+                };
+            }
+            let Script::Ready(script) = &read.script else {
+                return None;
+            };
+            let result = execute(script);
+            if matches!(result, Err(AutomationError::NotAuthorized)) {
+                // Revoked since TCC was asked: ask again on the next read.
+                read.granted = None;
+            }
+            Some(result)
+        }
+    }
+
+    pub(super) fn compile(source: &str) -> Result<Retained<NSAppleScript>, AutomationError> {
+        // Under APPLE_EVENTS like every osascript call: compiling a
+        // `tell application` block reads the target's dictionary.
+        let _guard = APPLE_EVENTS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        autoreleasepool(|_| {
+            let script =
+                NSAppleScript::initWithSource(NSAppleScript::alloc(), &NSString::from_str(source))
+                    .ok_or_else(|| AutomationError::Other("NSAppleScript init failed".into()))?;
+            let mut info = None;
+            // SAFETY: `info` has the dictionary type the method fills in.
+            if unsafe { script.compileAndReturnError(Some(&mut info)) } {
+                Ok(script)
+            } else {
+                Err(error_from(info))
+            }
+        })
+    }
+
+    pub(super) fn execute(script: &NSAppleScript) -> Result<String, AutomationError> {
+        let _guard = APPLE_EVENTS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // The watcher thread has no autorelease pool of its own; without
+        // this every tick would leak the result descriptor.
+        autoreleasepool(|_| {
+            let mut info: Option<Retained<NSDictionary<NSString, AnyObject>>> = None;
+            // Through `msg_send!` rather than the generated binding, which
+            // declares the result non-null and would panic on the nil that
+            // `executeAndReturnError:` returns on failure.
+            // SAFETY: the selector takes one `NSDictionary **` out-parameter
+            // and returns an `NSAppleEventDescriptor *` or nil.
+            let result: Option<Retained<NSAppleEventDescriptor>> =
+                unsafe { msg_send![script, executeAndReturnError: Some(&mut info)] };
+            match result {
+                Some(result) => Ok(result
+                    .stringValue()
+                    .map(|s| s.to_string())
+                    .unwrap_or_default()),
+                None => Err(error_from(info)),
+            }
+        })
+    }
+
+    /// Same mapping as `run_osascript`: -1743 is `NotAuthorized`.
+    fn error_from(info: Option<Retained<NSDictionary<NSString, AnyObject>>>) -> AutomationError {
+        let Some(info) = info else {
+            return AutomationError::Other("NSAppleScript failed without error info".into());
+        };
+        // SAFETY: Foundation's own constant strings, valid for the process.
+        let (number_key, message_key) =
+            unsafe { (NSAppleScriptErrorNumber, NSAppleScriptErrorMessage) };
+        let number = info
+            .objectForKey(number_key)
+            .and_then(|n| n.downcast::<NSNumber>().ok())
+            .map(|n| n.intValue());
+        if number == Some(-1743) {
+            return AutomationError::NotAuthorized;
+        }
+        let message = info
+            .objectForKey(message_key)
+            .and_then(|m| m.downcast::<NSString>().ok())
+            .map(|m| m.to_string())
+            .unwrap_or_default();
+        AutomationError::Other(match number {
+            Some(n) => format!("{message} ({n})"),
+            None => message,
+        })
+    }
 }
 
 fn apply_actions(
