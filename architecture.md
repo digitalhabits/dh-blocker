@@ -352,6 +352,16 @@ that browser. No organisation-policy prerequisite is used.
 
 - The 1 s watcher acts on the foreground window's active tab. Background
   tabs/windows are handled when brought forward; redirects happen after load.
+- Without active blocks, address-bar queries only run for windows with pending
+  restores. Counts (not URLs) are saved in `uia-pending-restores.json` beside
+  the per-user data file, keyed by HWND and PID. A restore is confirmed on a
+  later tick; closing a window prunes its entry. Manually closing individual
+  parked tabs can leave conservative counts until their window closes. A
+  corrupt/missing ledger cannot recover old parked tabs while no block is active.
+- A hidden window receives display-power and session notifications. Screen-off,
+  lock and disconnect independently suspend the worker on a condition variable;
+  all must clear before its 1 s tick resumes. Dimmed screens remain active.
+  Registration failure logs a warning and retains normal enforcement polling.
 - Chrome/Edge use class `OmniboxViewViews`; Brave uses
   `BraveOmniboxViewViews`. Firefox requires a direct-child `nav-bar` toolbar
   with a `urlbar-input` combo box, never a matching input in page content.
@@ -369,6 +379,13 @@ an already installed extension may continue providing additional coverage.
 The UI explains that extension mode covers background tabs and blocks before
 pages load. macOS retains its Apple Events permission model, and Firefox on
 macOS still uses the extension. Mobile platforms have no method selector.
+
+The custom MSIX builder runs `scripts/stage-msix-resources.ps1` to copy the
+explicit `bundle.resources` mappings into the package root beside the executable.
+Windows `resource_dir()` resolves that executable directory. All three block-page
+assets must exist and match their source hashes before `makeappx` runs; the
+optional `release/resources` copy is not sufficient. Browser access to these
+files under `WindowsApps` still needs packaged-install verification.
 
 Standalone probes passed redirect/restore on Chrome, Edge, Brave and Firefox;
 these do not prove Rust app integration, schedule activation or MSIX access.

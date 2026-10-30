@@ -16,6 +16,7 @@ on:
     paths:
       - 'src-tauri/**'
       - 'scripts/build-safari-bridge.sh'
+      - 'scripts/*msix*.ps1'
       - '.github/workflows/rust-ci.yml'
   # Duplicated rather than anchored — GitHub Actions does not support YAML
   # aliases. Keep the two lists in sync.
@@ -24,6 +25,7 @@ on:
     paths:
       - 'src-tauri/**'
       - 'scripts/build-safari-bridge.sh'
+      - 'scripts/*msix*.ps1'
       - '.github/workflows/rust-ci.yml'
 
 concurrency:
@@ -116,7 +118,11 @@ jobs:
       - name: cargo clippy --lib --bins --tests
         working-directory: src-tauri
         run: cargo clippy --lib --bins --tests --locked -- -D warnings
+      - name: Windows MSIX resource staging regression tests
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/test-msix-resources.ps1
       - name: Windows UI Automation regression tests
         if: runner.os == 'Windows'
         working-directory: src-tauri
-        run: cargo test --lib --locked uia_web_automation::tests
+        run: cargo test --lib --locked uia_web_automation

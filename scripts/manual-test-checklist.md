@@ -469,6 +469,34 @@ space active. Log: `~/Library/Logs/com.reddblock/Digital Habits Blocker.log`
 
 ---
 
+## Windows MSIX block-page resources
+
+- [ ] Build x64 and arm64 MSIX packages. Unpack each and confirm
+  `blocked/blocked.html`, `blocked/blocked.js` and `blocked/reddblock-icon.svg`
+  sit beside `redd-block.exe` and match the source hashes.
+- [ ] Install the signed package on a clean Windows account/VM without the
+  source checkout (so the development fallback cannot hide missing resources).
+- [ ] With Chrome, Edge, Brave and Firefox in Automation mode and no extension,
+  activate a safe website block: the browser opens the packaged block page
+  under `C:/Program Files/WindowsApps/...`, including its script and icon.
+- [ ] End the block and confirm the original URL restores, including its query
+  string. Verify the displayed block-page URL retains a decodable `u=` value.
+- [ ] Repeat after a Store package update; review Store certification results.
+
+## Windows Automation power and idle checks
+
+- [ ] With no active website rules and no restore ledger entries, verify no UIA
+  address-bar reads occur; activate a block/allowlist and verify enforcement resumes.
+- [ ] Park two tabs in the same window, end the block, and activate each tab:
+  both restore, including after restarting the blocker before restoration.
+- [ ] Lock/unlock and turn the display off/on during a block: no watcher ticks
+  while suspended; enforcement resumes after the desktop is interactive.
+  Unlocking while the display remains off must not resume polling.
+- [ ] Repeat with a disconnected/reconnected remote session and with a dimmed
+  screen (dimming alone must not suspend enforcement).
+- [ ] Measure idle/active/suspended CPU and battery on a packaged Store build;
+  these guards alone do not establish battery consumption or Store compatibility.
+
 ## Sign-off
 
 | Tester | Date | Version | Platform | Pass/Fail |
