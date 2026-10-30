@@ -342,7 +342,30 @@ the same `blocked.js` contract: redirect URLs carry block metadata query params
 (including `mode=allowlist` vs `blocklist`) so subtitle, pill, site, reason,
 and countdown rows render identically on Automation and extension paths.
 
-### 5.3 Windows watchdog
+### 5.3 UI Automation fallback for policy-managed PCs
+
+Organisation policy (`NativeMessagingUserLevelHosts = 0`, or our host on
+`NativeMessagingBlocklist`) stops Chromium launching the per-user host, so the
+extension installs but never receives rules. `browser_policy.rs` detects this.
+For Chrome, Edge and Brave in that state, `uia_web_automation.rs` takes over:
+
+- 1 s tick; acts only on the **foreground** window, because Enter is sent with
+  `SendInput` and must land in that window. Background windows are handled
+  when the user switches to them.
+- Finds the address bar by its UI Automation class name (`OmniboxViewViews`),
+  reads it, and normalises Chromium's elided display text
+  (`block_page::address_bar_text_to_url`).
+- Redirects or restores with the same decision as macOS
+  (`block_page::plan_actions`) by setting the bar's value and pressing Enter.
+  The block page is the bundled `blocked.html` reached by `file://`.
+- Fails towards allowing: no recognisable address bar, the user typing in it,
+  or text that is not a URL means no action that tick.
+
+Needs no elevation or MSIX capability, so it works from the Store build.
+Policy is re-read every 60 s. Browsers whose host is not blocked are left to
+the extension.
+
+### 5.4 Windows watchdog
 
 New installations do not create a periodic watchdog task. Defender flagged
 the script-based task registration command (issue #152), and recovery after

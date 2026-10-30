@@ -133,6 +133,8 @@ pub mod workspace_events;
 // macOS replacement for the Safari/Chromium extension. Firefox stays on
 // the extension + enforcer path.
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub mod block_page;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod blocking_method;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod browser_policy;
@@ -148,6 +150,8 @@ pub mod native_host_install;
 pub mod profile_scan;
 #[cfg(target_os = "macos")]
 pub mod safari_services;
+#[cfg(target_os = "windows")]
+pub mod uia_web_automation;
 #[cfg(target_os = "windows")]
 pub mod watchdog;
 #[cfg(target_os = "macos")]
@@ -712,6 +716,13 @@ pub fn run() {
                 commands::app_blocking::register(app);
                 commands::enforcement::register(app);
                 commands::enforcement::auto_start(app.handle());
+            }
+
+            // Windows Chromium browsers whose policy blocks our native-messaging
+            // host get UI Automation instead; the watcher idles everywhere else.
+            #[cfg(target_os = "windows")]
+            if let Some(url) = block_page::resolve_block_page_url(app.handle()) {
+                uia_web_automation::start(app.handle().clone(), url);
             }
 
             // macOS website blocking runs through Automation (Apple
