@@ -2078,6 +2078,9 @@
                                                 </select>
                                             </div>
                                         </div>
+                                        <!-- Firefox has no AppleScript dictionary for tabs, so its
+                                             choice is the extension or the Accessibility API, never
+                                             Automation. app.js rebuilds these options per browser. -->
                                         <div class="settings-row">
                                             <div class="settings-row-copy">
                                                 <span class="settings-blocking-method-label">
@@ -2087,9 +2090,17 @@
                                             </div>
                                             <div class="settings-row-control">
                                                 <select id="blocking-method-firefox" class="blocking-method-select" aria-label="Firefox blocking method">
-                                                    <option value="automation">Automation</option>
                                                     <option value="extension">Extension</option>
+                                                    <option value="accessibility">Accessibility</option>
                                                 </select>
+                                            </div>
+                                        </div>
+                                        <div id="settings-firefox-ax-row" class="settings-row settings-safari-fda-row hidden">
+                                            <div class="settings-row-copy">
+                                                <p id="settings-firefox-ax-status" class="settings-row-hint"></p>
+                                            </div>
+                                            <div class="settings-row-control">
+                                                <button id="settings-firefox-ax-grant-btn" type="button" class="modal-btn primary-btn settings-safari-fda-grant-btn">Allow access</button>
                                             </div>
                                         </div>
                                     </div>

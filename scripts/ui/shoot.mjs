@@ -112,6 +112,20 @@ function installTauriStub(context, appData) {
             // Returning null here would crash refreshDesktopHelperStatus, which
             // reads `.running` off the result unguarded.
             check_helper_status: { installed: false, running: false },
+            // The blocking-method rows are hidden per browser unless that
+            // browser is installed, so without this the whole section is
+            // invisible and any screenshot of it would be blank. Firefox
+            // only, deliberately: marking an *Automation* browser as
+            // installed raises the macOS automation intro modal over every
+            // other screen in the list.
+            onboarding_state: { browsers: { firefox: { installed: true } } },
+            // Served from the fixture, not invented here: the settings screen
+            // re-reads the methods over this command and would otherwise
+            // overwrite the fixture's own with null.
+            get_blocking_methods: (appData && appData.settings && appData.settings.blockingMethods) || {},
+            // Firefox's Accessibility row asks for this; false is the state
+            // worth screenshotting, since it is the one with copy and a button.
+            accessibility_trusted: false,
         };
         window.__TAURI_INTERNALS__ = {
             invoke: (cmd) => Promise.resolve(cmd in RESPONSES ? RESPONSES[cmd] : null),
@@ -213,6 +227,11 @@ async function openScreen(browser, screen, eulaRevision) {
             'windows', 'mac', 'ios', 'ios-phone', 'android', 'mobile-phone-home', 'handset-device',
         );
         bodyClasses.forEach(c => document.body.classList.add(c));
+        const { state } = await import('/state.js');
+        state.isWindowsDesktop = bodyClasses.includes('windows');
+        state.isMacOSDesktop = bodyClasses.includes('mac');
+        state.isIOS = bodyClasses.includes('ios');
+        state.isAndroid = bodyClasses.includes('android');
 
         // detectPlatform does not only add classes — it hides desktop chrome on
         // its mac/iOS/Android branches. Having already run its Windows branch on
