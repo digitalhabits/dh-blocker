@@ -365,6 +365,12 @@ Needs no elevation or MSIX capability, so it works from the Store build.
 Policy is re-read every 60 s. Browsers whose host is not blocked are left to
 the extension.
 
+The setup screens count these browsers as set up and say they are blocked via
+the address bar (`addressBarBlockingCovers` in `src/enforcement.js`). That
+function repeats the watcher's condition (Windows, Chrome/Edge/Brave, policy
+blocking the host), so change both together. On macOS a policy-blocked
+extension-mode browser still shows the "Blocked by your organisation" warning.
+
 ### 5.4 Windows watchdog
 
 New installations do not create a periodic watchdog task. Defender flagged
