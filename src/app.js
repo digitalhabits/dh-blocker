@@ -59,7 +59,7 @@ import { CURRENT_EULA_REVISION, applyEnforcementDescCopy, applyMacAutomationIntr
 // in applySettingsLanguage). Importing them keeps the edges on every target;
 // the guarded functions remain as no-ops on Android.
 import {
-    MAC_BLOCKING_METHOD_KEYS,
+    ALL_BLOCKING_METHOD_KEYS,
     browserBlockingMethod,
     invalidateMigrationMacCopyCache,
     migrationExtLinesHtml,
@@ -2915,13 +2915,13 @@ export function applySettingsLanguage() {
     setText('settings-help-label', tSettings('settingsDiagnosticsLabel'));
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
     setText('settings-blocking-method-toggle-label', tSettings('settingsBlockingMethodHeading'));
-    setText('settings-blocking-method-hint', tSettings('settingsBlockingMethodHint'));
+    setText('settings-blocking-method-hint', tSettings(state.isWindowsDesktop ? 'settingsBlockingMethodHintWindows' : 'settingsBlockingMethodHint'));
     setText('settings-blocking-method-chrome-label', tSettings('settingsBlockingMethodChrome'));
     setText('settings-blocking-method-brave-label', tSettings('settingsBlockingMethodBrave'));
     setText('settings-blocking-method-edge-label', tSettings('settingsBlockingMethodEdge'));
     setText('settings-blocking-method-safari-label', tSettings('settingsBlockingMethodSafari'));
     syncBlockingMethodLabelIcons();
-    for (const key of MAC_BLOCKING_METHOD_KEYS) {
+    for (const key of ALL_BLOCKING_METHOD_KEYS) {
         const select = document.getElementById(`blocking-method-${key}`);
         if (!select) continue;
         const current = select.value || browserBlockingMethod(key);

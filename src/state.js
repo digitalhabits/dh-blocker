@@ -28,6 +28,8 @@ export const state = {
     // runtime). Set in `detectPlatform`. Used to gate macOS-only Tauri
     // commands and onboarding copy.
     isMacOSDesktop: false,
+    // True on Windows desktop. Set in `detectPlatform`.
+    isWindowsDesktop: false,
     /** MSIX / Microsoft Store install — updates come from the Store, not GitHub. */
     isMicrosoftStorePackage: null,
     screentimeAuthorized: false, // Track if Screen Time is authorized (iOS)

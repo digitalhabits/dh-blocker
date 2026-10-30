@@ -39,6 +39,41 @@ const DESKTOP = { width: 1100, height: 900 };
 
 /** @type {Screen[]} */
 export const screens = [
+    {
+        name: 'settings-windows-blocking-methods',
+        fixture: fixtures.crowdedWeek,
+        platform: 'windows',
+        viewport: DESKTOP,
+        clip: '#settings-blocking-method-section',
+        prepare: async (page) => {
+            await page.click('#settings-btn');
+            await page.waitForSelector('#settings-modal:not(.hidden)');
+            await page.evaluate(async () => {
+                const { state } = await import('/state.js');
+                const ui = await import('/enforcement.js');
+                state.isWindowsDesktop = true;
+                state.isMacOSDesktop = false;
+                state.appData.settings.blockingMethods = {};
+                ui.syncBlockingMethodRowVisibility(Object.fromEntries(['chrome', 'edge', 'brave', 'firefox'].map(key => [key, { installed: true }])));
+                ui.syncBlockingMethodSelects();
+                ui.syncBlockingMethodLabelIcons();
+            });
+            if (await page.getAttribute('#settings-enforcement-section-toggle', 'aria-expanded') !== 'true') {
+                await page.click('#settings-enforcement-section-toggle');
+            }
+            await page.click('#settings-blocking-method-toggle');
+            await page.locator('#settings-blocking-method-section').scrollIntoViewIfNeeded();
+            const dimensions = await page.locator('#settings-blocking-method-section').evaluate(el => {
+                const rect = el.getBoundingClientRect();
+                return { width: rect.width, height: rect.height };
+            });
+            if (dimensions.width < 300 || dimensions.height < 150) throw new Error('Blocking method settings are not visible');
+            for (const key of ['chrome', 'edge', 'brave', 'firefox']) {
+                if (!await page.locator(`#blocking-method-${key}`).isVisible()) throw new Error(`Missing ${key} selector`);
+            }
+            if (await page.locator('#blocking-method-safari').isVisible()) throw new Error('Safari must be hidden on Windows');
+        },
+    },
     // ---- Whole app, per platform -------------------------------------------
     // The mobile ones are the home screen as a phone actually gets it: no week
     // calendar (hidden by `handset-device`), no title bar, no window controls.

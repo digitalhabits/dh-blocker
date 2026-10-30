@@ -133,6 +133,8 @@ pub mod workspace_events;
 // macOS replacement for the Safari/Chromium extension. Firefox stays on
 // the extension + enforcer path.
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub mod block_page;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod blocking_method;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod browser_policy;
@@ -148,6 +150,8 @@ pub mod native_host_install;
 pub mod profile_scan;
 #[cfg(target_os = "macos")]
 pub mod safari_services;
+#[cfg(target_os = "windows")]
+pub mod uia_web_automation;
 #[cfg(target_os = "windows")]
 pub mod watchdog;
 #[cfg(target_os = "macos")]
@@ -714,6 +718,13 @@ pub fn run() {
                 commands::enforcement::auto_start(app.handle());
             }
 
+            // Windows browsers default to UI Automation; the watcher checks
+            // each browser's saved blocking method before acting.
+            #[cfg(target_os = "windows")]
+            if let Some(url) = block_page::resolve_block_page_url(app.handle()) {
+                uia_web_automation::start(app.handle().clone(), url);
+            }
+
             // macOS website blocking runs through Automation (Apple
             // Events), not the extension, for Safari + Chromium. Register
             // its state handle and auto-start the watcher (paused until
@@ -782,20 +793,8 @@ pub fn run() {
                 log::warn!("native-host install on startup failed: {e}");
             }
 
-            #[cfg(all(
-                not(any(target_os = "ios", target_os = "android")),
-                not(target_os = "macos"),
-                not(feature = "system-test")
-            ))]
-            if !extension_install::startup_install_already_done() {
-                if let Err(e) = extension_install::install() {
-                    log::warn!("extension-install hint on startup failed: {e}");
-                } else {
-                    extension_install::mark_startup_install_done();
-                }
-            } else {
-                log::debug!("extension-install: startup auto-install skipped (marker present)");
-            }
+            // Windows defaults to UI Automation. Extension setup is offered
+            // only after an explicit switch to extension mode in Settings.
 
             // Do not create or refresh Windows watchdog tasks: Defender
             // flags the script-based registration command (issue #152).

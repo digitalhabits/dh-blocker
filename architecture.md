@@ -342,7 +342,55 @@ the same `blocked.js` contract: redirect URLs carry block metadata query params
 (including `mode=allowlist` vs `blocklist`) so subtitle, pill, site, reason,
 and countdown rows render identically on Automation and extension paths.
 
-### 5.3 Windows watchdog
+### 5.3 Windows UI Automation and extension selection
+
+Chrome, Edge, Brave and Firefox default to UI Automation. Settings exposes
+Automation / Extension per installed browser in `settings.blockingMethods`,
+using the same persisted selection as macOS. Missing or invalid Windows
+values mean Automation; an explicit Extension value stops UI Automation for
+that browser. No organisation-policy prerequisite is used.
+
+- The 1 s watcher acts on the foreground window's active tab. Background
+  tabs/windows are handled when brought forward; redirects happen after load.
+- Without active blocks, address-bar queries only run for windows with pending
+  restores. Counts (not URLs) are saved in `uia-pending-restores.json` beside
+  the per-user data file, keyed by HWND and PID. A restore is confirmed on a
+  later tick; closing a window prunes its entry. Manually closing individual
+  parked tabs can leave conservative counts until their window closes. A
+  corrupt/missing ledger cannot recover old parked tabs while no block is active.
+- A hidden window receives display-power and session notifications. Screen-off,
+  lock and disconnect independently suspend the worker on a condition variable;
+  all must clear before its 1 s tick resumes. Dimmed screens remain active.
+  Registration failure logs a warning and retains normal enforcement polling.
+- Chrome/Edge use class `OmniboxViewViews`; Brave uses
+  `BraveOmniboxViewViews`. Firefox requires a direct-child `nav-bar` toolbar
+  with a `urlbar-input` combo box, never a matching input in page content.
+- Redirect/restore decisions use `block_page`; navigation uses UIA SetValue
+  then SendInput, guarded by foreground and address-bar focus checks.
+- Failures allow that tick: missing controls, unparseable text or an address
+  bar the user is editing cause no input. No broad input-box fallback exists.
+
+Automation needs no extension or permission-grant prompt on Windows. Setup
+and the opt-in compliance enforcer do not require an extension for automation
+browsers. Explicit Extension selection restores extension setup and policy
+warnings and ensures its native host is registered. Startup no longer writes
+extension-install hints. Existing extensions/host registrations are retained;
+an already installed extension may continue providing additional coverage.
+The UI explains that extension mode covers background tabs and blocks before
+pages load. macOS retains its Apple Events permission model, and Firefox on
+macOS still uses the extension. Mobile platforms have no method selector.
+
+The custom MSIX builder runs `scripts/stage-msix-resources.ps1` to copy the
+explicit `bundle.resources` mappings into the package root beside the executable.
+Windows `resource_dir()` resolves that executable directory. All three block-page
+assets must exist and match their source hashes before `makeappx` runs; the
+optional `release/resources` copy is not sufficient. Browser access to these
+files under `WindowsApps` still needs packaged-install verification.
+
+Standalone probes passed redirect/restore on Chrome, Edge, Brave and Firefox;
+these do not prove Rust app integration, schedule activation or MSIX access.
+
+### 5.4 Windows watchdog
 
 New installations do not create a periodic watchdog task. Defender flagged
 the script-based task registration command (issue #152), and recovery after
