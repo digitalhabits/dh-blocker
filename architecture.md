@@ -461,6 +461,12 @@ apps is active, any app **not** on the allowed union is a quit candidate
 Same state machine on macOS and Windows; only process enumeration and quit
 primitives differ. Linux has no app watcher (no-op).
 
+Before advancing any pending warning or quit timer, the watcher rechecks the
+effective app policy. Stopping or pausing a space cancels timers for apps it
+no longer blocks, even while unrelated spaces remain active; overlapping
+spaces that still block an app keep its timer. The warning-hide event also
+removes the cancelled app from the frontend countdown banner.
+
 macOS warning overlay uses a custom `MainPanel` NSPanel (`lib.rs`) so the
 countdown can float over third-party fullscreen Spaces without stealing focus.
 
