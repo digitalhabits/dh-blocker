@@ -167,7 +167,6 @@ pub fn start(app: AppHandle, block_page_url: String) {
         let mut watcher = Watcher {
             activity: activity.clone(),
             pending,
-            restoring: HashMap::new(),
             automation,
             block_page_url,
             omnibox: None,
@@ -184,7 +183,6 @@ pub fn start(app: AppHandle, block_page_url: String) {
 struct Watcher {
     activity: Arc<activity::Gate>,
     pending: pending::Pending,
-    restoring: HashMap<String, String>,
     automation: IUIAutomation,
     block_page_url: String,
     /// Address bar of the window it was last found in. Finding it walks the
@@ -202,7 +200,6 @@ impl Watcher {
             return;
         }
         self.pending.retain(live_restore_window);
-        self.restoring.retain(|key, _| live_restore_window(key));
         let now = Instant::now();
         let Some((hwnd, browser)) = foreground_browser_window() else {
             return;
@@ -252,14 +249,9 @@ impl Watcher {
                 return;
             }
         };
-        if let Some(expected) = self.restoring.get(&restore_key) {
-            if block_page::address_bar_text_to_url(&text).as_ref() == Some(expected) {
-                self.pending.restored(&restore_key);
-                self.restoring.remove(&restore_key);
-            }
-        }
-        let Some(target) =
-            block_page::plan_address_bar_action(&text, &blocks, &self.block_page_url)
+        let Some(target) = self
+            .pending
+            .plan(&restore_key, &text, &blocks, &self.block_page_url)
         else {
             return;
         };
@@ -271,12 +263,8 @@ impl Watcher {
         }
         match navigate(&omnibox, hwnd, &target, &self.activity) {
             Ok(()) => {
-                if block_page::is_block_page_url(&target, &self.block_page_url) {
-                    self.pending.redirected(&restore_key);
-                } else {
-                    // Keep the count until the next tick observes the destination.
-                    self.restoring.insert(restore_key, target.clone());
-                }
+                self.pending
+                    .navigated(&restore_key, &target, &self.block_page_url);
                 log::info!(
                 "uia_web_automation: sent {} window to {} (redirect to / restore from block page)",
                 browser.label(),

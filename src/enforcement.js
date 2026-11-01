@@ -2,6 +2,9 @@
 // behaviour banner, enforcer action banners, web-automation watcher.
 // Extracted verbatim from app.js.
 import { state, appState } from './state.js';
+import { MAC_BLOCKING_METHOD_KEYS, WINDOWS_BLOCKING_METHOD_KEYS, ALL_BLOCKING_METHOD_KEYS, windowsBrowserMethod } from './browser-blocking-method.js';
+// Preserve the existing imports used by app, onboarding, and in-app tests.
+export { MAC_BLOCKING_METHOD_KEYS, WINDOWS_BLOCKING_METHOD_KEYS, ALL_BLOCKING_METHOD_KEYS, windowsBrowserMethod };
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask } from '@tauri-apps/plugin-dialog';
@@ -648,9 +651,6 @@ export const BROWSER_STORE_LINKS = {
 // grant, not whether ReDD Focus is installed/enabled. Firefox stays on
 // the extension path. Windows Automation is opt-in or a native-policy fallback.
 export const AUTOMATION_BROWSER_KEYS = ['chrome', 'brave', 'edge', 'safari'];
-export const MAC_BLOCKING_METHOD_KEYS = ['safari', 'chrome', 'edge', 'brave'];
-export const WINDOWS_BLOCKING_METHOD_KEYS = ['chrome', 'edge', 'brave', 'firefox'];
-export const ALL_BLOCKING_METHOD_KEYS = ['safari', ...WINDOWS_BLOCKING_METHOD_KEYS];
 export function blockingMethodKeys() {
     return state.isWindowsDesktop ? WINDOWS_BLOCKING_METHOD_KEYS : state.isMacOSDesktop ? MAC_BLOCKING_METHOD_KEYS : [];
 }
@@ -663,12 +663,6 @@ export function installedMacBlockingMethodKeys(browsers = {}) {
 
 export function getBlockingMethodsMap() {
     return state.appData?.settings?.blockingMethods || {};
-}
-
-export function windowsBrowserMethod(key, methods, browser) {
-    if (!WINDOWS_BLOCKING_METHOD_KEYS.includes(key)) return 'extension';
-    if (methods[key] === 'automation' || methods[key] === 'extension') return methods[key];
-    return key !== 'firefox' && browser?.nativeHostBlockedByPolicy ? 'automation' : 'extension';
 }
 
 export function browserBlockingMethod(key, browser) {
@@ -787,9 +781,7 @@ export function browserComplianceStatus(key, b) {
     // An organisation policy stops the browser reaching Blocker, so nothing else on the row helps.
     // Windows Automation was handled above. Explicit extension mode must
     // still report a policy that prevents native messaging.
-    if (b.nativeHostBlockedByPolicy) {
-        return addressBarBlockingCovers(key, b) ? 'compliant' : 'policy-blocked';
-    }
+    if (b.nativeHostBlockedByPolicy) return 'policy-blocked';
     const profiles = b.profiles || [];
     const def = profiles.find(p => p.isDefault) || profiles[0];
     if (key === 'safari') {
@@ -815,8 +807,6 @@ export function browserComplianceStatus(key, b) {
 }
 
 // Windows setup mirrors the saved per-browser Automation selection.
-
-
 export function addressBarBlockingCovers(key, b) {
     return Boolean(state.isWindowsDesktop && b?.installed && browserUsesAutomation(key, b));
 }

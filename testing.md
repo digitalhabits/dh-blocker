@@ -154,9 +154,9 @@ Notes on the non-obvious choices:
 - **Rust runs on macOS, not Linux.** `web_automation.rs`, `window_inventory.rs`
   and `workspace_events.rs` are `#[cfg(target_os = "macos")]`, and the
   `cfg(not(ios|android))` modules depend on macOS/Windows-only crates, so the
-  lib does not compile on a Linux runner at all. Windows-only UI Automation
-  regression tests run in the Windows desktop clippy job with
-  `cargo test --lib --locked uia_web_automation`.
+  lib does not compile on a Linux runner at all. The full Windows backend
+  suite runs in the Windows desktop clippy job with `cargo test --lib --locked`,
+  including method policy, shared block-page decisions, and IPC registration.
   The job also runs `pnpm vite:build`
   first — `tauri_build::build()` refuses to run when the configured
   `frontendDist` (`../dist`) is missing.

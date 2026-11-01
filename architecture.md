@@ -20,8 +20,10 @@ code paths.
   the default; each of the four can be switched to the extension path instead
   (`settings.blockingMethods`, `src-tauri/src/blocking_method.rs`). **Firefox on
   macOS** still uses the **Digital Habits: Focus extension** + native-messaging host
-  (`src-tauri/src/native_host.rs`). **Windows:** all supported browsers use
-  the extension + native host (unchanged from v2).
+  (`src-tauri/src/native_host.rs`). **Windows:** defaults to the extension + native host. Chrome, Edge, Brave,
+  and Firefox can opt into foreground address-bar UI Automation; confirmed
+  native-messaging policy blocks also default Chromium browsers to Automation.
+  Explicit saved choices win (see section 5.3).
 - **Compliance enforcer** (`src-tauri/src/enforcer.rs`) — 5 s scan tick,
   user-configurable grace (5–300 s, default 60 s), force-quits non-compliant
   *running* browsers during active website blocks when the user has opted in.
@@ -98,8 +100,8 @@ Three enforcement families:
 
 - **Desktop macOS (websites):** in-process Automation watcher + optional
   Firefox extension path.
-- **Desktop Windows (websites):** Digital Habits: Focus extension + native-messaging
-  host spawned from the same binary.
+- **Desktop Windows (websites):** extension + native-messaging host by default;
+  foreground UI Automation when selected or used as a confirmed policy fallback.
 - **Desktop (apps):** in-process app watcher (both OSes).
 - **iOS:** Screen Time plugin — no helper, no extension.
 

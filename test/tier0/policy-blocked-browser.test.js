@@ -86,6 +86,29 @@ describe('policy-blocked browsers on Windows', () => {
         expect(windowsBrowserSetupIsAutomatic(browsers)).toBe(false);
     });
 
+    test.each([undefined, 'invalid', 'extension', 'automation'])('settings and setup agree for saved method %s', async (saved) => {
+        const { browserBlockingMethod, syncBlockingMethodRowVisibility, syncBlockingMethodSelects,
+            effectiveBrowserComplianceStatus } = await setUpWindows(false);
+        const { state } = await import('../../src/state.js');
+        const { windowsBrowserSetupIsAutomatic } = await import('../../src/onboarding.js');
+        for (const key of ['chrome', 'edge', 'brave', 'firefox']) {
+            for (const blocked of [false, true]) {
+                const browsers = { [key]: edge({ profiles: [], nativeHostBlockedByPolicy: blocked }) };
+                state.appData.settings.blockingMethods = saved === undefined ? {} : { [key]: saved };
+                document.body.innerHTML = `<div class="settings-row"><select id="blocking-method-${key}"><option value="extension">Extension</option><option value="automation">Automation</option></select></div>`;
+                syncBlockingMethodRowVisibility(browsers);
+                syncBlockingMethodSelects();
+                const expected = saved === 'automation' || (saved !== 'extension' && blocked && key !== 'firefox')
+                    ? 'automation' : 'extension';
+                expect(browserBlockingMethod(key, browsers[key])).toBe(expected);
+                expect(document.getElementById(`blocking-method-${key}`).value).toBe(expected);
+                expect(windowsBrowserSetupIsAutomatic(browsers)).toBe(expected === 'automation');
+                expect(effectiveBrowserComplianceStatus(key, browsers)).toBe(
+                    expected === 'automation' ? 'compliant' : blocked ? 'policy-blocked' : 'needs-install');
+            }
+        }
+    });
+
     test('default Windows onboarding still shows the extension checklist', async () => {
         await setUpWindows(false);
         const { state } = await import('../../src/state.js');
