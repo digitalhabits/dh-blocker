@@ -33,6 +33,12 @@ pub fn windows_method(methods: &HashMap<String, String>, key: &str) -> Method {
     methods
         .get(key)
         .and_then(|s| Method::parse(s))
+        // Accessibility is macOS-Firefox-only. `method_is_valid_for_key`
+        // cannot be used here: it branches on the *host* OS, while this
+        // resolver models Windows semantics wherever it runs (its test runs
+        // on the macOS CI runner). Honouring a stored "accessibility" on
+        // Windows would leave that browser with no working enforcement.
+        .filter(|m| *m != Method::Accessibility)
         .unwrap_or(Method::Automation)
 }
 
