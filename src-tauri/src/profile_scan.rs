@@ -112,6 +112,12 @@ pub struct BrowserStatus {
     /// current ReDD Blocker binary (extension blocking bridge).
     #[serde(rename = "nativeHostReady", default)]
     pub native_host_ready: bool,
+    /// Windows Chromium only: an organisation policy stops the browser
+    /// launching our per-user host (`browser_policy`). Deliberately not
+    /// part of `compliant()`: the enforcer must never force-quit a browser
+    /// the user cannot fix.
+    #[serde(rename = "nativeHostBlockedByPolicy", default)]
+    pub native_host_blocked_by_policy: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,13 +150,13 @@ pub fn scan_for_onboarding() -> ScanResult {
             return empty_scan_result();
         }
         let path = crate::commands::canonical_data_path_static();
-        let mut result = scan_filter(|label| match label {
+        let mut result = with_policy(scan_filter(|label| match label {
             "firefox" => true,
             "safari" | "chrome" | "brave" | "edge" => {
                 !crate::blocking_method::uses_automation_at_path(&path, label)
             }
             _ => false,
-        });
+        }));
         if crate::blocking_method::uses_automation_at_path(&path, "chrome") {
             result.chrome = ChromiumBrowser::Chrome.presence_only();
         }
@@ -174,7 +180,7 @@ pub fn scan_for_onboarding() -> ScanResult {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        scan()
+        with_policy(scan())
     }
 }
 
@@ -192,13 +198,13 @@ pub fn scan_for_diagnostics() -> ScanResult {
             return empty_scan_result();
         }
         let path = crate::commands::canonical_data_path_static();
-        let mut result = scan_filter(|label| match label {
+        let mut result = with_policy(scan_filter(|label| match label {
             "firefox" => true,
             "safari" | "chrome" | "brave" | "edge" => {
                 !crate::blocking_method::uses_automation_at_path(&path, label)
             }
             _ => false,
-        });
+        }));
         if crate::blocking_method::uses_automation_at_path(&path, "chrome") {
             result.chrome = ChromiumBrowser::Chrome.presence_only();
         }
@@ -219,7 +225,7 @@ pub fn scan_for_diagnostics() -> ScanResult {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        scan()
+        with_policy(scan())
     }
 }
 
@@ -317,6 +323,25 @@ fn with_native_host_ready(
     _browser: crate::native_host_install::BrowserTarget,
 ) -> BrowserStatus {
     status
+}
+
+/// Organisation policy for each scanned Chromium browser, for the screens that
+/// show it. Kept out of `scan_filter` so the enforcer's 1-5 s tick never pays
+/// for it. Browsers not scanned (macOS Automation ones) are stubs with
+/// `installed: false` and are skipped: the policy does not touch them.
+fn with_policy(mut result: ScanResult) -> ScanResult {
+    use crate::native_host_install::BrowserTarget;
+    for (status, browser) in [
+        (&mut result.chrome, BrowserTarget::Chrome),
+        (&mut result.edge, BrowserTarget::Edge),
+        (&mut result.brave, BrowserTarget::Brave),
+    ] {
+        if status.installed {
+            status.native_host_blocked_by_policy =
+                crate::browser_policy::read(browser).is_some_and(|p| p.blocked);
+        }
+    }
+    result
 }
 
 fn firefox_root() -> Option<PathBuf> {
@@ -434,6 +459,8 @@ fn firefox_main_process_name(name: &str) -> bool {
     name.eq_ignore_ascii_case("firefox.exe")
 }
 
+mod cityhash;
+
 /// Firefox's name for one install: CityHash64 of its executable's folder as UTF-16.
 fn firefox_install_hash(exe_dir: &Path) -> u64 {
     let utf16: Vec<u8> = exe_dir
@@ -441,7 +468,7 @@ fn firefox_install_hash(exe_dir: &Path) -> u64 {
         .encode_utf16()
         .flat_map(u16::to_le_bytes)
         .collect();
-    cityhash::cityhash_1::city_hash_64(&utf16)
+    cityhash::city_hash_64(&utf16)
 }
 
 /// Where macOS's app register (Launch Services) has the app with this bundle
@@ -563,6 +590,7 @@ fn scan_firefox() -> Option<BrowserStatus> {
             duplicate_extensions: None,
             needs_fda_access: false,
             native_host_ready: false,
+            native_host_blocked_by_policy: false,
         });
     }
 
@@ -577,6 +605,7 @@ fn scan_firefox() -> Option<BrowserStatus> {
         duplicate_extensions: None,
         needs_fda_access: false,
         native_host_ready: false,
+        native_host_blocked_by_policy: false,
     })
 }
 
@@ -804,6 +833,7 @@ impl ChromiumBrowser {
             duplicate_extensions: None,
             needs_fda_access: false,
             native_host_ready: false,
+            native_host_blocked_by_policy: false,
         }
     }
 
@@ -878,6 +908,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
             duplicate_extensions: None,
             needs_fda_access: false,
             native_host_ready: false,
+            native_host_blocked_by_policy: false,
         });
     }
 
@@ -1021,6 +1052,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
         duplicate_extensions: None,
         needs_fda_access: false,
         native_host_ready: false,
+        native_host_blocked_by_policy: false,
     })
 }
 
@@ -1320,6 +1352,7 @@ fn safari_presence_only() -> BrowserStatus {
         duplicate_extensions: None,
         needs_fda_access: false,
         native_host_ready: false,
+        native_host_blocked_by_policy: false,
     }
 }
 
@@ -1495,6 +1528,7 @@ fn scan_safari() -> BrowserStatus {
         duplicate_extensions,
         needs_fda_access,
         native_host_ready: false,
+        native_host_blocked_by_policy: false,
     }
 }
 
@@ -1525,6 +1559,7 @@ fn scan_safari() -> BrowserStatus {
         duplicate_extensions: None,
         needs_fda_access: false,
         native_host_ready: false,
+        native_host_blocked_by_policy: false,
     }
 }
 

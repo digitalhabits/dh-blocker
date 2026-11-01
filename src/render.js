@@ -8,10 +8,10 @@ import { isBlockAlwaysOn } from './blocklist-utils.js';
 import { isNonRepeatingSchedule, isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
-import { autoSelectSoleBlocklist, renderBlocklists } from './blocklists.js';
+import { autoSelectSoleBlocklist, isBlocklistEditFrictionRequired, isOneOffPauseActive, renderBlocklists } from './blocklists.js';
 import { updateBlockedApps, updateOnboardingVisibility, updateWindowHeight } from './blocking-platform.js';
 import { handleBlocklistSelect, openOverrideModal, syncSchedulerChromeVisibility, refreshCalendarPreviews, handleTimeChange } from './confirm-modals.js';
-import { confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, syncEditorFooter } from './focus-space-editor.js';
+import { confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, resyncEditorLockState, syncEditorFooter } from './focus-space-editor.js';
 import { updateCleanHostsBtnState, updateOverrideAllButtonVisibility } from './settings.js';
 import { formatDuration, formatTime } from './app.js';
 import { usagePingTick } from './usage-ping.js';
@@ -360,7 +360,8 @@ export function renderScheduleAlwaysOnRow() {
     const chips = document.getElementById('schedule-always-on-chips');
     if (!row || !chips) return;
 
-    const alwaysOnBlocks = (state.appData.activeBlocks || []).filter(b => isBlockAlwaysOn(b));
+    // A paused block is not on, so it gets no chip.
+    const alwaysOnBlocks = (state.appData.activeBlocks || []).filter(b => isBlockAlwaysOn(b) && !isOneOffPauseActive(b));
 
     if (alwaysOnBlocks.length === 0) {
         row.classList.add('hidden');
@@ -771,6 +772,13 @@ export function startTickInterval() {
         const now = Date.now();
         let shouldSyncControls = false;
         usagePingTick(now);
+        // Re-lock the open editor when its space starts or a pause ends underneath it.
+        const editing = state.appData.blocklists.find(bl => bl.id === state.editingBlocklistId);
+        const editorLock = `${editing?.id}:${!!editing && isBlocklistEditFrictionRequired(editing.id, now)}`;
+        if (startTickInterval._lastEditorLock !== editorLock) {
+            if (editing) resyncEditorLockState(editing);
+            startTickInterval._lastEditorLock = editorLock;
+        }
 
         // Check for future blocks that have now become active
         const newlyActiveBlocks = state.appData.activeBlocks.filter(

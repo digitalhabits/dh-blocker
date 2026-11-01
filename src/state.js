@@ -63,7 +63,6 @@ export const state = {
     lastBlockedDomains: new Set(), // Track what's currently blocked to avoid re-prompting
     activatedBlockIds: new Set(), // Track blocks that have already triggered host updates
     scheduleSegments: null, // Array of time segments with per-segment days (set at startup)
-    expandedScheduleSegmentIndex: 0, // Which segment shows the full editor when multiple exist (-1 = all collapsed)
     scheduleRepeatDate: null, // Date object when repeatType is 'date'
     appBlockingActiveStartOverlay: null, // Custom start-overlay config for the active schedule warning session
     pendingScheduleStartOverlayId: null,

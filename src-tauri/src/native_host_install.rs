@@ -906,7 +906,7 @@ fn delete_hkcu_key(path: &str) -> std::io::Result<()> {
 }
 
 #[cfg(target_os = "windows")]
-fn to_wide(s: &str) -> Vec<u16> {
+pub(crate) fn to_wide(s: &str) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
     std::ffi::OsStr::new(s)
         .encode_wide()

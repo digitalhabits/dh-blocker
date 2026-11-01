@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
     DEFAULT_UNLOCK_MINUTES,
+    NEW_ALLOW_SPACE_UNLOCK_MINUTES,
     NEW_SPACE_UNLOCK_MINUTES,
     UNLOCK_MINUTE_OPTIONS,
     applyStopToTarget,
@@ -14,6 +15,11 @@ describe('new focus spaces', () => {
         expect(NEW_SPACE_UNLOCK_MINUTES).toBe(10);
         expect(UNLOCK_MINUTE_OPTIONS).toContain(NEW_SPACE_UNLOCK_MINUTES);
         expect(normalizeUnlockMinutes(NEW_SPACE_UNLOCK_MINUTES)).toBe(10);
+    });
+
+    test('a new allow-only space starts on Never, which survives normalizing', () => {
+        expect(NEW_ALLOW_SPACE_UNLOCK_MINUTES).toBe(0);
+        expect(normalizeUnlockMinutes(NEW_ALLOW_SPACE_UNLOCK_MINUTES)).toBe(0);
     });
 });
 

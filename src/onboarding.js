@@ -684,6 +684,10 @@ export async function showMigrationOnboarding(phase, onboardingState, opts = {})
     } catch (e) {
         console.error('[migration] overlay wiring failed:', e);
     }
+    // Open at the top, not wherever the last visit (or the rows rendering in) left the scroll.
+    const toTop = () => [screen, ...screen.querySelectorAll('.migration-card')].forEach(el => { el.scrollTop = 0; });
+    toTop();
+    requestAnimationFrame(toTop);
 
     // Bring our window back to the front. The osascript admin
     // prompt steals focus, and on macOS we run as a menu-bar

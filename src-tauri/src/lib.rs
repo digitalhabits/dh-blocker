@@ -135,6 +135,8 @@ pub mod workspace_events;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod blocking_method;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub mod browser_policy;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod data_cache;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod extension_install;

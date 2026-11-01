@@ -1,6 +1,6 @@
 [package]
 name = "redd-block"
-version = "3.9.0"
+version = "3.11.0"
 description = "Digital Habits: Blocker"
 authors = ["Centre for Digital Habits <team@digitalhabits.org>"]
 license = "CC-BY-NC-ND-3.0"
@@ -132,7 +132,6 @@ sysinfo = "0.33"
 tauri-plugin-notification = "2"
 
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
-cityhash = "0.1.1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["fs", "io-util"] }

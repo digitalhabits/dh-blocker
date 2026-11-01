@@ -52,6 +52,14 @@ function toggleBlocklistCardExpanded(card, id) {
     setBlocklistCardExpanded(card, id, !expandedBlocklistCardIds.has(id));
 }
 
+/** Expand a card's sites/apps summary, if it has one. */
+export function expandBlocklistCard(id) {
+    const card = document.querySelector(`.blocklist-card[data-id="${id}"]`);
+    if (!card?.querySelector('.blocklist-card-details')) return;
+    setBlocklistCardExpanded(card, id, true);
+    card.scrollIntoView({ block: 'nearest' });
+}
+
 async function openBlocklistEnterFromCard(blocklistId) {
     if (state.selectedBlocklistId === blocklistId) {
         if (isEnterSchedulerModalOpen()) {
@@ -520,6 +528,7 @@ export function normalizeImportedBlocklist(raw) {
 }
 
 export function parseBlocklistsImportPayload(text) {
+    if (text.length > 5_000_000) throw new Error('blocklist file too large');
     const parsed = JSON.parse(text);
     // Files written before overrideCountUnit existed came from a desktop that
     // stored character targets (phones already stored words). Only a count

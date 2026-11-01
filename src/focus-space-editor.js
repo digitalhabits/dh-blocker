@@ -12,6 +12,8 @@
 import { state } from './state.js';
 import { tSettings, tSettingsFmt, weekdayAbbrevMon0List } from './i18n.js';
 import { formatEditorItemCounts } from './list-presentation.js';
+import { formatSpaceTitleLabel } from './blocklist-utils.js';
+import { setSpaceTitle } from './utils.js';
 import {
     WHEN_TO_BLOCK_KINDS,
     deriveWhenToBlockKind,
@@ -22,7 +24,6 @@ import {
     formatDateForDisplay,
     formatDateForInput,
     getDefaultScheduleSegments,
-    getInitialExpandedScheduleSegmentIndex,
     getSelectedSchedule,
     isAllowEditsBetweenBlocksOn,
     rebuildScheduleSegments,
@@ -115,7 +116,6 @@ export function setWhenToBlockKind(kind, { fromUser = false } = {}) {
 
     if (next !== 'manual') {
         state.scheduleSegments = segmentsForKind(next, state.scheduleSegments, getDefaultScheduleSegments);
-        if (next === 'daily') state.expandedScheduleSegmentIndex = 0;
         rebuildScheduleSegments();
     }
 
@@ -331,7 +331,6 @@ export function populateFocusSpaceEditor(blocklist, { mode = null } = {}) {
         state.scheduleRepeatDate = null;
         state.draftAllowEditsBetweenBlocks = false;
     }
-    state.expandedScheduleSegmentIndex = getInitialExpandedScheduleSegmentIndex();
 
     setWhenToBlockKind(deriveWhenToBlockKind(schedule));
     setUntilMode(state.scheduleRepeatType);
@@ -384,11 +383,16 @@ function updateEditorTitles(isCreate, mode) {
     if (modalTitle) {
         modalTitle.textContent = tSettings(mode === 'allowlist' ? 'newFocusSpaceAllow' : 'newFocusSpaceBlock');
     }
+    const blocklist = state.appData.blocklists.find(bl => bl.id === state.editingBlocklistId);
+    const editTitle = blocklist
+        ? tSettingsFmt('editSpaceTitleFmt', { space: formatSpaceTitleLabel(blocklist) })
+        : tSettings('editFocusSpace');
     const panelTitle = document.getElementById('editor-panel-title');
-    if (panelTitle) panelTitle.textContent = tSettings('editFocusSpace');
+    if (panelTitle) setSpaceTitle(panelTitle, editTitle, blocklist?.name);
     const sheetTitle = document.getElementById('enter-scheduler-modal-title');
-    if (sheetTitle && !isCreate) sheetTitle.textContent = tSettings('editFocusSpace');
+    if (sheetTitle && !isCreate) setSpaceTitle(sheetTitle, editTitle, blocklist?.name);
 }
+
 
 // ── Summaries + footer ────────────────────────────────────────────────────
 
@@ -425,6 +429,7 @@ export function formatScheduleWhenSummary(kind, schedule, options) {
         dayNames: weekdayAbbrevMon0List(),
         everyDay: tSettings('segmentDaysEveryDay'),
         noDays: tSettings('segmentDaysNone'),
+        allDay: tSettings('segmentAllDay'),
     }, options);
 }
 

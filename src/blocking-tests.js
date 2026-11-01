@@ -33,6 +33,7 @@
  * - T243-T245: iOS cancels a Manual space's pending restart when it is resumed early, stopped with Never or cleared by Stop all
  * - T246: a space switched off with a restart time can be deleted; the delete cancels the restart once undo has passed
  * - T247: Stop all switches every schedule off and keeps its days and times
+ * - T248-T251: "All day" stores start == end, locks the times, switching it off restores them, and a range keeps its place
  * - T226-T229: iOS allow-mode 50-item cap counted across every running space
  * - T213-T219, T222-T223: The start card names the space that just started and closes the app; allow mode gets its own card
  * - T220-T221: Diagnostics reports an allow-mode space as allowing, not blocking
@@ -3160,6 +3161,57 @@
             assert(!h.elements.modalContentEl.classList.contains('challenge-word-mode'), 'T237: char mode clears the word-mode flag');
         })();
 
+        (function T254() {
+            // Word mode: the button reads "Next word" until the last word, then its own label and icon.
+            const h = makeHarness();
+            h.elements.confirmBtnEl.innerHTML = '<svg class="start-confirm-primary-icon"></svg><span class="start-confirm-primary-label">Stop</span>';
+            const label = h.elements.confirmBtnEl.querySelector('span');
+            const icon = h.elements.confirmBtnEl.querySelector('svg');
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            assertEqual(label.textContent, 'Next word', 'T254: a word that is not the last says Next word');
+            assert(icon.classList.contains('hidden'), 'T254: and hides the stop icon');
+            typeWord(h, 'alpha');
+            h.controller.handleConfirm();
+            assertEqual(label.textContent, 'Stop', 'T254: the last word says Stop');
+            assert(!icon.classList.contains('hidden'), 'T254: with the stop icon back');
+            h.controller.open({ text: 'alpha', wordMode: true });
+            assertEqual(label.textContent, 'Stop', 'T254: a single word says Stop straight away');
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            h.controller.reset();
+            assertEqual(label.textContent, 'Stop', 'T254: reset restores the label');
+            h.controller.open({ text: 'alpha beta' });
+            assertEqual(label.textContent, 'Stop', 'T254: char mode never says Next word');
+        })();
+
+        (function T255() {
+            // iOS drops the keyboard if the tap moves focus off the word field.
+            const h = makeHarness();
+            const tap = () => h.elements.confirmBtnEl.dispatchEvent(new MouseEvent('mousedown', { cancelable: true }));
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            assert(!tap(), 'T255: word mode keeps focus on the word field');
+            h.controller.open({ text: 'alpha beta' });
+            assert(tap(), 'T255: char mode leaves the button alone');
+        })();
+
+        (function T256() {
+            // Word mode: the button is muted until the current word has a letter in it.
+            const h = makeHarness();
+            const btn = h.elements.confirmBtnEl;
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            assert(btn.disabled, 'T256: muted before anything is typed');
+            typeWord(h, 'a');
+            assert(!btn.disabled, 'T256: enabled by the first letter');
+            typeWord(h, '');
+            assert(btn.disabled, 'T256: muted again when the word is cleared');
+            typeWord(h, 'alpha');
+            h.controller.handleConfirm();
+            assert(btn.disabled, 'T256: muted again for the next word');
+            typeWord(h, 'b');
+            assert(!btn.disabled, 'T256: the last word works the same way');
+            h.controller.open({ text: 'alpha beta' });
+            assert(!btn.disabled, 'T256: char mode never mutes it');
+        })();
+
         (function T238() {
             const h = makeHarness();
             h.controller.open({ text: 'alpha beta', wordMode: true });
@@ -3568,6 +3620,19 @@
             } finally {
                 internals.closeBlocklistModal();
             }
+            // An allow-only space starts on Never, and a block space opened after it is back on 10.
+            internals.openBlocklistModal(null, { mode: 'allowlist' });
+            try {
+                assertEqual(document.getElementById('unlock-duration-select')?.value, '0', 'T183: a new allow-only space starts on Never');
+            } finally {
+                internals.closeBlocklistModal();
+            }
+            internals.openBlocklistModal();
+            try {
+                assertEqual(document.getElementById('unlock-duration-select')?.value, '10', 'T183: a block space after an allow-only one is back on 10 minutes');
+            } finally {
+                internals.closeBlocklistModal();
+            }
         }
 
         // T230: Discard undoes the fields without collapsing the section you are
@@ -3590,6 +3655,50 @@
                 );
             } finally {
                 internals.appData = saved;
+            }
+        })();
+
+        // T232: a running allow-mode space cannot take new items (each one lets more
+        // through); a running block-mode space still can (each one blocks more).
+        (function T232() {
+            const saved = internals.appData;
+            const now = Date.now();
+            const addControls = ['modal-website-input', 'modal-import-websites-btn', ...(internals.isIOS ? [] : ['modal-browse-apps-btn'])];
+            try {
+                for (const mode of ['allowlist', 'blocklist']) {
+                    const bl = createMockBlocklist({ mode, websites: ['docs.google.com'] });
+                    internals.appData = createMockAppData({
+                        blocklists: [bl],
+                        activeBlocks: [{ id: `blk-${mode}`, blocklistId: bl.id, startTime: now - 60_000, endTime: now + 3_600_000 }],
+                    });
+                    internals.setupFocusSpaceEditor();
+                    internals.populateFocusSpaceEditor(bl);
+                    for (const id of addControls) {
+                        const el = document.getElementById(id);
+                        if (!el) continue;
+                        assertEqual(el.disabled, mode === 'allowlist', `T232: ${id} is ${mode === 'allowlist' ? 'disabled' : 'enabled'} while a ${mode} space runs`);
+                    }
+                }
+            } finally {
+                internals.appData = saved;
+            }
+        })();
+
+        // T253: a paused always-on block gets no "Always on" chip, so it cannot open a stop dialog.
+        (function T253() {
+            const saved = internals.appData;
+            const now = Date.now();
+            try {
+                const bl = createMockBlocklist({ name: 'Paused' });
+                internals.appData = createMockAppData({
+                    blocklists: [bl],
+                    activeBlocks: [{ id: 'blk-t253', blocklistId: bl.id, startTime: now - 60_000, endTime: internals.ALWAYS_ON_END_TIME ?? 8640000000000000, isPaused: true, pauseEndTime: now + 600_000 }],
+                });
+                internals.renderScheduleAlwaysOnRow();
+                assertEqual(document.querySelectorAll('#schedule-always-on-chips .always-on-chip').length, 0, 'T253: a paused always-on block has no chip');
+            } finally {
+                internals.appData = saved;
+                internals.renderScheduleAlwaysOnRow();
             }
         })();
 
@@ -3895,8 +4004,10 @@
     // ========================================
     // CATEGORY: SCHEDULE TIME LIST KEYBOARD (T196-T199)
     // ========================================
-    // Clicking an hour / minute opens a list of options; the arrow keys walk it
-    // and Enter takes the highlighted one, so the field is usable without a mouse.
+    // Each end of a time range is one HH:MM field. Clicking it opens an hour
+    // list and a minute list side by side; the arrow keys walk the column the
+    // caret is in and Enter takes the highlighted option, so the field is
+    // usable without a mouse. Typing a time edits it directly.
     function runScheduleTimeKeyboardTests() {
         console.log('\n⌨️  Schedule time list keyboard');
         const internals = window.__REDDBLOCK_INTERNALS__;
@@ -3905,64 +4016,147 @@
             return;
         }
         const press = (el, key) => el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
-        const options = () => [...document.querySelectorAll('.schedule-time-popover .popover-option')];
-        const activeIndex = () => options().findIndex((o) => o.classList.contains('key-active'));
+        const column = (part) => document.querySelector(`.schedule-time-popover .popover-scroll[data-part="${part}"]`);
+        const options = (part) => [...(column(part)?.querySelectorAll('.popover-option') || [])];
+        const activeIndex = (part) => options(part).findIndex((o) => o.classList.contains('key-active'));
         const optionText = () => document.querySelector('.schedule-time-popover .popover-option.key-active')?.textContent ?? null;
+        const caretAt = (field, pos) => field.setSelectionRange?.(pos, pos);
 
         internals.setupFocusSpaceEditor();
         internals.openBlocklistModal();
         try {
             document.getElementById('when-kind-weekly')?.click();
-            const hour = document.querySelector('.schedule-start-display input.time-part[data-type="hour"]');
-            if (!hour) {
-                assert(false, 'T196: the Weekly editor renders an hour field');
+            const field = document.querySelector('.segment-time-field[data-edge="start"]');
+            if (!field) {
+                assert(false, 'T196: the Weekly editor renders a start-time field');
                 return;
             }
+            assert(/^\d{2}:\d{2}$/.test(field.value), 'T196: the start time is one HH:MM field');
 
-            // T196: clicking the field opens the list, with the current value marked.
-            hour.click();
-            const popover = document.querySelector('.schedule-time-popover');
-            assert(!!popover, 'T196: clicking an hour opens the option list');
-            const selected = popover?.querySelector('.popover-option.selected');
-            assertEqual(selected?.textContent, hour.value, 'T196: the list marks the field\'s current value');
+            // T196: clicking the field opens both lists, each marking the current value.
+            field.click();
+            assert(!!document.querySelector('.schedule-time-popover'), 'T196: clicking the time opens the option lists');
+            const [hh, mm] = field.value.split(':');
+            assertEqual(column('hour')?.querySelector('.selected')?.textContent, hh, 'T196: the hour list marks the current hour');
+            assertEqual(column('minute')?.querySelector('.selected')?.textContent, mm, 'T196: the minute list marks the current minute');
 
-            // T197: the walk starts from the current value rather than the top of
-            // the list, and stops at the ends (no wrap from 23 back to 00).
-            const selectedIndex = options().findIndex((o) => o.classList.contains('selected'));
-            const lastIndex = options().length - 1;
+            // T197: with the caret in the hour, the walk starts from the current
+            // hour rather than the top of the list, and stops at the ends.
+            field.focus();
+            caretAt(field, 1);
+            const selectedIndex = options('hour').findIndex((o) => o.classList.contains('selected'));
+            const lastIndex = options('hour').length - 1;
             const stepDown = selectedIndex < lastIndex ? 'ArrowDown' : 'ArrowUp';
             const stepUp = stepDown === 'ArrowDown' ? 'ArrowUp' : 'ArrowDown';
             const delta = stepDown === 'ArrowDown' ? 1 : -1;
 
-            press(hour, stepDown);
-            assertEqual(activeIndex(), selectedIndex + delta,
-                'T197: the first press moves one option from the current value');
-            press(hour, stepDown);
-            assertEqual(activeIndex(), selectedIndex + 2 * delta,
+            press(field, stepDown);
+            assertEqual(activeIndex('hour'), selectedIndex + delta,
+                'T197: the first press moves one hour from the current value');
+            press(field, stepDown);
+            assertEqual(activeIndex('hour'), selectedIndex + 2 * delta,
                 'T197: pressing again keeps walking the list');
-            press(hour, stepUp);
-            assertEqual(activeIndex(), selectedIndex + delta,
+            press(field, stepUp);
+            assertEqual(activeIndex('hour'), selectedIndex + delta,
                 'T197: the opposite arrow walks back');
-
-            // The end of the list is a stop, not a wrap.
-            for (let i = 0; i < options().length + 2; i++) press(hour, stepUp);
-            assertEqual(activeIndex(), delta > 0 ? 0 : lastIndex,
+            for (let i = 0; i < options('hour').length + 2; i++) press(field, stepUp);
+            assertEqual(activeIndex('hour'), delta > 0 ? 0 : lastIndex,
                 'T197: the highlight stops at the end of the list');
-            press(hour, stepDown);
+            press(field, stepDown);
 
-            // T198: Enter takes the highlighted option and closes the list.
-            const expected = optionText();
-            press(hour, 'Enter');
-            assertEqual(hour.value, expected, 'T198: Enter commits the highlighted option');
+            // T198: Enter takes the highlighted hour, keeps the minute, closes the list.
+            const expectedHour = optionText();
+            press(field, 'Enter');
+            assertEqual(field.value, `${expectedHour}:${mm}`, 'T198: Enter commits the highlighted hour');
             assert(!document.querySelector('.schedule-time-popover'), 'T198: Enter closes the list');
 
-            // T199: Down with no list open opens one; Escape closes it, value untouched.
-            const beforeEscape = hour.value;
-            press(hour, 'ArrowDown');
+            // T199: Down with no list open opens one; the caret after the colon
+            // walks minutes; Escape closes it, value untouched.
+            field.focus();
+            caretAt(field, 4);
+            const beforeEscape = field.value;
+            press(field, 'ArrowDown');
             assert(!!document.querySelector('.schedule-time-popover'), 'T199: Down opens the list when it is closed');
-            press(hour, 'Escape');
+            assert(activeIndex('minute') >= 0 && activeIndex('hour') < 0,
+                'T199: with the caret in the minutes, the arrows walk the minute list');
+            press(field, 'Escape');
             assert(!document.querySelector('.schedule-time-popover'), 'T199: Escape closes the list');
-            assertEqual(hour.value, beforeEscape, 'T199: Escape leaves the value alone');
+            assertEqual(field.value, beforeEscape, 'T199: Escape leaves the value alone');
+
+            // T199: a typed time commits on Enter; an unreadable one is put back.
+            field.value = '730';
+            press(field, 'Enter');
+            assertEqual(field.value, '07:30', 'T199: a typed time is read and written back as HH:MM');
+            field.value = '25:00';
+            field.dispatchEvent(new Event('blur'));
+            assertEqual(field.value, '07:30', 'T199: an impossible time puts the previous one back');
+        } finally {
+            document.querySelectorAll('.schedule-time-popover').forEach((el) => el.remove());
+            document.activeElement?.blur?.();
+            internals.closeBlocklistModal();
+        }
+    }
+
+    // ========================================
+    // CATEGORY: ALL-DAY RANGES (T248-T251)
+    // ========================================
+    // "All day" is stored as start == end at 00:00, which desktop
+    // (native_host) and iOS (ScheduleData) enforce as a full day.
+    function runScheduleAllDayTests() {
+        console.log('\n🌞 All-day ranges');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        if (typeof internals.openBlocklistModal !== 'function' || typeof internals.setupFocusSpaceEditor !== 'function') {
+            assert(false, 'T248: openBlocklistModal and setupFocusSpaceEditor are exposed to tests');
+            return;
+        }
+        const toggle = () => document.querySelector('.schedule-segment .segment-all-day-input');
+        const fields = () => [...document.querySelectorAll('.schedule-segment .segment-time-field')];
+        const setSwitch = (on) => {
+            const input = toggle();
+            input.checked = on;
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+
+        internals.setupFocusSpaceEditor();
+        internals.openBlocklistModal();
+        try {
+            document.getElementById('when-kind-weekly')?.click();
+            if (!toggle()) {
+                assert(false, 'T248: each range has an All day switch');
+                return;
+            }
+            const before = fields().map((f) => f.value);
+            assert(!toggle().checked, 'T248: a new range is not all day');
+
+            // T249: on stores 00:00 – 00:00 and locks the times.
+            setSwitch(true);
+            assertEqual(fields().map((f) => f.value).join(' – '), '00:00 – 00:00',
+                'T249: All day stores start == end at midnight');
+            assert(toggle().checked, 'T249: the switch stays on after the rebuild');
+            assert(fields().every((f) => f.disabled), 'T249: an all-day range\'s times cannot be edited');
+
+            // T250: off puts the previous times back and unlocks them.
+            setSwitch(false);
+            assertEqual(fields().map((f) => f.value).join(' – '), before.join(' – '),
+                'T250: switching All day off restores the times it replaced');
+            assert(fields().every((f) => !f.disabled), 'T250: the times are editable again');
+
+            // T251: a later range switched to All day stays where it is. Sorting by its
+            // new 00:00 moved it to the top, so the switch seemed to turn on the first range.
+            internals.addScheduleSegment();
+            const switches = () => [...document.querySelectorAll('.schedule-segment .segment-all-day-input')];
+            const flip = (input, on) => { input.checked = on; input.dispatchEvent(new Event('change', { bubbles: true })); };
+            flip(switches()[1], true);
+            assertEqual(switches().map((input) => input.checked).join(','), 'false,true',
+                'T251: All day on the second range turns on the second card, not the first');
+            flip(switches()[1], false);
+            document.querySelectorAll('.schedule-segment .remove-segment-btn')[1]?.click();
+
+            // T250: typing times that meet shows the switch on.
+            const end = document.querySelector('.segment-time-field[data-edge="end"]');
+            end.value = before[0];
+            end.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            assert(toggle()?.checked, 'T250: typed times that meet are shown as All day');
         } finally {
             document.querySelectorAll('.schedule-time-popover').forEach((el) => el.remove());
             document.activeElement?.blur?.();
@@ -4062,6 +4256,7 @@
             runCardTimingAndSectionKeyboardTests();
             runCustomSelectTests();
             runScheduleTimeKeyboardTests();
+            runScheduleAllDayTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
         }

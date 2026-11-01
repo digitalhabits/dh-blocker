@@ -143,3 +143,36 @@ export function getContrastTextColor(backgroundColor) {
 
     return getRelativeLuminance(rgb.r, rgb.g, rgb.b) > 0.5 ? '#000000' : '#ffffff';
 }
+
+/** Space-name titles: a name whose longest word is wider than the title breaks anywhere,
+ *  so it starts beside its emoji; re-checked when the title's width changes. */
+const spaceTitleObserver = typeof ResizeObserver === 'function'
+    ? new ResizeObserver((entries) => entries.forEach(({ target, contentRect }) => {
+        if (contentRect.width !== target._spaceTitleWidth) fitSpaceTitle(target);
+    }))
+    : null;
+
+export function setSpaceTitle(el, text, name) {
+    el._spaceTitle = { text, name };
+    fitSpaceTitle(el);
+    spaceTitleObserver?.observe(el);
+}
+
+function fitSpaceTitle(el) {
+    const { text, name } = el._spaceTitle;
+    el._spaceTitleWidth = el.clientWidth;
+    el.textContent = text;
+    const at = name ? text.lastIndexOf(name) : -1;
+    if (at < 0 || !el.clientWidth) return;
+    const probe = document.createElement('span');
+    probe.style.whiteSpace = 'nowrap';
+    probe.textContent = name.split(/\s+/).reduce((a, b) => (b.length > a.length ? b : a), '');
+    el.appendChild(probe);
+    const tooWide = probe.offsetWidth > el.clientWidth;
+    probe.remove();
+    if (!tooWide) return;
+    const nameEl = document.createElement('span');
+    nameEl.className = 'title-name-unbroken';
+    nameEl.textContent = name;
+    el.replaceChildren(text.slice(0, at), nameEl, text.slice(at + name.length));
+}

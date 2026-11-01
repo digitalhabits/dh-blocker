@@ -5,7 +5,7 @@
 // src/test-utils.js / src/blocking-tests.js / src/integration-tests.js —
 // never rename them.
 import { state } from './state.js';
-import { canEnableAllowEditsBetweenBlocks } from './schedule-editor.js';
+import { addScheduleSegment, canEnableAllowEditsBetweenBlocks } from './schedule-editor.js';
 import { tauriAPI } from './tauri-api.js';
 import { PROTECTED_APP_NAMES, PROTECTED_DOMAINS, isAllowlistBlocklist, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
 import { buildAndroidScheduleEntries, buildIOSScheduleEntries, hasAnyBlockingStateToClear, isAndroidAllowlistUnsupported, isSchedulePausedNow } from './schedule-engine.js';
@@ -55,6 +55,7 @@ import { applyOverrideTypeUi, closeBlocklistModal, closeStartConfirmModal, openB
 import { applyEditorScheduleForBlocklist, discardFocusSpaceEditor, populateFocusSpaceEditor, setOpenEditorSection, setWhenToBlockKind, setupFocusSpaceEditor, showEditorDiscardConfirmModal } from './focus-space-editor.js';
 import { enhanceNativeSelects, enhanceSelect } from './custom-select.js';
 import { performOverrideAll, renderDiagnosticsEnforcementSection } from './settings.js';
+import { renderScheduleAlwaysOnRow } from './render.js';
 
 // Expose for integration tests (dev mode only)
 window.__REDDBLOCK_INTERNALS__ = {
@@ -143,6 +144,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     applyOverrideTypeUi,
     // The create form (new-space defaults) and the editor's discard dialog.
     openBlocklistModal,
+    addScheduleSegment,
     closeBlocklistModal,
     showEditorDiscardConfirmModal,
     // Idempotent. The headless Tier 1 page has no Tauri transport, so app
@@ -151,6 +153,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     applyEditorScheduleForBlocklist,
     discardFocusSpaceEditor,
     populateFocusSpaceEditor,
+    renderScheduleAlwaysOnRow,
     setOpenEditorSection,
     setWhenToBlockKind,
     setupFocusSpaceEditor,

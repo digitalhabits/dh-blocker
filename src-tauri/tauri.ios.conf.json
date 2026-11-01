@@ -1,5 +1,5 @@
 {
-    "version": "3.9.0",
+    "version": "3.11.0",
     "bundle": {
         "iOS": {
             "minimumSystemVersion": "16.0",

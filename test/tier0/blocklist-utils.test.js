@@ -396,11 +396,30 @@ describe('Screen Time selection at the save boundary', () => {
         expect(resolved.applicationTokens).toEqual(['tok-tiktok']);
     });
 
-    test('allow mode remains replacement-based', () => {
+    test('a running allow-mode space keeps its saved selection when something was added', () => {
+        const resolved = resolveIOSScreenTimeSelectionForSave(
+            sel(['tok-instagram']),
+            sel(['tok-instagram', 'tok-tiktok']),
+            { mode: 'allowlist', editFrictionRequired: true },
+        );
+
+        expect(resolved.applicationTokens).toEqual(['tok-instagram']);
+    });
+
+    test('a running allow-mode space may drop apps, but not its last one', () => {
+        const opts = { mode: 'allowlist', editFrictionRequired: true };
+        const saved = sel(['tok-docs', 'tok-slack']);
+
+        expect(resolveIOSScreenTimeSelectionForSave(saved, sel(['tok-docs']), opts).applicationTokens).toEqual(['tok-docs']);
+        expect(resolveIOSScreenTimeSelectionForSave(saved, null, opts).applicationTokens).toEqual(['tok-docs', 'tok-slack']);
+        expect(resolveIOSScreenTimeSelectionForSave(saved, sel([]), opts).applicationTokens).toEqual(['tok-docs', 'tok-slack']);
+    });
+
+    test('allow mode is replacement-based while not running', () => {
         const resolved = resolveIOSScreenTimeSelectionForSave(
             sel(['tok-instagram', 'tok-tiktok']),
             sel(['tok-tiktok']),
-            { mode: 'allowlist', editFrictionRequired: true },
+            { mode: 'allowlist', editFrictionRequired: false },
         );
 
         expect(resolved.applicationTokens).toEqual(['tok-tiktok']);
