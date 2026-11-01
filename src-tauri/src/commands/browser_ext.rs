@@ -969,10 +969,25 @@ pub fn open_browser_extension_settings(browser: String) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
+        // Chromium ignores chrome:// / edge:// URLs on the command line, so
+        // the extension opens its own page when the native host relays this.
+        if normalized != "firefox" {
+            let path = crate::native_host::resolve_data_path().ok_or("no data path")?;
+            // We are foreground right after the click; without this grant
+            // Windows only flashes the browser's taskbar button.
+            unsafe {
+                use windows::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
+                let _ = AllowSetForegroundWindow(ASFW_ANY);
+            }
+            return std::fs::write(
+                path.with_file_name(crate::native_host::OPEN_SETTINGS_FILE),
+                &normalized,
+            )
+            .map_err(|e| e.to_string());
+        }
         // Reuse the same exe-path lookup that profile_scan uses for
         // install detection.  Launching the browser directly (instead
-        // of `cmd /c start`) avoids slow PATH searches and ensures
-        // chrome:// URLs aren't mangled by cmd's argument parser.
+        // of `cmd /c start`) avoids slow PATH searches.
         let exe = profile_scan::find_browser_exe(&normalized)
             .ok_or_else(|| format!("Could not find {browser} executable"))?;
         std::process::Command::new(&exe)
