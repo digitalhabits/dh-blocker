@@ -1534,12 +1534,7 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
 
         row.appendChild(header);
 
-        if (viaAddressBar) {
-            const hint = document.createElement('div');
-            hint.className = 'migration-browser-hint migration-browser-after-hint';
-            hint.textContent = tSettingsFmt('migrationAddressBarHint', { browser: entry.label });
-            row.appendChild(hint);
-        } else if (status === 'policy-blocked') {
+        if (!viaAddressBar && status === 'policy-blocked') {
             const hint = document.createElement('div');
             hint.className = 'migration-browser-hint migration-browser-after-hint';
             hint.textContent = tSettingsFmt('migrationPolicyBlockedHint', { browser: entry.label });

@@ -610,6 +610,11 @@ export function setupMacAutomationIntroModal() {
     });
 }
 
+export function windowsBrowserSetupIsAutomatic() {
+    return state.isWindowsDesktop
+        && ['chrome', 'edge', 'brave', 'firefox'].every(browserUsesAutomation);
+}
+
 export async function ensureExtensionSetupOnboardingShown() {
     if (state.isIOS || state.isAndroid || state.migrationOnboardingActive) return;
     if (safariUsesExtensionMode()) {
@@ -617,6 +622,12 @@ export async function ensureExtensionSetupOnboardingShown() {
     }
     const dismissed = localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
     if (!state.firstRunExtensionSetupPending && (dismissed || state.migrationOnboardingDismissed)) return;
+    // Windows defaults require no browser permission or installation action.
+    // Complete the same startup/persistence work without showing a checklist.
+    if (windowsBrowserSetupIsAutomatic()) {
+        await finishExtensionSetup();
+        return;
+    }
     try {
         if (state.firstRunExtensionSetupPending) {
             state.migrationOnboardingDismissed = false;
