@@ -80,12 +80,9 @@ if (-not $makeappx) {
 
 Write-Host "  makeappx: $($makeappx.FullName)" -ForegroundColor Gray
 
-$iconCandidates = @(
-    (Join-Path $ProjectRoot "assets\icons\1024x1024.png"),
-    (Join-Path $ProjectRoot "src-tauri\icons\128x128@2x.png")
-)
-$sourceIcon = $iconCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $sourceIcon) {
+# Windows uses the shield without the shared app tile background.
+$sourceIcon = Join-Path $ProjectRoot "assets\icons\windows-1024.png"
+if (-not (Test-Path -LiteralPath $sourceIcon)) {
     Write-Host "ERROR: No source icon found. Run: node scripts/generate-icons-from-svg.js" -ForegroundColor Red
     exit 1
 }
