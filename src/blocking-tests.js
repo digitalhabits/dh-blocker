@@ -4219,6 +4219,28 @@
         }
     }
 
+    async function runWindowsOnboardingTests() {
+        const { state } = await import('./state.js');
+        const { windowsBrowserSetupIsAutomatic } = await import('./onboarding.js');
+        const windows = state.isWindowsDesktop;
+        const methods = state.appData.settings.blockingMethods;
+        try {
+            state.isWindowsDesktop = true;
+            state.appData.settings.blockingMethods = {};
+            assert(windowsBrowserSetupIsAutomatic(), 'Windows defaults skip browser setup');
+            for (const browser of ['chrome', 'edge', 'brave', 'firefox']) {
+                state.appData.settings.blockingMethods = { [browser]: 'extension' };
+                assert(!windowsBrowserSetupIsAutomatic(), 'Explicit extension mode retains setup: ' + browser);
+            }
+            state.isWindowsDesktop = false;
+            state.appData.settings.blockingMethods = {};
+            assert(!windowsBrowserSetupIsAutomatic(), 'Other platforms retain their setup flow');
+        } finally {
+            state.isWindowsDesktop = windows;
+            state.appData.settings.blockingMethods = methods;
+        }
+    }
+
     async function runAllTests() {
         console.clear();
         console.log('🧪 ReddBlock Blocking Tests');
@@ -4228,6 +4250,7 @@
         resetTestResults();
 
         try {
+            await runWindowsOnboardingTests();
             await runIOSResumeOrderingTests();
             runTimeBasedTests();
             runOverlapTests();

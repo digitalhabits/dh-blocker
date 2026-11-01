@@ -67,6 +67,27 @@ describe('policy-blocked browsers on Windows', () => {
         expect(buildBannerActionSummary(browsers, Object.keys(browsers))).toBe('');
     });
 
+    test('fresh Windows setup completes without revealing the browser overlay', async () => {
+        await setUpWindows();
+        const { state } = await import('../../src/state.js');
+        const { ensureExtensionSetupOnboardingShown, EXT_ONBOARDING_DISMISSED_KEY } = await import('../../src/onboarding.js');
+        const { invoke } = await import('@tauri-apps/api/core');
+        state.isIOS = false;
+        state.isAndroid = false;
+        state.migrationOnboardingActive = false;
+        state.firstRunExtensionSetupPending = true;
+        state.appData.settings.onboardingComplete = false;
+        document.body.innerHTML = '<div id="migration-onboarding" class="hidden"></div><div id="main-content"></div>';
+        invoke.mockClear();
+        await ensureExtensionSetupOnboardingShown();
+        expect(state.firstRunExtensionSetupPending).toBe(false);
+        expect(state.migrationOnboardingActive).toBe(false);
+        expect(state.appData.settings.onboardingComplete).toBe(true);
+        expect(localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY)).toBeTruthy();
+        expect(invoke).toHaveBeenCalledWith('enforcer_start');
+        expect(document.getElementById('migration-onboarding').classList.contains('hidden')).toBe(true);
+    });
+
     test('explicit extension mode restores extension setup, including policy warnings', async () => {
         const { browserBlockingMethod, effectiveBrowserComplianceStatus } = await setUpWindows();
         const { state } = await import('../../src/state.js');
@@ -114,5 +135,6 @@ describe('policy-blocked browsers on Windows', () => {
         const text = document.getElementById('migration-browser-buttons').textContent;
         expect(text).toContain('address bar');
         expect(text).not.toContain("won't work");
+        expect(text).not.toContain('organisation');
     });
 });
