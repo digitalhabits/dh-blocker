@@ -35,7 +35,7 @@ use tauri::Manager;
 ///   - window visible  → Regular  (Dock icon, menu bar present)
 ///   - window hidden   → Accessory (tray-only, runs in the background)
 ///
-/// The enforcer keeps running regardless of the policy; this is purely
+/// Native and app watchers keep running regardless of the policy; this is purely
 /// a UI affordance.
 #[cfg(target_os = "macos")]
 pub(crate) fn set_macos_activation_policy(regular: bool) {
@@ -119,45 +119,34 @@ tauri_nspanel::tauri_panel! {
     })
 }
 
-#[cfg(target_os = "macos")]
-pub mod app_group;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod app_watcher;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-pub mod enforcer;
 #[cfg(target_os = "macos")]
 pub mod window_inventory;
 #[cfg(target_os = "macos")]
 pub mod workspace_events;
-// JOMO-style website blocking via macOS Automation (Apple Events) — the
-// macOS replacement for the Safari/Chromium extension. Firefox stays on
-// the extension + enforcer path.
+// Native desktop website policy and browser watchers.
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod block_page;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
-pub mod blocking_method;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-pub mod browser_policy;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod data_cache;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
-pub mod extension_install;
+mod legacy_registration;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
-pub mod native_host;
+mod native_browser_inventory;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub mod native_failure;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod native_host_install;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
-pub mod profile_scan;
-// Firefox on macOS has no AppleScript dictionary for tabs, so the opt-in
-// alternative to its extension reads the active tab through Accessibility.
+pub mod website_policy;
+// Firefox has no AppleScript tab dictionary; read its address bar with Accessibility.
 #[cfg(target_os = "macos")]
 pub mod accessibility;
-// Opt-in Firefox blocking on macOS; see `accessibility` for why Firefox
+// Native Firefox blocking on macOS; see `accessibility` for why Firefox
 // cannot use the Automation watcher.
 #[cfg(target_os = "macos")]
 pub mod firefox_ax;
-#[cfg(target_os = "macos")]
-pub mod safari_services;
 #[cfg(target_os = "windows")]
 pub mod uia_web_automation;
 #[cfg(target_os = "windows")]
@@ -300,9 +289,7 @@ pub fn run() {
         Some(vec!["--autostart"]),
     ));
 
-    // Screen Time is iOS-only. macOS uses the browser-extension path
-    // (Safari via SafariWebExtensionHandler, other browsers via the
-    // same Rust native host the Windows target uses).
+    // Screen Time is iOS-only. Desktop uses native browser watchers.
     #[cfg(target_os = "ios")]
     let builder = builder.plugin(tauri_plugin_screentime::init());
 
@@ -367,7 +354,7 @@ pub fn run() {
             //   - window hidden  → Accessory (tray-only)
             // The Cmd-Q / red-X / last-window-closed paths are still
             // intercepted by `install_terminate_guard` and the
-            // CloseRequested handler below, so the enforcer/watcher
+            // CloseRequested handler below, so the native/app watchers
             // survives every "quit" gesture and keeps running in the
             // tray.
             #[cfg(target_os = "macos")]
@@ -676,7 +663,7 @@ pub fn run() {
             }
 
             // Tray icon (desktop only) — no right-click menu by design:
-            // exiting the app would tear down the enforcer/watcher and
+            // exiting the app would tear down the native/app watchers and
             // silently drop active blocks. Left-click reveals/focuses
             // the main window; right-click does nothing. The only way
             // out is uninstall.
@@ -706,12 +693,7 @@ pub fn run() {
                     .build(app)?;
             }
 
-            // Register app-watcher + enforcer state handles, and
-            // auto-start the enforcer. The enforcer scans browsers
-            // for missing/disabled extensions every 5 s and quits the
-            // browser if the user doesn't fix it within the grace
-            // window — that's the whole point of the migration, so
-            // there's no reason to gate it behind a frontend opt-in.
+            // Native website health and the independent app watcher.
             // NSWorkspace notification bridge: app launch/activation +
             // screen sleep/wake events that let the app watcher and the
             // Automation watcher idle instead of polling. Must run on
@@ -722,53 +704,33 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             {
                 commands::app_blocking::register(app);
-                commands::enforcement::register(app);
-                commands::enforcement::auto_start(app.handle());
+                native_failure::start(app.handle().clone());
             }
 
-            // Windows browsers default to UI Automation; the watcher checks
-            // each browser's saved blocking method before acting.
+            // Windows website blocking always uses UI Automation.
             #[cfg(target_os = "windows")]
             if let Some(url) = block_page::resolve_block_page_url(app.handle()) {
                 uia_web_automation::start(app.handle().clone(), url);
+            } else {
+                native_failure::record_health(
+                    "windowsUIA",
+                    "unavailable",
+                    Some("Bundled block page unavailable"),
+                );
             }
 
-            // macOS website blocking runs through Automation (Apple
-            // Events), not the extension, for Safari + Chromium. Register
-            // its state handle and auto-start the watcher (paused until
-            // onboarding completes — same gate as the enforcer).
+            // macOS native watchers remain gated on EULA acceptance.
             #[cfg(target_os = "macos")]
             {
                 commands::web_automation::register(app);
                 commands::web_automation::auto_start(app.handle());
-                // Firefox cannot be scripted, so its opt-in alternative to
-                // the extension runs its own watcher over Accessibility.
+                // Firefox uses Accessibility because it has no scripting dictionary.
                 commands::firefox_ax::register(app);
                 commands::firefox_ax::auto_start(app.handle());
-                if let Some(path) = commands::canonical_data_path(app.handle()) {
-                    crate::app_group::ensure_sync_loop(path.clone());
-                    // Manifest checks touch browser-owned directories and do
-                    // not affect the first webview frame. Keep them out of
-                    // Tauri's setup callback so the event loop can begin
-                    // painting as soon as the window has been created.
-                    #[cfg(not(feature = "system-test"))]
-                    std::thread::spawn(move || {
-                        if let Err(e) =
-                            native_host_install::sync_extension_mode_native_hosts(&path, false)
-                        {
-                            log::warn!("native-host sync for extension-mode browsers failed: {e}");
-                        }
-                        if crate::cross_app_consent::should_run_profile_scans() {
-                            if let Err(e) = native_host_install::sync_firefox_native_host(false) {
-                                log::warn!("native-host sync for firefox failed: {e}");
-                            }
-                        }
-                    });
-                }
             }
 
             // Ensure notification permission is granted (or prompt for
-            // it once). Without this, the enforcer's grace / kill
+            // it once). Without this, native warning
             // notifications silently no-op. macOS prompts via
             // NSUserNotificationCenter; Windows toasts don't need a
             // runtime prompt and the call returns Granted immediately.
@@ -793,20 +755,14 @@ pub fn run() {
                 }
             }
 
-            // On macOS, Safari/Chromium use Automation; Firefox extension
-            // is installed manually — Firefox native-host manifest sync
-            // runs above (EULA-gated) and during onboarding scans.
+            // Retire app-owned legacy registrations, without reading profiles.
             #[cfg(all(
                 not(any(target_os = "ios", target_os = "android")),
-                not(target_os = "macos"),
                 not(feature = "system-test")
             ))]
-            if let Err(e) = native_host_install::install() {
-                log::warn!("native-host install on startup failed: {e}");
+            if let Err(e) = native_host_install::uninstall() {
+                log::warn!("legacy native-host cleanup failed: {e}");
             }
-
-            // Windows defaults to UI Automation. Extension setup is offered
-            // only after an explicit switch to extension mode in Settings.
 
             // Do not create or refresh Windows watchdog tasks: Defender
             // flags the script-based registration command (issue #152).
@@ -950,18 +906,8 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::resize_blocking_warning_inner_size,
         commands::enter_blocking_warning_panel_mode,
         commands::leave_blocking_warning_panel_mode,
-        commands::scan_browser_profiles,
-        commands::is_firefox_installed,
-        commands::browser_profiles_compliant,
         commands::activate_app,
         commands::hide_main_window,
-        native_host_install::install_native_host,
-        native_host_install::ensure_firefox_native_host,
-        native_host_install::uninstall_native_host,
-        extension_install::install_extension_hints,
-        extension_install::uninstall_extension_hints,
-        commands::enforcer_start,
-        commands::enforcer_pause,
         commands::web_automation_start,
         commands::web_automation_pause,
         commands::web_automation_permission_status,
@@ -979,13 +925,9 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::migration_pending,
         commands::migration_was_pending_at_launch,
         commands::user_came_from_v1x,
-        commands::get_extension_grace_seconds,
-        commands::set_extension_grace_seconds,
-        commands::get_enforcement_enabled,
-        commands::set_enforcement_enabled,
-        commands::get_blocking_methods,
-        commands::set_blocking_method,
         commands::get_system_diagnostics,
+        native_failure::native_warning_visible,
+        native_failure::native_website_status,
         commands::onboarding_state,
         commands::check_helper_status,
         commands::install_helper,
@@ -998,13 +940,6 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::block_websites,
         commands::clean_hosts_file,
         commands::get_helper_diagnostics,
-        commands::check_safari_fda_access,
-        commands::sync_safari_fda_access,
-        commands::complete_safari_fda_onboarding,
-        commands::open_safari_fda_settings,
-        commands::open_safari_extension_settings,
-        commands::open_browser_extension_settings,
-        commands::open_url_in_browser,
         commands::save_overlay_image_asset,
         commands::save_overlay_image_asset_bytes,
         commands::save_overlay_voice_asset,
@@ -1038,29 +973,17 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::resize_blocking_warning_inner_size,
         commands::enter_blocking_warning_panel_mode,
         commands::leave_blocking_warning_panel_mode,
-        commands::scan_browser_profiles,
-        commands::is_firefox_installed,
-        commands::browser_profiles_compliant,
         commands::activate_app,
         commands::hide_main_window,
-        native_host_install::install_native_host,
-        native_host_install::ensure_firefox_native_host,
-        native_host_install::uninstall_native_host,
-        extension_install::install_extension_hints,
-        extension_install::uninstall_extension_hints,
-        commands::enforcer_start,
-        commands::enforcer_pause,
         commands::strip_hosts_markers,
         commands::uninstall_legacy_helper,
         commands::run_upgrade_migration,
         commands::migration_pending,
         commands::migration_was_pending_at_launch,
         commands::user_came_from_v1x,
-        commands::get_extension_grace_seconds,
-        commands::set_extension_grace_seconds,
-        commands::get_enforcement_enabled,
-        commands::set_enforcement_enabled,
         commands::get_system_diagnostics,
+        native_failure::native_warning_visible,
+        native_failure::native_website_status,
         commands::onboarding_state,
         commands::check_helper_status,
         commands::install_helper,
@@ -1073,8 +996,6 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::block_websites,
         commands::clean_hosts_file,
         commands::get_helper_diagnostics,
-        commands::open_browser_extension_settings,
-        commands::open_url_in_browser,
         commands::save_overlay_image_asset,
         commands::save_overlay_image_asset_bytes,
         commands::save_overlay_voice_asset,

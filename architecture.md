@@ -8,32 +8,20 @@ code paths.
 
 | Section | What it covers |
 |---|---|
-| **[Part I — v3 (current)](#part-i--current-architecture-v3)** | Desktop runtime as shipped in v3.0+: macOS Automation blocking for Safari and Chromium browsers, extension blocking on Windows and macOS Firefox, in-process app blocking, compliance enforcer, iOS Screen Time. **Start here.** |
-| **[Part II — v2 (historical)](#part-ii--v2-architecture-historical)** | v2.0–v2.4.x desktop design: every browser blocked via the Digital Habits: Focus extension (including Safari App Group bridge). Superseded on macOS by v3 Automation; Windows is still on this model. |
+| **[Part I — v3 (current)](#part-i--current-architecture-v3)** | Desktop runtime as shipped in v3.0+: macOS Automation blocking for Safari and Chromium browsers, Windows UI Automation, macOS Firefox Accessibility, in-process app blocking, native worker health, iOS Screen Time. **Start here.** |
+| **[Part II — v2 (historical)](#part-ii--v2-architecture-historical)** | v2.0–v2.4.x desktop design: every browser blocked via the Digital Habits: Focus extension (including Safari App Group bridge). Retired on both desktop platforms. |
 | **[Part III — v1 (historical)](#part-iii--v1-architecture-historical)** | v1.x privileged helper daemon, `/etc/hosts` writes, helper-owned enforcement state. Removed in v2; migration code still cleans residue on upgrade. |
 
-### v3 desktop runtime in three lines
+### Desktop runtime
 
-- **Website blocking (macOS):** Safari, Chrome, Brave, and Edge are driven by
-  **Automation** (Apple Events) in `src-tauri/src/web_automation.rs` — blocked
-  tabs redirect to a bundled block page (`src-tauri/blocked/`). Automation is
-  the default; each of the four can be switched to the extension path instead
-  (`settings.blockingMethods`, `src-tauri/src/blocking_method.rs`). **Firefox on
-  macOS** still uses the **Digital Habits: Focus extension** + native-messaging host
-  (`src-tauri/src/native_host.rs`). **Windows:** all supported browsers use
-  the extension + native host (unchanged from v2).
-- **Compliance enforcer** (`src-tauri/src/enforcer.rs`) — 5 s scan tick,
-  user-configurable grace (5–300 s, default 60 s), force-quits non-compliant
-  *running* browsers during active website blocks when the user has opted in.
-  On macOS, Safari/Chromium compliance = Automation TCC; Firefox/Windows =
-  extension profile scan (`src-tauri/src/profile_scan.rs`).
-- **App blocking** runs in-process via `src-tauri/src/app_watcher.rs` (sysinfo
-  poll-and-kill on both desktop OSes). **No privileged helper daemon. No
-  hosts-file writes.** v1.x cleanup runs once via
-  `src-tauri/src/commands/migration.rs`.
-
-Deeper v2 migration notes lived in `browser-ext-migration/`, deleted in
-5248fed; read them from git history.
+- macOS uses Apple Events for Safari/Chrome/Brave/Edge and Accessibility for Firefox.
+- Windows uses native UI Automation for Chrome/Edge/Brave/Firefox.
+- `website_policy.rs` derives shared rules. Native workers report their own health;
+  there is no extension communication, profile scan or mechanism selection.
+- App blocking retains its independent warning and quit flow. No privileged daemon
+  or hosts-file enforcement is introduced.
+- Unvalidated native failure signals remain diagnostic-only. See
+  [PR 3 validation](docs/pr3-validation.md) before enabling any browser quit signal.
 
 ---
 
@@ -63,11 +51,6 @@ This section explains the **current** runtime:
 | App data persistence | `src-tauri/src/commands/data.rs` |
 | Legacy command names (shim) | `src-tauri/src/commands/helper_shim.rs` |
 | macOS Automation blocking | `src-tauri/src/web_automation.rs`, `src-tauri/src/commands/web_automation.rs` |
-| macOS per-browser method (Automation default, opt-in extension) | `src-tauri/src/blocking_method.rs`, `src-tauri/src/commands/blocking_method_cmd.rs`, `src-tauri/src/app_group.rs` (Safari extension mode), `src-tauri/src/commands/safari_bridge.rs`, `src-tauri/src/safari_services.rs` |
-| Windows + macOS Firefox extension host | `src-tauri/src/native_host.rs`, `src-tauri/src/native_host_install.rs` |
-| Extension install hints | `src-tauri/src/extension_install.rs` |
-| Browser profile / extension scan | `src-tauri/src/profile_scan.rs` |
-| Compliance enforcer | `src-tauri/src/enforcer.rs`, `src-tauri/src/commands/enforcement_toggle.rs` |
 | App blocking watcher | `src-tauri/src/app_watcher.rs`, `src-tauri/src/commands/app_blocking.rs` |
 | v1.x migration / hosts cleanup | `src-tauri/src/commands/migration.rs` |
 | Uninstall | `src-tauri/src/commands/uninstall.rs` |
@@ -94,42 +77,14 @@ website blocking; app blocking goes to `app_watcher`).
 
 ## 2) Runtime architecture at a glance
 
-Three enforcement families:
+The frontend saves the per-user `redd-block-data.json`; native workers read the
+same policy through `website_policy::derive_payload()`. The block page and app
+watcher also consume shared policy types and derivation. Blocked domains win on
+overlap; active allowlists union before subtracting blocked domains. Protected
+hosts, pause windows and schedule transitions keep their existing semantics.
 
-- **Desktop macOS (websites):** in-process Automation watcher + optional
-  Firefox extension path.
-- **Desktop Windows (websites):** Digital Habits: Focus extension + native-messaging
-  host spawned from the same binary.
-- **Desktop (apps):** in-process app watcher (both OSes).
-- **iOS:** Screen Time plugin — no helper, no extension.
-
-```mermaid
-flowchart TD
-    ui[UserInput_src_app_js] --> tauri[TauriBackend_Commands]
-    tauri --> platform{Platform}
-    platform -->|macOS_websites| auto[web_automation_rs]
-    platform -->|macOS_Firefox| nmMac[native_host_rs]
-    platform -->|Windows_websites| nmWin[native_host_rs]
-    platform -->|Desktop_apps| watcher[app_watcher_rs]
-    platform -->|iOS| st[ScreenTimePlugin]
-    auto --> blockPage[bundled_blocked_html]
-    nmMac --> extFF[Firefox_extension]
-    nmWin --> extAll[Browser_extensions]
-    tauri --> enforcer[enforcer_rs]
-    enforcer -->|grace_force_quit| browsers[Running_browsers]
-```
-
-**Single source of truth for desktop website rules:**
-`redd-block-data.json` → `native_host::derive_payload()` computes both the
-legacy flat blocklist domain set and the richer per-block website metadata from
-`activeBlocks`, `schedules`, and `blocklists`. Website composition matches
-desktop app enforcement: blocklist domains always block, and when allowlist
-website blocks are active the union of allowlisted domains is allowed while
-everything else is blocked. Both the Automation watcher and the native-messaging
-host re-read this file; the frontend writes it via `save_data` before starting
-or editing blocks.
-
----
+iOS uses its Screen Time App Group store. Android uses its native Accessibility
+service and WorkManager. Neither is routed through the desktop worker health flow.
 
 ## 3) State ownership and authority model
 
@@ -146,16 +101,15 @@ Important `settings` sub-state:
 
 - `eulaAcceptedRevision`, `eulaAcceptedAt` — EULA gate
 - `enforcementEnabled` — opt-in for force-closing non-compliant browsers
-- `extensionGraceSeconds` — enforcer grace (5–300 s)
+- legacy `extensionGraceSeconds` / `enforcementEnabled` — retired extension settings; they do not disable native failure handling
 - `migrationRanAtVersion` — v1.x cleanup stamp
 
 The frontend (`src/app.js`) owns UX state: rendering, challenges, pause/resume,
-onboarding (EULA → browser setup → iOS Screen Time auth), and command dispatch.
+platform onboarding (EULA, missing macOS grants, or mobile permissions), and command dispatch.
 
 **There is no separate helper-owned enforcement state in v3.** Schedule
 evaluation for website blocking happens when backends read
-`redd-block-data.json` (native host polls every 30 s for time transitions;
-Automation watcher reads every 1 s tick). App blocking state lives in the
+`redd-block-data.json` on native worker ticks. App blocking state lives in the
 in-process watcher, driven by frontend commands.
 
 ### 3.2 Desktop app-data paths
@@ -166,9 +120,7 @@ Canonical paths — **per user, one branch, no machine-wide alternative**:
 - Windows: `%APPDATA%\com.reddblock\redd-block-data.json`
 
 Resolved by `data.rs` (`canonical_data_path_static`, and `get_data_path` for
-handle-holding callers). `native_host.rs::resolve_data_path` routes through the
-same function rather than reimplementing it, so a browser-spawned host and the
-app cannot disagree about which file is canonical.
+handle-holding callers). Native workers resolve the same canonical store.
 
 Legacy per-user paths, still read as a migration fallback:
 
@@ -194,16 +146,11 @@ themselves — and only the account that created the file could save to it:
 `C:\ProgramData` lets any account add files to a subfolder but not replace or
 delete another account's, and a save is an atomic rename over the existing
 file. The rest read it and had their edits fail. Nothing needs cross-user
-access: every reader, the browser-spawned native host included, runs inside the
-signed-in user's own session.
+access: native workers run inside the signed-in user's own session.
 
-The Microsoft Store build lists `%APPDATA%\com.reddblock` as an excluded
-directory in `scripts/build-msix.ps1`, next to the native-host staging folder.
-Windows can redirect a packaged app's writes under `%APPDATA%` into the
-package's private folder, which the native host — unpackaged, a child of the
-browser — cannot see; the exclusion guarantees the data file lands on the real
-disk regardless. Verified on a sideloaded Store package with two accounts
-(checklist §9b).
+The Microsoft Store build excludes the canonical per-user data directory from
+package virtualization. Retain and verify that path across upgrades; removing
+native messaging is not a reason to reset or relocate existing user rules.
 
 Legacy v1 helper state may still exist at
 `/var/lib/redd-block/helper-state.json` (macOS) or
@@ -236,23 +183,8 @@ Implemented in `src-tauri/src/web_automation.rs`.
 
 ### 4.1 Supported browsers
 
-| Browser | Mechanism | Extension required? |
-|---|---|---|
-| Safari | Apple Events (`tell application "Safari"`) | No |
-| Chrome | Apple Events (`tell application "Google Chrome"`) | No |
-| Brave | Apple Events (`tell application "Brave Browser"`) | No |
-| Edge | Apple Events (`tell application "Microsoft Edge"`) | No |
-| Firefox | Digital Habits: Focus extension + `--native-host`, or Accessibility | Yes (manual install), or an Accessibility grant |
-
-Firefox has no usable AppleScript dictionary for tab URL control — its
-auto-generated Standard Suite has no `tab` class, so a tab-URL script fails to
-*compile* — and it therefore defaults to the v2 extension path. Its opt-in
-alternative is Accessibility (§6.1), not Automation. Safari, Chrome, Brave and
-Edge can each be opted into the extension path per browser
-(`blocking_method.rs`); Automation is the default, and Accessibility is not
-offered to them because Apple Events are faster, cover every tab rather than
-the active one, and need no system-wide input-synthesis grant. Safari's extension mode mirrors the data file into the App Group
-(`app_group.rs`), and the enforcer and profile scan follow the chosen method.
+Safari, Chrome, Brave and Edge always use Apple Events. Firefox always uses
+Accessibility (§6). Stored extension selections do not select a transport.
 
 ### 4.2 How blocking works
 
@@ -263,7 +195,7 @@ the active one, and need no system-wide input-synthesis grant. Safari's extensio
    detected via sysinfo; when NSWorkspace events are installed only the
    frontmost browser is scripted every tick, the rest every 5 s):
    - read active blocks (mode-aware `blocks[]`) from
-     `native_host::derive_payload()`,
+     `website_policy::derive_payload()`,
    - if no web enforcement is active, restore any tabs still parked on the
      block page,
    - otherwise, AppleScript-reads open tab URLs; a tab is redirected when its
@@ -273,7 +205,7 @@ the active one, and need no system-wide input-synthesis grant. Safari's extensio
      `location` to the block page with the same query params the extension
      uses (`url`, `blocklist`, `mode`, etc.).
 3. All Apple Events serialize through a global mutex — concurrent osascript
-   from the watcher, enforcer, and Tauri commands can deadlock macOS's
+   from workers and Tauri commands can deadlock macOS's
    AppleEvent manager.
 
 ### 4.3 Automation permission (TCC)
@@ -296,7 +228,7 @@ Commands: `web_automation_permission_status`, `request_automation_permission`,
 
 ### 4.4 Block page
 
-Same UX as the extension block page, bundled under `src-tauri/blocked/` and
+Bundled under `src-tauri/blocked/` and
 staged into the app resources at build time (`tauri.conf.json` →
 `bundle.resources`). No App Group, no Safari Web Extension, no Full Disk Access
 for website blocking on macOS.
@@ -316,83 +248,24 @@ flowchart TD
 
 ---
 
-## 5) Windows website blocking (extension + native host)
+## 5) Windows website blocking (UI Automation)
 
-Unchanged from v2. All supported browsers (Chrome, Brave, Edge, Firefox) use
-the **Digital Habits: Focus** extension.
+Chrome, Edge, Brave and Firefox use `uia_web_automation.rs` unconditionally.
+There is no browser setup or mechanism selector. The 1-second worker acts on the
+foreground window's active tab; background tabs are checked when brought forward.
 
-### 5.1 Native-messaging host
+Without active rules, queries run only for windows with pending restores. The
+restore ledger stores counts, not browsing history. Closing a window prunes its
+entry. Lock, display-off and session-disconnect independently suspend the worker.
 
-The main binary doubles as the host: `redd-block --native-host` (see
-`src-tauri/src/main.rs`). `native_host_install.rs` writes per-browser
-manifests pointing at the installed binary.
+Chrome/Edge use `OmniboxViewViews`; Brave uses `BraveOmniboxViewViews`; Firefox
+requires its `nav-bar` / `urlbar-input`. Navigation is guarded by foreground and
+address-bar focus checks. Unknown/unparseable/edited addresses deliberately allow
+that tick, without guessed input or failure escalation.
 
-Protocol (`native_host.rs`):
-
-- 4-byte little-endian length + UTF-8 JSON per message
-- on connect: read `redd-block-data.json`, derive website rules, push
-  `{ "blocklist": [...], "blocks": [...] }`
-- `blocklist` remains the legacy blocklist-only domain array; `blocks` is an
-  additive contract used for richer metadata and allowlist-aware website rules
-- re-push on file change (2 s mtime poll) and every 30 s (schedule time transitions)
-- empty list when nothing active → extension clears blocking
-
-### 5.2 Extension install
-
-`extension_install.rs` can auto-install or hint on Windows where supported.
-The extension performs the actual page redirect to `blocked.html` (shipped
-with the extension assets, not the Automation bundle path). Both copies share
-the same `blocked.js` contract: redirect URLs carry block metadata query params
-(including `mode=allowlist` vs `blocklist`) so subtitle, pill, site, reason,
-and countdown rows render identically on Automation and extension paths.
-
-### 5.3 Windows UI Automation and extension selection
-
-Chrome, Edge, Brave and Firefox default to UI Automation. Settings exposes
-Automation / Extension per installed browser in `settings.blockingMethods`,
-using the same persisted selection as macOS. Missing or invalid Windows
-values mean Automation; an explicit Extension value stops UI Automation for
-that browser. No organisation-policy prerequisite is used.
-
-- The 1 s watcher acts on the foreground window's active tab. Background
-  tabs/windows are handled when brought forward; redirects happen after load.
-- Without active blocks, address-bar queries only run for windows with pending
-  restores. Counts (not URLs) are saved in `uia-pending-restores.json` beside
-  the per-user data file, keyed by HWND and PID. A restore is confirmed on a
-  later tick; closing a window prunes its entry. Manually closing individual
-  parked tabs can leave conservative counts until their window closes. A
-  corrupt/missing ledger cannot recover old parked tabs while no block is active.
-- A hidden window receives display-power and session notifications. Screen-off,
-  lock and disconnect independently suspend the worker on a condition variable;
-  all must clear before its 1 s tick resumes. Dimmed screens remain active.
-  Registration failure logs a warning and retains normal enforcement polling.
-- Chrome/Edge use class `OmniboxViewViews`; Brave uses
-  `BraveOmniboxViewViews`. Firefox requires a direct-child `nav-bar` toolbar
-  with a `urlbar-input` combo box, never a matching input in page content.
-- Redirect/restore decisions use `block_page`; navigation uses UIA SetValue
-  then SendInput, guarded by foreground and address-bar focus checks.
-- Failures allow that tick: missing controls, unparseable text or an address
-  bar the user is editing cause no input. No broad input-box fallback exists.
-
-Automation needs no extension or permission-grant prompt on Windows. Setup
-and the opt-in compliance enforcer do not require an extension for automation
-browsers. Explicit Extension selection restores extension setup and policy
-warnings and ensures its native host is registered. Startup no longer writes
-extension-install hints. Existing extensions/host registrations are retained;
-an already installed extension may continue providing additional coverage.
-The UI explains that extension mode covers background tabs and blocks before
-pages load. macOS retains its Apple Events permission model, and Firefox on
-macOS still uses the extension. Mobile platforms have no method selector.
-
-The custom MSIX builder runs `scripts/stage-msix-resources.ps1` to copy the
-explicit `bundle.resources` mappings into the package root beside the executable.
-Windows `resource_dir()` resolves that executable directory. All three block-page
-assets must exist and match their source hashes before `makeappx` runs; the
-optional `release/resources` copy is not sufficient. Browser access to these
-files under `WindowsApps` still needs packaged-install verification.
-
-Standalone probes passed redirect/restore on Chrome, Edge, Brave and Firefox;
-these do not prove Rust app integration, schedule activation or MSIX access.
+The MSIX resource staging script must package `blocked/blocked.html`, its script
+and icon beside the executable, with matching hashes. A signed installed build
+and real browser redirect/restore remain separate release gates.
 
 ### 5.4 Windows watchdog
 
@@ -410,102 +283,42 @@ running; terminating the app stops its in-process enforcement until relaunch.
 
 ---
 
-## 6) macOS Firefox (extension path)
+## 6) macOS Firefox (Accessibility)
 
-Firefox on macOS follows the Windows-style extension + native-messaging model:
+`accessibility.rs` and `firefox_ax.rs` read the active document's `AXURL` and
+redirect using Firefox's Open Location action. They do not enumerate profiles.
+The active tab is enforced; background tabs are checked when brought forward.
+Typing/focus races defer input. URL decisions share the native block-page policy.
 
-- manifest in `~/Library/Application Support/Mozilla/NativeMessagingHosts/`
-- extension installed **manually** from the Firefox Add-ons store (no auto-install)
-- `profile_scan.rs` scans the Firefox profile for extension presence,
-  enabled state, and private-browsing allowance
-- the host-backed extension path consumes the same website allowlist semantics
-  as `src-tauri/src/web_automation.rs` (blocklist wins, then allowlist union);
-  only the enforcement location differs
-- enforcer treats Firefox like a Windows browser (extension compliance, not
-  Automation TCC) — unless Firefox is on the Accessibility method, where the
-  compliance signal is the grant instead (§6.1)
+Accessibility is a global user grant. Missing/revoked permission is shown as
+unavailable protection with an actionable System Settings step. Startup warm-up
+can return no URL while Firefox initializes its accessibility tree; this is
+unknown state, never a confirmed failure merely because time passes. Its actual
+gap and recovery after launch/grant/revoke require macOS runtime measurement.
 
-### 6.1) macOS Firefox (Accessibility path, opt-in)
+## 7) Native website failure handling
 
-`src-tauri/src/accessibility.rs` + `src-tauri/src/firefox_ax.rs`. Selected per
-user via `settings.blockingMethods.firefox = "accessibility"`; the extension
-stays the default, so existing installs are unaffected.
+Native workers report per-browser health. No separate compliance/profile scanner
+exists. The product policy requires a visible 60-second warning and recovery
+opportunity before quitting a browser for confirmed native enforcement failure.
+The retired extension enforcement toggle does not gate this policy.
 
-- **Reads** take `AXWebArea`'s `AXURL` — the document's real URL — rather than
-  the address-bar string, which is a display form with the scheme hidden,
-  `www.` sometimes trimmed and IDN rendered for humans. This is the parsing
-  hazard `BrowserUrlParserTest` exists for on Android, avoided rather than
-  parsed.
-- **The active tab only.** Accessibility exposes the laid-out document, so a
-  blocked page in a background tab is caught when the user switches to it.
-- **Redirects** press Firefox's "Open Location" menu item and type the URL,
-  because CoreGraphics keycodes are physical positions: keycode 37 is `L` on
-  QWERTY and `N` on Dvorak, where a synthesised Cmd+L would open a new window.
-  Events post to the browser's pid, so Firefox is never activated. A redirect
-  **defers** while the address bar has focus rather than clobbering what the
-  user is typing.
-- **Decisions reuse `web_automation`'s helpers verbatim** (`url_is_blocked`,
-  `build_blocked_url`, `is_block_page_url`, `original_url_from_block_page`),
-  so Firefox cannot drift into blocking a different set of URLs than the other
-  browsers. Only the transport differs.
-- **One global grant, not per-browser TCC.** It cannot be self-granted: the
-  system prompt only deep-links to System Settings, so the UI polls for the
-  switch being flipped.
-- **The engine is instantiated lazily** and the documented handshakes are
-  rejected on current builds (`AXEnhancedUserInterface` → -25208,
-  `AXManualAccessibility` → -25205) while the engine comes up anyway shortly
-  after the attempt. Reads therefore answer nothing for a second or two after
-  Firefox launches, and **Firefox is unenforced in that window** — one reason
-  the extension remains the default.
-- **Failures fall closed, then escalate.** A read that returns nothing means
-  "no decision", never "nothing is blocked", so an unidentified tab is left
-  alone. A *missing grant* is different: it is treated as non-compliance
-  (`ExtensionIssue::Accessibility`) and rides the enforcer's grace/force-quit
-  path, exactly as a denied Automation grant does, rather than leaving the user
-  believing Firefox is blocked while it is not.
+Qualifying evidence is a definitive required-permission denial, positively
+identified access prevention, or repeatedly verified redirect failure for a URL
+still blocked by current policy. Verification must wait for navigation and safely
+re-read the same relevant window without stealing focus. Unknown readings,
+editing, launch warm-up, focus races and absent acknowledgements do not qualify.
 
----
+At grace expiry revalidate active applicable rules, the same running browser
+instance, and the same unresolved failure. Recovery, block expiry/pause, browser
+closure/restart or successful navigation cancels the website action. App-blocking
+state remains independent. Quit only the affected browser politely, then use a
+bounded force-quit if still required. Hidden-app warnings and denied notification
+permission need runtime validation.
 
-## 7) Compliance enforcer
-
-`src-tauri/src/enforcer.rs` — in-process loop, **5 s** tick (1 s while a
-grace timer or browser close is in flight).
-
-### 7.1 When it runs
-
-The enforcer is active only when **all** of:
-
-1. `website_blocking_active()` — `derive_payload()` returns at least one block
-   with non-empty domains, blocklist **or** allowlist mode (respects pause,
-   schedule windows, one-off expiry). Allowlist domains never populate the
-   legacy flat domain list, so the gate reads the per-block metadata,
-2. `settings.enforcementEnabled === true` — user opt-in (default **off**),
-3. at least one enforced browser process is **running**.
-
-If no website block is active, the tick is a no-op and in-flight grace timers
-are cleared — a misconfigured extension outside a block is not policed.
-
-### 7.2 Compliance signal by browser
-
-| Platform | Browser | Compliance check |
-|---|---|---|
-| macOS | Safari, Chrome, Brave, Edge | Automation permission (`web_automation`); extension profile scan if switched to the extension method |
-| macOS | Firefox | Extension profile scan |
-| Windows | All | Extension profile scan |
-
-On macOS, profile directories for Chromium/Safari on the Automation method are
-**not** scanned during enforcement (avoids Sequoia “access data from other apps” prompts for browsers
-already on the Automation path).
-
-### 7.3 Grace and force-quit
-
-- Grace period: `settings.extensionGraceSeconds` (default 60 s, clamped 5–300 s)
-- Emits `enforcer://grace-update` with countdown; UI shows persistent banner
-- On expiry: SIGTERM then SIGKILL after 10 s (`taskkill` on Windows)
-- Emits `enforcer://browser-closed` when quit completes
-- Issue types include `ExtensionIssue::Automation` for macOS Safari/Chromium
-
----
+**Release gate:** OS signals that lack actual browser validation remain
+diagnostic-only. Automated state-machine tests cannot establish OS signal
+reliability. See [validation and remaining gates](docs/pr3-validation.md).
 
 ## 8) App blocking watcher
 
@@ -573,9 +386,7 @@ countdown can float over third-party fullscreen Spaces without stealing focus.
    — no separate daemon to sync to).
 3. Backends re-read canonical data:
    - Automation watcher: every tick
-   - Native host: on connect, 2 s file-change poll, 30 s poll
    - App watcher: on `set_blocked_apps` and each poll
-   - Enforcer: every 5 s via `derive_payload`
 
 ### 9.3 Stop = temporary unlock
 
@@ -610,7 +421,7 @@ schedule segments. Shared domains stay blocked while any source is active.
 When any **allowlist** source is active, the effective website policy becomes
 allow-union-minus-blocked (concurrent allowlists union their allowed sets;
 an explicitly blocked domain always wins on overlap) — same rule on both the
-Automation and extension channels, and mirrored on iOS (§12.3).
+native desktop transports, and mirrored on iOS (§12.3).
 `hasAnyEnforcedBlocks()` in `src/schedule-engine.js` gates override-all, uninstall prompts,
 and similar UX.
 
@@ -649,23 +460,23 @@ never active. Naming: “X” → “X copy” → “X copy 2” …
 1. Load canonical app data (`data.rs`)
 2. Run v1 migration if needed (`migration.rs`) — hosts cleanup + legacy helper
    removal; may prompt once for admin/UAC
-3. Register tray, enforcer, app watcher, native host manifests
+3. Register tray, app watcher and native website worker state
 4. macOS: start Automation watcher after EULA (`web_automation` auto-start)
 5. Reconcile launch-at-login (release builds only); Windows leaves legacy watchdog tasks untouched
-6. Frontend: EULA gate → browser setup (Automation rows + Firefox extension)
+6. Frontend: EULA gate → missing macOS permission actions (Windows skips browser setup)
 
 `check_helper_status()` always reports ready — the app **is** the runtime.
 
 ### 11.2 App close vs quit
 
-Closing the window hides to tray; **does not** stop enforcer, Automation watcher,
-app watcher, or native-host child processes. There is no Quit: the tray icon
+Closing the window hides to tray; **does not** stop native website workers,
+app watcher. There is no Quit: the tray icon
 has no menu, and both `RunEvent::ExitRequested` and the macOS
 `applicationShouldTerminate:` hook turn every exit request into a hide
 (`lib.rs`). The only exit is in-app uninstall's `std::process::exit(0)`.
 
 **macOS Dock / menu bar:** activation policy flips between Regular (window open:
-Dock + menu bar) and Accessory (hidden: tray only). Enforcer and watchers keep
+Dock + menu bar) and Accessory (hidden: tray only). Native workers keep
 running regardless.
 
 ### 11.3 Uninstall
@@ -673,7 +484,7 @@ running regardless.
 - macOS: modern `NSFileManager.trashItemAtURL` path first; legacy script fallback
 - Removes native-messaging manifests, legacy helper artifacts if present
 - **Keep blocking after uninstall** removed in v2 — uninstall stops blocking
-- Firefox extension on macOS may need manual removal (called out in UI)
+- Installed user extensions are left untouched; their standalone behavior is outside this app's control
 
 ### 11.4 v1.x migration
 
@@ -833,7 +644,6 @@ desktop `current_blocking` state and shows nothing on iOS).
 | App data (legacy per-user) | `~/Library/Application Support/com.redd.block/...` | `%APPDATA%\com.redd.block\...` | — |
 | App data (pre-3.x machine-wide; import source only) | `/var/lib/redd-block/redd-block-data.json` | `%PROGRAMDATA%\Digital Habits Blocker\redd-block-data.json` (legacy: `%PROGRAMDATA%\Fristed\...`, `%PROGRAMDATA%\ReDD Block\...`) | — |
 | Bundled block page | Inside `.app` Resources | Inside install dir | — |
-| Native host manifests | `~/Library/Application Support/<vendor>/NativeMessagingHosts/` | `HKCU\Software\<vendor>\...\NativeMessagingHosts\` | — |
 | Legacy helper state (v1 residue) | `/var/lib/redd-block/helper-state.json` | `%PROGRAMDATA%\ReDD Block\helper-state.json` | — |
 | Legacy hosts backup (v1 residue) | `/etc/hosts.redd-backup` | `...\etc\hosts.redd-backup` | — |
 
@@ -841,23 +651,10 @@ desktop `current_blocking` state and shows nothing on iOS).
 
 ## 14) Diagnostics
 
-`openDiagnosticsModal()` in `src/settings.js` → backend diagnostics commands in
-`src-tauri/src/commands/diagnostics.rs`.
-
-Desktop surfaces include:
-
-- app version and backend mode (`automation` on macOS, `extension` on Windows)
-- Automation permission status per browser (macOS)
-- extension scan summary (Firefox on macOS; all browsers on Windows)
-- current enforcement snapshot (`current_blocking`): per-block breakdown with
-  mode, plus allowlist state (`allowlist_active`, allowed website/app unions)
-- hosts file contents (should be clean post-migration)
-- relevant paths and logs
-
-`get_helper_diagnostics()` (shim) returns app version + backend label — not
-legacy helper daemon status.
-
----
+Diagnostics expose app/platform details, effective policy and native worker
+health, including actionable macOS permission state. They do not inspect browser
+profiles or extension installations. Missing resources/worker startup errors are
+internal failures; quitting requires confirmed impact on a particular browser.
 
 ## 15) Safety mechanisms (v3)
 
@@ -865,8 +662,8 @@ legacy helper daemon status.
 - Protected app filtering in app watcher
 - Apple Event serialization mutex (macOS Automation)
 - osascript timeout (8 s) so consent dialogs cannot block the watcher indefinitely
-- Enforcer gated on active website blocks + explicit user opt-in
-- Enforcer scans only **running** browsers
+- Native website failure actions require validated evidence and an active applicable policy
+- Native failure evidence is bound to the same **running** browser instance
 - v1 migration: hosts backup + validation before strip
 - Localhost validity checks in migration scripts
 
@@ -877,18 +674,17 @@ legacy helper daemon status.
 - Automation requires per-browser grant; denied grant blocks redirects until fixed
 - TCC cannot report Automation grant for a **closed** browser without launching it
 - Browser cache may delay visible redirect after a block starts
-- Firefox on macOS is manual-install only
-- Schedule boundary effects are tick-bounded (1 s Automation, 30 s native host, 5 s enforcer)
+- Firefox Accessibility startup warm-up is a release gate; an unknown read is not a failure
+- Schedule boundary effects are tick-bounded (native worker tick intervals)
 - `tauri dev` does not rewrite launch-at-login (release builds only)
-- iOS behavior must not be reasoned about through the desktop Automation/extension model
-- Windows native host and Automation watcher share one canonical data file — path must remain stable
+- iOS behavior must not be reasoned about through the desktop native transport model
+- All native desktop workers share one canonical data file — path must remain stable
 
 ---
 
 # Part II — v2 architecture (historical)
 
-> **Status:** Superseded on **macOS** by v3 Automation (v3.0+). **Windows**
-> still matches this model. Kept for upgrade context and git archaeology.
+> **Status:** Superseded on both desktops by native enforcement. Kept for upgrade context and git archaeology.
 
 v2 (v2.0 – v2.4.x) replaced the v1 helper daemon with an **extension-first**
 desktop design: no `/etc/hosts` writes, no privileged helper process, no admin
@@ -912,7 +708,7 @@ prompt at install (except one-time v1 cleanup).
 ```
 Digital Habits: Blocker app (Tauri)
  ├─ native_host.rs          ─ stdio host (Chromium/Firefox; Windows all)
- ├─ app_group.rs             ─ Safari App Group bridge [opt-in Safari extension mode only in v3]
+ ├─ app_group.rs             ─ Safari App Group bridge [retired desktop integration]
  ├─ redd-focus-web/         ─ vendored Safari extension bundle [REMOVED in v3]
  ├─ profile_scan.rs          ─ extension state from disk
  ├─ enforcer.rs              ─ force-quit non-compliant browsers
@@ -939,7 +735,7 @@ Digital Habits: Blocker app (Tauri)
 | Enforcer scans all browser profiles | Enforcer scans Firefox profile only; Safari/Chromium use Automation TCC |
 | Firefox auto-install hints on macOS | Manual install only |
 
-Windows and macOS Firefox in v3 still match the v2 extension column.
+This table describes the initial v3 transition. Desktop extension integration is now retired on Windows and macOS Firefox too; Part I describes current behavior.
 
 Further detail: `V2_OVERVIEW.md`, `MIGRATION_PLAN.md` and
 `SAFARI_COMPLIANCE.md` under `browser-ext-migration/` in git history (the
@@ -1055,4 +851,4 @@ When changing enforcement architecture:
 1. Update **Part I** first — it describes what ships today.
 2. Move replaced designs into **Part II** or **Part III** rather than deleting history.
 3. Keep file paths and tick intervals aligned with code comments at the top of
-   each module (`web_automation.rs`, `enforcer.rs`, `app_watcher.rs`, etc.).
+   each module (`web_automation.rs`, `native_failure.rs`, `app_watcher.rs`, etc.).

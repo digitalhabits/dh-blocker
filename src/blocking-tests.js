@@ -4230,7 +4230,7 @@
             assert(windowsBrowserSetupIsAutomatic(), 'Windows defaults skip browser setup');
             for (const browser of ['chrome', 'edge', 'brave', 'firefox']) {
                 state.appData.settings.blockingMethods = { [browser]: 'extension' };
-                assert(!windowsBrowserSetupIsAutomatic(), 'Explicit extension mode retains setup: ' + browser);
+                assert(windowsBrowserSetupIsAutomatic(), 'Legacy extension settings cannot restore setup: ' + browser);
             }
             state.isWindowsDesktop = false;
             state.appData.settings.blockingMethods = {};

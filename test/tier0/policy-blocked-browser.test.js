@@ -1,140 +1,113 @@
-import { describe, expect, test, vi } from 'vitest';
-
-// An organisation browser policy (NativeMessagingUserLevelHosts=0) stops the
-// browser reaching Blocker. Where nothing else blocks it (macOS extension mode),
-// the setup screen must say so instead of showing the browser as set up,
-// whatever state the extension itself is in.
-
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => []) }));
-vi.mock('@tauri-apps/api/window', () => ({
-    getCurrentWindow: () => ({ onFocusChanged: async () => () => {} }),
-}));
-vi.mock('@tauri-apps/plugin-dialog', () => ({ ask: vi.fn() }));
-
-const setUp = async () => {
-    const { state } = await import('../../src/state.js');
-    state.isMacOSDesktop = false;
-    state.isWindowsDesktop = false;
-    return import('../../src/enforcement.js');
-};
-const edge = (extra) => ({
-    installed: true,
-    profiles: [{ name: 'Default', isDefault: true, installed: true, enabled: true, privateBrowsing: true }],
-    ...extra,
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+const native = vi.hoisted(() => ({ listeners: new Map(), invoke: vi.fn(async () => true), finish: vi.fn(), permissions: [] }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: native.invoke }));
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async (name, callback) => { native.listeners.set(name, callback); return () => {}; }) }));
+vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ onFocusChanged: async () => () => {} }) }));
+vi.mock('../../src/app.js', () => ({ setLanguagePickerOpen: vi.fn() }));
+vi.mock('../../src/render.js', () => ({ kickClockNow: vi.fn() }));
+vi.mock('../../src/blocking-platform.js', () => ({ reconcileBlockingWarningShell: vi.fn() }));
+vi.mock('../../src/onboarding.js', () => ({ MIGRATION_POLL_MS: 2500, hasAcceptedEula: () => true, showMigrationOnboarding: vi.fn(), presentWelcomeOnboarding: vi.fn(), finishNativePermissionSetup: native.finish }));
+vi.mock('../../src/tauri-api.js', () => ({ tauriAPI: { webAutomationPermissionStatus: async () => native.permissions } }));
+import { state } from '../../src/state.js';
+import { renderNativePermissionRows, refreshAutomationPermissionStatus, setupNativeEnforcementAlerts, refreshNativePermissions, showNativeEnforcementWarning, acknowledgeVisibleNativeWarnings, hydrateNativeWarnings } from '../../src/enforcement.js';
+beforeEach(() => {
+    document.body.innerHTML = '<div class="app-container"><div id="migration-browser-buttons"></div></div>';
+    state.isMacOSDesktop = true; state.isWindowsDesktop = false; state.isIOS = false; state.isAndroid = false; state.migrationOnboardingActive = true;
+    native.finish.mockClear(); native.invoke.mockReset().mockResolvedValue(true); native.permissions = [];
 });
-
-describe('policy-blocked browsers', () => {
-    test('a fully set-up browser blocked by policy is not reported as compliant', async () => {
-        const { browserComplianceStatus } = await setUp();
-        expect(browserComplianceStatus('edge', edge({}))).toBe('compliant');
-        expect(browserComplianceStatus('edge', edge({ nativeHostBlockedByPolicy: true }))).toBe('policy-blocked');
+describe('native permission setup', () => {
+    test('granted permissions and absent browsers require no actions', async () => {
+        native.permissions = [{ label: 'Chrome', state: 'granted', running: true }];
+        await refreshAutomationPermissionStatus({ force: true });
+        await renderNativePermissionRows({ browsers: { chrome: { installed: true }, firefox: { installed: true } } });
+        expect(document.getElementById('migration-browser-buttons').children).toHaveLength(0);
+        expect(native.finish).toHaveBeenCalledOnce();
     });
-
-    test('policy wins over a missing extension, since installing it cannot help', async () => {
-        const { browserComplianceStatus } = await setUp();
-        expect(browserComplianceStatus('edge', edge({ profiles: [], nativeHostBlockedByPolicy: true }))).toBe('policy-blocked');
+    test('denied Automation and revoked Accessibility surface recovery actions', async () => {
+        native.permissions = [{ label: 'Chrome', state: 'denied', running: true }];
+        native.invoke.mockResolvedValue(false);
+        await refreshAutomationPermissionStatus({ force: true });
+        await renderNativePermissionRows({ browsers: { chrome: { installed: true }, firefox: { installed: true } } });
+        expect(document.querySelectorAll('#migration-browser-buttons button')).toHaveLength(2);
+        expect(native.finish).not.toHaveBeenCalled();
     });
-
-    test('the setup banner names the blocked browser first', async () => {
-        const { buildBannerActionSummary } = await setUp();
-        const summary = buildBannerActionSummary(
-            { edge: edge({ nativeHostBlockedByPolicy: true }), chrome: edge({ profiles: [] }) },
-            ['chrome', 'edge'],
-        );
-        expect(summary).toBe('Blocked by your organisation in Edge · Install in Chrome');
+    test('Windows has no browser setup rows', async () => {
+        state.isMacOSDesktop = false; state.isWindowsDesktop = true;
+        await renderNativePermissionRows({ browsers: { chrome: { installed: true } } });
+        expect(document.getElementById('migration-browser-buttons').children).toHaveLength(0);
+        expect(native.invoke).not.toHaveBeenCalled();
     });
 });
-
-// Windows: Chrome, Edge and Brave in that state are blocked through their
-// address bar instead (src-tauri/src/uia_web_automation.rs). There is nothing
-// for the user to do, so the row must not tell them blocking is broken.
-describe('policy-blocked browsers on Windows', () => {
-    const setUpWindows = async () => {
-        const { state } = await import('../../src/state.js');
-        state.isMacOSDesktop = false;
-        state.isWindowsDesktop = true;
-        state.appData.settings = { ...state.appData.settings, blockingMethods: {} };
-        return import('../../src/enforcement.js');
-    };
-
-    test('Windows defaults to automation without extension setup or permission prompts', async () => {
-        const { browserBlockingMethod, effectiveBrowserComplianceStatus, buildBannerActionSummary } = await setUpWindows();
-        const browsers = Object.fromEntries(['chrome', 'edge', 'brave', 'firefox'].map(key => [key, edge({ profiles: [], present: true })]));
-        for (const key of Object.keys(browsers)) {
-            expect(browserBlockingMethod(key)).toBe('automation');
-            expect(effectiveBrowserComplianceStatus(key, browsers)).toBe('compliant');
-        }
-        expect(buildBannerActionSummary(browsers, Object.keys(browsers))).toBe('');
+describe('native enforcement health', () => {
+    test('a diagnostic warning stays visible until recovery and never promises automatic closing', () => {
+        setupNativeEnforcementAlerts();
+        native.listeners.get('native-enforcement-warning')({ payload: { browser: 'Chrome', reason: 'Permission denied', diagnosticOnly: true } });
+        const banner = document.getElementById('native-enforcement-warning');
+        expect(banner.classList.contains('hidden')).toBe(false);
+        expect(banner.textContent).toContain('does not automatically close');
+        expect(banner.querySelector('.update-banner-dismiss')).toBeNull();
+        native.listeners.get('native-enforcement-recovered')({ payload: 'Chrome' });
+        expect(banner.classList.contains('hidden')).toBe(true);
     });
+});
 
-    test('fresh Windows setup completes without revealing the browser overlay', async () => {
-        await setUpWindows();
-        const { state } = await import('../../src/state.js');
-        const { ensureExtensionSetupOnboardingShown, EXT_ONBOARDING_DISMISSED_KEY } = await import('../../src/onboarding.js');
-        const { invoke } = await import('@tauri-apps/api/core');
-        state.isIOS = false;
-        state.isAndroid = false;
-        state.migrationOnboardingActive = false;
-        state.firstRunExtensionSetupPending = true;
-        state.appData.settings.onboardingComplete = false;
-        document.body.innerHTML = '<div id="migration-onboarding" class="hidden"></div><div id="main-content"></div>';
-        invoke.mockClear();
-        await ensureExtensionSetupOnboardingShown();
-        expect(state.firstRunExtensionSetupPending).toBe(false);
-        expect(state.migrationOnboardingActive).toBe(false);
-        expect(state.appData.settings.onboardingComplete).toBe(true);
-        expect(localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY)).toBeTruthy();
-        expect(invoke).toHaveBeenCalledWith('enforcer_start');
-        expect(document.getElementById('migration-onboarding').classList.contains('hidden')).toBe(true);
-    });
+test('validated failures show the named browser and remaining grace time', () => {
+    vi.useFakeTimers();
+    native.listeners.get('native-enforcement-warning')({ payload: { browser: 'Edge', reason: 'Redirect failed', diagnosticOnly: false, graceSeconds: 60 } });
+    const banner = document.getElementById('native-enforcement-warning');
+    expect(banner.textContent).toContain('Edge');
+    expect(banner.textContent).toContain('60 seconds');
+    vi.advanceTimersByTime(10000);
+    expect(banner.textContent).toContain('50 seconds');
+    native.listeners.get('native-enforcement-recovered')({ payload: 'Edge' });
+    expect(banner.classList.contains('hidden')).toBe(true);
+    vi.useRealTimers();
+});
 
-    test('explicit extension mode restores extension setup, including policy warnings', async () => {
-        const { browserBlockingMethod, effectiveBrowserComplianceStatus } = await setUpWindows();
-        const { state } = await import('../../src/state.js');
-        state.appData.settings.blockingMethods = { chrome: 'extension', firefox: 'extension' };
-        expect(browserBlockingMethod('chrome')).toBe('extension');
-        expect(effectiveBrowserComplianceStatus('chrome', { chrome: edge({ profiles: [] }) })).toBe('needs-install');
-        expect(effectiveBrowserComplianceStatus('chrome', { chrome: edge({ nativeHostBlockedByPolicy: true }) })).toBe('policy-blocked');
-        expect(effectiveBrowserComplianceStatus('firefox', { firefox: edge({ profiles: [] }) })).toBe('needs-install');
-    });
+test('successful permission polling cannot hide a native redirect failure', async () => {
+    showNativeEnforcementWarning({ browser: 'Chrome', reason: 'BlockedUrlRemains', diagnosticOnly: true });
+    native.permissions = [{ label: 'Chrome', state: 'granted', running: true }];
+    await refreshNativePermissions({ browsers: { chrome: { installed: true } } });
+    expect(document.getElementById('native-enforcement-warning').textContent).toContain('could not be redirected');
+    expect(document.getElementById('native-enforcement-warning').classList.contains('hidden')).toBe(false);
+    native.listeners.get('native-enforcement-recovered')({ payload: 'Chrome' });
+});
 
-    test('Chrome, Edge and Brave count as set up', async () => {
-        const { browserComplianceStatus } = await setUpWindows();
-        for (const key of ['chrome', 'edge', 'brave']) {
-            expect(browserComplianceStatus(key, edge({ nativeHostBlockedByPolicy: true }))).toBe('compliant');
-            expect(browserComplianceStatus(key, edge({ profiles: [], nativeHostBlockedByPolicy: true }))).toBe('compliant');
-        }
-    });
+test('an empty native inventory skips setup, but a missing inventory never implies granted access', async () => {
+    await renderNativePermissionRows({ browsers: {} });
+    expect(native.finish).toHaveBeenCalledOnce();
+    await expect(renderNativePermissionRows({})).rejects.toThrow('inventory unavailable');
+});
 
-    test('the setup banner does not list them', async () => {
-        const { buildBannerActionSummary } = await setUpWindows();
-        const { state } = await import('../../src/state.js');
-        state.appData.settings.blockingMethods.chrome = 'extension';
-        const summary = buildBannerActionSummary(
-            { edge: edge({ nativeHostBlockedByPolicy: true }), chrome: edge({ profiles: [] }) },
-            ['chrome', 'edge'],
-        );
-        expect(summary).toBe('Install in Chrome');
-    });
+test('warning acknowledgment requires a visible unobscured banner and is sent once', async () => {
+    showNativeEnforcementWarning({ browser: 'Edge', reason: 'BlockedUrlRemains', diagnosticOnly: false, warningId: 42 });
+    const banner = document.getElementById('native-enforcement-warning');
+    banner.getBoundingClientRect = () => ({ left: 0, top: 30, right: 600, bottom: 130, width: 600, height: 100 });
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    document.elementFromPoint = () => banner;
+    native.invoke.mockClear();
+    await acknowledgeVisibleNativeWarnings();
+    expect(native.invoke).not.toHaveBeenCalledWith('native_warning_visible', expect.anything());
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    document.elementFromPoint = () => document.body;
+    await acknowledgeVisibleNativeWarnings();
+    expect(native.invoke).not.toHaveBeenCalledWith('native_warning_visible', expect.anything());
+    document.elementFromPoint = () => banner;
+    await acknowledgeVisibleNativeWarnings();
+    await acknowledgeVisibleNativeWarnings();
+    expect(native.invoke.mock.calls.filter(([name]) => name === 'native_warning_visible')).toEqual([['native_warning_visible', { warningId: 42 }]]);
+    native.listeners.get('native-enforcement-recovered')({ payload: 'Edge' });
+});
 
-    test('macOS Firefox and mobile platforms retain extension semantics', async () => {
-        const { browserBlockingMethod } = await setUp();
-        const { state } = await import('../../src/state.js');
-        state.isMacOSDesktop = true;
-        state.appData.settings.blockingMethods = {};
-        expect(browserBlockingMethod('safari')).toBe('automation');
-        expect(browserBlockingMethod('firefox')).toBe('extension');
-        state.isMacOSDesktop = false;
-        expect(browserBlockingMethod('chrome')).toBe('extension');
-    });
-
-    test('the row explains the address-bar blocking instead of the policy warning', async () => {
-        const { renderBrowserInstallButtons } = await setUpWindows();
-        document.body.innerHTML = '<div id="migration-browser-buttons"></div>';
-        renderBrowserInstallButtons({ browsers: { edge: edge({ nativeHostBlockedByPolicy: true }) } }, { force: true });
-        const text = document.getElementById('migration-browser-buttons').textContent;
-        expect(text).toContain('address bar');
-        expect(text).not.toContain("won't work");
-        expect(text).not.toContain('organisation');
-    });
+test('authoritative empty worker snapshot clears missed recovery without clearing permission warnings', async () => {
+    native.permissions = [{ label: 'Chrome', state: 'denied', running: true }];
+    await refreshNativePermissions({ browsers: { chrome: { installed: true } } });
+    showNativeEnforcementWarning({ browser: 'Edge', reason: 'BlockedUrlRemains', diagnosticOnly: true, warningId: 77 });
+    native.invoke.mockResolvedValue({ pendingWarnings: [] });
+    await hydrateNativeWarnings();
+    const banner = document.getElementById('native-enforcement-warning');
+    expect(banner.textContent).toContain('Chrome');
+    expect(banner.textContent).not.toContain('Edge');
+    expect(banner.classList.contains('hidden')).toBe(false);
 });

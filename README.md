@@ -7,7 +7,7 @@ Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and th
 ## Features
 
 - **Cross-Platform** — Works on macOS 11+, Windows 10+, iOS (iPad/iPhone), and Android from the same Tauri UI codebase.
-- **Website Blocking** — Digital Habits: Blocker decides what to block. On **macOS**, Safari/Chrome/Brave/Edge use **Automation** (no extension); **Firefox** uses the Digital Habits: Focus extension. On **Windows**, Chrome/Brave/Edge/Firefox use the extension. On **iOS**, blocking uses Screen Time. On **Android**, blocking is enforced by the native AccessibilityService plugin.
+- **Website Blocking** — Digital Habits: Blocker decides what to block. On **macOS**, Safari/Chrome/Brave/Edge use **Automation** (no extension); **Firefox** uses Accessibility. On **Windows**, Chrome/Brave/Edge/Firefox use native UI Automation. On **iOS**, blocking uses Screen Time. On **Android**, blocking is enforced by the native AccessibilityService plugin.
 - **App Blocking** — Closes distracting apps on desktop (warning overlay → save window → polite quit → force-close if needed), uses Screen Time shield overlays on iOS, and uses the Android AccessibilityService/friction gate on Android.
 - **Focus Spaces** — Create multiple Focus Spaces with custom names, colors, and emojis, each blocking or allowing only what you choose
 - **Manual Focus Spaces** — Switch a Focus Space on whenever you need it; it runs until you turn it off
@@ -19,49 +19,45 @@ Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and th
 
 ## How it works
 
-> **v3 (current).** Digital Habits: Blocker is a single unprivileged app — no helper daemon, no `hosts` file writes. On **macOS**, Safari/Chrome/Brave/Edge website blocking uses **Automation** (Apple Events); **Firefox** still uses the Digital Habits: Focus extension. On **Windows**, all supported browsers use the extension. macOS may ask for your password **once** when cleaning up leftover v1.x components.
+> **v3 (current).** Digital Habits: Blocker is a single unprivileged app — no helper daemon, no `hosts` file writes. On **macOS**, Safari/Chrome/Brave/Edge website blocking uses **Automation** (Apple Events); **Firefox** uses Accessibility. On **Windows**, all supported browsers use native UI Automation. macOS may ask for your password **once** when cleaning up leftover v1.x components.
 
 Digital Habits: Blocker is **one app**. When you start a block, it does two things:
 
 | | What gets blocked | Who does the blocking (desktop) |
 |---|-------------------|----------------------------------|
-| **Websites** | URLs in your blocklists | **macOS:** Automation for Safari/Chrome/Brave/Edge; Digital Habits: Focus extension for Firefox. **Windows:** Digital Habits: Focus extension |
+| **Websites** | URLs in your blocklists | **macOS:** Automation for Safari/Chrome/Brave/Edge; Accessibility for Firefox. **Windows:** native UI Automation |
 | **Apps** | Programs in your blocklists | **Digital Habits: Blocker** — closes them for you |
 
 ```mermaid
 flowchart LR
   RB[Digital Habits: Blocker]
-  RB --> WEB[Websites<br/>Automation or extension]
+  RB --> WEB[Websites<br/>Native browser automation]
   RB --> APP[Apps<br/>closed by Digital Habits: Blocker]
 ```
 
 ### Website blocking (desktop)
 
-**Digital Habits: Blocker** stores your blocklists and enforces them. macOS and Windows use different plumbing — see the tables below.
+| Platform | Browsers | Native transport | Required grant |
+|---|---|---|---|
+| macOS | Safari, Chrome, Brave, Edge | Apple Events | Automation for the affected browser |
+| macOS | Firefox | Accessibility | Accessibility for Digital Habits: Blocker |
+| Windows | Chrome, Edge, Brave, Firefox | UI Automation | No browser-setup step |
 
-**macOS**
+Browser extensions and browser profiles are not inspected or used. Existing
+extension selections no longer choose an enforcement method. Rules, schedules,
+pauses and override challenges retain their meaning.
 
-| Browser | How blocking works | Extension setup |
-|---------|-------------------|-----------------|
-| Safari, Chrome, Brave, Edge | **Automation** (Apple Events) — Digital Habits: Blocker redirects blocked tabs | Digital Habits: Blocker prompts for Automation in System Settings → Privacy & Security → Automation |
-| Firefox | Digital Habits: Focus extension | Install manually from the [Digital Habits: Focus Firefox add-on](https://addons.mozilla.org/en-US/firefox/addon/digitalhabits-focus/) — Digital Habits: Blocker does **not** auto-install on macOS |
+Windows and macOS Firefox act on the active tab; background tabs are checked
+when brought forward. An unreadable URL or an address bar being edited is left
+alone and retried on later ticks. This deliberately allows unknown state rather
+than guessing a redirect or closing a browser on ambiguous evidence.
 
-**Windows**
-
-| Browser | How blocking works | Extension setup |
-|---------|-------------------|-----------------|
-| Chrome, Brave, Edge, Firefox | Native messaging (stdio) — the extension wakes Digital Habits: Blocker in the background to fetch the blocklist | Digital Habits: Blocker can auto-install extension hints where supported |
-
-**How native messaging works (Windows)**
-
-1. The extension needs the current blocklist.
-2. The browser **cannot read Digital Habits: Blocker's window**, so it wakes up Digital Habits: Blocker **in the background** — same app you installed, **no new window appears**.
-3. Digital Habits: Blocker sends the list to the extension and exits.
-4. The extension blocks matching sites.
-
-You never open anything extra or run a second program. It's just how Chrome/Firefox talk to local apps.
-
-While a block is active, Digital Habits: Blocker can warn you or quit browsers if website blocking stops working (e.g. Automation denied on Safari/Chrome, or the Firefox extension disabled).
+Missing macOS grants are shown with a recovery action. The native failure policy
+uses a 60-second warning before closing only an affected browser, and requires
+confirmed unresolved failure, a running matching browser instance and an active
+website policy. **Unvalidated failure signals remain diagnostic-only.** See
+[the validation record](docs/pr3-validation.md) for release gates, including
+Firefox startup warm-up and signed installed-build checks.
 
 ### App blocking (desktop)
 
@@ -91,9 +87,8 @@ You can open `src-tauri/gen/android/` in Android Studio to inspect, run, and bui
 
 ### Permissions (desktop)
 
-- **Extensions:** install Digital Habits: Focus in Firefox (macOS) or in each browser you use on Windows.
 - **macOS — Automation:** Safari, Chrome, Brave, and Edge need **Automation** permission so Digital Habits: Blocker can redirect blocked tabs. Digital Habits: Blocker walks you through this during setup; no Full Disk Access is required.
-- **macOS — Firefox:** install Digital Habits: Focus manually from the Add-ons store and allow it in private windows.
+- **macOS — Firefox:** grant Accessibility in System Settings. A missing or revoked grant means Firefox protection is unavailable.
 - **No** admin or UAC prompt at install time (macOS may ask once when cleaning up leftover v1.x components).
 
 ### Upgrading from v1.x
@@ -101,12 +96,12 @@ You can open `src-tauri/gen/android/` in Android Studio to inspect, run, and bui
 If you previously ran Digital Habits: Blocker, **Fristed**, or ReDD Block 1.x (helper daemon + hosts file), the first launch after upgrade:
 
 1. Cleans up the old hosts-file entries and helper daemon (macOS may ask for your password once).
-2. Registers launch-at-login and (on Windows) native-messaging manifests for the extension.
-3. Walks you through browser setup — Automation for Safari/Chrome/Brave/Edge on macOS; Digital Habits: Focus extension on Windows and for Firefox on macOS.
+2. Registers launch-at-login and removes only owned legacy extension integration artifacts.
+3. Shows missing macOS permission actions; Windows has no browser-setup screen.
 
 ### Developers
 
-Implementation details and module map: [architecture.md](architecture.md) (v3 current; v2/v1 historical). The [browser-ext-migration/](browser-ext-migration/) folder documents the v2 extension architecture — still accurate for **Windows**; macOS website blocking moved to Automation in v3.
+Implementation details and module map: [architecture.md](architecture.md) (v3 current; v2/v1 historical). Desktop extension integration is retired; historical descriptions are not current enforcement guidance.
 
 ## Local Development
 
@@ -220,7 +215,7 @@ pnpm dev                   # Start the app
 
 **2. Integration Tests (in-app, profile-based)**
 
-Creates real blocks using safe `.invalid` domains and exercises app → Tauri command paths (save, pause/resume, scoped clear, app-blocking commands, migration hosts cleanup). Does **not** fully prove website blocking on v3 — use the manual checklist for Automation redirects and extension enforcement.
+Creates real blocks using safe `.invalid` domains and exercises app → Tauri command paths (save, pause/resume, scoped clear, app-blocking commands, migration hosts cleanup). Does **not** fully prove website blocking on v3 — use the manual checklist for native browser redirects.
 
 ```bash
 # In the dev console:
@@ -239,7 +234,7 @@ pnpm ui:shoot --screen=week-crowded --measure    # one screen, with measured geo
 
 **4. Manual Checklist**
 
-See `scripts/manual-test-checklist.md` for the full pre-release checklist. Key items: macOS Automation setup + enforcer (Safari/Chrome/Brave/Edge), Firefox/Windows extension install, hide-on-close + launch-at-login, v1.x migration cleanup, Screen Time (iOS).
+See `scripts/manual-test-checklist.md` for the full pre-release checklist. Key items: macOS Automation and Accessibility grants, Windows UI Automation, native failure recovery, hide-on-close + launch-at-login, v1.x migration cleanup, Screen Time (iOS).
 
 ## Project Structure
 
@@ -253,11 +248,8 @@ redd-block/
 │   ├── src/
 │   │   ├── lib.rs                # App setup, tray, hide-on-close, autostart
 │   │   ├── app_watcher.rs        # In-process app watcher (sysinfo poll + quit)
-│   │   ├── enforcer.rs           # Compliance enforcer (Automation TCC on macOS Safari/Chromium; extension elsewhere)
 │   │   ├── web_automation.rs     # macOS Automation tab blocking (Safari, Chrome, Brave, Edge)
-│   │   ├── native_host.rs        # Headless native-messaging host (Windows / Firefox blocklist feed)
-│   │   ├── native_host_install.rs # Registers native-messaging manifests (Windows; skipped on macOS)
-│   │   ├── profile_scan.rs       # Reads browser profile files
+│   │   ├── website_policy.rs     # Shared desktop rules and schedule/pause derivation
 │   │   └── commands/             # IPC commands (data, apps, migration, …)
 │   ├── blocked/                  # Block page bundled for macOS Automation redirects
 │   ├── entitlements.macos.plist  # macOS Automation (Apple Events) entitlement
@@ -324,7 +316,7 @@ On **Windows** and **macOS Firefox**, the native-messaging host re-reads this fi
 User data is preserved unless manually deleted. Uninstalling the app also removes:
 
 - the launch-at-login / login-item entry registered by `tauri-plugin-autostart`,
-- the native-messaging manifests and registry keys (Windows) written by `install_native_host` (macOS uses Automation instead and does not auto-write Firefox manifests).
+- app-owned legacy native-messaging manifests and registration entries, when ownership can be established. User extensions, browser profiles and organisation policy are not modified.
 
 Active blocks stop firing once the app is gone because the app itself is now the enforcement engine. A paid-for-itself "keep blocking after uninstall" mode is no longer provided.
 

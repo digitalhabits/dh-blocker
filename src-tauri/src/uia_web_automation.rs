@@ -55,8 +55,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::block_page;
-use crate::blocking_method::{self, Method};
-use crate::native_host;
+use crate::website_policy;
 
 /// Same cadence as the macOS Automation watcher.
 const TICK: Duration = Duration::from_millis(1000);
@@ -75,19 +74,6 @@ enum UiaBrowser {
 }
 
 impl UiaBrowser {
-    fn should_watch(self, method: Method) -> bool {
-        method == Method::Automation
-    }
-
-    fn setting_key(self) -> &'static str {
-        match self {
-            UiaBrowser::Chrome => "chrome",
-            UiaBrowser::Edge => "edge",
-            UiaBrowser::Brave => "brave",
-            UiaBrowser::Firefox => "firefox",
-        }
-    }
-
     fn window_class(self) -> &'static str {
         match self {
             UiaBrowser::Firefox => "MozillaWindowClass",
@@ -145,6 +131,7 @@ impl UiaBrowser {
 /// Screen-off and locked/disconnected sessions suspend the worker. Idle ticks
 /// never query a browser unless its window has a pending restore.
 pub fn start(app: AppHandle, block_page_url: String) {
+    crate::native_failure::record_health("windowsUIA", "starting", None);
     let activity = activity::start();
     std::thread::spawn(move || {
         // UI Automation clients belong in the multithreaded apartment; this
@@ -154,12 +141,22 @@ pub fn start(app: AppHandle, block_page_url: String) {
             match CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER) {
                 Ok(a) => a,
                 Err(e) => {
+                    crate::native_failure::record_health(
+                        "windowsUIA",
+                        "unavailable",
+                        Some(&format!("COM initialization failed: {e}")),
+                    );
                     log::warn!("uia_web_automation: cannot create IUIAutomation: {e}");
                     return;
                 }
             }
         };
         let Some(path) = crate::commands::canonical_data_path(&app) else {
+            crate::native_failure::record_health(
+                "windowsUIA",
+                "unavailable",
+                Some("App data path unavailable"),
+            );
             return;
         };
         let pending = pending::Pending::load(path.with_file_name("uia-pending-restores.json"));
@@ -175,6 +172,11 @@ pub fn start(app: AppHandle, block_page_url: String) {
         };
         loop {
             activity.wait_for_tick(TICK);
+            crate::native_failure::record_health(
+                "windowsUIA",
+                "running",
+                Some("Foreground-only worker; OS redirect validation remains pending"),
+            );
             watcher.tick(&app);
         }
     });
@@ -198,14 +200,22 @@ struct Watcher {
 impl Watcher {
     fn tick(&mut self, app: &AppHandle) {
         if self.activity.suspended() {
+            crate::native_failure::record_health(
+                "windowsUIA",
+                "suspended",
+                Some("Desktop locked, disconnected, or display asleep"),
+            );
+            crate::native_failure::clear_all();
             return;
         }
         self.pending.retain(live_restore_window);
         self.restoring.retain(|key, _| live_restore_window(key));
         let now = Instant::now();
         let Some((hwnd, browser)) = foreground_browser_window() else {
+            crate::native_failure::clear_all();
             return;
         };
+        crate::native_failure::retain_browsers(&[browser.label()]);
         let key = hwnd.0 as isize;
         if self
             .last_action
@@ -218,31 +228,51 @@ impl Watcher {
         // Read the blocks only once a window needs judging; idle ticks with
         // no browser in front cost two Win32 calls.
         let Some(path) = crate::commands::canonical_data_path(app) else {
+            crate::native_failure::clear_all();
             return;
         };
-        if !browser.should_watch(blocking_method::method_for_key_at_path(
-            &path,
-            browser.setting_key(),
-        )) {
+        let eula_accepted = crate::data_cache::read(&path).is_some_and(|data| {
+            data.get("settings").is_some_and(|settings| {
+                settings
+                    .get("eulaAcceptedRevision")
+                    .and_then(|v| v.as_u64())
+                    .is_some_and(|r| r > 0)
+                    || settings.get("eulaAccepted").and_then(|v| v.as_bool()) == Some(true)
+            })
+        });
+        if !eula_accepted {
+            crate::native_failure::clear_all();
             return;
         }
-        let (_domains, blocks) = native_host::derive_payload(&path);
+        let (_domains, blocks) = website_policy::derive_payload(&path);
         let restore_key = restore_window_key(hwnd);
         if !polling::needs_address_bar(!blocks.is_empty(), self.pending.count(&restore_key)) {
+            crate::native_failure::clear_browser(browser.label());
             self.omnibox = None;
             return;
         }
         if self.activity.suspended() {
+            crate::native_failure::clear_all();
             return;
         }
 
         let Some(omnibox) = self.omnibox_for(hwnd, browser) else {
+            crate::native_failure::record_health(
+                "windowsUIA",
+                "unavailable",
+                Some("Foreground browser address bar unavailable; blocking unverified"),
+            );
+            crate::native_failure::clear_browser(browser.label());
             return;
         };
         let text = match read_address_bar(&omnibox) {
-            Ok(AddressBar::Editing) => return,
+            Ok(AddressBar::Editing) => {
+                crate::native_failure::clear_browser(browser.label());
+                return;
+            }
             Ok(AddressBar::Showing(text)) => text,
             Err(e) => {
+                crate::native_failure::clear_browser(browser.label());
                 log::debug!(
                     "uia_web_automation: reading {} address bar failed: {e}",
                     browser.label()
@@ -260,17 +290,46 @@ impl Watcher {
         let Some(target) =
             block_page::plan_address_bar_action(&text, &blocks, &self.block_page_url)
         else {
+            crate::native_failure::clear_browser(browser.label());
             return;
         };
         self.last_action
             .retain(|_, t| now.duration_since(*t) < ACTION_COOLDOWN);
         self.last_action.insert(key, now);
         if self.activity.suspended() {
+            crate::native_failure::clear_all();
             return;
         }
         match navigate(&omnibox, hwnd, &target, &self.activity) {
             Ok(()) => {
                 if block_page::is_block_page_url(&target, &self.block_page_url) {
+                    if let Some(original) = block_page::address_bar_text_to_url(&text) {
+                        let mut pid = 0;
+                        unsafe {
+                            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+                        }
+                        crate::native_failure::verify_redirect(
+                            app,
+                            browser.label(),
+                            pid,
+                            &original,
+                            &target,
+                            &restore_key,
+                            || {
+                                if self.activity.suspended()
+                                    || unsafe { GetForegroundWindow() } != hwnd
+                                {
+                                    return None;
+                                }
+                                match read_address_bar(&omnibox).ok()? {
+                                    AddressBar::Showing(text) => {
+                                        block_page::address_bar_text_to_url(&text)
+                                    }
+                                    AddressBar::Editing => None,
+                                }
+                            },
+                        );
+                    }
                     self.pending.redirected(&restore_key);
                 } else {
                     // Keep the count until the next tick observes the destination.
@@ -286,14 +345,18 @@ impl Watcher {
                 }
             );
             }
-            Err(e) => log::warn!(
-                "uia_web_automation: navigating {} window failed: {e}",
-                browser.label()
-            ),
+            Err(e) => {
+                crate::native_failure::clear_browser(browser.label());
+                log::warn!(
+                    "uia_web_automation: navigating {} window failed: {e}",
+                    browser.label()
+                );
+            }
         }
     }
 
     fn omnibox_for(&mut self, hwnd: HWND, browser: UiaBrowser) -> Option<IUIAutomationElement> {
+        crate::native_failure::retain_browsers(&[browser.label()]);
         let key = hwnd.0 as isize;
         if let Some((cached_hwnd, element)) = &self.omnibox {
             if *cached_hwnd == key {
@@ -456,6 +519,9 @@ fn navigate(
         if activity.suspended() {
             return Err("desktop suspended".into());
         }
+        if GetForegroundWindow() != hwnd {
+            return Err("window lost the foreground before focus".into());
+        }
         omnibox.SetFocus().map_err(|e| format!("focus: {e}"))?;
         let value: IUIAutomationValuePattern = omnibox
             .GetCurrentPatternAs(UIA_ValuePatternId)
@@ -500,14 +566,6 @@ fn navigate(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn watcher_respects_selected_method_for_every_browser() {
-        for browser in UiaBrowser::all() {
-            assert!(browser.should_watch(Method::Automation));
-            assert!(!browser.should_watch(Method::Extension));
-        }
-    }
 
     #[test]
     fn firefox_requires_its_own_process_and_window_class() {

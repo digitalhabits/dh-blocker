@@ -179,9 +179,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build Safari bridge dylib
-        run: bash ./scripts/build-safari-bridge.sh
-
       # macOS is the only host that compiles every tested module (see
       # rust-ci.yml), and this job already has the toolchain and warm cache, so
       # the release gets the backend suite here rather than in `checks`.

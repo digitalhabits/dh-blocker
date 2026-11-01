@@ -1,11 +1,8 @@
 //! Shared parse cache for the canonical data file.
 //!
-//! The enforcement loops re-derive state from `redd-block-data.json` on
-//! every tick — the Automation watcher every 1 s (plus one
-//! `blockingMethods` lookup per running browser), the app-watcher sync
-//! loop every 2 s (twice: blocked + allowed apps), and the enforcer
-//! every 5 s (up to three separate reads). That added up to several
-//! full disk-read + JSON-parse round-trips per second in steady state.
+//! Native website and app watchers derive policy on their own ticks.
+//! Share the parsed file to avoid repeated disk reads while keeping all
+//! time-dependent decisions live.
 //!
 //! This module caches the *parsed* `serde_json::Value` keyed on the
 //! file's (mtime, len). Derivations stay live — they depend on `now()`
@@ -13,7 +10,7 @@
 //! file is only ever replaced via atomic rename
 //! (`write_data_file_atomic`), which always produces a fresh mtime, so
 //! the (mtime, len) key is a reliable change signal even for writes
-//! from other processes (the browser-spawned native host). Same-process
+//! from other processes. Same-process
 //! writers additionally call [`invalidate`] so a rewrite within the
 //! filesystem's timestamp granularity can't serve a stale snapshot.
 

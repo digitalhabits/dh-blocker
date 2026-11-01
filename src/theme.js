@@ -8,8 +8,8 @@ import { updateOverrideAllButtonVisibility, refreshUninstallButtonState } from '
 import { stopHelperUiRefreshLoop } from './modal-manager.js';
 import { saveData } from './persistence.js';
 import { getLiveTimePickerContainer, syncEnterSchedulerSheetLayout } from './confirm-modals.js';
-import { wireEnforcementToggle, wireBlockingMethodSettings, resetSettingsEnforcementSection } from './enforcement.js';
-import { applyEnforcementDescCopy } from './onboarding.js';
+import { resetSettingsEnforcementSection } from './enforcement.js';
+import { /* no action needed */ } from './onboarding.js';
 import {
     setLanguagePickerOpen,
     applySettingsLanguage,
@@ -63,14 +63,11 @@ export function setupTheme() {
             settingsModal.classList.remove('hidden');
             syncFooterZoomControl(getActiveUiZoomScale());
             resetSettingsEnforcementSection();
-            void applyEnforcementDescCopy(state.lastMigrationBrowserState);
             // Re-evaluate the in-app Uninstall button (Mac only): a
             // schedule could have fired since the modal was last open,
             // flipping the disabled state. Cheap; idempotent.
             refreshUninstallButtonState();
             updateOverrideAllButtonVisibility();
-            void wireEnforcementToggle();
-            void wireBlockingMethodSettings();
             // Set current theme selection
             if (themeSelect) {
                 const currentTheme = state.appData.settings?.themeMode || 'system';
@@ -618,9 +615,9 @@ export function setupUiZoomShortcuts() {
 
     if (state.isIOS) return;
 
-    tauriAPI.onMenuZoomIn(() => zoomUiIn({ showToast: true })).catch(() => { });
-    tauriAPI.onMenuZoomOut(() => zoomUiOut({ showToast: true })).catch(() => { });
-    tauriAPI.onMenuZoomReset(() => resetUiZoom({ showToast: true })).catch(() => { });
+    tauriAPI.onMenuZoomIn(() => zoomUiIn({ showToast: true })).catch(() => { /* no action needed */ });
+    tauriAPI.onMenuZoomOut(() => zoomUiOut({ showToast: true })).catch(() => { /* no action needed */ });
+    tauriAPI.onMenuZoomReset(() => resetUiZoom({ showToast: true })).catch(() => { /* no action needed */ });
 
     document.addEventListener('keydown', (e) => {
         const hasAccel = e.metaKey || e.ctrlKey;

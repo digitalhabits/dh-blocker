@@ -43,9 +43,12 @@ Several parts of the codebase look like bugs until you apply this:
 - Override challenges (`src/override-challenge.js`) make unblocking
   deliberately effortful. Making them cheaper or skippable is a product
   regression, not an ergonomics win.
-- The compliance enforcer force-quits non-compliant browsers, and is
-  nonetheless **opt-in and default off** (`settings.enforcementEnabled`).
-  Escalation is a choice the user makes, not one we make for them.
+- Native website failure handling is separate from app blocking. Unknown URL
+  reads, typing/focus races and Firefox startup warm-up never become confirmed
+  failures through elapsed time. Only platform-validated evidence may enable
+  browser quitting, after a visible 60-second recovery grace and revalidation
+  of the same browser instance, active policy and unresolved failure. The old
+  `settings.enforcementEnabled` extension toggle must not gate this response.
 
 **The adversary is a distracted user, not a technical one.** Our users are
 non-technical: the bypass we design against is the one reachable in a weak
@@ -134,16 +137,16 @@ shared PC gave a whole family one blocklist and made writes fail for whoever
 did not create the file; those locations are now import sources only, read once
 per account. Do not reintroduce a machine-wide branch — two accounts resolving
 to one file is the bug, not the feature. The frontend writes it via
-`save_data`; every backend re-reads it. `native_host::derive_payload()` computes
+`save_data`; every backend re-reads it. `website_policy::derive_payload()` computes
 effective website rules: blocklist domains always block; when any allowlist
 source is active, policy is `allowed-union − blocked-union` (blocklist wins on
 overlap). iOS uses its own App Group store, not this file.
 
 ### Enforcement per platform
-- **macOS websites:** Automation (Apple Events) in `src-tauri/src/web_automation.rs` — 1 s tick, redirects blocked tabs in Safari/Chrome/Brave/Edge to a bundled block page (`src-tauri/blocked/`). Firefox is the exception: it uses the extension + native-messaging host.
-- **Windows websites:** Digital Habits: Focus extension + native-messaging host (`native_host.rs`); the same binary runs as the host via `redd-block --native-host`. Where organisation policy blocks that host, Chrome/Edge/Brave fall back to UI Automation on the foreground window (`src-tauri/src/uia_web_automation.rs`), sharing URL decisions with macOS through `block_page.rs`.
-- **Desktop apps (both OSes):** in-process poll-and-quit watcher, `src-tauri/src/app_watcher.rs` (1 s tick, PID state machine: warn → 30 s grace → polite quit → SIGKILL). Allow-mode inverts the target set.
-- **Compliance enforcer** (`src-tauri/src/enforcer.rs`, 5 s tick): force-quits non-compliant *running* browsers during active website blocks — opt-in only.
+- **macOS websites:** Apple Events in `src-tauri/src/web_automation.rs` for Safari/Chrome/Brave/Edge; Accessibility in `firefox_ax.rs` for Firefox. Missing grants must remain visible and actionable.
+- **Windows websites:** native UI Automation in `src-tauri/src/uia_web_automation.rs` for Chrome/Edge/Brave/Firefox. There is no extension method or browser setup.
+- **Desktop apps (both OSes):** independent in-process poll-and-quit watcher, `src-tauri/src/app_watcher.rs`. Preserve its warning/grace behavior when changing website failure handling.
+- **Native website failures:** worker-reported health, without a profile/compliance scanner. Leave unvalidated signals diagnostic-only; track release gates in `docs/pr3-validation.md`.
 - **iOS:** Apple Screen Time via `tauri-plugin-screentime/` (Swift). No file, no extension, no process watching. Allow-mode uses `.all(except:)` with a 50-item cap.
 - **Android:** `tauri-plugin-android-blocker/` — Kotlin AccessibilityService applies the block/friction gate, WorkManager handles schedule transitions; Rust only bridges Tauri commands.
 
@@ -244,10 +247,10 @@ mode via the dev console. Full details, including the "What runs in CI" table:
   `BlockerServiceTest` (an event arrives → the gate launches, or provably does
   not) and `UnlockActivityTest` (challenge, pause commit, dismissal).
   **`Schedules.kt` re-implements semantics the desktop side derives in
-  `native_host::derive_payload`, and nothing but these tests keeps the two in
+  `website_policy::derive_payload`, and nothing but these tests keeps the two in
   step** — a change to blocking semantics needs a case on both sides.
 - **Rust backend**: `#[cfg(test)]` unit tests in the module under test.
-- **Website-enforcement correctness** (Automation redirects, extension blocking)
+- **Website-enforcement correctness** (native browser redirects)
   is validated manually — `scripts/manual-test-checklist.md`.
 
 ### Write the failing test first

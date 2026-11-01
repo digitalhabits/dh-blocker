@@ -28,14 +28,14 @@ describe('Firefox blocking method', () => {
         expect(e.browserBlockingMethod('firefox')).toBe('automation');
         expect(e.browserUsesAutomation('firefox')).toBe(true);
         expect(e.browserUsesAccessibility('firefox')).toBe(false);
-        expect(e.methodOptionsForKey('firefox')).toEqual(['automation', 'extension']);
+        expect(e.methodOptionsForKey('firefox')).toEqual(['automation']);
         expect(e.methodIsValidForKey('firefox', 'accessibility')).toBe(false);
     });
 
-    test('defaults to the extension, so existing installs are untouched', async () => {
+    test('defaults to native accessibility', async () => {
         const e = await load();
-        expect(e.browserBlockingMethod('firefox')).toBe('extension');
-        expect(e.browserUsesAccessibility('firefox')).toBe(false);
+        expect(e.browserBlockingMethod('firefox')).toBe('accessibility');
+        expect(e.browserUsesAccessibility('firefox')).toBe(true);
     });
 
     test('can be switched to accessibility', async () => {
@@ -48,7 +48,7 @@ describe('Firefox blocking method', () => {
 
     test('never resolves to automation, even if the data file says so', async () => {
         const e = await load({ methods: { firefox: 'automation' } });
-        expect(e.browserBlockingMethod('firefox')).toBe('extension');
+        expect(e.browserBlockingMethod('firefox')).toBe('accessibility');
         expect(e.browserUsesAutomation('firefox')).toBe(false);
     });
 
@@ -71,13 +71,13 @@ describe('Firefox blocking method', () => {
 
     test('offers each browser only the methods it can enforce with', async () => {
         const e = await load();
-        expect(e.methodOptionsForKey('firefox')).toEqual(['extension', 'accessibility']);
-        expect(e.methodOptionsForKey('chrome')).toEqual(['automation', 'extension']);
+        expect(e.methodOptionsForKey('firefox')).toEqual(['accessibility']);
+        expect(e.methodOptionsForKey('chrome')).toEqual(['automation']);
     });
 
-    test('off macOS everything stays on the extension', async () => {
+    test('off macOS accessibility is not used', async () => {
         const e = await load({ mac: false, methods: { firefox: 'accessibility' } });
-        expect(e.browserBlockingMethod('firefox')).toBe('extension');
+        expect(e.browserBlockingMethod('firefox')).toBe('automation');
         expect(e.browserUsesAccessibility('firefox')).toBe(false);
     });
 });

@@ -2,10 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>com.apple.security.application-groups</key>
-	<array>
-		<string>group.com.reddblock.shared</string>
-	</array>
 	<!-- Required for the hardened-runtime parent app to send Apple Events
 	     (AppleScript) to other apps. Without this, macOS denies the event
 	     with errAEEventNotPermitted (-1743) in the signed build even after

@@ -22,7 +22,7 @@ Each tier answers a different quality question:
 - **Tier 2**: Do app → Tauri command paths, data persistence, and migration cleanup behave correctly?
 - **UI shots**: Does the interface actually look right? Nothing else can answer this. Tier 0 runs in jsdom, which has no layout engine — `getBoundingClientRect()` returns zeros, so "does this label fit in this box" is unanswerable there by construction. Tier 1 loads the page but asserts only logic, and Tier 2 asserts the Rust-derived snapshot. A change to `styles.css` can be wrong in every visible way and still be green.
 
-No single tier is sufficient on its own. **Website blocking enforcement** (macOS Automation redirects, Windows/Firefox native messaging) is validated primarily through the **manual checklist** — Tier 2 asserts the Rust-derived enforcement snapshot (`current_blocking`), which proves derivation is correct but not that a browser actually redirects.
+No single tier is sufficient on its own. **Website blocking enforcement** (macOS Apple Events/Firefox Accessibility and Windows UI Automation redirects) is validated primarily through the **manual checklist** — Tier 2 asserts the Rust-derived enforcement snapshot (`current_blocking`), which proves derivation is correct but not that a browser actually redirects.
 
 Tier 0 and Tier 1 overlap in kind but not in reach. Tier 1 owns the
 *composed* question — schedule windows, overlaps, allowlist resolution — and
@@ -232,7 +232,7 @@ It uses mock `appData` and pure functions from `src/test-utils.js` including:
 
 ### Important limitations
 
-- Does not prove real Automation redirects (macOS) or extension blocking (Windows/Firefox).
+- Does not prove real native browser redirects on macOS or Windows.
 - Does not prove app-watcher quit behavior (manual checklist covers that).
 - App watcher behavior is mostly marked as manual/placeholder in this tier.
 
@@ -355,7 +355,7 @@ that surface is manual checklist section 15.
 - All groups now assert the Rust-derived enforcement snapshot (`get_system_diagnostics` → `current_blocking`), not the removed v1 hosts payload. This proves derivation and command paths, **not** browser-visible redirects.
 - The legacy `*_via_helper` clear/set commands are acknowledgment-only shims on v3; the real clear path is the frontend mutating app data and saving. The rewritten C/B tests exercise both (shim ack + real path); A11 pins that shim payloads alone never affect enforcement.
 - Some checks are command-path assertions, not UI-visible assertions.
-- Not a substitute for manual Automation TCC flows, extension install, or enforcer grace UX.
+- Not a substitute for manual Automation/Accessibility permission flows or native-failure warning/grace UX.
 - **Tech debt:** renaming `updateHostsFile()` (legacy name; it drives v3 sync).
 
 ---
@@ -485,13 +485,13 @@ Coverage relevant to blocking behavior:
   sessions count as active web enforcement, concurrent allowlists union,
   blocklist precedence on overlap, and block-page metadata attribution
   (blocklist hit wins; else earliest-started allowlist).
-- `native_host.rs` — extension payload derivation (`derive_payload`),
+- `website_policy.rs` — effective rule derivation (`derive_payload`),
   including allowlist domains staying out of the legacy flat blocklist.
-- `profile_scan.rs`, `window_inventory.rs`, `commands/diagnostics.rs`,
+- `native_failure.rs`, `window_inventory.rs`, `commands/diagnostics.rs`,
   `commands/migration.rs` — supporting surfaces.
 
-Run these before merging changes to `web_automation.rs`, `native_host.rs`,
-`app_watcher.rs`, or `enforcer.rs`. CI also runs them on every PR that touches
+Run these before merging changes to `web_automation.rs`, `website_policy.rs`,
+`app_watcher.rs`, or `native_failure.rs`. CI also runs them on every PR that touches
 `src-tauri/**` (`rust-ci.yml`), so a red job there means one of these failed.
 
 ---
@@ -515,7 +515,7 @@ artifact.
 
 Why this matters more than it looks: **Android shares none of the desktop
 enforcement code.** `Schedules.kt` re-implements the semantics
-`native_host::derive_payload` derives on desktop, and nothing but these suites
+`website_policy::derive_payload` derives on desktop, and nothing but these suites
 keeps the two in step. A change to blocking semantics needs a case on both
 sides.
 
@@ -575,7 +575,7 @@ arrives and the friction gate launches.
 - **Rust unit tests**: enforcement decision logic (URL matching, allowlist composition, payload derivation).
 - **Android Kotlin unit tests**: URL-bar parsing against fixtures dumped from real devices, plus schedule decisions, the friction gate and event interception.
 - **UI shots**: appearance and layout geometry, from fixtures, in a real browser. Renders; does not assert.
-- **Manual checklist**: required for website enforcement, permissions, enforcer behaviour, and visual UX on real devices.
+- **Manual checklist**: required for website enforcement, permissions, native failure behavior, and visual UX on real devices.
 
 Recommended stance:
 
@@ -603,7 +603,7 @@ For release, run the **manual test checklist** (section **14. iOS-Specific**, in
 1. Run Tier 1 during active feature work for fast feedback.
 2. Run Tier 2 before merging changes that touch save/sync/shim/app-blocking command paths (Group H when touching allowlist derivation or sync).
 3. Run `cargo test --lib` before merging changes to Rust enforcement code.
-4. Run the manual checklist for website blocking, permissions, enforcer, and release confidence — section 15 for desktop allowlist, section 14/14.1 for iOS.
+4. Run the manual checklist for website blocking, permissions, native failure recovery, and release confidence — section 15 for desktop allowlist, section 14/14.1 for iOS.
 
 ---
 
@@ -626,3 +626,10 @@ hashes in a path containing spaces, and rejects missing sources and incorrect
 runtime mappings. Windows Rust CI runs it, including on `scripts/*msix*.ps1`
 changes. This does not prove that installed browsers can read `WindowsApps`;
 use the packaged-install checks in `scripts/manual-test-checklist.md`.
+
+## Desktop extension retirement release gates
+
+See [PR 3 validation](docs/pr3-validation.md). Unit tests establish policy and
+state-machine behavior; they do not validate OS failure signals, browser quit
+targeting, Firefox startup availability, or signed package resources. A green
+suite is not permission to enable an unvalidated failure signal's quit action.

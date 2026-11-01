@@ -64,10 +64,6 @@ impl AutomationIo for FakeIo {
         self.running.clone()
     }
 
-    fn uses_automation(&mut self, browser: SupportedBrowser) -> bool {
-        self.methods.get(&browser).copied().unwrap_or(true)
-    }
-
     fn read_tabs(&mut self, browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
         self.read_calls.push(browser);
         self.reads
@@ -452,7 +448,7 @@ fn frontmost_browser_runs_each_tick_background_runs_on_full_cadence() {
 }
 
 #[test]
-fn extension_method_browser_is_excluded_from_automation() {
+fn obsolete_extension_selection_cannot_disable_native_automation() {
     let shared = tick_shared();
     let extension = SupportedBrowser::Chrome;
     let automation = SupportedBrowser::Brave;
@@ -472,7 +468,7 @@ fn extension_method_browser_is_excluded_from_automation() {
         &mut last_full_pass,
         Instant::now(),
     );
-    assert_eq!(io.read_calls, vec![automation]);
+    assert_eq!(io.read_calls, vec![extension, automation]);
 }
 
 #[test]

@@ -35,7 +35,7 @@ checkedConfig.bundle.resources = {
 checkedConfig.bundle.icon = checkedConfig.bundle.icon.map((entry) => source(entry));
 checkedConfig.bundle.macOS.entitlements = source(checkedConfig.bundle.macOS.entitlements);
 checkedConfig.bundle.macOS.infoPlist = source(checkedConfig.bundle.macOS.infoPlist);
-checkedConfig.bundle.macOS.frameworks = checkedConfig.bundle.macOS.frameworks.map((entry) => source(entry));
+checkedConfig.bundle.macOS.frameworks = (checkedConfig.bundle.macOS.frameworks || []).map((entry) => source(entry));
 checkedConfig.bundle.macOS.signingIdentity = identity;
 writeFileSync(generatedConfigPath, `${JSON.stringify(checkedConfig, null, 2)}\n`);
 const args = [

@@ -5,14 +5,8 @@
 // frontend in a single pass, we keep those command names and route
 // them to the new backends:
 //
-//   - Website blocking (both OSes) → browser extension via the
-//     native messaging host. On Chromium/Firefox the host is this
-//     binary in `--native-host` mode; on Safari (macOS) the host is
-//     SafariWebExtensionHandler.swift inside the signed .app. Either
-//     way the host re-reads redd-block-data.json and re-derives the
-//     blocklist when the file changes — the app just has to have
-//     persisted via `save_data`, which the frontend already did
-//     before calling this command.
+//   - Website blocking → native browser watchers reading persisted policy.
+//     These legacy commands acknowledge the preceding save_data call.
 //   - App blocking (both OSes) → in-process app watcher.
 //
 // The frontend can be migrated piecemeal away from these shims in a
@@ -91,11 +85,8 @@ pub async fn uninstall_helper() -> HelperResult {
 
 /// Website blocking entry point.
 ///
-/// No synchronous action is required — the native-messaging host
-/// running alongside the extension (and SafariWebExtensionHandler on
-/// Safari) re-reads `redd-block-data.json` and re-derives the
-/// blocklist whenever the file changes. The frontend has already
-/// called `save_data` before invoking this, so we just acknowledge.
+/// The native desktop watchers re-read persisted policy on their ticks.
+/// The frontend saves the rules before invoking this legacy acknowledgement.
 #[tauri::command]
 pub async fn start_block_via_helper(_app: tauri::AppHandle) -> HelperResult {
     HelperResult::ok()
@@ -139,7 +130,7 @@ pub fn set_blocked_apps_via_helper(
 
 /// The frontend pushes the full `schedules` array here after every
 /// edit. The helper used to persist and evaluate them server-side.
-/// Now the frontend (or the native-host / Screen Time plugin) is the
+/// Now the frontend (or the native website watcher / Screen Time plugin) is the
 /// evaluator. This shim just acknowledges.
 #[tauri::command]
 pub fn set_schedules_via_helper(_schedules: serde_json::Value) -> HelperResult {
@@ -169,13 +160,11 @@ pub struct HelperDiagnostics {
 
 #[tauri::command]
 pub fn get_helper_diagnostics() -> HelperDiagnostics {
-    // macOS drives Safari + Chromium through Automation (Apple Events);
-    // Firefox alone still rides the extension + enforcer. Windows keeps
-    // every browser on the extension.
+    // Native browser watchers enforce websites on both desktop platforms.
     let backend = if cfg!(target_os = "macos") {
         "automation"
     } else if cfg!(target_os = "windows") {
-        "extension"
+        "uia"
     } else {
         "unsupported"
     };

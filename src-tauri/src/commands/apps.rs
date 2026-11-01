@@ -19,7 +19,7 @@ pub struct InstalledApp {
 /// permission dialog. Removing them lets the app start with one
 /// fewer system-permission prompt at first launch. Real running-
 /// process introspection lives in app_watcher (sysinfo-based) and
-/// in the enforcer's quit_browser path.
+/// in native browser recovery.
 #[tauri::command]
 pub async fn open_app_picker(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     #[cfg(target_os = "macos")]

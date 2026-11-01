@@ -398,7 +398,7 @@ fn import_sources() -> Vec<PathBuf> {
 /// Always per-user, on every platform. macOS, Windows and iOS all treat
 /// per-user application data as the native default, and nothing in the app
 /// reads this file from another user's security context: every reader, the
-/// browser-spawned native host included, runs inside the signed-in user's
+/// native website watchers included, runs inside the signed-in user's
 /// own session.
 ///
 /// Public accessor so other command modules can locate the canonical
@@ -421,7 +421,7 @@ pub fn canonical_data_path_static() -> PathBuf {
 }
 
 /// Where the per-user file lives when `app_data_dir()` cannot be resolved.
-/// Desktop falls back to the same handle-free resolver the native host uses,
+/// Desktop falls back to the same handle-free resolver native website watchers use,
 /// so both still agree on one file. iOS has no handle-free equivalent — the
 /// container path is only knowable through the app handle — so it falls back
 /// inside the container instead. Unreachable in practice on iOS, where
@@ -451,7 +451,7 @@ fn per_user_data_path_from(data_dir: Option<PathBuf>, home: Option<PathBuf>) -> 
     }
 
     // Only reachable on a broken environment (no $HOME, no %APPDATA%).
-    // Mirror each platform's own layout so the app and the native host
+    // Mirror each platform's own layout so the app and its native watchers
     // still agree on one file.
     #[cfg(target_os = "macos")]
     let relative = "Library/Application Support";
@@ -486,9 +486,7 @@ pub(crate) fn get_data_path(app: &AppHandle) -> PathBuf {
 /// directory, then rename over the destination.
 ///
 /// The data file is the single source of truth for active blocking and
-/// is re-read continuously by other threads and processes — the
-/// Automation watcher (1 s tick), the browser-spawned native host (2 s
-/// mtime poll), and the enforcer (5 s tick). A plain truncate-and-write
+/// is re-read continuously by the native website and app watcher threads. A plain truncate-and-write
 /// can be observed half-written; the readers then fail the JSON parse
 /// and treat the blocklist as empty, momentarily dropping enforcement
 /// (and un-parking tabs from the block page). rename() within one
@@ -720,22 +718,12 @@ pub fn save_data(app: AppHandle, mut data: AppData) -> Result<(), String> {
     // Ensure parent directory exists
     ensure_data_dir(&data_path)?;
 
-    // Backend-managed settings keys: these are owned by dedicated
-    // commands (set_enforcement_enabled, set_extension_grace_seconds)
-    // that read-modify-write the JSON directly. The frontend never
-    // touches them in `appData.settings`, so a blind round-trip here
-    // would drop a fresh-install user's toggle a few seconds after
-    // they enabled it (the next saveData() trigger — block edit,
-    // tick, etc. — serializes the stale `undefined` and clobbers
-    // the disk value written by the dedicated command). Preserve
-    // whatever is currently on disk for these keys.
+    // Preserve obsolete desktop preferences on round-trip for upgrade history.
+    // Native enforcement never reads them; they cannot disable a watcher.
     preserve_backend_settings(&data_path, &mut data);
 
     let content = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
     write_data_file_atomic(&data_path, content.as_bytes()).map_err(|e| e.to_string())?;
-
-    #[cfg(target_os = "macos")]
-    crate::app_group::maybe_mirror_after_save(&data_path, content.as_bytes());
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     super::app_blocking::sync_blocked_apps_from_disk(&app);
@@ -808,13 +796,6 @@ pub fn wipe_user_data(app: &AppHandle) {
     }
 
     use std::collections::HashSet;
-
-    #[cfg(target_os = "macos")]
-    {
-        if let Err(e) = crate::app_group::remove_blocklist_mirror() {
-            log::warn!("wipe_user_data: App Group mirror cleanup failed: {e}");
-        }
-    }
 
     let mut files: Vec<PathBuf> = vec![get_data_path(app)];
 

@@ -123,9 +123,6 @@ export const tauriAPI = {
     onMenuHelpWhoWeAre: (callback) => listen('menu-help-who-we-are', callback),
 
     // Enforcer events (desktop only)
-    onEnforcerGraceUpdate: (callback) => listen('enforcer://grace-update', callback),
-    onEnforcerGraceResolved: (callback) => listen('enforcer://grace-resolved', callback),
-    onEnforcerBrowserClosed: (callback) => listen('enforcer://browser-closed', callback),
 
     // Website automation (macOS only): JOMO-style Safari/Chromium
     // blocking via Apple Events. The watcher fires permission-needed when
@@ -138,8 +135,6 @@ export const tauriAPI = {
         launchProbeBrowser: opts?.launchProbeBrowser ?? null,
         launchProbeBrowsers: opts?.launchProbeBrowsers ?? null,
     }),
-    getBlockingMethods: () => invoke('get_blocking_methods'),
-    setBlockingMethod: (browser, method) => invoke('set_blocking_method', { browser, method }),
     requestAutomationPermission: (browser) => invoke('request_automation_permission', { browser }),
     openAutomationSettings: () => invoke('open_automation_settings'),
 

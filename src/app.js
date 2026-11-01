@@ -5,7 +5,6 @@ import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask, message, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
-import logoReddFocusUrl from './images/logo-reddfocus.svg';
 import logoReddShieldUrl from './images/logo-redd-shield.svg';
 import appleLogoUrl from './images/apple-logo.svg';
 import iconChromeUrl from './images/icon-chrome.svg';
@@ -49,37 +48,8 @@ import { applyEditorScheduleForBlocklist, applyFocusSpaceEditorLanguage, confirm
 import { loadData, saveData, updateHostsFile } from './persistence.js';
 import { cleanDomainInput, isValidDomain, processWebsiteInput, setupWebsitesImportMenu, resetWebsitesImportMenuPosition } from './website-input.js';
 import { updateBlockedApps, acceptEula, appBlockingWarningSnoozedUntilMs, checkAndroidPermissions, checkHelperStatus, checkScreentimeAuth, collectManualBlockedApps, collectScheduleBlockedApps, detectPlatform, ensureInstalledAppsCache, initializeAndroidBlockingState, initializeIOSBlockingState, listenForAndroidFrictionGate, onAndroidResumed, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAndroidBackButtonHandling, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility, openExternal, updateWindowHeight, isHelperInstallCancelled, isHelperConnectionError, joinAppListWithLimit, formatAppBlockingSnoozeStartsIn, APP_BLOCKING_SNOOZE_ICON_IMG_12 } from './blocking-platform.js';
-import { CURRENT_EULA_REVISION, applyEnforcementDescCopy, applyMacAutomationIntroCopy, ensureExtensionSetupOnboardingShown, getAcceptedEulaRevision, hasAcceptedEula, isFirstRunOnboardingInProgress, resetDevOnlyEulaAcceptance, returnToWelcomeFromEula, runDesktopOnboarding, runInitialOnboardingSequence, setupMacAutomationIntroModal, syncMigrationPostBackButtonVisibility, syncSetupBannerHeadline, welcomeFirefoxInstalled } from './onboarding.js';
-// app.js calls these enforcement.js exports but historically never imported
-// them — they resolved only through Rollup's scope hoisting, which held while
-// the desktop bundle retained every enforcement helper. The Android build now
-// strips desktop-only UI (__ANDROID_BUILD__ guards, CSS purge, DOM removal),
-// so Rollup tree-shakes any export without a real import edge and these bare
-// references become runtime ReferenceErrors (e.g. syncBlockingMethodLabelIcons
-// in applySettingsLanguage). Importing them keeps the edges on every target;
-// the guarded functions remain as no-ops on Android.
-import {
-    ALL_BLOCKING_METHOD_KEYS,
-    browserBlockingMethod,
-    methodOptionsForKey,
-    invalidateMigrationMacCopyCache,
-    migrationExtLinesHtml,
-    applySafariFdaOnboardingLanguage,
-    refreshBehaviourBannerIfStale,
-    renderBrowserInstallButtons,
-    setupAppForegroundRefresh,
-    setupEnforcerUiAlerts,
-    setupSettingsEnforcementSection,
-    setupWebAutomationUiAlerts,
-    startWebAutomationWatcher,
-    syncBlockingMethodLabelIcons,
-    syncMigrationMacHowto,
-    syncMigrationPostHeader,
-    syncSafariFdaOnboardingGrantButton,
-    updateAllEnforcementToggleLocks,
-    updateGraceSettingLock,
-    wireEnforcementToggle,
-} from './enforcement.js';
+import { CURRENT_EULA_REVISION, ensureNativePermissionSetupShown, getAcceptedEulaRevision, hasAcceptedEula, isFirstRunOnboardingInProgress, resetDevOnlyEulaAcceptance, returnToWelcomeFromEula, runDesktopOnboarding, runInitialOnboardingSequence, syncMigrationPostBackButtonVisibility, syncSetupBannerHeadline, welcomeFirefoxInstalled } from './onboarding.js';
+import { setupNativeEnforcementAlerts, ALL_BLOCKING_METHOD_KEYS, browserBlockingMethod, methodOptionsForKey, refreshNativePermissionsIfStale, renderNativePermissionRows, setupAppForegroundRefresh, setupSettingsEnforcementSection, startWebAutomationWatcher } from './enforcement.js';
 import {
     addScheduleSegment,
     getDefaultScheduleSegments, handleRepeatDateChange,
@@ -114,9 +84,9 @@ import { hasAnyEnforcedBlocks, isAndroidAllowlistUnsupported, isNonRepeatingSche
 import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
 import {
     refreshUninstallButtonState,
-    setupGraceSetting, setupMaxOverrideWordsSetting, syncMaxOverrideWordsSetting, setupHelpMenuLinks, setupHelperSettings, setupInAppUninstall,
+    setupMaxOverrideWordsSetting, syncMaxOverrideWordsSetting, setupHelpMenuLinks, setupHelperSettings, setupInAppUninstall,
     setupOverrideAll, setupSettingsHelpButtons, setupSettingsInfoTooltips, setupWindowsUninstallGuidance,
-    syncUninstallConfirmModal, updateCleanHostsBtnState, updateHelperStatusIndicator,
+    updateCleanHostsBtnState, updateHelperStatusIndicator,
     updateManageSectionVisibility, updateOverrideAllButtonVisibility,
 } from './settings.js';
 import { normalizeUnlockMinutes } from './unlock-duration.js';
@@ -162,6 +132,8 @@ export const IOS_STOP_BTN_META_COLLAPSE_SLACK_PX = 24;
 state.scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
 
 // Initialize
+
+
 document.addEventListener('DOMContentLoaded', async () => {
     detectPlatform(); // Before loadData so first-launch defaults can differ on iOS
     // App-styled dropdowns over every <select>. Before loadData so the first
@@ -212,16 +184,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupSettingsInfoTooltips();
     setupBlocklistsImportExportButtons();
     setupAppForegroundRefresh();
+    setupNativeEnforcementAlerts();
     setupOverrideAll();
     setupInAppUninstall();
     setupWindowsUninstallGuidance();
-    setupMacAutomationIntroModal();
-    setupGraceSetting();
     setupMaxOverrideWordsSetting();
     setupSettingsEnforcementSection();
-    if (!state.isIOS && !state.isAndroid) {
-        void wireEnforcementToggle();
-    }
+    if (!state.isIOS && !state.isAndroid) { /* no action needed */ }
     await runInitialOnboardingSequence();
     if (state.isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
@@ -289,10 +258,10 @@ export async function runPostAcceptanceStartup() {
             await initializeAndroidBlockingState();
         } else {
             // Run first-launch migration off the legacy helper + check
-            // Automation TCC (macOS) + extension compliance. Idempotent;
+            // native browser permissions (macOS). Idempotent;
             // a no-op on subsequent launches past the current version.
-            setupEnforcerUiAlerts();
-            setupWebAutomationUiAlerts();
+
+            setupNativeEnforcementAlerts();
             await ensureInstalledAppsCache();
             await runDesktopOnboarding();
             await checkHelperStatus();
@@ -306,13 +275,7 @@ export async function runPostAcceptanceStartup() {
             // immediately — don't wait for the 1s tick interval.
             await updateHostsFile();
             await updateBlockedApps();
-            if (!state.migrationOnboardingActive) {
-                try {
-                    await invoke('enforcer_start');
-                } catch (e) {
-                    console.warn('[startup] enforcer_start failed:', e);
-                }
-            }
+
             // Start the automation watcher even while the migration overlay
             // is open — blocks may already be active and the watcher is
             // idle until then anyway.
@@ -403,10 +366,10 @@ function setupEventListeners() {
     });
     eulaContinueBtn?.addEventListener('click', async () => {
         if (!eulaCheckbox?.checked || !eulaContinueBtn) return;
-        if (state.firstRunExtensionSetupPending && hasAcceptedEula()) {
-            state.extensionSetupPausedForBackNavigation = false;
+        if (state.firstRunNativePermissionSetupPending && hasAcceptedEula()) {
+            state.nativePermissionSetupPausedForBackNavigation = false;
             document.getElementById('eula-onboarding')?.classList.add('hidden');
-            void ensureExtensionSetupOnboardingShown();
+            void ensureNativePermissionSetupShown();
             return;
         }
         eulaContinueBtn.disabled = true;
@@ -2139,7 +2102,7 @@ function switchLanguageSetting(next) {
     state.appData.settings.language = next;
     applySettingsLanguage();
     saveData();
-    if (!state.isIOS && !state.isAndroid) void refreshBehaviourBannerIfStale({ force: true });
+    if (!state.isIOS && !state.isAndroid) void refreshNativePermissionsIfStale({ force: true });
     if (state.isIOS) void syncIOSStartWarnings(); // the booked wording is in the old language
     closeAllLanguagePickers();
 }
@@ -2202,9 +2165,9 @@ export function formatConfirmModalOverrideTypingLine({ type, count, estimatedMin
     return tSettingsFmt('confirmOverrideRandomWordsIosFmt', { count, wordUnit, minutes });
 }
 
-/** Static copy on the migration / extension-setup overlay — call when language changes. */
+/** Static copy on the migration / native permission overlay — call when language changes. */
 export function applyMigrationOverlayStaticCopy() {
-    invalidateMigrationMacCopyCache();
+
     const setHtml = (id, html) => {
         const el = document.getElementById(id);
         if (el) el.innerHTML = html;
@@ -2222,25 +2185,17 @@ export function applyMigrationOverlayStaticCopy() {
     setHtml('migration-pre-warn', tSettings('migrationPreWarnHtml'));
     setText('migration-checklist-cleaned-label', tSettings('migrationChecklistCleanedOld'));
     setText('migration-checklist-blocks-label', tSettings('migrationChecklistBlocklistsPreserved'));
-    syncMigrationPostHeader(state.lastMigrationBrowserState);
-    setHtml('migration-checklist-ext-lines', migrationExtLinesHtml(state.lastMigrationBrowserState));
-    setText('migration-howto-title', tSettings('migrationHowtoHeading'));
-    if (state.isMacOSDesktop) {
-        syncMigrationMacHowto(state.lastMigrationBrowserState);
-    } else {
-        setHtml('migration-howto-li1', tSettings('migrationHowtoLi1Html'));
+
+
+    if (state.isMacOSDesktop) { /* no action needed */ } else {
         document.getElementById('migration-howto-li2')?.classList.add('hidden');
         document.getElementById('migration-howto-li3')?.classList.remove('hidden');
-        setHtml('migration-howto-li3', tSettings('migrationHowtoLi3Html'));
     }
     setText('migration-done-btn', tSettings('migrationDone'));
     setText('migration-skip-btn', tSettings('migrationSkip'));
     setText('migration-back-btn', tSettings('eulaBackBtn'));
     syncMigrationPostBackButtonVisibility();
-    setText('enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
-    void applyEnforcementDescCopy(state.lastMigrationBrowserState);
-    setText('enforcement-toggle-disable-note-text', tSettings('migrationEnforcementDisableNote'));
-    void updateAllEnforcementToggleLocks();
+
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
     const continueBtn = document.getElementById('migration-continue-btn');
     if (continueBtn && !continueBtn.disabled) {
@@ -2398,8 +2353,6 @@ export function applyWelcomeOnboardingLanguage() {
     const howHeading = document.getElementById('welcome-how-heading');
     if (howHeading) howHeading.textContent = tSettings('welcomeHowHeading');
 
-    const focusLogoHtml =
-        `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
     const appleLogoHtml =
         `<img src="${appleLogoUrl}" alt="" class="welcome-apple-inline-logo" aria-hidden="true"> `;
 
@@ -2424,18 +2377,18 @@ export function applyWelcomeOnboardingLanguage() {
             if (step2Title) {
                 step2Title.innerHTML = tSettings('welcomeStep2TitleFirefoxHtml')
                     .replace('{APPLE}', appleLogoHtml)
-                    .replace('{LOGO}', focusLogoHtml);
+                    .replace('{LOGO}', '');
             }
             if (step2Body) {
-                step2Body.innerHTML = tSettings('welcomeStep2BodyFirefoxHtml');
+                step2Body.innerHTML = tSettings('firefoxAxSettingsNotGranted');
             }
         }
     } else {
         stepMac?.classList.add('hidden');
         stepFirefox?.classList.remove('hidden');
 
-        let step2TitleKey = 'welcomeStep2TitleHtml';
-        let step2BodyKey = 'welcomeStep2BodyHtml';
+        let step2TitleKey = '';
+        let step2BodyKey = '';
         if (state.isAndroid) {
             step2TitleKey = 'welcomeStep2TitleAndroidHtml';
             step2BodyKey = 'welcomeStep2BodyAndroidHtml';
@@ -2446,7 +2399,7 @@ export function applyWelcomeOnboardingLanguage() {
 
         if (step2Title) step2Title.innerHTML = tSettings(step2TitleKey);
         if (step2Body) {
-            step2Body.innerHTML = tSettings(step2BodyKey).replace('{LOGO}', focusLogoHtml);
+            step2Body.innerHTML = tSettings(step2BodyKey).replace('{LOGO}', '');
         }
     }
 
@@ -2537,7 +2490,7 @@ function syncWelcomeDemoVideoCaption() {
 
 function toggleWelcomeDemoPlayback(video) {
     if (video.paused) {
-        video.play().catch(() => {});
+        video.play().catch(() => { /* no action needed */ });
     } else {
         video.pause();
     }
@@ -2915,38 +2868,7 @@ export function applySettingsLanguage() {
     setText('settings-windows-uninstall-btn-label', tSettings('windowsUninstallOpenSettingsBtn'));
     setText('settings-help-label', tSettings('settingsDiagnosticsLabel'));
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
-    setText('settings-blocking-method-toggle-label', tSettings('settingsBlockingMethodHeading'));
-    setText('settings-blocking-method-hint', tSettings(state.isWindowsDesktop ? 'settingsBlockingMethodHintWindows' : 'settingsBlockingMethodHint'));
-    setText('settings-blocking-method-chrome-label', tSettings('settingsBlockingMethodChrome'));
-    setText('settings-blocking-method-brave-label', tSettings('settingsBlockingMethodBrave'));
-    setText('settings-blocking-method-edge-label', tSettings('settingsBlockingMethodEdge'));
-    setText('settings-blocking-method-safari-label', tSettings('settingsBlockingMethodSafari'));
-    setText('settings-blocking-method-firefox-label', tSettings('settingsBlockingMethodFirefox'));
-    syncBlockingMethodLabelIcons();
-    for (const key of ALL_BLOCKING_METHOD_KEYS) {
-        const select = document.getElementById(`blocking-method-${key}`);
-        if (!select) continue;
-        const current = select.value || browserBlockingMethod(key);
-        select.innerHTML = '';
-        // Per browser, not one list for all: Firefox offers extension or
-        // accessibility, the others automation or extension.
-        const labelKeys = {
-            automation: 'settingsBlockingMethodAutomation',
-            extension: 'settingsBlockingMethodExtension',
-            accessibility: 'settingsBlockingMethodAccessibility',
-        };
-        for (const value of methodOptionsForKey(key)) {
-            const labelKey = labelKeys[value];
-            const opt = document.createElement('option');
-            opt.value = value;
-            opt.textContent = tSettings(labelKey);
-            if (value === current) opt.selected = true;
-            select.appendChild(opt);
-        }
-    }
-    setText('settings-enforcement-row-label', tSettings('settingsEnforcementRowLabel'));
-    void applyEnforcementDescCopy(state.lastMigrationBrowserState);
-    setText('settings-setup-btn-label', tSettings('settingsSetupBtn'));
+
     setText('settings-diagnostics-btn-label', tSettings('settingsDiagnosticsBtn'));
     setText('diagnostics-modal-title', tSettings('diagnosticsModalTitle'));
     setText('diagnostics-refresh-btn-label', tSettings('diagnosticsRefresh'));
@@ -2960,17 +2882,13 @@ export function applySettingsLanguage() {
     setText('settings-export-blocklists-btn-label', tSettings('settingsExportBlocklistsBtn'));
     setText('settings-import-blocklists-btn-label', tSettings('settingsImportBlocklistsBtn'));
     setText('uninstall-confirm-title', tSettings('uninstallConfirmTitle'));
-    setText('uninstall-delete-data-label', tSettings('uninstallDeleteDataLabel'));
-    syncUninstallConfirmModal(null);
-    setText('cancel-uninstall-confirm-btn', tSettings('cancel'));
-    setText('confirm-uninstall-confirm-btn', tSettings('uninstallConfirmOk'));
-    applyMacAutomationIntroCopy();
-    // The hint paragraph and button tooltip need re-translation too —
+    setText('uninstall-delete-data-label', tSettings('uninstallDeleteDataLabel'));    setText('cancel-uninstall-confirm-btn', tSettings('cancel'));
+    setText('confirm-uninstall-confirm-btn', tSettings('uninstallConfirmOk'));    // The hint paragraph and button tooltip need re-translation too —
     // refreshUninstallButtonState reads from tSettings() and rewrites
     // both. Cheap to call unconditionally.
     refreshUninstallButtonState();
     updateOverrideAllButtonVisibility();
-    void updateAllEnforcementToggleLocks();
+
     setText('settings-helper-service-label', tSettings('helperService'));
     setText('settings-update-helper-label', tSettings('updateHelper'));
     setText('settings-clean-hosts-label', tSettings('cleanHostsFile'));
@@ -2984,7 +2902,7 @@ export function applySettingsLanguage() {
     setText('app-blocking-lets-go-btn-label', tSettings('appBlockingLetsGo'));
     setText('app-blocking-snooze-btn-label', tSettings('appBlockingSnoozeBtn'));
     setHtml('settings-feedback-footer-text', tSettings('settingsFeedbackFooterHtml'));
-    updateGraceSettingLock();
+
     refreshSettingsVersionLabels();
 
     const helperStatusText = document.getElementById('settings-helper-status-text');
@@ -3015,13 +2933,13 @@ export function applySettingsLanguage() {
     applyEulaOnboardingLanguage();
     applyWelcomeOnboardingLanguage();
     applyRebrandOnboardingLanguage();
-    applySafariFdaOnboardingLanguage();
+
     applyIosScreentimeOnboardingLanguage();
     applyStartWarningsLanguage();
     applyAndroidPermissionsOnboardingLanguage();
 
     if (state.migrationOnboardingActive && state.lastMigrationBrowserState) {
-        renderBrowserInstallButtons(state.lastMigrationBrowserState, { force: true });
+        renderNativePermissionRows(state.lastMigrationBrowserState, { force: true });
     }
 
     // Re-render pieces with dynamic language-dependent text.

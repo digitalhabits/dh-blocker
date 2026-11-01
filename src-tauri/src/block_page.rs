@@ -10,14 +10,14 @@
 
 use tauri::{AppHandle, Manager};
 
-use crate::native_host::{self, BlockInfo};
+use crate::website_policy::{self, BlockInfo};
 
 /// True when any active block enforces website restrictions (blocklist
 /// domains or allowlist-only browsing).
 pub fn web_enforcement_active(blocks: &[BlockInfo]) -> bool {
     // Both modes come down to the same question: an allowlist block with no
     // domains allows everything, and a blocklist block with no domains blocks
-    // nothing. Matches `enforcer::website_blocking_active`.
+    // nothing; native website health uses the same policy condition.
     blocks.iter().any(|b| !b.domains.is_empty())
 }
 
@@ -156,7 +156,7 @@ pub(crate) fn block_info_for_url<'a>(url: &str, blocks: &'a [BlockInfo]) -> Opti
 
     // Blocklist hit takes precedence for metadata (same as app watcher).
     if let Some(b) = blocks.iter().find(|b| {
-        !native_host::blocklist_mode_is_allowlist(&b.mode)
+        !website_policy::blocklist_mode_is_allowlist(&b.mode)
             && b.domains.iter().any(|d| domain_matches(&host, d))
     }) {
         return Some(b);
@@ -167,7 +167,7 @@ pub(crate) fn block_info_for_url<'a>(url: &str, blocks: &'a [BlockInfo]) -> Opti
     // stays deterministic when two allowlists started together.
     blocks
         .iter()
-        .filter(|b| native_host::blocklist_mode_is_allowlist(&b.mode) && !b.domains.is_empty())
+        .filter(|b| website_policy::blocklist_mode_is_allowlist(&b.mode) && !b.domains.is_empty())
         .filter(|b| !b.domains.iter().any(|d| domain_matches(&host, d)))
         .min_by_key(|b| {
             (
@@ -221,7 +221,7 @@ pub fn url_is_blocked(url: &str, blocks: &[BlockInfo]) -> bool {
     // Blocklist blocks: URL matches → blocked.
     for b in blocks
         .iter()
-        .filter(|b| !native_host::blocklist_mode_is_allowlist(&b.mode))
+        .filter(|b| !website_policy::blocklist_mode_is_allowlist(&b.mode))
     {
         if b.domains.iter().any(|d| domain_matches(&host, d)) {
             return true;
@@ -239,10 +239,10 @@ pub fn url_is_blocked(url: &str, blocks: &[BlockInfo]) -> bool {
     // `reddit.com`. Exact-host allows would be a behaviour change, not a fix.
     let allowlist_active = blocks
         .iter()
-        .any(|b| native_host::blocklist_mode_is_allowlist(&b.mode) && !b.domains.is_empty());
+        .any(|b| website_policy::blocklist_mode_is_allowlist(&b.mode) && !b.domains.is_empty());
     if allowlist_active {
         let allowed = blocks.iter().any(|b| {
-            native_host::blocklist_mode_is_allowlist(&b.mode)
+            website_policy::blocklist_mode_is_allowlist(&b.mode)
                 && b.domains.iter().any(|d| domain_matches(&host, d))
         });
         if !allowed {
