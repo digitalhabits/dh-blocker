@@ -122,6 +122,16 @@ jobs:
         if: runner.os == 'Windows'
         shell: powershell
         run: ./scripts/test-msix-resources.ps1
+      - name: Windows MSIX icon resource regression tests
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          # Packaging-only fixture: never execute this payload or publish it.
+          $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP 'msix-icon-fixture'
+          $release = Join-Path $env:CARGO_TARGET_DIR 'x86_64-pc-windows-msvc\release'
+          New-Item -ItemType Directory -Force $release | Out-Null
+          Copy-Item "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" (Join-Path $release 'redd-block.exe')
+          ./scripts/build-msix.ps1 -LocalTest
       - name: Windows UI Automation regression tests
         if: runner.os == 'Windows'
         working-directory: src-tauri
