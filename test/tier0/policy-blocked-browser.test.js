@@ -105,6 +105,11 @@ describe('policy-blocked browsers on Windows', () => {
         state.migrationOnboardingActive = false;
     });
 
+    test('Windows onboarding copy accepts a scan that has not arrived yet', async () => {
+        const { migrationExtLinesHtml } = await setUpWindows(false);
+        expect(() => migrationExtLinesHtml(null)).not.toThrow();
+    });
+
     test('Windows explicit automation skips extension setup and permission prompts', async () => {
         const { browserBlockingMethod, effectiveBrowserComplianceStatus, buildBannerActionSummary } = await setUpWindows();
         const browsers = Object.fromEntries(['chrome', 'edge', 'brave', 'firefox'].map(key => [key, edge({ profiles: [], present: true })]));

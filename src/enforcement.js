@@ -1181,7 +1181,7 @@ export function syncMigrationPostHeader(state) {
 }
 
 export function migrationExtLinesHtml(state) {
-    if (appState.isWindowsDesktop && migrationBrowserKeys(state).every(key => browserUsesAutomation(key, state.browsers?.[key]))) {
+    if (appState.isWindowsDesktop && migrationBrowserKeys(state).every(key => browserUsesAutomation(key, state?.browsers?.[key]))) {
         return tSettings('settingsBlockingMethodHintWindows');
     }
     const focusLogoHtml =
