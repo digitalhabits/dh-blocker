@@ -4046,7 +4046,9 @@
             caretAt(field, 1);
             const selectedIndex = options('hour').findIndex((o) => o.classList.contains('selected'));
             const lastIndex = options('hour').length - 1;
-            const stepDown = selectedIndex < lastIndex ? 'ArrowDown' : 'ArrowUp';
+            // The next assertions walk twice before reversing. At 22:00,
+            // Down has only one step left, so walk up near the upper end.
+            const stepDown = selectedIndex + 2 <= lastIndex ? 'ArrowDown' : 'ArrowUp';
             const stepUp = stepDown === 'ArrowDown' ? 'ArrowUp' : 'ArrowDown';
             const delta = stepDown === 'ArrowDown' ? 1 : -1;
 
