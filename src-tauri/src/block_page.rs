@@ -510,6 +510,13 @@ pub(crate) fn address_bar_text_to_url(text: &str) -> Option<String> {
     if text.contains("://") {
         return Some(text.to_string());
     }
+    // Brave's UIA ValuePattern elides file:/// from local addresses, too.
+    // Restore only becomes possible once the displayed absolute drive path
+    // is reconstructed; plan_actions still requires our own block-page URL.
+    let bytes = text.as_bytes();
+    if bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1..3] == *b":/" {
+        return Some(format!("file:///{text}"));
+    }
     let host_end = text.find(['/', '?', '#']).unwrap_or(text.len());
     let host = text[..host_end].split(':').next().unwrap_or("");
     let looks_like_host = (host.contains('.') && !host.starts_with('.') && !host.ends_with('.'))
@@ -639,6 +646,19 @@ mod tests {
         assert_eq!(
             plan_address_bar_action(&parked, &[], BLOCK_PAGE).as_deref(),
             Some("https://reddit.com/")
+        );
+    }
+
+    #[test]
+    fn brave_scheme_elided_file_address_restores_original_query() {
+        let shown = "C:/Program%20Files/Digital%20Habits%20Blocker/blocked/blocked.html?u=https%3A%2F%2Fexample.com%2F%3Fpr206%3Dbaseline&id=b1";
+        assert_eq!(
+            plan_address_bar_action(shown, &[], BLOCK_PAGE).as_deref(),
+            Some("https://example.com/?pr206=baseline")
+        );
+        assert_eq!(
+            plan_address_bar_action(shown, &blocklist(&["example.com"]), BLOCK_PAGE),
+            None
         );
     }
 
