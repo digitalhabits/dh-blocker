@@ -4153,8 +4153,11 @@
             document.querySelectorAll('.schedule-segment .remove-segment-btn')[1]?.click();
 
             // T250: typing times that meet shows the switch on.
+            // Adding a range can wrap past midnight and sort it ahead of the
+            // original range. Use the surviving range's start, not `before`.
+            const start = document.querySelector('.segment-time-field[data-edge="start"]');
             const end = document.querySelector('.segment-time-field[data-edge="end"]');
-            end.value = before[0];
+            end.value = start.value;
             end.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
             assert(toggle()?.checked, 'T250: typed times that meet are shown as All day');
         } finally {
