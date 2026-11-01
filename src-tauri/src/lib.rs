@@ -1056,6 +1056,8 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::set_extension_grace_seconds,
         commands::get_enforcement_enabled,
         commands::set_enforcement_enabled,
+        commands::get_blocking_methods,
+        commands::set_blocking_method,
         commands::get_system_diagnostics,
         commands::onboarding_state,
         commands::check_helper_status,
@@ -1106,4 +1108,27 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::save_data,
         commands::set_window_size,
     ]
+}
+
+#[cfg(test)]
+mod command_registration_tests {
+    #[test]
+    fn windows_registers_blocking_method_settings_commands() {
+        // Guard the platform-specific IPC wiring: testing the commands directly
+        // cannot detect their omission from generate_handler!.
+        let source = include_str!("lib.rs").replace("\r\n", "\n");
+        let windows = source
+            .split("#[cfg(not(any(target_os = \"ios\", target_os = \"android\", target_os = \"macos\")))]\nfn all_commands()")
+            .nth(1)
+            .expect("Windows command handler")
+            .split("/// Commands for mobile")
+            .next()
+            .unwrap();
+        for command in ["get_blocking_methods", "set_blocking_method"] {
+            assert!(
+                windows.contains(&format!("commands::{command},")),
+                "Windows IPC missing {command}"
+            );
+        }
+    }
 }
