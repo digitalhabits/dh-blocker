@@ -21,6 +21,7 @@
     "build:win": "powershell -ExecutionPolicy Bypass -File ./scripts/build-win.ps1",
     "build:win:unsigned": "powershell -ExecutionPolicy Bypass -File ./scripts/build-win.ps1 -Unsigned",
     "build:win-store": "powershell -ExecutionPolicy Bypass -File ./scripts/build-win-store.ps1",
+    "build:win-test": "powershell -ExecutionPolicy Bypass -File ./scripts/build-win-test.ps1",
     "sign:win-store-msix": "powershell -ExecutionPolicy Bypass -File ./scripts/sign-msix-dev.ps1",
     "tauri": "node ./scripts/run-tauri.js",
     "vite:dev": "vite",
