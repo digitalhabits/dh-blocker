@@ -1,4 +1,4 @@
-//! Tauri commands for per-browser blocking method (macOS).
+//! Tauri commands for per-browser blocking method (desktop).
 
 use std::collections::HashMap;
 
@@ -18,7 +18,7 @@ pub fn set_blocking_method(
     browser: String,
     method: String,
 ) -> Result<HashMap<String, String>, String> {
-    blocking_method::validate_mac_blocking_method_key(&browser)?;
+    blocking_method::validate_blocking_method_key(&browser)?;
     let parsed = blocking_method::validate_method(&method)?;
     // Not every browser can enforce with every method: Firefox has no tab
     // scripting, and the others have Apple Events and so never need the
@@ -50,17 +50,27 @@ pub fn set_blocking_method(
 }
 
 #[cfg_attr(target_os = "windows", allow(unreachable_code))] // the cfg arm above returns
-fn apply_side_effects(app: &AppHandle, browser: &str, method: Method) -> Result<(), String> {
-    #[cfg(not(target_os = "macos"))]
+fn apply_side_effects(_app: &AppHandle, browser: &str, method: Method) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
     {
-        let _ = (app, browser, method);
+        if method == Method::Extension {
+            if let Some(target) = blocking_method::native_host_target(browser) {
+                crate::native_host_install::install_native_host_for(target)
+                    .map_err(|e| format!("native-host install for {browser}: {e}"))?;
+            }
+        }
+        return Ok(());
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = (_app, browser, method);
         return Ok(());
     }
     #[cfg(target_os = "macos")]
     match (browser, method) {
         ("safari", Method::Extension) => {
             let path =
-                super::canonical_data_path(app).ok_or_else(|| "no app data path".to_string())?;
+                super::canonical_data_path(_app).ok_or_else(|| "no app data path".to_string())?;
             crate::app_group::sync_blocklist_from(&path)
                 .map_err(|e| format!("App Group sync for Safari: {e}"))?;
         }

@@ -21,6 +21,17 @@ const load = async ({ mac = true, methods = {} } = {}) => {
 describe('Firefox blocking method', () => {
     beforeEach(() => vi.resetModules());
 
+    test('Windows Firefox keeps Automation and rejects macOS Accessibility', async () => {
+        const e = await load({ mac: false, methods: { firefox: 'accessibility' } });
+        const { state } = await import('../../src/state.js');
+        state.isWindowsDesktop = true;
+        expect(e.browserBlockingMethod('firefox')).toBe('automation');
+        expect(e.browserUsesAutomation('firefox')).toBe(true);
+        expect(e.browserUsesAccessibility('firefox')).toBe(false);
+        expect(e.methodOptionsForKey('firefox')).toEqual(['automation', 'extension']);
+        expect(e.methodIsValidForKey('firefox', 'accessibility')).toBe(false);
+    });
+
     test('defaults to the extension, so existing installs are untouched', async () => {
         const e = await load();
         expect(e.browserBlockingMethod('firefox')).toBe('extension');

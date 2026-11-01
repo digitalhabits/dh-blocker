@@ -4046,7 +4046,9 @@
             caretAt(field, 1);
             const selectedIndex = options('hour').findIndex((o) => o.classList.contains('selected'));
             const lastIndex = options('hour').length - 1;
-            const stepDown = selectedIndex < lastIndex ? 'ArrowDown' : 'ArrowUp';
+            // The next assertions walk twice before reversing. At 22:00,
+            // Down has only one step left, so walk up near the upper end.
+            const stepDown = selectedIndex + 2 <= lastIndex ? 'ArrowDown' : 'ArrowUp';
             const stepUp = stepDown === 'ArrowDown' ? 'ArrowUp' : 'ArrowDown';
             const delta = stepDown === 'ArrowDown' ? 1 : -1;
 
@@ -4153,8 +4155,11 @@
             document.querySelectorAll('.schedule-segment .remove-segment-btn')[1]?.click();
 
             // T250: typing times that meet shows the switch on.
+            // Adding a range can wrap past midnight and sort it ahead of the
+            // original range. Use the surviving range's start, not `before`.
+            const start = document.querySelector('.segment-time-field[data-edge="start"]');
             const end = document.querySelector('.segment-time-field[data-edge="end"]');
-            end.value = before[0];
+            end.value = start.value;
             end.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
             assert(toggle()?.checked, 'T250: typed times that meet are shown as All day');
         } finally {
@@ -4214,6 +4219,28 @@
         }
     }
 
+    async function runWindowsOnboardingTests() {
+        const { state } = await import('./state.js');
+        const { windowsBrowserSetupIsAutomatic } = await import('./onboarding.js');
+        const windows = state.isWindowsDesktop;
+        const methods = state.appData.settings.blockingMethods;
+        try {
+            state.isWindowsDesktop = true;
+            state.appData.settings.blockingMethods = {};
+            assert(windowsBrowserSetupIsAutomatic(), 'Windows defaults skip browser setup');
+            for (const browser of ['chrome', 'edge', 'brave', 'firefox']) {
+                state.appData.settings.blockingMethods = { [browser]: 'extension' };
+                assert(!windowsBrowserSetupIsAutomatic(), 'Explicit extension mode retains setup: ' + browser);
+            }
+            state.isWindowsDesktop = false;
+            state.appData.settings.blockingMethods = {};
+            assert(!windowsBrowserSetupIsAutomatic(), 'Other platforms retain their setup flow');
+        } finally {
+            state.isWindowsDesktop = windows;
+            state.appData.settings.blockingMethods = methods;
+        }
+    }
+
     async function runAllTests() {
         console.clear();
         console.log('🧪 ReddBlock Blocking Tests');
@@ -4223,6 +4250,7 @@
         resetTestResults();
 
         try {
+            await runWindowsOnboardingTests();
             await runIOSResumeOrderingTests();
             runTimeBasedTests();
             runOverlapTests();

@@ -28,11 +28,11 @@ use std::time::{Duration, Instant};
 
 use tauri::AppHandle;
 
-use crate::native_host::{self, BlockInfo};
-use crate::web_automation::{
+use crate::block_page::{
     build_blocked_url, is_block_page_url, original_url_from_block_page, url_is_blocked,
     web_enforcement_active,
 };
+use crate::native_host::{self, BlockInfo};
 
 /// Same cadence as the Automation watcher: the user notices a redirect that
 /// takes longer than about a second.

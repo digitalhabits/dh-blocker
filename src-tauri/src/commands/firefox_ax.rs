@@ -28,7 +28,7 @@ impl Default for FirefoxAxState {
 pub fn firefox_ax_start(app: AppHandle, state: State<FirefoxAxState>) {
     let mut slot = state.0.lock().expect("firefox_ax lock");
     if slot.is_none() {
-        match super::web_automation::resolve_block_page_url(&app) {
+        match crate::block_page::resolve_block_page_url(&app) {
             Some(url) => *slot = Some(firefox_ax::start(app.clone(), url)),
             None => {
                 log::warn!("firefox_ax: not starting — no block page URL");
@@ -110,7 +110,7 @@ pub fn register<R: tauri::Runtime>(app: &tauri::App<R>) {
 /// method every pass and goes idle in one tick when it is not selected. An
 /// idle tick reads nothing and synthesises nothing.
 pub fn auto_start(app: &AppHandle) {
-    let url = match super::web_automation::resolve_block_page_url(app) {
+    let url = match crate::block_page::resolve_block_page_url(app) {
         Some(u) => u,
         None => {
             log::warn!("firefox_ax: skipping auto_start — no block page URL");

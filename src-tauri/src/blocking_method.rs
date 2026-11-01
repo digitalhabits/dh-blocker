@@ -1,6 +1,6 @@
-//! Per-browser website blocking method on macOS (Automation vs extension).
+//! Per-browser desktop website blocking method (Automation vs extension).
 //!
-//! Chrome, Brave, Edge, and Safari default to Automation; power users may
+//! Supported browsers default to Automation (Firefox stays extension-only on macOS). Users may
 //! opt into the ReDD Focus extension path for instant redirects.
 //!
 //! Firefox is the exception twice over. It has no AppleScript dictionary for
@@ -24,6 +24,17 @@ pub const METHOD_ACCESSIBILITY: &str = "accessibility";
 /// list when Accessibility arrived; before that its method was fixed, so
 /// anything reading this constant must not assume "can use Automation".
 pub const MAC_BLOCKING_METHOD_KEYS: &[&str] = &["chrome", "brave", "edge", "safari", "firefox"];
+pub const WINDOWS_BLOCKING_METHOD_KEYS: &[&str] = &["chrome", "brave", "edge", "firefox"];
+
+pub fn windows_method(methods: &HashMap<String, String>, key: &str) -> Method {
+    if !WINDOWS_BLOCKING_METHOD_KEYS.contains(&key) {
+        return Method::Extension;
+    }
+    methods
+        .get(key)
+        .and_then(|s| Method::parse(s))
+        .unwrap_or(Method::Automation)
+}
 
 /// Chromium browsers on macOS (native-messaging extension path).
 pub const MAC_CHROMIUM_KEYS: &[&str] = &["chrome", "brave", "edge"];
@@ -85,7 +96,11 @@ fn read_map_from_value(data: &Value) -> HashMap<String, String> {
 /// Effective blocking method for a browser key on this platform.
 #[allow(clippy::needless_return)] // cfg dispatch: the return is load-bearing on the other platform
 pub fn method_for_key_at_path(path: &Path, key: &str) -> Method {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        return windows_method(&read_map_from_path(path), key);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = (path, key);
         return Method::Extension;
@@ -142,6 +157,9 @@ pub fn uses_accessibility(app: &AppHandle, key: &str) -> bool {
 /// choice — slower, active tab only, and it would ask the user for a
 /// system-wide input-synthesis grant they do not otherwise need.
 pub fn method_is_valid_for_key(key: &str, method: Method) -> bool {
+    if cfg!(target_os = "windows") {
+        return WINDOWS_BLOCKING_METHOD_KEYS.contains(&key) && method != Method::Accessibility;
+    }
     match (key, method) {
         ("firefox", Method::Automation) => false,
         ("firefox", _) => true,
@@ -166,8 +184,13 @@ pub fn is_mac_blocking_method_key(key: &str) -> bool {
     MAC_BLOCKING_METHOD_KEYS.contains(&key)
 }
 
-pub fn validate_mac_blocking_method_key(key: &str) -> Result<(), String> {
-    if is_mac_blocking_method_key(key) {
+pub fn validate_blocking_method_key(key: &str) -> Result<(), String> {
+    let supported = if cfg!(target_os = "windows") {
+        WINDOWS_BLOCKING_METHOD_KEYS.contains(&key)
+    } else {
+        is_mac_blocking_method_key(key)
+    };
+    if supported {
         Ok(())
     } else {
         Err(format!("unsupported browser for blocking method: {key}"))
@@ -271,5 +294,25 @@ mod tests {
         for key in ["chrome", "brave", "edge", "safari"] {
             assert_eq!(method_for_key_at_path(&path, key), Method::Automation);
         }
+    }
+}
+
+#[cfg(test)]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    fn windows_defaults_and_explicit_extension_selection() {
+        let mut methods = HashMap::new();
+        for key in WINDOWS_BLOCKING_METHOD_KEYS {
+            assert_eq!(windows_method(&methods, key), Method::Automation);
+            methods.insert(key.to_string(), METHOD_EXTENSION.to_string());
+            assert_eq!(windows_method(&methods, key), Method::Extension);
+            methods.insert(key.to_string(), "invalid".to_string());
+            assert_eq!(windows_method(&methods, key), Method::Automation);
+            methods.insert(key.to_string(), METHOD_ACCESSIBILITY.to_string());
+            assert_eq!(windows_method(&methods, key), Method::Automation);
+        }
+        assert_eq!(windows_method(&methods, "safari"), Method::Extension);
     }
 }

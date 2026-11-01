@@ -227,6 +227,11 @@ async function openScreen(browser, screen, eulaRevision) {
             'windows', 'mac', 'ios', 'ios-phone', 'android', 'mobile-phone-home', 'handset-device',
         );
         bodyClasses.forEach(c => document.body.classList.add(c));
+        const { state } = await import('/state.js');
+        state.isWindowsDesktop = bodyClasses.includes('windows');
+        state.isMacOSDesktop = bodyClasses.includes('mac');
+        state.isIOS = bodyClasses.includes('ios');
+        state.isAndroid = bodyClasses.includes('android');
 
         // detectPlatform does not only add classes — it hides desktop chrome on
         // its mac/iOS/Android branches. Having already run its Windows branch on
