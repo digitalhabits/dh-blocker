@@ -802,12 +802,24 @@ enum AutomationError {
 /// linefeed never appear inside a URL, so parsing back is unambiguous.
 const FIELD_SEP: char = '\t';
 
-fn read_tabs(browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
-    let app_name = browser.applescript_name();
+/// AppleScript handler that joins the read script's rows. Building one
+/// text by `set _out to _out & …` copies everything built so far on every
+/// row, so a read cost grew with the square of the open tab count;
+/// collecting a list and coercing it once under `text item delimiters`
+/// is linear. Shared with the tests, which run it on synthetic rows.
+const JOIN_ROWS_HANDLER: &str = r#"on joinRows(_rows, _eol)
+  set _saved to AppleScript's text item delimiters
+  set AppleScript's text item delimiters to _eol
+  set _out to _rows as text
+  set AppleScript's text item delimiters to _saved
+  return _out
+end joinRows"#;
+
+fn read_tabs_script(browser: SupportedBrowser) -> String {
     // The `is running` guard keeps the read from *launching* the browser
     // if it quit between the sysinfo check and now (referencing the
     // `running` property does not launch the app).
-    // NOTE: `tab` and `linefeed` are resolved at the TOP LEVEL here, before the
+    // NOTE: `tab` and `linefeed` are resolved OUTSIDE the
     // `tell application` block. Inside a browser `tell` block the bare word
     // `tab` binds to the app's `tab` *element class* (Safari/Chrome both define
     // it), so `... & tab & ...` would concatenate the literal text "tab"
@@ -823,38 +835,55 @@ fn read_tabs(browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
     // the `tab <i> of window <w>` addressing `apply_actions` uses.
     // Safari reports `missing value` for empty tabs; the `as text`
     // coercion is wrapped in `try` so those rows degrade to "".
-    let script = format!(
-        r#"set _sep to tab
-set _eol to linefeed
-if application "{app}" is running then
-  tell application "{app}"
-    set _out to ""
-    set _wi to 0
-    repeat with w in windows
-      set _wi to _wi + 1
-      try
-        set _urls to URL of every tab of w
-      on error
-        set _urls to {{}}
-      end try
-      set _ti to 0
-      repeat with _u in _urls
-        set _ti to _ti + 1
-        set _u_text to ""
-        try
-          set _u_text to _u as text
-        end try
-        set _out to _out & _wi & _sep & _ti & _sep & _u_text & _eol
-      end repeat
-    end repeat
-    return _out
-  end tell
-else
-  return ""
-end if"#,
-        app = app_name
-    );
-    let out = run_osascript(&script)?;
+    //
+    // The explicit `on run` keeps the variables local; at the top level
+    // of an implicit run handler they would be script globals.
+    //
+    // `with timeout` bounds each Apple Event, while run_osascript also
+    // caps the whole subprocess. A timeout (-1712) inside the per-window `try`
+    // is rethrown: swallowing it would report a hung window as having no
+    // tabs, and a restore pass would take that as "nothing left parked".
+    format!(
+        r#"{join}
+
+on run
+  set _sep to tab
+  set _eol to linefeed
+  set _rows to {{}}
+  if application "{app}" is running then
+    with timeout of {timeout} seconds
+      tell application "{app}"
+        set _wi to 0
+        repeat with w in windows
+          set _wi to _wi + 1
+          try
+            set _urls to URL of every tab of w
+          on error _msg number _num
+            if _num is -1712 then error _msg number _num
+            set _urls to {{}}
+          end try
+          set _ti to 0
+          repeat with _u in _urls
+            set _ti to _ti + 1
+            set _u_text to ""
+            try
+              set _u_text to _u as text
+            end try
+            set end of _rows to (_wi as text) & _sep & _ti & _sep & _u_text
+          end repeat
+        end repeat
+      end tell
+    end timeout
+  end if
+  return joinRows(_rows, _eol)
+end run"#,
+        join = JOIN_ROWS_HANDLER,
+        app = browser.applescript_name(),
+        timeout = OSASCRIPT_TIMEOUT.as_secs()
+    )
+}
+
+fn parse_tab_rows(out: &str) -> Vec<Tab> {
     let mut tabs = Vec::new();
     for line in out.lines() {
         if line.is_empty() {
@@ -872,7 +901,12 @@ end if"#,
             });
         }
     }
-    Ok(tabs)
+    tabs
+}
+
+fn read_tabs(browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
+    let out = run_osascript(&read_tabs_script(browser))?;
+    Ok(parse_tab_rows(&out))
 }
 
 fn apply_actions(
