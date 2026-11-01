@@ -1,5 +1,6 @@
 // Website blocking on Windows through UI Automation. Chrome, Edge, Brave and
-// Firefox default to this method; explicit extension mode skips the watcher.
+// Firefox use this method after opt-in; Chromium also defaults to it when
+// native-messaging policy blocks the host. Explicit extension mode skips it.
 // Active ticks read the foreground browser address bar and redirect blocked
 // sites to the bundled page. Parked pages restore when the rule no longer
 // applies. URL decisions are shared with macOS in block_page.rs.

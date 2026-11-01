@@ -1,7 +1,7 @@
 //! Per-browser desktop website blocking method (Automation vs extension).
 //!
-//! Supported browsers default to Automation (Firefox stays extension-only on macOS). Users may
-//! opt into the ReDD Focus extension path for instant redirects.
+//! Windows defaults to Extension, except confirmed native-messaging policy blocks.
+//! Explicit choices override defaults. macOS supported browsers default to Automation.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -15,14 +15,21 @@ pub const METHOD_EXTENSION: &str = "extension";
 pub const MAC_BLOCKING_METHOD_KEYS: &[&str] = &["chrome", "brave", "edge", "safari"];
 pub const WINDOWS_BLOCKING_METHOD_KEYS: &[&str] = &["chrome", "brave", "edge", "firefox"];
 
-pub fn windows_method(methods: &HashMap<String, String>, key: &str) -> Method {
+pub fn windows_method(
+    methods: &HashMap<String, String>,
+    key: &str,
+    policy_blocked: bool,
+) -> Method {
     if !WINDOWS_BLOCKING_METHOD_KEYS.contains(&key) {
         return Method::Extension;
     }
-    methods
-        .get(key)
-        .and_then(|s| Method::parse(s))
-        .unwrap_or(Method::Automation)
+    methods.get(key).and_then(|s| Method::parse(s)).unwrap_or(
+        if policy_blocked && key != "firefox" {
+            Method::Automation
+        } else {
+            Method::Extension
+        },
+    )
 }
 
 /// Chromium browsers on macOS (native-messaging extension path).
@@ -84,7 +91,10 @@ fn read_map_from_value(data: &Value) -> HashMap<String, String> {
 pub fn method_for_key_at_path(path: &Path, key: &str) -> Method {
     #[cfg(target_os = "windows")]
     {
-        return windows_method(&read_map_from_path(path), key);
+        let policy_blocked = native_host_target(key)
+            .and_then(crate::browser_policy::read)
+            .is_some_and(|policy| policy.blocked);
+        return windows_method(&read_map_from_path(path), key, policy_blocked);
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
@@ -223,15 +233,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn windows_defaults_and_explicit_extension_selection() {
+    fn windows_extension_default_policy_fallback_and_explicit_overrides() {
         let mut methods = HashMap::new();
         for key in WINDOWS_BLOCKING_METHOD_KEYS {
-            assert_eq!(windows_method(&methods, key), Method::Automation);
+            assert_eq!(windows_method(&methods, key, false), Method::Extension);
+            let fallback = if *key == "firefox" {
+                Method::Extension
+            } else {
+                Method::Automation
+            };
+            assert_eq!(windows_method(&methods, key, true), fallback);
             methods.insert(key.to_string(), METHOD_EXTENSION.to_string());
-            assert_eq!(windows_method(&methods, key), Method::Extension);
+            assert_eq!(windows_method(&methods, key, true), Method::Extension);
             methods.insert(key.to_string(), "invalid".to_string());
-            assert_eq!(windows_method(&methods, key), Method::Automation);
+            assert_eq!(windows_method(&methods, key, false), Method::Extension);
+            methods.insert(key.to_string(), METHOD_AUTOMATION.to_string());
+            assert_eq!(windows_method(&methods, key, false), Method::Automation);
         }
-        assert_eq!(windows_method(&methods, "safari"), Method::Extension);
+        assert_eq!(windows_method(&methods, "safari", true), Method::Extension);
     }
 }

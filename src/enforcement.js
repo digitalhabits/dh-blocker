@@ -215,7 +215,9 @@ export function syncBlockingMethodSelects(methods = getBlockingMethodsMap()) {
     for (const key of ALL_BLOCKING_METHOD_KEYS) {
         const select = document.getElementById(`blocking-method-${key}`);
         if (!select) continue;
-        const value = methods[key] || 'automation';
+        const value = state.isWindowsDesktop
+            ? windowsBrowserMethod(key, methods, lastSettingsBlockingMethodBrowsers?.[key])
+            : (methods[key] || 'automation');
         select.value = value;
         select.disabled = false;
     }
@@ -644,7 +646,7 @@ export const BROWSER_STORE_LINKS = {
 // (Apple Events) watcher rather than the browser extension — so for
 // these the onboarding "compliance" is about the per-browser Automation
 // grant, not whether ReDD Focus is installed/enabled. Firefox stays on
-// the extension path. Windows uses UI Automation by default without a grant prompt.
+// the extension path. Windows Automation is opt-in or a native-policy fallback.
 export const AUTOMATION_BROWSER_KEYS = ['chrome', 'brave', 'edge', 'safari'];
 export const MAC_BLOCKING_METHOD_KEYS = ['safari', 'chrome', 'edge', 'brave'];
 export const WINDOWS_BLOCKING_METHOD_KEYS = ['chrome', 'edge', 'brave', 'firefox'];
@@ -663,13 +665,21 @@ export function getBlockingMethodsMap() {
     return state.appData?.settings?.blockingMethods || {};
 }
 
-export function browserBlockingMethod(key) {
+export function windowsBrowserMethod(key, methods, browser) {
+    if (!WINDOWS_BLOCKING_METHOD_KEYS.includes(key)) return 'extension';
+    if (methods[key] === 'automation' || methods[key] === 'extension') return methods[key];
+    return key !== 'firefox' && browser?.nativeHostBlockedByPolicy ? 'automation' : 'extension';
+}
+
+export function browserBlockingMethod(key, browser) {
     if (!blockingMethodKeys().includes(key)) return 'extension';
+    if (state.isWindowsDesktop) return windowsBrowserMethod(key, getBlockingMethodsMap(), browser
+        || lastOnboardingState?.browsers?.[key] || state.lastMigrationBrowserState?.browsers?.[key]);
     return getBlockingMethodsMap()[key] === 'extension' ? 'extension' : 'automation';
 }
 
-export function browserUsesAutomation(key) {
-    return browserBlockingMethod(key) === 'automation';
+export function browserUsesAutomation(key, browser) {
+    return browserBlockingMethod(key, browser) === 'automation';
 }
 
 // key -> 'granted' | 'denied' | 'unknown', refreshed from
@@ -746,7 +756,7 @@ export function automationBrowserIsRunning(key, browserScan) {
 }
 
 export function effectiveBrowserComplianceStatus(key, browsers) {
-    if (state.isWindowsDesktop && browserUsesAutomation(key)) return 'compliant';
+    if (state.isWindowsDesktop && browserUsesAutomation(key, browsers?.[key])) return 'compliant';
     if (browserUsesAutomation(key)) {
         const browserScan = (browsers || {})[key];
         if (!automationPermissionStatusReady) {
@@ -808,7 +818,7 @@ export function browserComplianceStatus(key, b) {
 
 
 export function addressBarBlockingCovers(key, b) {
-    return Boolean(state.isWindowsDesktop && b?.installed && browserUsesAutomation(key));
+    return Boolean(state.isWindowsDesktop && b?.installed && browserUsesAutomation(key, b));
 }
 
 export function statusLabel(key, status) {
@@ -1171,7 +1181,7 @@ export function syncMigrationPostHeader(state) {
 }
 
 export function migrationExtLinesHtml(state) {
-    if (appState.isWindowsDesktop && migrationBrowserKeys(state).every(browserUsesAutomation)) {
+    if (appState.isWindowsDesktop && migrationBrowserKeys(state).every(key => browserUsesAutomation(key, state.browsers?.[key]))) {
         return tSettings('settingsBlockingMethodHintWindows');
     }
     const focusLogoHtml =

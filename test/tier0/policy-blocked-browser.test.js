@@ -49,15 +49,63 @@ describe('policy-blocked browsers', () => {
 // address bar instead (src-tauri/src/uia_web_automation.rs). There is nothing
 // for the user to do, so the row must not tell them blocking is broken.
 describe('policy-blocked browsers on Windows', () => {
-    const setUpWindows = async () => {
+    const setUpWindows = async (optIn = true) => {
         const { state } = await import('../../src/state.js');
         state.isMacOSDesktop = false;
         state.isWindowsDesktop = true;
         state.appData.settings = { ...state.appData.settings, blockingMethods: {} };
+        if (optIn) state.appData.settings.blockingMethods = Object.fromEntries(
+            ['chrome', 'edge', 'brave', 'firefox'].map(key => [key, 'automation']));
         return import('../../src/enforcement.js');
     };
 
-    test('Windows defaults to automation without extension setup or permission prompts', async () => {
+    test('Windows upgrades and fresh installs retain extension mode unless explicitly opted in', async () => {
+        const { browserBlockingMethod, effectiveBrowserComplianceStatus } = await setUpWindows(false);
+        const { state } = await import('../../src/state.js');
+        const { windowsBrowserSetupIsAutomatic } = await import('../../src/onboarding.js');
+        for (const key of ['chrome', 'edge', 'brave', 'firefox']) {
+            expect(browserBlockingMethod(key)).toBe('extension');
+            expect(effectiveBrowserComplianceStatus(key, { [key]: edge({ profiles: [] }) })).toBe('needs-install');
+            expect(effectiveBrowserComplianceStatus(key, { [key]: edge({ nativeHostBlockedByPolicy: true }) })).toBe(key === 'firefox' ? 'policy-blocked' : 'compliant');
+            state.appData.settings.blockingMethods[key] = 'invalid';
+            expect(browserBlockingMethod(key)).toBe('extension');
+        }
+        expect(windowsBrowserSetupIsAutomatic()).toBe(false);
+    });
+
+    test('policy-blocked Chromium defaults to automation, but explicit extension choice wins', async () => {
+        const { windowsBrowserMethod, effectiveBrowserComplianceStatus } = await setUpWindows(false);
+        const { windowsBrowserSetupIsAutomatic } = await import('../../src/onboarding.js');
+        const { state } = await import('../../src/state.js');
+        const browsers = { edge: edge({ nativeHostBlockedByPolicy: true }) };
+        expect(windowsBrowserMethod('edge', {}, browsers.edge)).toBe('automation');
+        expect(windowsBrowserSetupIsAutomatic(browsers)).toBe(true);
+        expect(windowsBrowserSetupIsAutomatic({ ...browsers, chrome: edge({ profiles: [] }) })).toBe(false);
+        state.appData.settings.blockingMethods.edge = 'extension';
+        expect(effectiveBrowserComplianceStatus('edge', browsers)).toBe('policy-blocked');
+        expect(windowsBrowserSetupIsAutomatic(browsers)).toBe(false);
+    });
+
+    test('default Windows onboarding still shows the extension checklist', async () => {
+        await setUpWindows(false);
+        const { state } = await import('../../src/state.js');
+        const { ensureExtensionSetupOnboardingShown, EXT_ONBOARDING_DISMISSED_KEY } = await import('../../src/onboarding.js');
+        state.isIOS = false;
+        state.isAndroid = false;
+        state.migrationOnboardingActive = false;
+        state.migrationOnboardingDismissed = false;
+        state.firstRunExtensionSetupPending = true;
+        state.appData.settings.onboardingComplete = false;
+        localStorage.removeItem(EXT_ONBOARDING_DISMISSED_KEY);
+        document.body.innerHTML = '<div id="migration-onboarding" class="hidden"><div id="migration-phase-pre"></div><div id="migration-phase-post"></div></div><div id="main-content"></div>';
+        await ensureExtensionSetupOnboardingShown();
+        expect(state.migrationOnboardingActive).toBe(true);
+        expect(document.getElementById('migration-onboarding').classList.contains('hidden')).toBe(false);
+        expect(state.appData.settings.onboardingComplete).toBe(false);
+        state.migrationOnboardingActive = false;
+    });
+
+    test('Windows explicit automation skips extension setup and permission prompts', async () => {
         const { browserBlockingMethod, effectiveBrowserComplianceStatus, buildBannerActionSummary } = await setUpWindows();
         const browsers = Object.fromEntries(['chrome', 'edge', 'brave', 'firefox'].map(key => [key, edge({ profiles: [], present: true })]));
         for (const key of Object.keys(browsers)) {
@@ -67,7 +115,7 @@ describe('policy-blocked browsers on Windows', () => {
         expect(buildBannerActionSummary(browsers, Object.keys(browsers))).toBe('');
     });
 
-    test('fresh Windows setup completes without revealing the browser overlay', async () => {
+    test('Windows setup with explicit automation completes without revealing the browser overlay', async () => {
         await setUpWindows();
         const { state } = await import('../../src/state.js');
         const { ensureExtensionSetupOnboardingShown, EXT_ONBOARDING_DISMISSED_KEY } = await import('../../src/onboarding.js');

@@ -4227,7 +4227,10 @@
         try {
             state.isWindowsDesktop = true;
             state.appData.settings.blockingMethods = {};
-            assert(windowsBrowserSetupIsAutomatic(), 'Windows defaults skip browser setup');
+            assert(!windowsBrowserSetupIsAutomatic(), 'Windows defaults retain extension setup');
+            state.appData.settings.blockingMethods = Object.fromEntries(
+                ['chrome', 'edge', 'brave', 'firefox'].map(key => [key, 'automation']));
+            assert(windowsBrowserSetupIsAutomatic(), 'Explicit automation for every browser skips setup');
             for (const browser of ['chrome', 'edge', 'brave', 'firefox']) {
                 state.appData.settings.blockingMethods = { [browser]: 'extension' };
                 assert(!windowsBrowserSetupIsAutomatic(), 'Explicit extension mode retains setup: ' + browser);

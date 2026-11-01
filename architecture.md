@@ -344,11 +344,14 @@ and countdown rows render identically on Automation and extension paths.
 
 ### 5.3 Windows UI Automation and extension selection
 
-Chrome, Edge, Brave and Firefox default to UI Automation. Settings exposes
+Chrome, Edge, Brave and Firefox default to Extension. Settings exposes
 Automation / Extension per installed browser in `settings.blockingMethods`,
 using the same persisted selection as macOS. Missing or invalid Windows
-values mean Automation; an explicit Extension value stops UI Automation for
-that browser. No organisation-policy prerequisite is used.
+values mean Extension unless native-messaging policy is confirmed to block
+Chrome, Edge or Brave: those browsers default to Automation without the policy
+popup. An explicit saved selection wins over that default. This applies to
+upgrades and fresh installs alike; an installed extension is not removed.
+Policy read failures retain Extension; Firefox has no supported policy fallback.
 
 - The 1 s watcher acts on the foreground window's active tab. Background
   tabs/windows are handled when brought forward; redirects happen after load.
