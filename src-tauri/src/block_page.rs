@@ -363,6 +363,19 @@ pub fn path_to_file_url(path: &std::path::Path) -> String {
 /// letter keeps its colon: `C:\Program Files\x` becomes
 /// `file:///C:/Program%20Files/x`, which is what a browser expects.
 pub(crate) fn path_str_to_file_url(path: &str) -> String {
+    // Windows resource_dir() can return a verbatim drive path in an MSIX.
+    // The filesystem prefix is not part of a browser URL: encoding it would
+    // produce file:///%3F/C%3A/... and send every blocked tab to a missing file.
+    let path = path
+        .strip_prefix(r"\\?\")
+        .filter(|rest| {
+            let bytes = rest.as_bytes();
+            bytes.len() >= 3
+                && bytes[0].is_ascii_alphabetic()
+                && bytes[1] == b':'
+                && matches!(bytes[2], b'\\' | b'/')
+        })
+        .unwrap_or(path);
     let mut url = String::from("file://");
     let mut first = true;
     for component in path.split(['/', '\\']) {
@@ -553,6 +566,14 @@ mod tests {
         assert_eq!(
             path_str_to_file_url(r"C:\Program Files\Digital Habits Blocker\blocked\blocked.html"),
             BLOCK_PAGE
+        );
+    }
+
+    #[test]
+    fn windows_extended_package_path_becomes_browser_file_url() {
+        assert_eq!(
+            path_str_to_file_url(r"\\?\C:\Program Files\WindowsApps\DigitalHabits.Blocker.LocalTest_3.11.0.0_x64__farx1f09fp9d4\blocked\blocked.html"),
+            "file:///C:/Program%20Files/WindowsApps/DigitalHabits.Blocker.LocalTest_3.11.0.0_x64__farx1f09fp9d4/blocked/blocked.html"
         );
     }
 

@@ -50,7 +50,7 @@ pub fn set_blocking_method(
 }
 
 #[cfg_attr(target_os = "windows", allow(unreachable_code))] // the cfg arm above returns
-fn apply_side_effects(app: &AppHandle, browser: &str, method: Method) -> Result<(), String> {
+fn apply_side_effects(_app: &AppHandle, browser: &str, method: Method) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         if method == Method::Extension {
@@ -63,14 +63,14 @@ fn apply_side_effects(app: &AppHandle, browser: &str, method: Method) -> Result<
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        let _ = (app, browser, method);
+        let _ = (_app, browser, method);
         return Ok(());
     }
     #[cfg(target_os = "macos")]
     match (browser, method) {
         ("safari", Method::Extension) => {
             let path =
-                super::canonical_data_path(app).ok_or_else(|| "no app data path".to_string())?;
+                super::canonical_data_path(_app).ok_or_else(|| "no app data path".to_string())?;
             crate::app_group::sync_blocklist_from(&path)
                 .map_err(|e| format!("App Group sync for Safari: {e}"))?;
         }
