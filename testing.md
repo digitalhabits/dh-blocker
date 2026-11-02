@@ -35,6 +35,60 @@ layer closer to observed behavior.
 
 ---
 
+## Choosing regression coverage
+
+Follow [AGENTS.md's verification policy](AGENTS.md#match-verification-to-risk):
+match effort to behavioral risk. Small, low-risk changes do not require new
+tests or a test-first workflow; run relevant existing checks and visually inspect
+UI changes. For enforcement changes and substantive bug fixes, prefer a
+regression test that demonstrably fails on the original code. If the test was
+written after the fix, running it against the original code can still establish
+that it detects the regression.
+
+Regression coverage is especially valuable for enforcement, where the
+characteristic failure mode is silence rather than an error:
+
+- A browser-specific URL-bar quirk makes extraction return nothing. The browser
+  stays in the supported map, blocking just stops working for it, and nothing
+  logs an error — that is how Samsung Internet's invisible `U+200E` prefix went
+  unnoticed.
+- `web_automation::tests::file_url_encodes_spaces` asserted the pre-rename
+  product name and could never pass. Nothing ran it, so nobody found out until
+  `cargo test --lib` was wired into CI.
+
+When adding or updating coverage, put it where CI will actually run it,
+matching the layer you changed:
+
+| What you changed | Where the test goes |
+| --- | --- |
+| A single pure helper in `src/` — boundaries, malformed input | `test/tier0/` (Tier 0) |
+| Blocking/schedule/allowlist logic in `src/` | `src/blocking-tests.js` (Tier 1) |
+| Desktop enforcement semantics — derivation, URL decisions, payloads | `#[cfg(test)]` in the Rust module |
+| Android blocking decisions / schedule persistence | `SchedulesTest` |
+| Android interception or friction-gate behavior | `BlockerServiceTest` / `UnlockActivityTest` (Robolectric) |
+| Android URL-bar parsing / a new browser | `BrowserUrlParserTest` fixtures |
+| Command paths, persistence round-trips | `src/integration-tests.js` (Tier 2) |
+| Appearance or layout regressions | reuse or add a screen in `test/ui/screens.js`, then `pnpm ui:shoot --screen=<name> --measure` and **look at it** |
+
+Prefer the highest row that can hold the case — except that a case about
+*composed* behavior belongs in Tier 1 even when its pieces are individually
+Tier 0-able. Use `scripts/manual-test-checklist.md` for behavior that needs
+real-system verification, such as a browser redirecting or an app being quit.
+If automated reproduction is impractical, briefly explain why and record the
+closest reliable verification.
+
+**A test that names a CSS class is not a test that the UI works.** jsdom has no
+layout engine, so Tier 0 cannot measure a box —
+`getBoundingClientRect()` returns zeros there. Asserting that a bar gained a
+`.compact` class proves the class was added, not that the result is legible, and
+it stays green if the matching rule is deleted from `styles.css`. For substantive layout fixes, check *geometry* (`pnpm ui:shoot --measure`
+reports what a real browser measured) and look at the screenshot. Neither half
+substitutes for the other. Minor styling and copy edits need visual inspection,
+but do not require a new screenshot fixture or geometry assertion when existing
+screens or a direct UI check suffice.
+
+---
+
 ## Quick run guide
 
 - **Tier 0**: `pnpm test:tier0` (that script wraps `vitest run`, so for watch
@@ -100,9 +154,9 @@ Notes on the non-obvious choices:
 - **Rust runs on macOS, not Linux.** `web_automation.rs`, `window_inventory.rs`
   and `workspace_events.rs` are `#[cfg(target_os = "macos")]`, and the
   `cfg(not(ios|android))` modules depend on macOS/Windows-only crates, so the
-  lib does not compile on a Linux runner at all. Windows-only UI Automation
-  regression tests run in the Windows desktop clippy job with
-  `cargo test --lib --locked uia_web_automation`.
+  lib does not compile on a Linux runner at all. The full Windows backend
+  suite runs in the Windows desktop clippy job with `cargo test --lib --locked`,
+  including shared block-page decisions and native website enforcement.
   The job also runs `pnpm vite:build`
   first — `tauri_build::build()` refuses to run when the configured
   `frontendDist` (`../dist`) is missing.
@@ -580,7 +634,7 @@ arrives and the friction gate launches.
 Recommended stance:
 
 - Run Tier 0 and Tier 1 during feature work.
-- Run `pnpm ui:shoot` after any change to `styles.css` or to rendering code, and look at the output.
+- Visually inspect UI changes, using relevant `pnpm ui:shoot` screens or a direct UI check. For substantive layout fixes, also check measured geometry; see [Choosing regression coverage](#choosing-regression-coverage).
 - Run Tier 2 for data/sync/shim regressions; do not treat passing Tier 2 as proof of website blocking.
 - Run the manual checklist before every release.
 

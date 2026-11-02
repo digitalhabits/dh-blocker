@@ -253,51 +253,25 @@ mode via the dev console. Full details, including the "What runs in CI" table:
 - **Website-enforcement correctness** (native browser redirects)
   is validated manually — `scripts/manual-test-checklist.md`.
 
-### Write the failing test first
+### Match verification to risk
 
-When fixing a bug or changing enforcement behavior, add the test **before** the
-fix and confirm it fails for the reason you are about to address. A test written
-afterwards only proves the code does what it currently does.
+For enforcement changes and substantive bug fixes, add or update a regression
+test and confirm it fails on the original code before applying the fix, where
+practical. An existing failing test is sufficient.
 
-This matters more here than in most codebases, because the characteristic
-failure mode is silence rather than an error:
+Small, low-risk changes — such as copy edits, minor styling, documentation, and
+behavior-preserving refactors — do not require a new test or a test-first
+workflow. Run relevant existing checks and visually inspect UI changes. Add
+coverage when it protects meaningful behavior; avoid tests that merely repeat
+implementation details.
 
-- A browser-specific URL-bar quirk makes extraction return nothing. The browser
-  stays in the supported map, blocking just stops working for it, and nothing
-  logs an error — that is how Samsung Internet's invisible `U+200E` prefix went
-  unnoticed.
-- `web_automation::tests::file_url_encodes_spaces` asserted the pre-rename
-  product name and could never pass. Nothing ran it, so nobody found out until
-  `cargo test --lib` was wired into CI.
+If automated reproduction is impractical, explain briefly and use the closest
+reliable verification. Judge risk by behavioral impact, not diff size: a one-line
+change to blocking, schedules, allowlists, persistence, or bypass prevention can
+still need regression coverage.
 
-Put the test where CI will actually run it, matching the layer you changed:
-
-| What you changed | Where the test goes |
-| --- | --- |
-| A single pure helper in `src/` — boundaries, malformed input | `test/tier0/` (Tier 0) |
-| Blocking/schedule/allowlist logic in `src/` | `src/blocking-tests.js` (Tier 1) |
-| Desktop enforcement semantics — derivation, URL decisions, payloads | `#[cfg(test)]` in the Rust module |
-| Android blocking decisions / schedule persistence | `SchedulesTest` |
-| Android interception or friction-gate behavior | `BlockerServiceTest` / `UnlockActivityTest` (Robolectric) |
-| Android URL-bar parsing / a new browser | `BrowserUrlParserTest` fixtures |
-| Command paths, persistence round-trips | `src/integration-tests.js` (Tier 2) |
-| `styles.css`, or anything about how a screen *looks* | a screen in `test/ui/screens.js`, then `pnpm ui:shoot` and **look at it** |
-
-Prefer the highest row that can hold the case — except that a case about
-*composed* behavior belongs in Tier 1 even when its pieces are individually
-Tier 0-able. Reaching for
-`scripts/manual-test-checklist.md` is correct only when no automated layer can
-express the case — a real browser redirecting, a real app being quit — and not
-because writing the automated test is awkward.
-
-**A test that names a CSS class is not a test that the UI works.** jsdom has no
-layout engine, so Tier 0 cannot measure a box —
-`getBoundingClientRect()` returns zeros there. Asserting that a bar gained a
-`.compact` class proves the class was added, not that the result is legible, and
-it stays green if the matching rule is deleted from `styles.css`. When the change
-is about appearance, assert *geometry* (`pnpm ui:shoot --measure` reports what a
-real browser measured) and then look at the screenshot. Neither half substitutes
-for the other.
+See [testing.md](testing.md#choosing-regression-coverage) for test placement,
+visual verification, and the failures behind this guidance.
 
 ### What CI does and does not cover
 

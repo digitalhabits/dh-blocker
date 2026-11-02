@@ -21,63 +21,28 @@ const IOS_APPICON_DIR = path.join(
 // Must match the rounded-rect fill in assets/reddblock-icon.svg. iOS App Store
 // rejects icons with an alpha channel, so we flatten onto this background.
 const IOS_ICON_BG = { r: 247, g: 245, b: 240 };
-// rx on the 1024 SVG background rect (150/1024).
-const ICON_CORNER_RADIUS_RATIO = 150 / 1024;
-
 // Icon sizes needed for various platforms
 const ICON_SIZES = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
 const ICO_SIZES = ICON_SIZES.filter((size) => size <= 256);
 
-function isOutsideRoundedRect(x, y, size, radius) {
-    const cx = x + 0.5;
-    const cy = y + 0.5;
-    const corners = [
-        [radius, radius],
-        [size - radius, radius],
-        [radius, size - radius],
-        [size - radius, size - radius],
-    ];
-
-    for (const [qx, qy] of corners) {
-        const inX = qx === radius ? cx < radius : cx >= size - radius;
-        const inY = qy === radius ? cy < radius : cy >= size - radius;
-        if (!inX || !inY) {
-            continue;
-        }
-        const dx = cx - qx;
-        const dy = cy - qy;
-        if (dx * dx + dy * dy > radius * radius) {
-            return true;
-        }
-    }
-    return false;
+function windowsIconSvg() {
+    const svg = fs.readFileSync(SVG_PATH, 'utf8');
+    const background = '<rect width="1024" height="1024" rx="150" fill="#F7F5F0"/>';
+    if (!svg.includes(background)) throw new Error('Windows icon: canonical background rectangle changed');
+    const outline = svg.match(/<path d="([^"]+)" stroke="[^"]+"[^>]*\/>/);
+    if (!outline) throw new Error('Windows icon: shield outline missing');
+    // The shared SVG also has a rectangular backing behind the shield.
+    // Clip the colour fills to the shield itself, then draw its full stroke
+    // outside that clip so the outer half of the outline stays intact.
+    return Buffer.from(svg.replace(background, '')
+        .replace(/<rect width="633" height="791" transform="translate\(195 116\)" fill="#F7F5F0"\/>/, '')
+        .replace(outline[0], '')
+        .replace('</g>', `</g>${outline[0]}`)
+        .replace(/<rect width="633" height="791" fill="white" transform="translate\(195 116\)"\/>/, `<path d="${outline[1]}"/>`));
 }
 
 async function renderWindowsIcoPng(svgBuffer, size) {
-    const radius = ICON_CORNER_RADIUS_RATIO * size;
-    const { data } = await sharp(svgBuffer)
-        .resize(size, size, { fit: 'contain' })
-        .ensureAlpha()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-
-    for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-            const i = (y * size + x) * 4;
-            if (isOutsideRoundedRect(x, y, size, radius)) {
-                data[i] = data[i + 1] = data[i + 2] = data[i + 3] = 0;
-                continue;
-            }
-            const alpha = data[i + 3] / 255;
-            data[i] = Math.round(data[i] * alpha);
-            data[i + 1] = Math.round(data[i + 1] * alpha);
-            data[i + 2] = Math.round(data[i + 2] * alpha);
-        }
-    }
-
-    return sharp(data, { raw: { width: size, height: size, channels: 4 } })
-        .png()
-        .toBuffer();
+    return sharp(svgBuffer).resize(size, size).png().toBuffer();
 }
 
 function syncReddBlockIconCopies() {
@@ -185,10 +150,10 @@ async function generateIco() {
         // Use dynamic import for ES module
         const pngToIcoModule = await import('png-to-ico');
         const pngToIco = pngToIcoModule.default;
-        const svgBuffer = fs.readFileSync(SVG_PATH);
+        const svgBuffer = windowsIconSvg();
+        await sharp(svgBuffer).png().toFile(path.join(ICONS_DIR, 'windows-1024.png'));
 
-        // Small taskbar sizes lose corner transparency when downscaled; png-to-ico
-        // then renders those pixels as dark wedges on the Windows taskbar.
+        // Render each frame directly from the transparent Windows artwork.
         const icoPngBuffers = await Promise.all(
             ICO_SIZES.map((size) => renderWindowsIcoPng(svgBuffer, size)),
         );
@@ -198,10 +163,12 @@ async function generateIco() {
         // Write to both locations
         fs.writeFileSync(path.join(ICONS_DIR, 'icon.ico'), icoBuffer);
         fs.writeFileSync(path.join(ASSETS_DIR, 'icon.ico'), icoBuffer);
+        fs.writeFileSync(path.join(TAURI_ICONS_DIR, 'icon.ico'), icoBuffer);
 
         console.log('✓ Generated icon.ico');
     } catch (err) {
         console.error('✗ Error generating ICO:', err);
+        throw err;
     }
 }
 
@@ -307,6 +274,11 @@ async function generateIcns() {
 async function main() {
     console.log('Starting icon generation from:', SVG_PATH);
     console.log('');
+
+    if (process.argv.includes('--windows-only')) {
+        await generateIco();
+        return;
+    }
 
     syncReddBlockIconCopies();
     console.log('');

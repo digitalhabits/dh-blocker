@@ -4223,9 +4223,11 @@
         const { state } = await import('./state.js');
         const { windowsBrowserSetupIsAutomatic } = await import('./onboarding.js');
         const windows = state.isWindowsDesktop;
+        const mac = state.isMacOSDesktop;
         const methods = state.appData.settings.blockingMethods;
         try {
             state.isWindowsDesktop = true;
+            state.isMacOSDesktop = false;
             state.appData.settings.blockingMethods = {};
             assert(windowsBrowserSetupIsAutomatic(), 'Windows defaults skip browser setup');
             for (const browser of ['chrome', 'edge', 'brave', 'firefox']) {
@@ -4237,6 +4239,7 @@
             assert(!windowsBrowserSetupIsAutomatic(), 'Other platforms retain their setup flow');
         } finally {
             state.isWindowsDesktop = windows;
+            state.isMacOSDesktop = mac;
             state.appData.settings.blockingMethods = methods;
         }
     }

@@ -10,7 +10,8 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$MsixPath,
-    [switch]$Install
+    [switch]$Install,
+    [switch]$LocalTest
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,7 +50,7 @@ function Import-CertToTrustedPeople {
 }
 
 $envFile = Join-Path $ProjectRoot ".env"
-if (Test-Path $envFile) {
+if (-not $LocalTest -and (Test-Path $envFile)) {
     Get-Content $envFile | ForEach-Object {
         $line = $_.Trim()
         if ($line -and -not $line.StartsWith("#")) {
@@ -64,6 +65,7 @@ if (Test-Path $envFile) {
 }
 
 $Publisher = $env:WINDOWS_PUBLISHER
+if ($LocalTest) { $Publisher = "CN=Digital Habits Local Test" }
 if (-not $Publisher) {
     Write-Host "ERROR: Set WINDOWS_PUBLISHER in .env (Partner Center product identity)." -ForegroundColor Red
     exit 1
@@ -143,10 +145,12 @@ if ($Install) {
 
     Write-Host "  Installing..." -ForegroundColor Gray
     Add-AppxPackage -Path $MsixPath -ForceUpdateFromAnyVersion
-    Write-Host "  Installed. Launch Digital Habits: Blocker from the Start menu." -ForegroundColor Green
+    $label = if ($LocalTest) { 'the app ending in (Test)' } else { 'Digital Habits: Blocker' }
+    Write-Host "  Installed. Launch $label from the Start menu." -ForegroundColor Green
     Write-Host "  (Also enable Settings > System > For developers > Developer Mode if install still fails.)" -ForegroundColor Gray
 } else {
     Write-Host ""
     Write-Host "Sign-only done. To install, re-run as Administrator with -Install:" -ForegroundColor Yellow
-    Write-Host "  .\scripts\sign-msix-dev.ps1 -MsixPath `"$MsixPath`" -Install" -ForegroundColor White
+    $testFlag = if ($LocalTest) { ' -LocalTest' } else { '' }
+    Write-Host "  .\scripts\sign-msix-dev.ps1 -MsixPath `"$MsixPath`" -Install$testFlag" -ForegroundColor White
 }

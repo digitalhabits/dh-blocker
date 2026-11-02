@@ -528,6 +528,7 @@ export function normalizeImportedBlocklist(raw) {
 }
 
 export function parseBlocklistsImportPayload(text) {
+    if (text.length > 5_000_000) throw new Error('blocklist file too large');
     const parsed = JSON.parse(text);
     // Files written before overrideCountUnit existed came from a desktop that
     // stored character targets (phones already stored words). Only a count

@@ -15,7 +15,20 @@ updates:
     open-pull-requests-limit: 10
     commit-message:
       prefix: "deps"
+    ignore:
+      # Tauri requires matching JS/Rust minor versions. Upgrade these together
+      # with src-tauri/Cargo.lock; independent JS minor bumps fail native builds.
+      - dependency-name: "@tauri-apps/api"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "@tauri-apps/plugin-*"
+        update-types: ["version-update:semver-minor"]
     groups:
+      webdriverio-major:
+        patterns:
+          - "@wdio/*"
+          - "webdriverio"
+        update-types:
+          - "major"
       npm-minor-patch:
         update-types:
           - "minor"

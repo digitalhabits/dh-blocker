@@ -71,6 +71,7 @@ export const SETTINGS_TRANSLATIONS = {
         bannerActionInstallIn: 'Install in',
 
         bannerActionAutomationIn: 'Allow Automation for',
+        bannerActionAccessibilityIn: 'Allow Accessibility for',
         bannerActionEnableIn: 'Enable in',
         bannerActionPrivateBrowsingIn: 'Allow in private browsing in',
         bannerActionAllWebsitesIn: 'Allow on all websites in',
@@ -922,6 +923,7 @@ export const SETTINGS_TRANSLATIONS = {
         bannerActionInstallIn: 'Installer i',
 
         bannerActionAutomationIn: 'Tillad automatisering for',
+        bannerActionAccessibilityIn: 'Tillad tilgængelighed for',
         bannerActionEnableIn: 'Aktivér i',
         bannerActionPrivateBrowsingIn: 'Tillad privat browsing i',
         bannerActionAllWebsitesIn: 'Tillad på alle hjemmesider i',
@@ -1042,6 +1044,7 @@ export const SETTINGS_TRANSLATIONS = {
         migrationExtTitleMac: 'Tillad Digital Habits: Blocker i browsere',
         migrationExtSubMac: 'Hjemmesideblokering bruger <strong>macOS-automatisering</strong> i Safari, Chrome og Edge.',
         migrationExtSubMacFirefox: 'I Safari, Chrome og Edge: <strong>macOS-automatisering</strong>.\nI Firefox: <strong>Digital Habits: Focus-udvidelsen</strong>.',
+        migrationExtSubMacFirefoxAx: 'I Safari, Chrome og Edge: <strong>macOS-automatisering</strong>.\nI Firefox: <strong>macOS-tilgængelighed</strong>.',
         migrationExtStep1Mac: 'Klik på <strong>Giv adgang</strong> for hver browser nedenfor, og godkend macOS-prompten. Hvis du ser <strong>Åbn Automatisering</strong>, klik på den og slå Digital Habits: Blocker til igen.',
         migrationExtStep2MacFirefox: 'Til Firefox: klik på <strong>Installer</strong> nedenfor for at tilføje {FOCUS}<strong>Digital Habits: Focus</strong> fra tilføjelsesbutikken, og tillad den derefter i private vinduer.',
         migrationHowtoHeading: 'Opsætning',
@@ -1771,6 +1774,7 @@ export const SETTINGS_TRANSLATIONS = {
         bannerActionInstallIn: '安装到',
 
         bannerActionAutomationIn: '允许自动化控制',
+        bannerActionAccessibilityIn: '允许辅助功能访问',
         bannerActionEnableIn: '启用',
         bannerActionPrivateBrowsingIn: '允许隐私浏览',
         bannerActionAllWebsitesIn: '允许访问所有网站',
@@ -1868,6 +1872,7 @@ export const SETTINGS_TRANSLATIONS = {
         migrationExtTitleMac: '允许 Digital Habits: Blocker 控制你的浏览器',
         migrationExtSubMac: 'Safari、Chrome 和 Edge 的网站阻止使用 <strong>macOS 自动化</strong>。',
         migrationExtSubMacFirefox: 'Safari、Chrome 和 Edge 使用 <strong>macOS 自动化</strong>，Firefox 使用 <strong>Digital Habits: Focus 扩展</strong>。',
+        migrationExtSubMacFirefoxAx: 'Safari、Chrome 和 Edge 使用 <strong>macOS 自动化</strong>，Firefox 使用 <strong>macOS 辅助功能</strong>。',
         migrationExtStep1Mac: '点击下方每个浏览器的<strong>授予访问权限</strong>，并批准 macOS 权限提示。如果看到<strong>打开自动化设置</strong>，请点击并重新开启 Digital Habits: Blocker。',
         migrationExtStep2MacFirefox: 'Firefox：点击下方<strong>安装</strong>，从附加组件商店添加 {FOCUS}<strong>Digital Habits: Focus</strong>，然后允许它在隐私窗口中运行。',
         migrationHowtoHeading: '设置',
