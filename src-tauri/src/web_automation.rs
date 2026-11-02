@@ -33,7 +33,7 @@
 
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -300,15 +300,30 @@ impl Default for BrowserRuntime {
 struct Shared {
     enabled: bool,
     runtimes: HashMap<SupportedBrowser, BrowserRuntime>,
+    /// False when every browser is on the extension: the loop then waits on
+    /// `wake` instead of ticking, so extension-only installs pay nothing.
+    automation_wanted: bool,
 }
 
 /// Handle returned from `start`. Drop it (or call `set_enabled(false)`)
 /// to make the loop go idle.
 pub struct WebAutomationHandle {
     shared: Arc<Mutex<Shared>>,
+    wake: Arc<Condvar>,
 }
 
 impl WebAutomationHandle {
+    /// Re-read whether any browser blocks through Automation and wake the
+    /// loop if one now does. Call after anything that changes a browser's
+    /// method; `set_blocking_method` is the only writer today.
+    pub fn refresh_automation_wanted(&self, app: &AppHandle) {
+        let wanted = crate::blocking_method::any_uses_automation(app);
+        if let Ok(mut s) = self.shared.lock() {
+            s.automation_wanted = wanted;
+        }
+        self.wake.notify_all();
+    }
+
     pub fn set_enabled(&self, enabled: bool) {
         if let Ok(mut s) = self.shared.lock() {
             s.enabled = enabled;
@@ -358,8 +373,13 @@ impl WebAutomationHandle {
 /// of the bundled blocked.html (no query string), resolved once by the
 /// caller from the Tauri resource dir.
 pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
-    let shared = Arc::new(Mutex::new(Shared::default()));
+    let shared = Arc::new(Mutex::new(Shared {
+        automation_wanted: crate::blocking_method::any_uses_automation(&app),
+        ..Shared::default()
+    }));
+    let wake = Arc::new(Condvar::new());
     let shared_thread = shared.clone();
+    let wake_thread = wake.clone();
     std::thread::spawn(move || {
         // When true, the next idle ticks run a full restore sweep for
         // tabs still parked on blocked.html. Set while website
@@ -371,6 +391,11 @@ pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
         // frontmost one) was scripted — drives BACKGROUND_BROWSER_TICK.
         let mut last_full_pass: Option<Instant> = None;
         loop {
+            // No browser on Automation: block until a method changes rather
+            // than waking every second to find nothing to script.
+            if let Ok(guard) = shared_thread.lock() {
+                drop(wake_thread.wait_while(guard, |s| !s.automation_wanted));
+            }
             std::thread::sleep(TICK);
             let enabled = shared_thread.lock().map(|s| s.enabled).unwrap_or(false);
             if !enabled {
@@ -391,7 +416,7 @@ pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
             );
         }
     });
-    WebAutomationHandle { shared }
+    WebAutomationHandle { shared, wake }
 }
 
 fn tick(
