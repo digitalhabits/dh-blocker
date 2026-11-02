@@ -32,7 +32,7 @@ termination. None of its production OS signals is enabled for quitting.
 | Gate | Windows | macOS |
 |---|---|---|
 | Fresh install and stored extension-selection upgrade preserve rules/schedules/pauses/challenges | Pending runtime | Pending runtime |
-| Supported browsers redirect and restore exact original URLs | Pending runtime | Pending runtime |
+| Supported browsers redirect and restore exact original URLs | Pending runtime | Brave Apple Events passed; other browsers pending |
 | Private and multiple windows, typing/focus races | Pending runtime | Pending runtime |
 | Granted/denied/revoked/recovered required permission | Elevated-browser access tests pending | Automation and Accessibility tests pending |
 | Firefox launch/accessibility warm-up and bounded nudges | Disabled accessibility tests pending | Actual warm-up gap measurement pending |
@@ -153,8 +153,8 @@ The production `signal_validated` gate remains false for every failure type.
 ## Split validation status
 
 - The diagnostics-only base was verified separately; see `docs/pr3-validation.md`.
-- On this macOS host, Brave and Firefox were already running. The opt-in live check
-  refused to attach with `Brave is already running; close it yourself before isolated native-browser validation`. No test browser was launched or terminated.
+- The first attempt refused to attach to the existing Brave session. After the
+  user closed Brave, the isolated transport check passed; see the evidence below.
 - Windows live-browser tests, elevated-browser access and installed-package
   tests remain pending. No Windows runtime is available in this worktree.
 - Keep this PR in draft until the required real-browser evidence is recorded.
@@ -169,6 +169,23 @@ The production `signal_validated` gate remains false for every failure type.
   Android bundle pruning passed.
 - The synthetic countdown fixture rendered and was inspected: 1064 by 49 at
   an 1100-by-900 viewport. This is UI evidence, not OS signal validation.
-- Explicit invocation of the live test failed at the already-running-Brave
-  guard before launching a browser. Redirect/restore and termination validation
-  remain pending; no signal was enabled and no existing browser was closed.
+- The live Brave redirect/restore check passed. Termination validation remains
+  pending; no production signal was enabled and no existing browser was closed.
+
+## Live Brave transport evidence, 2 November 2026
+
+- Clean tested revision: `624dbcb7d158c5713ce6ec52196b98af66ec4198`.
+- Host: macOS `27.2`; browser: `Brave Browser 156.1.98.63`.
+- Command: the opt-in command above; **1 passed, 0 failed** in 3.00 seconds.
+- Observed navigation to the bundled block-page URL and restoration of
+  `https://native-recovery.invalid/exact/path?first=one%20two&second=3#fragment`.
+  The block-page planner left the parked tab alone while its rule was active.
+- Local evidence: `artifacts/native-browser-validation/9936-1793629047882586000/result.json`
+  and that directory's browser logs. The profile and logs remain ignored.
+- The first launched attempt encountered the transient Launch Services error
+  `Application isn’t running. (-600)`. The test now retries only that error
+  within its existing 20-second observation bound; other read errors still fail.
+- This verifies the production Apple Events reader, planner and navigation
+  transport with an isolated profile. It does not validate signed-app TCC,
+  failure signals, visible warning delivery, grace, notifications or termination.
+  `terminationSignalsValidated` remains false.
