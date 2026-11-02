@@ -17,7 +17,19 @@ impl Drop for IsolatedBrowser {
 fn wait_for_tab(expected: &str) -> Tab {
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
-        let tabs = read_tabs(SupportedBrowser::Brave).expect("native Brave tab read failed");
+        let tabs = match read_tabs(SupportedBrowser::Brave) {
+            Ok(tabs) => tabs,
+            // The process can exist before Launch Services can address it.
+            // Retry only this startup race, within the same bounded wait;
+            // permission denials and other read errors must still fail.
+            Err(AutomationError::Other(message))
+                if message.contains("(-600)") && Instant::now() < deadline =>
+            {
+                std::thread::sleep(Duration::from_millis(200));
+                continue;
+            }
+            Err(error) => panic!("native Brave tab read failed: {error:?}"),
+        };
         if let Some(tab) = tabs.into_iter().find(|tab| tab.url == expected) {
             return tab;
         }
