@@ -23,6 +23,12 @@ updates:
       - dependency-name: "@tauri-apps/plugin-*"
         update-types: ["version-update:semver-minor"]
     groups:
+      webdriverio-major:
+        patterns:
+          - "@wdio/*"
+          - "webdriverio"
+        update-types:
+          - "major"
       npm-minor-patch:
         update-types:
           - "minor"
