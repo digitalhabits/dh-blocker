@@ -346,6 +346,33 @@ fn restores_a_parked_tab_after_idle_reads_back_off() {
 }
 
 #[test]
+fn a_firefox_that_quits_during_the_idle_backoff_reports_not_running() {
+    let mut io = FakeIo {
+        blocks: vec![],
+        url: None,
+        ..FakeIo::watching("", &[])
+    };
+    let mut state = TickState::default();
+    let start = Instant::now();
+    for i in 0..IDLE_RESTORE_ATTEMPTS {
+        tick_with_io(&mut io, BLOCK_PAGE, &mut state, start + TICK * i);
+    }
+    assert!(state.next_idle_read.is_some(), "back-off should be armed");
+    io.pid = None;
+    let quit = start + TICK * IDLE_RESTORE_ATTEMPTS;
+    assert_eq!(
+        tick_with_io(&mut io, BLOCK_PAGE, &mut state, quit),
+        Status::BrowserNotRunning
+    );
+    // A relaunch reads straight away rather than waiting out the old
+    // instance's back-off.
+    io.pid = Some(4243);
+    let reads = io.url_reads;
+    tick_with_io(&mut io, BLOCK_PAGE, &mut state, quit + TICK);
+    assert_eq!(io.url_reads, reads + 1);
+}
+
+#[test]
 fn a_live_block_bypasses_the_idle_restore_backoff() {
     let mut io = FakeIo {
         blocks: vec![],
