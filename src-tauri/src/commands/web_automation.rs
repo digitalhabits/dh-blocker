@@ -30,7 +30,7 @@ pub fn web_automation_start(app: AppHandle, state: State<WebAutomationState>) {
         match crate::block_page::resolve_block_page_url(&app) {
             Some(url) => *slot = Some(web_automation::start(app.clone(), url)),
             None => {
-                crate::native_failure::record_health(
+                crate::native_health::record_health(
                     "macosAppleEvents",
                     "unavailable",
                     Some("Bundled block page unavailable"),
@@ -173,7 +173,7 @@ pub fn auto_start(app: &AppHandle) {
     let url = match crate::block_page::resolve_block_page_url(app) {
         Some(u) => u,
         None => {
-            crate::native_failure::record_health(
+            crate::native_health::record_health(
                 "macosAppleEvents",
                 "unavailable",
                 Some("Bundled block page unavailable"),

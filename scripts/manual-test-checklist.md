@@ -178,22 +178,17 @@ per-user data path across package updates.
 
 ---
 
-## 10. Native website failure policy
+## 10. Native website diagnostics and recovery
 
-Use the full [PR 3 release-gate matrix](../docs/pr3-validation.md). No unvalidated
-signal may close a browser; diagnostic-only status must not claim enforcement.
+Use the [desktop validation matrix](../docs/pr3-validation.md). Website failure
+escalation is a separate dependent PR; this layer cannot close browsers.
 
 - [ ] Grant/deny/revoke/recover each macOS permission during an active block
-- [ ] Confirm repeated redirect failure against the same blocked URL/window
-- [ ] Warning identifies browser, cause, recovery action and 60-second grace
-- [ ] Hidden-app warning remains visible when notification permission is denied
-- [ ] Recovery, pause/expiry, browser closure/restart cancel pending website action
-- [ ] Revalidation at grace expiry targets only the same affected browser instance
-- [ ] Polite quit and bounded force quit do not affect unrelated browsers/apps
-- [ ] Unknown URL, typing/focus races and Firefox startup warm-up never trigger quit
-- [ ] Elevated Windows browsers and disabled Firefox accessibility stay diagnostic-only until their signals are validated
+- [ ] Missing grants identify the browser and provide a recovery action
+- [ ] Firefox warm-up remains distinguishable from a denied Accessibility grant
+- [ ] Diagnostics report worker/resource errors without claiming enforcement
 - [ ] Exact original URL restores after end/pause, app restart and package update
-- [ ] Old user extensions remain installed; no communication is attempted and no promise is made about their standalone behavior
+- [ ] Old user extensions remain installed; no communication is attempted and no promise is made about their standalone behaviour
 
 ---
 

@@ -29,7 +29,7 @@ pub fn firefox_ax_start(app: AppHandle, state: State<FirefoxAxState>) {
         match crate::block_page::resolve_block_page_url(&app) {
             Some(url) => *slot = Some(firefox_ax::start(app.clone(), url)),
             None => {
-                crate::native_failure::record_health(
+                crate::native_health::record_health(
                     "macosFirefoxAX",
                     "unavailable",
                     Some("Bundled block page unavailable"),
@@ -113,7 +113,7 @@ pub fn auto_start(app: &AppHandle) {
     let url = match crate::block_page::resolve_block_page_url(app) {
         Some(u) => u,
         None => {
-            crate::native_failure::record_health(
+            crate::native_health::record_health(
                 "macosFirefoxAX",
                 "unavailable",
                 Some("Bundled block page unavailable"),

@@ -58,33 +58,6 @@ export const screens = [
     })),
 
     {
-        name: 'native-health-diagnostic', fixture: fixtures.singleSchedule, platform: 'mac', viewport: DESKTOP,
-        prepare: async (page) => {
-            await page.evaluate(async () => {
-                const ui = await import('/enforcement.js');
-                ui.showNativeEnforcementWarning({ browser: 'Firefox', reason: 'Accessibility permission was revoked.', diagnosticOnly: true });
-            });
-            await page.waitForTimeout(400); // Wait for the slide-in warning animation before measuring contrast/geometry.
-            const box = await page.locator('#native-enforcement-warning').boundingBox();
-            console.log('[native warning geometry]', JSON.stringify(box));
-            if (!box || box.width < 300 || box.height < 35) throw new Error('Native warning is not legible');
-        },
-    },
-    {
-        name: 'native-health-countdown', fixture: fixtures.singleSchedule, platform: 'windows', viewport: DESKTOP,
-        prepare: async (page) => {
-            await page.evaluate(async () => {
-                const ui = await import('/enforcement.js');
-                ui.showNativeEnforcementWarning({ browser: 'Chrome', reason: 'The blocked page could not be redirected.', diagnosticOnly: false, graceSeconds: 60 });
-            });
-            await page.waitForTimeout(400); // Wait for the slide-in warning animation before measuring contrast/geometry.
-            const box = await page.locator('#native-enforcement-warning').boundingBox();
-            console.log('[native warning geometry]', JSON.stringify(box));
-            if (!box || box.width < 300 || box.height < 35) throw new Error('Native countdown is not legible');
-        },
-    },
-
-    {
         name: 'settings-windows-native',
         fixture: fixtures.crowdedWeek,
         platform: 'windows',
@@ -738,7 +711,23 @@ export const screens = [
     },
 ];
 
-screens.push({ ...screens.find(screen => screen.name === 'native-health-diagnostic'), name: 'native-permissions-revoked' });
+screens.push({
+    name: 'native-permissions-revoked', fixture: fixtures.singleSchedule, platform: 'mac', viewport: DESKTOP,
+    prepare: async page => {
+        await page.evaluate(async () => {
+            const { tauriAPI } = await import('/tauri-api.js');
+            const { refreshNativePermissions } = await import('/enforcement.js');
+            tauriAPI.webAutomationPermissionStatus = async () => [{ label: 'Chrome', state: 'denied', running: true }];
+            await refreshNativePermissions({ browsers: { chrome: { installed: true } } });
+        });
+        await page.waitForTimeout(400);
+        const banner = page.locator('#native-enforcement-warning');
+        const box = await banner.boundingBox();
+        console.log('[revoked permission warning geometry]', JSON.stringify(box));
+        if (!box || box.width < 300 || box.height < 35) throw new Error('Permission warning is not legible');
+        if (!await banner.locator('button').isVisible()) throw new Error('Permission recovery action is missing');
+    },
+});
 screens.push({
     name: 'native-windows-onboarding', fixture: fixtures.singleSchedule, platform: 'windows', viewport: DESKTOP,
     prepare: async page => {

@@ -43,12 +43,10 @@ Several parts of the codebase look like bugs until you apply this:
 - Override challenges (`src/override-challenge.js`) make unblocking
   deliberately effortful. Making them cheaper or skippable is a product
   regression, not an ergonomics win.
-- Native website failure handling is separate from app blocking. Unknown URL
-  reads, typing/focus races and Firefox startup warm-up never become confirmed
-  failures through elapsed time. Only platform-validated evidence may enable
-  browser quitting, after a visible 60-second recovery grace and revalidation
-  of the same browser instance, active policy and unresolved failure. The old
-  `settings.enforcementEnabled` extension toggle must not gate this response.
+- Website worker health and permission recovery are diagnostic-only. This layer
+  has no website grace timer or browser termination path. The dependent recovery
+  PR owns redirect verification, visible warnings and any future browser closing.
+  Keep the independent app-blocking warning/grace behaviour unchanged.
 
 **The adversary is a distracted user, not a technical one.** Our users are
 non-technical: the bypass we design against is the one reachable in a weak
@@ -146,7 +144,7 @@ overlap). iOS uses its own App Group store, not this file.
 - **macOS websites:** Apple Events in `src-tauri/src/web_automation.rs` for Safari/Chrome/Brave/Edge; Accessibility in `firefox_ax.rs` for Firefox. Missing grants must remain visible and actionable.
 - **Windows websites:** native UI Automation in `src-tauri/src/uia_web_automation.rs` for Chrome/Edge/Brave/Firefox. There is no extension method or browser setup.
 - **Desktop apps (both OSes):** independent in-process poll-and-quit watcher, `src-tauri/src/app_watcher.rs`. Preserve its warning/grace behavior when changing website failure handling.
-- **Native website failures:** worker-reported health, without a profile/compliance scanner. Leave unvalidated signals diagnostic-only; track release gates in `docs/pr3-validation.md`.
+- **Native website failures:** worker-reported health, without a profile/compliance scanner. No website grace or termination machinery lives in this layer; track release gates in `docs/pr3-validation.md`.
 - **iOS:** Apple Screen Time via `tauri-plugin-screentime/` (Swift). No file, no extension, no process watching. Allow-mode uses `.all(except:)` with a 50-item cap.
 - **Android:** `tauri-plugin-android-blocker/` — Kotlin AccessibilityService applies the block/friction gate, WorkManager handles schedule transitions; Rust only bridges Tauri commands.
 

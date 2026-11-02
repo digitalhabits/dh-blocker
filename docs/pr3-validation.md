@@ -1,124 +1,67 @@
 # Desktop native enforcement: validation record
 
-Implementation base: PR #208 head `20c81ca`, including the Windows work from
-PR #206. Required merge order remains #206, #208, then this change.
+## Scope after the split
 
-## Release status
+This layer removes desktop extension integration while retaining native browser
+blocking, worker health and actionable macOS permission recovery. It contains no
+website failure grace, warning acknowledgement, redirect-confirmation state
+machine, countdown UI or browser termination executor. The dependent recovery
+PR owns that machinery and its real-browser validation. App blocking retains its
+existing independent grace and quit behaviour.
 
-**Not release-approved.** Source removal and automated checks do not establish
-native browser reliability. No OS failure signal may enable browser quitting
-without actual browser validation. Unvalidated signals remain diagnostic-only.
+**Not release-approved.** Automated policy and UI checks do not establish native
+browser reliability. In particular, a successful redirect command does not prove
+that the browser reached the block page.
 
-The native website failure grace is **60 seconds**, separate from the independent
-app-blocking grace. A warning must name the browser, explain the failure and
-recovery action, and accurately state whether windows will close. Diagnostic-only
-signals must not display a countdown promising a quit that cannot happen.
-
-The countdown starts only after the warning is visible in the app and the
-backend acknowledges that warning ID. A notification alone is not proof that
-the user saw it; hidden/covered warnings do not arm termination. Redirect
-verification settles for 500 ms and requires three positive same-URL reads
-200 ms apart across two attempts bound to the browser instance, policy and
-target. Apple Events reads have their existing eight-second timeout, giving
-one verification an upper bound of 25.1 seconds. Unknown reads cancel evidence.
-The dormant executor requests polite termination, waits up to ten seconds,
-then requires new positive evidence and the same process identity before force
-termination. None of its production OS signals is enabled for quitting.
-
-## Required browser evidence
+## Required browser and platform evidence
 
 | Gate | Windows | macOS |
 |---|---|---|
-| Fresh install and stored extension-selection upgrade preserve rules/schedules/pauses/challenges | Pending runtime | Pending runtime |
+| Fresh install and legacy-settings upgrade preserve rules, schedules, pauses and challenges | Pending installed test | Pending installed test |
 | Supported browsers redirect and restore exact original URLs | Pending runtime | Pending runtime |
-| Private and multiple windows, typing/focus races | Pending runtime | Pending runtime |
-| Granted/denied/revoked/recovered required permission | Elevated-browser access tests pending | Automation and Accessibility tests pending |
-| Firefox launch/accessibility warm-up and bounded nudges | Disabled accessibility tests pending | Actual warm-up gap measurement pending |
-| Repeated verified redirect failure, allowed navigation cancels | Pending runtime | Pending runtime |
-| Warning/grace recovery; expiry/pause; browser restart; multiple browsers | Pending runtime | Pending runtime |
-| Hidden app and notifications denied: visible warning without unsafe focus/input | Pending runtime | Pending runtime |
-| Polite quit, bounded force quit and stale process identity rejection | Pending runtime | Pending runtime |
+| Private/multiple windows and typing/focus races | Pending runtime | Pending runtime |
+| Required permission grant, denial, revocation and recovery | Elevated-browser access pending | Automation and Accessibility pending |
+| Firefox accessibility warm-up | Pending runtime | Pending runtime |
 | App restart/package update with pending restores | Pending signed install | Pending signed install |
-| App + browser CPU: idle, active block, pending restore | Pending measurement | Pending measurement |
-| Actual lock/display/session transitions | Pending runtime | Pending runtime |
+| App/browser CPU, lock/display/session transitions | Pending measurement | Pending measurement |
+| Packaging | Installed MSIX and certification pending | Signed installed build pending |
 
-Unknown/unreadable/edited URLs, isolated read errors, warm-up, focus races and
-missing acknowledgements never become confirmed failure merely through elapsed
-time. Missing worker/resource errors require browser-specific impact before they
-could qualify for quitting. Revalidate the same browser instance, active policy
-and unresolved failure at grace expiry and before force quit.
+The dependent recovery PR additionally validates warning delivery, grace
+cancellation, browser identity, repeated redirect failure and termination. These
+are not acceptance criteria for the diagnostics-only implementation here.
 
-## Packaging and mobile gates
-
-- Windows: repeat block-page resource hash checks, real installed-browser
-  redirects, local certification and separately track Partner Center approval.
-- macOS: signed installed build, Apple Events entitlement and Accessibility
-  permission behavior. Removing SafariServices must not break signing/loading.
-- iOS: retain Screen Time App Group, shared Swift policy and entitlements; build
-  and run policy checks on a macOS host and physical-device runtime checks.
-- Android: build and JVM/Robolectric tests plus physical-device Accessibility
-  checks. A frontend Android bundle alone does not prove enforcement.
+iOS Screen Time and Android native plugin enforcement are unchanged by this
+split. Native builds and physical-device enforcement still require their own
+checks; an Android web bundle does not prove Accessibility blocking.
 
 ## Upgrade ownership boundary
 
-Cleanup may remove only app-owned native-host manifests/registration entries and
-owned extension installation hints, idempotently. It must not edit browser
-profiles, uninstall user extensions or change organisation policy. No desktop
-blocklist mirror or communication loop may remain. Test with old extensions left
-installed: their independent rules or cached state may continue to act, and this
-app no longer controls or updates them. Their actual standalone behavior remains
-an explicit runtime test, not a compatibility promise.
+Cleanup removes only app-owned native-host manifests, registration entries and
+owned extension-installation hints, idempotently. It must not edit browser
+profiles, uninstall user extensions or change organisation policy. Existing
+extensions may retain standalone or cached behaviour; the app no longer controls
+or updates them.
 
-## Local execution record
+## Evidence provenance
 
-This checkout was prepared on Windows. Locked pnpm dependencies installed.
-Windows Rust stable is available. No macOS/iOS runtime or physical mobile device
-has been verified in this implementation session. Results below do not satisfy
-the pending runtime gates above.
+The pre-split implementation had Windows Rust, Tier 2 and MSIX resource checks.
+Those results apply to the pre-split source and are not a Windows pass for this
+new revision. The current split is checked separately before publication.
+Real-browser validation remains pending unless a result explicitly names the
+browser, platform, revision and command. The manual checks are in
+[section 10](../scripts/manual-test-checklist.md#10-native-website-diagnostics-and-recovery).
 
-- `cargo test --lib` (Windows, default features): **95 passed**, rerun outside
-  filesystem virtualization. The first sandbox run had six existing persistence
-  test failures; all six passed in the rerun.
-- Windows default-feature `cargo clippy --lib --bins --tests -- -D warnings`:
-  **passed**. macOS Clippy is not executable on this Windows host.
-- Frontend: **218 Tier 0 tests and 572 Tier 1 tests passed**. Tier 0 required
-  an unsandboxed rerun because filesystem virtualization hid Vitest's temporary
-  transformed modules. Desktop and Android Vite bundles built, and the Android
-  bundle pruning check passed. This does not validate Android enforcement.
-- `pnpm lint`: **zero errors, 156 warnings**. Both Rust crate graphs pass
-  `cargo fmt --all --check`; `git diff --check` passes.
-- Windows Tier 2 full profile: **33 passed, zero failed or skipped**, with no
-  captured app errors. The isolated system-test app accepted the EULA through
-  its own path and started its clock. This checks real command/persistence and
-  startup paths, not actual browser redirects or OS failure signals.
-- UI fixtures cover Windows onboarding/settings, macOS missing/revoked grants,
-  all-granted/no-browser skips, and diagnostic/countdown warnings. Screenshots
-  were rendered and inspected; OS permission prompts remain a runtime gate.
-  At a 1100-by-900 viewport, browser measurements gave a 502-by-83.5 missing
-  permission action region, a 1064-by-68 revoked-permission banner and a
-  1064-by-49 countdown banner. Windows Settings asserts the obsolete Setup
-  action is invisible; all-granted/no-browser fixtures assert setup is hidden.
-- Tier 2 investigation exposed an inherited issue in `src/render.js`: its
-  duplicated one-shot expiry calculation treats a 23:00-to-00:00 segment as
-  ending earlier on the creation day. The shared resolver correctly spans
-  midnight. The code is unchanged from the base PR; product behavior is not
-  changed here. Active-schedule/pause integration fixtures use recurring
-  schedules to isolate their intended assertions. A separate fix must test
-  one-shot expiry across midnight on all four platforms.
-- `scripts/test-msix-resources.ps1`: **3 checks passed** (correct layout/hashes,
-  missing source rejection, invalid mapping rejection). This is not an installed
-  MSIX or Store certification test.
-- Android debug APK attempt: **blocked by environment setup**. The repository
-  wrapper could not find `npx.cmd`; direct `pnpm exec tauri android build --debug
-  --apk --target aarch64` reached the CLI and failed Android prerequisites. SDK
-  command-line setup/NDK and Android Rust targets are not ready on this host.
-- Android JVM test attempt with Android Studio's JBR and the local SDK:
-  **blocked before compilation** because generated `tauri.settings.gradle` is
-  absent. `tauri android init` was not run: it would overwrite committed manual
-  patches. No Kotlin or mobile runtime pass is claimed.
-- iOS Screen Time source, generated Apple entitlements and Android plugin source
-  had no changes at the time of the mobile-boundary audit. Their native builds
-  and device behavior remain unverified here.
+## Split verification on macOS
 
-Ambiguous legacy external-extension hints without app provenance are left alone;
-their filename or extension ID alone is not sufficient ownership evidence.
+Against the split working tree based on `a3fce194`:
+
+- Tier 0: 218 passed; Tier 1: 572 passed using cached Chromium 1243 because the
+  current Playwright browser download was blocked by the network allowlist.
+- `cargo test --lib --locked`: 131 passed, 2 ignored; default-feature Clippy
+  with `-D warnings` and both Rust formatting graphs passed.
+- ESLint: zero errors; desktop and Android Vite builds and Android bundle
+  pruning passed. Native Windows, iOS and Android enforcement was not run.
+- The actual revoked-permission fixture rendered a 1064-by-64 warning at an
+  1100-by-900 viewport, with a visible recovery action; screenshot inspected.
+
+These checks verify the split and recovery UI, not real-browser redirects.

@@ -296,29 +296,20 @@ can return no URL while Firefox initializes its accessibility tree; this is
 unknown state, never a confirmed failure merely because time passes. Its actual
 gap and recovery after launch/grant/revoke require macOS runtime measurement.
 
-## 7) Native website failure handling
+## 7) Native website diagnostics and recovery
 
-Native workers report per-browser health. No separate compliance/profile scanner
-exists. The product policy requires a visible 60-second warning and recovery
-opportunity before quitting a browser for confirmed native enforcement failure.
-The retired extension enforcement toggle does not gate this policy.
+`native_health.rs` records worker-reported health. Existing browser workers
+notify the frontend when a definitive permission grant changes; unknown
+Automation readings never count as granted. The frontend rechecks current
+permissions and offers the relevant macOS recovery action, including after
+foregrounding the app. No profile scan or second backend permission poller runs.
 
-Qualifying evidence is a definitive required-permission denial, positively
-identified access prevention, or repeatedly verified redirect failure for a URL
-still blocked by current policy. Verification must wait for navigation and safely
-re-read the same relevant window without stealing focus. Unknown readings,
-editing, launch warm-up, focus races and absent acknowledgements do not qualify.
+This layer contains no redirect-confirmation state machine, warning
+acknowledgement, website grace timer or browser termination executor. Those
+belong to the dependent native-recovery PR and its real-browser validation.
+Independent app-blocking warnings and termination are unchanged.
 
-At grace expiry revalidate active applicable rules, the same running browser
-instance, and the same unresolved failure. Recovery, block expiry/pause, browser
-closure/restart or successful navigation cancels the website action. App-blocking
-state remains independent. Quit only the affected browser politely, then use a
-bounded force-quit if still required. Hidden-app warnings and denied notification
-permission need runtime validation.
-
-**Release gate:** OS signals that lack actual browser validation remain
-diagnostic-only. Automated state-machine tests cannot establish OS signal
-reliability. See [validation and remaining gates](docs/pr3-validation.md).
+See [validation and remaining gates](docs/pr3-validation.md).
 
 ## 8) App blocking watcher
 
@@ -851,4 +842,4 @@ When changing enforcement architecture:
 1. Update **Part I** first — it describes what ships today.
 2. Move replaced designs into **Part II** or **Part III** rather than deleting history.
 3. Keep file paths and tick intervals aligned with code comments at the top of
-   each module (`web_automation.rs`, `native_failure.rs`, `app_watcher.rs`, etc.).
+   each module (`web_automation.rs`, `native_health.rs`, `app_watcher.rs`, etc.).

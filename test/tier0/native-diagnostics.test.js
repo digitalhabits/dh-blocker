@@ -8,7 +8,7 @@ test('native diagnostics preserve live permission states and expose worker healt
     const html = renderSystemDiagnostics({
         app: { os: 'macos', arch: 'aarch64' }, migration: { residue_items: [] },
         automation: { applicable: true, browsers: [{ label: 'Chrome', state: 'granted' }, { label: 'Safari', state: 'denied' }] },
-        native_website_failures: { pendingWarnings: [], automaticBrowserClosingEnabled: false, workerHealth: { firefox: { status: 'WaitingForEngine' } } },
+        native_website_failures: { workerHealth: { firefox: { status: 'WaitingForEngine' } } },
     });
     expect(html).toContain(tSettings('diagnosticsAutomationGranted'));
     expect(html).toContain(tSettings('diagnosticsAutomationDenied'));
