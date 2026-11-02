@@ -560,6 +560,7 @@ export async function syncFirefoxAxSettingsRow() {
     let trusted = false;
     try {
         trusted = !!(await invoke('accessibility_trusted'));
+        lastAccessibilityTrusted = trusted;
     } catch (e) {
         console.warn('[firefox-ax] trusted check failed:', e);
     }
@@ -827,6 +828,25 @@ let lastAutomationPermissionFetchAt = 0;
 let automationPermissionStatusReady = false;
 export const AUTOMATION_PERMISSION_FETCH_MIN_MS = 2000;
 
+// macOS Accessibility grant, which Firefox needs on the Accessibility method.
+// null until first read. The setup screen treats unknown as compliant rather
+// than flashing a prompt at startup; this is display only — the enforcer
+// (enforcer.rs) reads the grant itself and is what force-quits Firefox.
+let lastAccessibilityTrusted = null;
+
+/// Re-read the grant for the setup screen's synchronous status checks. A
+/// failed read keeps the last known value instead of guessing either way.
+export async function refreshAccessibilityTrustedStatus() {
+    if (__ANDROID_BUILD__) return false;
+    if (!browserUsesAccessibility('firefox')) return lastAccessibilityTrusted === true;
+    try {
+        lastAccessibilityTrusted = !!(await invoke('accessibility_trusted'));
+    } catch (e) {
+        console.warn('[firefox-ax] trusted check failed:', e);
+    }
+    return lastAccessibilityTrusted === true;
+}
+
 // Pull the live per-browser Automation decision (no consent prompt) and
 // cache it by browser key. Safe to call on any platform — no-ops off
 // macOS. Returns the cached map for convenience.
@@ -849,6 +869,9 @@ export async function refreshAutomationPermissionStatus({
     if (!force && now - lastAutomationPermissionFetchAt < AUTOMATION_PERMISSION_FETCH_MIN_MS) {
         return lastAutomationPermissionByKey;
     }
+    // Every setup-screen and banner poll comes through here, so the
+    // Accessibility grant rides along with the Automation one.
+    await refreshAccessibilityTrustedStatus();
     try {
         const probeList = launchProbeBrowsers ?? normalizeLaunchProbeBrowsers(launchProbeBrowser);
         const list = await tauriAPI.webAutomationPermissionStatus({
@@ -902,6 +925,11 @@ export function effectiveBrowserComplianceStatus(key, browsers) {
         const mode = automationBrowserRowMode(key, browserScan);
         if (mode === 'granted' || mode === 'awaiting-open') return 'compliant';
         return 'needs-automation';
+    }
+    // Firefox on Accessibility is judged by the grant alone, as the enforcer
+    // does — the extension's state is irrelevant on this method.
+    if (browserUsesAccessibility(key)) {
+        return lastAccessibilityTrusted === false ? 'needs-accessibility' : 'compliant';
     }
     return browserComplianceStatus(key, (browsers || {})[key]) || 'needs-install';
 }
@@ -960,6 +988,7 @@ export function statusLabel(key, status) {
         case 'needs-enable': return tSettings('migrationStatusEnableExtension');
         case 'needs-native-host': return tSettings('migrationStatusNativeHost');
         case 'policy-blocked': return tSettings('migrationBadgePolicyBlocked');
+        case 'needs-accessibility': return tSettings('migrationBadgeAutomationOff');
         case 'needs-install': return tSettings('migrationStatusInstall');
         default: return tSettings('migrationStatusInstall');
     }
@@ -1199,26 +1228,29 @@ export function migrationBrowserKeys(state) {
 // HTML for the extension-setup header (bold title + lighter subtitle).
 // On macOS the path is Automation for Safari/Chromium plus — only when
 // Firefox is installed — the ReDD Focus extension in Firefox, so the
-// subtitle is built from live state. Other platforms keep the
-// extension-everywhere copy.
+// subtitle is built from live state. Firefox on the Accessibility method
+// needs no extension, so its copy names Accessibility instead. Other
+// platforms keep the extension-everywhere copy.
 export function migrationExtHeaderCopy(state) {
     if (!appState.isMacOSDesktop) return null;
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
     const browsers = state?.browsers || appState.lastMigrationBrowserState?.browsers || {};
     const firefoxInstalled = !!(browsers.firefox && browsers.firefox.installed);
+    const subKey = !firefoxInstalled
+        ? 'migrationExtSubMac'
+        : (browserUsesAccessibility('firefox') ? 'migrationExtSubMacFirefoxAx' : 'migrationExtSubMacFirefox');
     return {
         titleHtml: tSettings('migrationExtTitleMac'),
-        subtitleHtml: (firefoxInstalled
-            ? tSettings('migrationExtSubMacFirefox')
-            : tSettings('migrationExtSubMac')).replace('{FOCUS}', focusLogoHtml),
+        subtitleHtml: tSettings(subKey).replace('{FOCUS}', focusLogoHtml),
     };
 }
 
 export function migrationMacCopyKey(state) {
     const browsers = state?.browsers || appState.lastMigrationBrowserState?.browsers || {};
     const firefoxInstalled = !!(browsers.firefox && browsers.firefox.installed);
-    return `${getSettingsLanguage()}:${firefoxInstalled ? 1 : 0}`;
+    const firefoxAx = browserUsesAccessibility('firefox');
+    return `${getSettingsLanguage()}:${firefoxInstalled ? 1 : 0}:${firefoxAx ? 'ax' : 'ext'}`;
 }
 
 export function invalidateMigrationMacCopyCache() {
@@ -1245,7 +1277,8 @@ export function syncMigrationMacHowto(state) {
         }
         appState.lastMigrationHowtoCopyKey = copyKey;
     }
-    if (li2) li2.classList.toggle('hidden', !firefoxInstalled);
+    // Step 2 is the Firefox extension install, which Accessibility skips.
+    if (li2) li2.classList.toggle('hidden', !firefoxInstalled || browserUsesAccessibility('firefox'));
     if (li3) li3.classList.add('hidden');
 }
 
@@ -1354,6 +1387,67 @@ export function scheduleAutomationVerificationPoll(browserKeyOrLabels = null) {
     };
     setTimeout(verify, 1200);
     setTimeout(verify, 3500);
+}
+
+// Onboarding row for Firefox on the macOS Accessibility method: one
+// system-wide grant, so just "Allowed" or a button that asks for it. The
+// extension rows' install/enable steps do not apply.
+export function buildAccessibilityBrowserRow(key, entry, browsers) {
+    const granted = effectiveBrowserComplianceStatus(key, browsers) === 'compliant';
+    const status = granted ? 'compliant' : 'needs-enable';
+
+    const row = document.createElement('div');
+    row.className = `migration-browser-row ${status}`;
+
+    const header = document.createElement('div');
+    header.className = 'migration-browser-header';
+    const name = document.createElement('span');
+    name.className = 'migration-browser-name';
+    const icon = document.createElement('img');
+    icon.className = 'migration-browser-icon';
+    icon.src = browserIconUrl(key);
+    icon.alt = '';
+    icon.setAttribute('aria-hidden', 'true');
+    name.appendChild(icon);
+    name.appendChild(document.createTextNode(entry.label));
+    header.appendChild(name);
+
+    const badge = document.createElement('span');
+    badge.className = `migration-browser-badge ${status}`;
+    badge.textContent = granted
+        ? tSettings('migrationBadgeAutomationOn')
+        : tSettings('migrationBadgeAutomationOff');
+    header.appendChild(badge);
+    row.appendChild(header);
+
+    if (granted) return row;
+
+    const hint = document.createElement('div');
+    hint.className = 'migration-browser-hint';
+    hint.textContent = tSettings('firefoxAxSettingsNotGranted');
+    row.appendChild(hint);
+
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'migration-actions-row';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'migration-primary-btn';
+    btn.textContent = tSettings('firefoxAxSettingsGrantBtn');
+    btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        // Resolves once the switch is flipped (or the wait gives up).
+        await requestAccessibilityGrant();
+        btn.disabled = false;
+        await pollMigrationCompliance();
+    });
+    actionsRow.appendChild(btn);
+    row.appendChild(actionsRow);
+
+    const delayNote = document.createElement('div');
+    delayNote.className = 'migration-browser-hint migration-delay-note';
+    delayNote.textContent = tSettings('migrationDelayDetectionNote');
+    row.appendChild(delayNote);
+    return row;
 }
 
 // Build an onboarding row for a macOS Automation-blocked browser
@@ -1541,6 +1635,9 @@ export function migrationBrowserRenderSignature(state) {
             const present = browsers[k]?.present ? 1 : 0;
             return `${k}:auto:${lastAutomationPermissionByKey[k] || 'unknown'}:${present}`;
         }
+        if (browserUsesAccessibility(k)) {
+            return `${k}:ax:${lastAccessibilityTrusted}`;
+        }
         const b = browsers[k];
         const status = browserComplianceStatus(k, b) || 'needs-install';
         if (k === 'firefox') {
@@ -1624,6 +1721,10 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
         // extension — render a permission-grant row instead.
         if (appState.isMacOSDesktop && browserUsesAutomation(key)) {
             container.appendChild(buildAutomationBrowserRow(key, entry, browsers[key]));
+            continue;
+        }
+        if (appState.isMacOSDesktop && browserUsesAccessibility(key)) {
+            container.appendChild(buildAccessibilityBrowserRow(key, entry, browsers));
             continue;
         }
 
@@ -2190,7 +2291,7 @@ export function buildBannerActionSummary(browsers, detectedKeys) {
         groups.get(status).push(label);
     }
 
-    const order = ['policy-blocked', 'needs-install','needs-automation', 'needs-fda', 'needs-native-host', 'needs-enable', 'needs-private', 'needs-website-access'];
+    const order = ['policy-blocked', 'needs-install','needs-automation', 'needs-accessibility', 'needs-fda', 'needs-native-host', 'needs-enable', 'needs-private', 'needs-website-access'];
     const phrases = [];
     for (const status of order) {
         const list = groups.get(status);
@@ -2206,6 +2307,8 @@ export function bannerActionPhrase(status) {
             return tSettings('bannerActionInstallIn');
         case 'needs-automation':
             return tSettings('bannerActionAutomationIn');
+        case 'needs-accessibility':
+            return tSettings('bannerActionAccessibilityIn');
         case 'policy-blocked':
             return tSettings('bannerActionPolicyBlockedIn');
         case 'needs-fda':

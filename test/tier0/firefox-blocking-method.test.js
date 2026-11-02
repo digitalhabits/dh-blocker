@@ -86,3 +86,57 @@ describe('Firefox blocking method', () => {
         expect(e.browserUsesAccessibility('firefox')).toBe(false);
     });
 });
+
+// The setup screen judged every non-Automation browser by its extension, so
+// Firefox on Accessibility showed "Disabled" with an "Open Extension
+// Settings" prompt even after the grant. The enforcer (enforcer.rs) already
+// judges it by the grant alone; the UI has to agree.
+describe('Firefox setup status on the Accessibility method', () => {
+    beforeEach(() => vi.resetModules());
+
+    // Installed, but the extension is switched off: compliant only if the
+    // status ignores the extension.
+    const browsers = {
+        firefox: {
+            installed: true,
+            nativeHostReady: false,
+            profiles: [{ isDefault: true, installed: true, enabled: false, privateBrowsing: false }],
+        },
+    };
+
+    const loadWithGrant = async (trusted, methods = { firefox: 'accessibility' }) => {
+        const { invoke } = await import('@tauri-apps/api/core');
+        invoke.mockImplementation(async (cmd) => (cmd === 'accessibility_trusted' ? trusted : []));
+        const e = await load({ methods });
+        await e.refreshAccessibilityTrustedStatus();
+        return e;
+    };
+
+    test('is compliant once Accessibility is granted, whatever the extension says', async () => {
+        const e = await loadWithGrant(true);
+        expect(e.effectiveBrowserComplianceStatus('firefox', browsers)).toBe('compliant');
+    });
+
+    test('asks for Accessibility, not the extension, while the grant is missing', async () => {
+        const e = await loadWithGrant(false);
+        expect(e.effectiveBrowserComplianceStatus('firefox', browsers)).toBe('needs-accessibility');
+        expect(e.bannerHeadlineKey(browsers, ['firefox'])).toBe('setupBrowsersBannerHeadlineMac');
+        expect(e.buildBannerActionSummary(browsers, ['firefox'])).toContain('Firefox');
+    });
+
+    test('the extension method still reports extension problems', async () => {
+        const e = await loadWithGrant(true, {});
+        expect(e.effectiveBrowserComplianceStatus('firefox', browsers)).toBe('needs-enable');
+    });
+
+    test('the setup subtitle does not send Accessibility users to the extension', async () => {
+        const ax = await loadWithGrant(true);
+        const axCopy = ax.migrationExtHeaderCopy({ browsers });
+        expect(axCopy.subtitleHtml).not.toContain('Focus extension');
+        expect(axCopy.subtitleHtml).toContain('Accessibility');
+
+        vi.resetModules();
+        const ext = await loadWithGrant(true, {});
+        expect(ext.migrationExtHeaderCopy({ browsers }).subtitleHtml).toContain('Focus extension');
+    });
+});

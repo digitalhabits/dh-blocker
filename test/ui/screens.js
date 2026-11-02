@@ -600,6 +600,23 @@ export const screens = [
         },
     },
     {
+        // Browser setup with Firefox on Accessibility and the grant missing:
+        // the Firefox row asks for Accessibility, never for the extension.
+        name: 'setup-firefox-accessibility',
+        fixture: fixtures.firefoxAccessibility,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#migration-onboarding',
+        prepare: async (page) => {
+            // Settings → Help → Setup: the banner's own entry point only
+            // shows once a background compliance poll has run.
+            await page.click('#settings-btn');
+            await page.waitForSelector('#settings-modal:not(.hidden)');
+            await page.locator('#settings-setup-btn').click();
+            await page.waitForSelector('#migration-onboarding:not(.hidden) #migration-browser-buttons .migration-browser-row');
+        },
+    },
+    {
         // The setting was lowered to 50 after this space was set to 800 words:
         // the slider stretches to 800 rather than cutting the challenge.
         name: 'editor-stop-early-above-maximum',
