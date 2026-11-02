@@ -132,7 +132,7 @@ pub mod workspace_events;
 // JOMO-style website blocking via macOS Automation (Apple Events) — the
 // macOS replacement for the Safari/Chromium extension. Firefox stays on
 // the extension + enforcer path.
-#[cfg(target_os = "macos")]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod block_page;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod blocking_method;
@@ -150,6 +150,8 @@ pub mod native_host_install;
 pub mod profile_scan;
 #[cfg(target_os = "macos")]
 pub mod safari_services;
+#[cfg(target_os = "windows")]
+pub mod uia_web_automation;
 #[cfg(target_os = "windows")]
 pub mod watchdog;
 #[cfg(target_os = "macos")]
@@ -723,6 +725,14 @@ pub fn run() {
                 commands::enforcement::auto_start(app.handle());
             }
 
+            // Windows UI Automation is opt-in (or a policy fallback). The watcher
+            // sleeps while no browser uses it and checks each browser's method
+            // before acting.
+            #[cfg(target_os = "windows")]
+            if let Some(url) = block_page::resolve_block_page_url(app.handle()) {
+                uia_web_automation::start(app.handle().clone(), url);
+            }
+
             // macOS website blocking runs through Automation (Apple
             // Events), not the extension, for Safari + Chromium. Register
             // its state handle and auto-start the watcher (paused until
@@ -791,19 +801,14 @@ pub fn run() {
                 log::warn!("native-host install on startup failed: {e}");
             }
 
-            #[cfg(all(
-                not(any(target_os = "ios", target_os = "android")),
-                not(target_os = "macos"),
-                not(feature = "system-test")
-            ))]
+            // Preserve the existing one-time extension setup hint on Windows.
+            #[cfg(all(target_os = "windows", not(feature = "system-test")))]
             if !extension_install::startup_install_already_done() {
                 if let Err(e) = extension_install::install() {
                     log::warn!("extension-install hint on startup failed: {e}");
                 } else {
                     extension_install::mark_startup_install_done();
                 }
-            } else {
-                log::debug!("extension-install: startup auto-install skipped (marker present)");
             }
 
             // Do not create or refresh Windows watchdog tasks: Defender
@@ -1052,6 +1057,8 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::set_extension_grace_seconds,
         commands::get_enforcement_enabled,
         commands::set_enforcement_enabled,
+        commands::get_blocking_methods,
+        commands::set_blocking_method,
         commands::get_system_diagnostics,
         commands::onboarding_state,
         commands::check_helper_status,
@@ -1102,4 +1109,27 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::save_data,
         commands::set_window_size,
     ]
+}
+
+#[cfg(test)]
+mod command_registration_tests {
+    #[test]
+    fn windows_registers_blocking_method_settings_commands() {
+        // Guard the platform-specific IPC wiring: testing the commands directly
+        // cannot detect their omission from generate_handler!.
+        let source = include_str!("lib.rs").replace("\r\n", "\n");
+        let windows = source
+            .split("#[cfg(not(any(target_os = \"ios\", target_os = \"android\", target_os = \"macos\")))]\nfn all_commands()")
+            .nth(1)
+            .expect("Windows command handler")
+            .split("/// Commands for mobile")
+            .next()
+            .unwrap();
+        for command in ["get_blocking_methods", "set_blocking_method"] {
+            assert!(
+                windows.contains(&format!("commands::{command},")),
+                "Windows IPC missing {command}"
+            );
+        }
+    }
 }

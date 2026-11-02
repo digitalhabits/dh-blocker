@@ -2,6 +2,9 @@
 // behaviour banner, enforcer action banners, web-automation watcher.
 // Extracted verbatim from app.js.
 import { state, appState } from './state.js';
+import { MAC_BLOCKING_METHOD_KEYS, WINDOWS_BLOCKING_METHOD_KEYS, ALL_BLOCKING_METHOD_KEYS, windowsBrowserMethod } from './browser-blocking-method.js';
+// Preserve the existing imports used by app, onboarding, and in-app tests.
+export { MAC_BLOCKING_METHOD_KEYS, WINDOWS_BLOCKING_METHOD_KEYS, ALL_BLOCKING_METHOD_KEYS, windowsBrowserMethod };
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask } from '@tauri-apps/plugin-dialog';
@@ -191,10 +194,10 @@ let blockingMethodSettingsWired = false;
 let lastSettingsBlockingMethodBrowsers = null;
 
 export function syncBlockingMethodRowVisibility(browsers = {}) {
-    if (!state.isMacOSDesktop) return;
+    if (!state.isMacOSDesktop && !state.isWindowsDesktop) return;
     lastSettingsBlockingMethodBrowsers = browsers;
-    const installed = new Set(installedMacBlockingMethodKeys(browsers));
-    for (const key of MAC_BLOCKING_METHOD_KEYS) {
+    const installed = new Set(blockingMethodKeys().filter(key => browsers[key]?.installed));
+    for (const key of ALL_BLOCKING_METHOD_KEYS) {
         const select = document.getElementById(`blocking-method-${key}`);
         const row = select?.closest('.settings-row');
         if (row) row.classList.toggle('hidden', !installed.has(key));
@@ -205,17 +208,19 @@ export function syncBlockingMethodRowVisibility(browsers = {}) {
 
 export function syncBlockingMethodLabelIcons() {
     if (__ANDROID_BUILD__) return;
-    for (const key of MAC_BLOCKING_METHOD_KEYS) {
+    for (const key of ALL_BLOCKING_METHOD_KEYS) {
         const icon = document.getElementById(`settings-blocking-method-${key}-icon`);
         if (icon) icon.src = browserIconUrl(key);
     }
 }
 
 export function syncBlockingMethodSelects(methods = getBlockingMethodsMap()) {
-    for (const key of MAC_BLOCKING_METHOD_KEYS) {
+    for (const key of ALL_BLOCKING_METHOD_KEYS) {
         const select = document.getElementById(`blocking-method-${key}`);
         if (!select) continue;
-        const value = methods[key] || 'automation';
+        const value = state.isWindowsDesktop
+            ? windowsBrowserMethod(key, methods, lastSettingsBlockingMethodBrowsers?.[key])
+            : (methods[key] || 'automation');
         select.value = value;
         select.disabled = false;
     }
@@ -223,7 +228,7 @@ export function syncBlockingMethodSelects(methods = getBlockingMethodsMap()) {
 
 export async function wireBlockingMethodSettings() {
     if (__ANDROID_BUILD__) return;
-    if (!state.isMacOSDesktop) return;
+    if (!state.isMacOSDesktop && !state.isWindowsDesktop) return;
 
     let browsers = lastOnboardingState?.browsers || state.lastMigrationBrowserState?.browsers || {};
     try {
@@ -236,7 +241,7 @@ export async function wireBlockingMethodSettings() {
 
     let methods = getBlockingMethodsMap();
     try {
-        methods = await tauriAPI.getBlockingMethods();
+        methods = await tauriAPI.getBlockingMethods() || {};
         if (!state.appData.settings) state.appData.settings = {};
         state.appData.settings.blockingMethods = methods;
     } catch (e) {
@@ -247,7 +252,7 @@ export async function wireBlockingMethodSettings() {
 
     if (!blockingMethodSettingsWired) {
         blockingMethodSettingsWired = true;
-        for (const key of MAC_BLOCKING_METHOD_KEYS) {
+        for (const key of ALL_BLOCKING_METHOD_KEYS) {
             const select = document.getElementById(`blocking-method-${key}`);
             if (!select) continue;
             select.addEventListener('change', () => {
@@ -644,9 +649,11 @@ export const BROWSER_STORE_LINKS = {
 // (Apple Events) watcher rather than the browser extension — so for
 // these the onboarding "compliance" is about the per-browser Automation
 // grant, not whether ReDD Focus is installed/enabled. Firefox stays on
-// the extension path. Non-macOS keeps the extension model everywhere.
+// the extension path. Windows Automation is opt-in or a native-policy fallback.
 export const AUTOMATION_BROWSER_KEYS = ['chrome', 'brave', 'edge', 'safari'];
-export const MAC_BLOCKING_METHOD_KEYS = ['safari', 'chrome', 'edge', 'brave'];
+export function blockingMethodKeys() {
+    return state.isWindowsDesktop ? WINDOWS_BLOCKING_METHOD_KEYS : state.isMacOSDesktop ? MAC_BLOCKING_METHOD_KEYS : [];
+}
 /** @deprecated use MAC_BLOCKING_METHOD_KEYS */
 export const MAC_CHROMIUM_BLOCKING_KEYS = MAC_BLOCKING_METHOD_KEYS;
 
@@ -658,21 +665,15 @@ export function getBlockingMethodsMap() {
     return state.appData?.settings?.blockingMethods || {};
 }
 
-export function browserBlockingMethod(key) {
-    if (!state.isMacOSDesktop || !MAC_BLOCKING_METHOD_KEYS.includes(key)) {
-        if (state.isMacOSDesktop && key === 'firefox') return 'extension';
-        return 'extension';
-    }
-    return getBlockingMethodsMap()[key] || 'automation';
+export function browserBlockingMethod(key, browser) {
+    if (!blockingMethodKeys().includes(key)) return 'extension';
+    if (state.isWindowsDesktop) return windowsBrowserMethod(key, getBlockingMethodsMap(), browser
+        || lastOnboardingState?.browsers?.[key] || state.lastMigrationBrowserState?.browsers?.[key]);
+    return getBlockingMethodsMap()[key] === 'extension' ? 'extension' : 'automation';
 }
 
-export function browserUsesAutomation(key) {
-    if (!state.isMacOSDesktop) return false;
-    if (key === 'firefox') return false;
-    if (MAC_BLOCKING_METHOD_KEYS.includes(key)) {
-        return browserBlockingMethod(key) === 'automation';
-    }
-    return false;
+export function browserUsesAutomation(key, browser) {
+    return browserBlockingMethod(key, browser) === 'automation';
 }
 
 // key -> 'granted' | 'denied' | 'unknown', refreshed from
@@ -749,6 +750,7 @@ export function automationBrowserIsRunning(key, browserScan) {
 }
 
 export function effectiveBrowserComplianceStatus(key, browsers) {
+    if (state.isWindowsDesktop && browserUsesAutomation(key, browsers?.[key])) return 'compliant';
     if (browserUsesAutomation(key)) {
         const browserScan = (browsers || {})[key];
         if (!automationPermissionStatusReady) {
@@ -775,7 +777,10 @@ export function effectiveBrowserComplianceStatus(key, browsers) {
 // Returns null if the browser itself isn't installed on the machine.
 export function browserComplianceStatus(key, b) {
     if (!b || !b.installed) return null;
-    // Windows: an organisation policy stops the browser reaching Blocker, so nothing else on the row helps.
+    if (addressBarBlockingCovers(key, b)) return 'compliant';
+    // An organisation policy stops the browser reaching Blocker, so nothing else on the row helps.
+    // Windows Automation was handled above. Explicit extension mode must
+    // still report a policy that prevents native messaging.
     if (b.nativeHostBlockedByPolicy) return 'policy-blocked';
     const profiles = b.profiles || [];
     const def = profiles.find(p => p.isDefault) || profiles[0];
@@ -799,6 +804,11 @@ export function browserComplianceStatus(key, b) {
         return 'needs-native-host';
     }
     return 'compliant';
+}
+
+// Windows setup mirrors the saved per-browser Automation selection.
+export function addressBarBlockingCovers(key, b) {
+    return Boolean(state.isWindowsDesktop && b?.installed && browserUsesAutomation(key, b));
 }
 
 export function statusLabel(key, status) {
@@ -1161,6 +1171,9 @@ export function syncMigrationPostHeader(state) {
 }
 
 export function migrationExtLinesHtml(state) {
+    if (appState.isWindowsDesktop && migrationBrowserKeys(state).every(key => browserUsesAutomation(key, state?.browsers?.[key]))) {
+        return tSettings('settingsBlockingMethodHintWindows');
+    }
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
     if (appState.isMacOSDesktop) {
@@ -1416,7 +1429,7 @@ export function updateMigrationBrowserChecklist(state) {
     // On the setup overlay, keep the howto visible until Automation status is
     // ready — otherwise closed browsers look compliant and the box flashes in late.
     const showHowto = appState.migrationOnboardingActive
-        ? !(automationPermissionStatusReady && allCompliant)
+        ? !((appState.isWindowsDesktop || automationPermissionStatusReady) && allCompliant)
         : keys.some(k => effectiveBrowserComplianceStatus(k, browsers) !== 'compliant');
     if (howto) howto.classList.toggle('hidden', !showHowto);
 
@@ -1470,12 +1483,13 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
 
         // macOS: Safari + Chromium block via Automation, not the
         // extension — render a permission-grant row instead.
-        if (browserUsesAutomation(key)) {
+        if (appState.isMacOSDesktop && browserUsesAutomation(key)) {
             container.appendChild(buildAutomationBrowserRow(key, entry, browsers[key]));
             continue;
         }
 
         const status = browserComplianceStatus(key, browsers[key]) || 'needs-install';
+        const viaAddressBar = addressBarBlockingCovers(key, browsers[key]);
 
         const row = document.createElement('div');
         row.className = `migration-browser-row ${status}`;
@@ -1503,7 +1517,9 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
         const badge = document.createElement('span');
         badge.className = `migration-browser-badge ${status}`;
         switch (status) {
-            case 'compliant': badge.textContent = statusLabel(key, status); break;
+            case 'compliant':
+                badge.textContent = viaAddressBar ? tSettings('migrationBadgeAddressBar') : statusLabel(key, status);
+                break;
             case 'needs-deduplicate': badge.textContent = tSettings('migrationBadgeDuplicateSafari'); break;
             case 'needs-install': badge.textContent = tSettings('migrationBadgeNotInstalled'); break;
             case 'needs-enable': badge.textContent = tSettings('migrationBadgeDisabled'); break;
@@ -1518,7 +1534,7 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
 
         row.appendChild(header);
 
-        if (status === 'policy-blocked') {
+        if (!viaAddressBar && status === 'policy-blocked') {
             const hint = document.createElement('div');
             hint.className = 'migration-browser-hint migration-browser-after-hint';
             hint.textContent = tSettingsFmt('migrationPolicyBlockedHint', { browser: entry.label });

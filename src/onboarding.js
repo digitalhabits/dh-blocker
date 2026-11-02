@@ -610,6 +610,14 @@ export function setupMacAutomationIntroModal() {
     });
 }
 
+export function windowsBrowserSetupIsAutomatic(browsers) {
+    const keys = browsers
+        ? ['chrome', 'edge', 'brave', 'firefox'].filter(key => browsers[key]?.installed)
+        : ['chrome', 'edge', 'brave', 'firefox'];
+    return state.isWindowsDesktop
+        && keys.length > 0 && keys.every(key => browserUsesAutomation(key, browsers?.[key]));
+}
+
 export async function ensureExtensionSetupOnboardingShown() {
     if (state.isIOS || state.isAndroid || state.migrationOnboardingActive) return;
     if (safariUsesExtensionMode()) {
@@ -617,11 +625,21 @@ export async function ensureExtensionSetupOnboardingShown() {
     }
     const dismissed = localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
     if (!state.firstRunExtensionSetupPending && (dismissed || state.migrationOnboardingDismissed)) return;
+    // Explicit Windows Automation choices require no browser setup action.
+    // Complete the same startup/persistence work without showing a checklist.
+    if (windowsBrowserSetupIsAutomatic()) {
+        await finishExtensionSetup();
+        return;
+    }
     try {
         if (state.firstRunExtensionSetupPending) {
             state.migrationOnboardingDismissed = false;
         }
         const onboardingState = await invoke('onboarding_state');
+        if (windowsBrowserSetupIsAutomatic(onboardingState?.browsers)) {
+            await finishExtensionSetup();
+            return;
+        }
         await showMigrationOnboarding('post', onboardingState, { mode: 'fresh' });
     } catch (e) {
         console.warn('[onboarding] extension setup overlay failed:', e);

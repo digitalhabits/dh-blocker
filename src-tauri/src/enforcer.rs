@@ -807,8 +807,8 @@ fn diagnose_issue(b: &BrowserStatus) -> ExtensionIssue {
 /// watcher's cached state, a live osascript probe, and the silent TCC
 /// read (in that order). Only `Unknown` across all three is treated as
 /// compliant — same leniency as before for unmeasurable state. Firefox
-/// (all platforms) and every browser on Windows fall back to the
-/// extension scan.
+/// on macOS uses the extension scan. Windows Automation browsers need
+/// no extension; explicitly selected extension mode uses the scan.
 #[cfg_attr(not(target_os = "macos"), allow(unused_variables))] // macOS-only branch below
 fn compliance_issue(
     app: &AppHandle,
@@ -829,6 +829,10 @@ fn compliance_issue(
             }
             return None;
         }
+    }
+    #[cfg(target_os = "windows")]
+    if crate::blocking_method::uses_automation(app, key.setting_key()) {
+        return None;
     }
     let b = key.for_status(scan);
     #[cfg(target_os = "macos")]

@@ -1792,6 +1792,7 @@ export function detectPlatform() {
             document.getElementById('window-controls')?.classList.add('hidden');
         } else {
             document.body.classList.add('windows');
+            state.isWindowsDesktop = true;
             // Show custom HTML controls on Windows (frameless window)
             document.getElementById('window-controls')?.classList.remove('hidden');
         }

@@ -1,7 +1,7 @@
-//! Per-browser website blocking method on macOS (Automation vs extension).
+//! Per-browser desktop website blocking method (Automation vs extension).
 //!
-//! Chrome, Brave, Edge, and Safari default to Automation; power users may
-//! opt into the ReDD Focus extension path for instant redirects.
+//! Windows defaults to Extension, except confirmed native-messaging policy blocks.
+//! Explicit choices override defaults. macOS supported browsers default to Automation.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -13,6 +13,24 @@ pub const METHOD_AUTOMATION: &str = "automation";
 pub const METHOD_EXTENSION: &str = "extension";
 
 pub const MAC_BLOCKING_METHOD_KEYS: &[&str] = &["chrome", "brave", "edge", "safari"];
+pub const WINDOWS_BLOCKING_METHOD_KEYS: &[&str] = &["chrome", "brave", "edge", "firefox"];
+
+pub fn windows_method(
+    methods: &HashMap<String, String>,
+    key: &str,
+    policy_blocked: bool,
+) -> Method {
+    if !WINDOWS_BLOCKING_METHOD_KEYS.contains(&key) {
+        return Method::Extension;
+    }
+    methods.get(key).and_then(|s| Method::parse(s)).unwrap_or(
+        if policy_blocked && key != "firefox" {
+            Method::Automation
+        } else {
+            Method::Extension
+        },
+    )
+}
 
 /// Chromium browsers on macOS (native-messaging extension path).
 pub const MAC_CHROMIUM_KEYS: &[&str] = &["chrome", "brave", "edge"];
@@ -71,7 +89,14 @@ fn read_map_from_value(data: &Value) -> HashMap<String, String> {
 /// Effective blocking method for a browser key on this platform.
 #[allow(clippy::needless_return)] // cfg dispatch: the return is load-bearing on the other platform
 pub fn method_for_key_at_path(path: &Path, key: &str) -> Method {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        let policy_blocked = native_host_target(key)
+            .and_then(crate::browser_policy::read)
+            .is_some_and(|policy| policy.blocked);
+        return windows_method(&read_map_from_path(path), key, policy_blocked);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = (path, key);
         return Method::Extension;
@@ -123,8 +148,13 @@ pub fn is_mac_blocking_method_key(key: &str) -> bool {
     MAC_BLOCKING_METHOD_KEYS.contains(&key)
 }
 
-pub fn validate_mac_blocking_method_key(key: &str) -> Result<(), String> {
-    if is_mac_blocking_method_key(key) {
+pub fn validate_blocking_method_key(key: &str) -> Result<(), String> {
+    let supported = if cfg!(target_os = "windows") {
+        WINDOWS_BLOCKING_METHOD_KEYS.contains(&key)
+    } else {
+        is_mac_blocking_method_key(key)
+    };
+    if supported {
         Ok(())
     } else {
         Err(format!("unsupported browser for blocking method: {key}"))
@@ -159,7 +189,7 @@ pub fn extension_hint_target(key: &str) -> Option<crate::extension_install::Brow
 }
 
 #[cfg(all(test, target_os = "macos"))]
-mod tests {
+mod watcher_tests {
     use super::*;
 
     fn data_file(name: &str, body: &str) -> std::path::PathBuf {
@@ -195,5 +225,31 @@ mod tests {
             r#"{"settings":{"blockingMethods":{"safari":"extension","chrome":"extension","edge":"extension"}}}"#,
         );
         assert!(any_uses_automation_at_path(&path));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_extension_default_policy_fallback_and_explicit_overrides() {
+        let mut methods = HashMap::new();
+        for key in WINDOWS_BLOCKING_METHOD_KEYS {
+            assert_eq!(windows_method(&methods, key, false), Method::Extension);
+            let fallback = if *key == "firefox" {
+                Method::Extension
+            } else {
+                Method::Automation
+            };
+            assert_eq!(windows_method(&methods, key, true), fallback);
+            methods.insert(key.to_string(), METHOD_EXTENSION.to_string());
+            assert_eq!(windows_method(&methods, key, true), Method::Extension);
+            methods.insert(key.to_string(), "invalid".to_string());
+            assert_eq!(windows_method(&methods, key, false), Method::Extension);
+            methods.insert(key.to_string(), METHOD_AUTOMATION.to_string());
+            assert_eq!(windows_method(&methods, key, false), Method::Automation);
+        }
+        assert_eq!(windows_method(&methods, "safari", true), Method::Extension);
     }
 }

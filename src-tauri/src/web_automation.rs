@@ -13,8 +13,9 @@
 //
 // This is the macOS replacement for the extension on Safari + Chromium.
 // Firefox has no usable scripting dictionary, so it stays on the
-// extension + enforcer path (see enforcer.rs). The URL decisions live in
-// block_page.rs.
+// extension + enforcer path (see enforcer.rs). Windows has a narrower
+// counterpart for policy-managed PCs in uia_web_automation.rs; the URL
+// decisions both share live in block_page.rs.
 //
 // Trade-off vs. the extension path: this requires **Automation** TCC
 // permission ("ReDD Blocker wants to control Google Chrome"). The first
