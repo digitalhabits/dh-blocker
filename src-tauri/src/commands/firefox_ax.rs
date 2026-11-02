@@ -45,6 +45,16 @@ pub fn firefox_ax_start(app: AppHandle, state: State<FirefoxAxState>) {
     }
 }
 
+/// Wake or park the watcher after Firefox's blocking method changed.
+pub fn refresh_accessibility_wanted(app: &AppHandle) {
+    use tauri::Manager;
+    let state = app.state::<FirefoxAxState>();
+    let slot = state.0.lock().expect("firefox_ax lock");
+    if let Some(h) = slot.as_ref() {
+        h.refresh_accessibility_wanted(app);
+    }
+}
+
 #[tauri::command]
 pub fn firefox_ax_pause(state: State<FirefoxAxState>) {
     if let Some(h) = state.0.lock().expect("firefox_ax lock").as_ref() {

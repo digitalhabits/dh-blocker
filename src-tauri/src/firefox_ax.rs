@@ -23,7 +23,7 @@
 //! so Firefox cannot drift into blocking a different set of URLs than the
 //! other browsers. Only the transport differs.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use tauri::AppHandle;
@@ -50,6 +50,9 @@ struct Shared {
     /// Last read outcome, for the diagnostics UI: the grant can be revoked
     /// mid-session and the user deserves to be told enforcement has stopped.
     status: Status,
+    /// False while Firefox is on the extension (the default): the loop then
+    /// waits on `wake` instead of ticking every second for nothing.
+    accessibility_wanted: bool,
 }
 
 /// What the watcher can report about itself.
@@ -72,9 +75,27 @@ pub enum Status {
 
 pub struct FirefoxAxHandle {
     shared: Arc<Mutex<Shared>>,
+    wake: Arc<Condvar>,
+}
+
+/// Whether Firefox is on the Accessibility method. Without a data path the
+/// resolver answers its own default, which is not Accessibility: Firefox then
+/// stays on the extension, the same as an install that never opted in.
+fn accessibility_wanted(app: &AppHandle) -> bool {
+    crate::blocking_method::uses_accessibility(app, "firefox")
 }
 
 impl FirefoxAxHandle {
+    /// Re-read Firefox's method and wake the loop if it is now Accessibility.
+    /// `set_blocking_method` is the only writer of the methods.
+    pub fn refresh_accessibility_wanted(&self, app: &AppHandle) {
+        let wanted = accessibility_wanted(app);
+        if let Ok(mut s) = self.shared.lock() {
+            s.accessibility_wanted = wanted;
+        }
+        self.wake.notify_all();
+    }
+
     pub fn set_enabled(&self, enabled: bool) {
         if let Ok(mut s) = self.shared.lock() {
             s.enabled = enabled;
@@ -175,11 +196,26 @@ impl Default for TickState {
 /// the bundled blocked.html, resolved by the caller just as for the
 /// Automation watcher.
 pub fn start(app: AppHandle, block_page_url: String) -> FirefoxAxHandle {
-    let shared = Arc::new(Mutex::new(Shared::default()));
+    let shared = Arc::new(Mutex::new(Shared {
+        accessibility_wanted: accessibility_wanted(&app),
+        ..Shared::default()
+    }));
+    let wake = Arc::new(Condvar::new());
     let shared_thread = shared.clone();
+    let wake_thread = wake.clone();
     std::thread::spawn(move || {
         let mut state = TickState::default();
         loop {
+            // Firefox on the extension: block until its method changes. What
+            // the tick would do here is report Inactive and drop the restore
+            // latch, so do both before sleeping.
+            if let Ok(mut guard) = shared_thread.lock() {
+                if !guard.accessibility_wanted {
+                    guard.status = Status::Inactive;
+                    state.needs_restore = false;
+                    drop(wake_thread.wait_while(guard, |s| !s.accessibility_wanted));
+                }
+            }
             std::thread::sleep(TICK);
             let enabled = shared_thread.lock().map(|s| s.enabled).unwrap_or(false);
             if !enabled {
@@ -197,7 +233,7 @@ pub fn start(app: AppHandle, block_page_url: String) -> FirefoxAxHandle {
             }
         }
     });
-    FirefoxAxHandle { shared }
+    FirefoxAxHandle { shared, wake }
 }
 
 fn tick_with_io<I: FirefoxIo>(

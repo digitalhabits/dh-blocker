@@ -44,10 +44,13 @@ pub fn set_blocking_method(
         .insert(browser.clone(), Value::String(parsed.as_str().to_string()));
 
     write_data(&path, &data).map_err(|e| format!("write data: {e}"))?;
-    // Before the side effects, so a failed native-host step cannot leave the
-    // watcher parked while the saved method says Automation.
+    // Before the side effects, so a failed native-host step cannot leave a
+    // watcher asleep while the saved method says it should be running.
     #[cfg(target_os = "macos")]
-    super::web_automation::refresh_automation_wanted(&app);
+    {
+        super::web_automation::refresh_automation_wanted(&app);
+        super::firefox_ax::refresh_accessibility_wanted(&app);
+    }
     apply_side_effects(&app, &browser, parsed)?;
     #[cfg(target_os = "windows")]
     crate::uia_web_automation::refresh_automation_wanted();
