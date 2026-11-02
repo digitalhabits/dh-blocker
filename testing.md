@@ -409,7 +409,7 @@ that surface is manual checklist section 15.
 - All groups now assert the Rust-derived enforcement snapshot (`get_system_diagnostics` → `current_blocking`), not the removed v1 hosts payload. This proves derivation and command paths, **not** browser-visible redirects.
 - The legacy `*_via_helper` clear/set commands are acknowledgment-only shims on v3; the real clear path is the frontend mutating app data and saving. The rewritten C/B tests exercise both (shim ack + real path); A11 pins that shim payloads alone never affect enforcement.
 - Some checks are command-path assertions, not UI-visible assertions.
-- Not a substitute for manual Automation/Accessibility permission flows or native permission-recovery UX.
+- Not a substitute for manual Automation/Accessibility permission flows or native-failure warning/grace UX.
 - **Tech debt:** renaming `updateHostsFile()` (legacy name; it drives v3 sync).
 
 ---
@@ -541,11 +541,11 @@ Coverage relevant to blocking behavior:
   (blocklist hit wins; else earliest-started allowlist).
 - `website_policy.rs` — effective rule derivation (`derive_payload`),
   including allowlist domains staying out of the legacy flat blocklist.
-- `native_health.rs`, `window_inventory.rs`, `commands/diagnostics.rs`,
+- `native_failure.rs`, `window_inventory.rs`, `commands/diagnostics.rs`,
   `commands/migration.rs` — supporting surfaces.
 
 Run these before merging changes to `web_automation.rs`, `website_policy.rs`,
-`app_watcher.rs`, or `native_health.rs`. CI also runs them on every PR that touches
+`app_watcher.rs`, or `native_failure.rs`. CI also runs them on every PR that touches
 `src-tauri/**` (`rust-ci.yml`), so a red job there means one of these failed.
 
 ---

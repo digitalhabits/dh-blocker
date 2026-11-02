@@ -1,8 +1,10 @@
-# Desktop native enforcement: validation record
+# Base PR #214: desktop native enforcement validation
+
+For the dependent recovery layer, see [its validation record](native-browser-recovery-validation.md).
 
 ## Scope after the split
 
-This layer removes desktop extension integration while retaining native browser
+PR #214 removes desktop extension integration while retaining native browser
 blocking, worker health and actionable macOS permission recovery. It contains no
 website failure grace, warning acknowledgement, redirect-confirmation state
 machine, countdown UI or browser termination executor. The dependent recovery

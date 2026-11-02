@@ -76,6 +76,9 @@ pub struct FirefoxAxHandle {
 
 impl FirefoxAxHandle {
     pub fn set_enabled(&self, enabled: bool) {
+        if !enabled {
+            crate::native_failure::clear_browser("Firefox");
+        }
         if let Ok(mut s) = self.shared.lock() {
             s.enabled = enabled;
         }
@@ -109,24 +112,76 @@ struct ProductionIo<'a> {
 impl FirefoxIo for ProductionIo<'_> {
     fn active_blocks(&mut self) -> Option<Vec<BlockInfo>> {
         let path = crate::commands::canonical_data_path(self.app)?;
-        Some(website_policy::derive_payload(&path).1)
+        let (_domains, blocks) = website_policy::derive_payload(&path);
+        if !crate::block_page::web_enforcement_active(&blocks) {
+            crate::native_failure::clear_browser("Firefox");
+        }
+        Some(blocks)
     }
+
     fn trusted(&mut self) -> bool {
         let trusted = crate::accessibility::is_trusted();
         crate::native_health::permission_changed(self.app, "Firefox", trusted);
+        if !trusted {
+            if let Some(pid) = firefox_pid() {
+                crate::native_failure::report(
+                    self.app,
+                    "Firefox",
+                    pid as u32,
+                    Some(crate::native_failure::Failure::PermissionDenied),
+                );
+            } else {
+                crate::native_failure::clear_browser("Firefox");
+            }
+        }
+        if trusted {
+            crate::native_failure::recover_permission("Firefox");
+        }
         trusted
     }
+
     fn firefox_pid(&mut self) -> Option<i32> {
-        firefox_pid()
+        let pid = firefox_pid();
+        if pid.is_none() {
+            crate::native_failure::clear_browser("Firefox");
+        }
+        pid
     }
+
     fn nudge(&mut self, pid: i32) {
         crate::accessibility::nudge_accessibility(pid);
     }
+
     fn active_tab_url(&mut self, pid: i32) -> Option<String> {
-        crate::accessibility::active_tab_url(pid)
+        let result = crate::accessibility::active_tab_url(pid);
+        let blocks = self.active_blocks().unwrap_or_default();
+        if !result
+            .as_ref()
+            .is_some_and(|url| crate::block_page::url_is_blocked(url, &blocks))
+        {
+            crate::native_failure::clear_browser("Firefox");
+        }
+        result
     }
+
     fn redirect(&mut self, pid: i32, url: &str) -> Result<bool, String> {
-        crate::accessibility::redirect_active_tab(pid, url)
+        let result = crate::accessibility::redirect_active_tab(pid, url);
+        if matches!(&result, Ok(true)) {
+            if let Some(original) = crate::block_page::original_url_from_block_page(url) {
+                crate::native_failure::verify_redirect(
+                    self.app,
+                    "Firefox",
+                    pid as u32,
+                    &original,
+                    url,
+                    "firefox-active-tab-unvalidated",
+                    || crate::accessibility::active_tab_url(pid),
+                );
+            }
+        } else {
+            crate::native_failure::clear_browser("Firefox");
+        }
+        result
     }
 }
 
@@ -173,11 +228,7 @@ pub fn start(app: AppHandle, block_page_url: String) -> FirefoxAxHandle {
         let mut state = TickState::default();
         loop {
             std::thread::sleep(TICK);
-            crate::native_health::record_health(
-                "macosFirefoxAX",
-                "running",
-                Some("Worker active; Accessibility status is reported separately"),
-            );
+            crate::native_health::record_health("macosFirefoxAX","running",Some("Worker active; Accessibility status and redirect validation are reported separately"));
             let enabled = shared_thread.lock().map(|s| s.enabled).unwrap_or(false);
             if !enabled {
                 continue;

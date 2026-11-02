@@ -171,7 +171,7 @@ fn assemble_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
         migration,
         autostart,
         automation,
-        native_website_failures: crate::native_health::snapshot(),
+        native_website_failures: crate::native_failure::snapshot(),
         #[cfg(target_os = "windows")]
         watchdog,
         recent_log,

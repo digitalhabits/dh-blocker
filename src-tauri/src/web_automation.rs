@@ -290,6 +290,11 @@ pub struct WebAutomationHandle {
 
 impl WebAutomationHandle {
     pub fn set_enabled(&self, enabled: bool) {
+        if !enabled {
+            for browser in SupportedBrowser::all() {
+                crate::native_failure::clear_browser(browser.label());
+            }
+        }
         if let Ok(mut s) = self.shared.lock() {
             s.enabled = enabled;
         }
@@ -353,11 +358,7 @@ pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
         let mut last_full_pass: Option<Instant> = None;
         loop {
             std::thread::sleep(TICK);
-            crate::native_health::record_health(
-                "macosAppleEvents",
-                "running",
-                Some("Worker active; per-browser permissions are reported separately"),
-            );
+            crate::native_health::record_health("macosAppleEvents","running",Some("Worker active; per-browser permissions and redirect validation are reported separately"));
             let enabled = shared_thread.lock().map(|s| s.enabled).unwrap_or(false);
             if !enabled {
                 continue;
@@ -429,27 +430,86 @@ struct ProductionAutomationIo<'a> {
 impl AutomationIo for ProductionAutomationIo<'_> {
     fn active_blocks(&mut self) -> Option<Vec<BlockInfo>> {
         let path = crate::commands::canonical_data_path(self.app)?;
-        Some(website_policy::derive_payload(&path).1)
+        let (_domains, blocks) = website_policy::derive_payload(&path);
+        if !crate::block_page::web_enforcement_active(&blocks) {
+            for browser in SupportedBrowser::all() {
+                crate::native_failure::clear_browser(browser.label());
+            }
+        }
+        Some(blocks)
     }
+
     fn events_active(&self) -> bool {
         crate::workspace_events::events_active()
     }
+
     fn frontmost_bundle_id(&self) -> Option<String> {
         crate::workspace_events::frontmost_bundle_id()
     }
+
     fn running_browsers(&mut self) -> Vec<SupportedBrowser> {
-        running_supported_browsers()
+        let running = running_supported_browsers();
+        for browser in SupportedBrowser::all() {
+            if !running.contains(&browser) {
+                crate::native_failure::clear_browser(browser.label());
+            }
+        }
+        running
     }
+
     fn read_tabs(&mut self, browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
-        read_tabs(browser)
+        let result = read_tabs(browser);
+        match &result {
+            Ok(tabs) => {
+                let blocks = self.active_blocks().unwrap_or_default();
+                if !tabs
+                    .iter()
+                    .any(|t| crate::block_page::url_is_blocked(&t.url, &blocks))
+                {
+                    crate::native_failure::clear_browser(browser.label());
+                }
+            }
+            Err(AutomationError::Other(_)) => crate::native_failure::clear_browser(browser.label()),
+            _ => {}
+        }
+        result
     }
+
     fn apply_actions(
         &mut self,
         browser: SupportedBrowser,
         actions: &[(u32, u32, String)],
     ) -> Result<(), AutomationError> {
-        apply_actions(browser, actions)
+        let result = apply_actions(browser, actions);
+        if result.is_ok() {
+            if let (Some((wi, ti, target)), Some(pid)) = (
+                actions.first(),
+                crate::native_failure::main_pid(browser.label()),
+            ) {
+                if let Some(original) = crate::block_page::original_url_from_block_page(target) {
+                    crate::native_failure::verify_redirect(
+                        self.app,
+                        browser.label(),
+                        pid,
+                        &original,
+                        target,
+                        &format!("window:{wi}:tab:{ti}"),
+                        || {
+                            read_tabs(browser)
+                                .ok()?
+                                .into_iter()
+                                .find(|t| t.window_index == *wi && t.tab_index == *ti)
+                                .map(|t| t.url)
+                        },
+                    );
+                }
+            }
+        } else if !matches!(&result, Err(AutomationError::NotAuthorized)) {
+            crate::native_failure::clear_browser(browser.label());
+        }
+        result
     }
+
     fn set_permission(
         &mut self,
         shared: &Arc<Mutex<Shared>>,
@@ -458,6 +518,19 @@ impl AutomationIo for ProductionAutomationIo<'_> {
         denied_retry: Duration,
         now: Instant,
     ) {
+        if state == PermState::Granted {
+            crate::native_failure::recover_permission(browser.label());
+        }
+        if state == PermState::Denied {
+            if let Some(pid) = crate::native_failure::main_pid(browser.label()) {
+                crate::native_failure::report(
+                    self.app,
+                    browser.label(),
+                    pid,
+                    Some(crate::native_failure::Failure::PermissionDenied),
+                );
+            }
+        }
         set_perm_inner_at(self.app, shared, browser, state, denied_retry, now);
         if state != PermState::Unknown {
             crate::native_health::permission_changed(
@@ -554,7 +627,7 @@ fn tick_with_io<I: AutomationIo>(
             .and_then(|s| s.runtimes.get(&browser).map(|r| (r.state, r.next_attempt)))
             .map(|(state, next)| state == PermState::Denied && now < next)
             .unwrap_or(false);
-        if skip {
+        if skip && !crate::native_failure::requires_revalidation(browser.label()) {
             continue;
         }
 
@@ -704,7 +777,8 @@ pub fn running_supported_browsers() -> Vec<SupportedBrowser> {
                 .to_ascii_lowercase()
                 .ends_with(&needle)
         });
-        if running.is_some() {
+        if let Some(process) = running {
+            crate::native_failure::record_main_pid(browser.label(), process.pid().as_u32());
             out.push(browser);
         }
     }
@@ -1141,3 +1215,6 @@ fn applescript_string_expr(s: &str) -> String {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod live_browser_tests;
