@@ -158,7 +158,7 @@ impl FirefoxIo for ProductionIo<'_> {
             return None;
         }
         crate::workspace_events::frontmost_bundle_id()
-            .map(|bid| FIREFOX_BUNDLE_IDS.contains(&bid.as_str()))
+            .map(|bid| crate::running_apps::FIREFOX.contains(&bid.as_str()))
     }
 
     fn firefox_pid(&mut self) -> Option<i32> {
@@ -178,43 +178,10 @@ impl FirefoxIo for ProductionIo<'_> {
     }
 }
 
-/// Release, Developer Edition and Nightly. All three run a main process
-/// named `firefox`, which is what the pid lookup used to match on.
-const FIREFOX_BUNDLE_IDS: [&str; 3] = [
-    "org.mozilla.firefox",
-    "org.mozilla.firefoxdeveloperedition",
-    "org.mozilla.nightly",
-];
-
 /// Asks Launch Services rather than walking the process table: a full
 /// `sysinfo` refresh every tick was most of this watcher's idle CPU.
 pub fn firefox_pid() -> Option<i32> {
-    use cocoa::base::{id, nil};
-    use cocoa::foundation::NSString;
-    use objc::{class, msg_send, sel, sel_impl};
-    objc::rc::autoreleasepool(|| unsafe {
-        for bundle_id in FIREFOX_BUNDLE_IDS {
-            let bid: id = NSString::alloc(nil).init_str(bundle_id);
-            let bid: id = msg_send![bid, autorelease];
-            let apps: id = msg_send![
-                class!(NSRunningApplication),
-                runningApplicationsWithBundleIdentifier: bid
-            ];
-            if apps.is_null() {
-                continue;
-            }
-            let count: usize = msg_send![apps, count];
-            for i in 0..count {
-                let app: id = msg_send![apps, objectAtIndex: i];
-                let terminated: bool = msg_send![app, isTerminated];
-                let pid: i32 = msg_send![app, processIdentifier];
-                if !terminated && pid > 0 {
-                    return Some(pid);
-                }
-            }
-        }
-        None
-    })
+    crate::running_apps::first_pid(crate::running_apps::FIREFOX)
 }
 
 /// Per-tick state that outlives one call.

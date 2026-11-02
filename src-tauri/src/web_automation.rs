@@ -136,18 +136,6 @@ impl SupportedBrowser {
         }
     }
 
-    /// Main-process name as reported by sysinfo on macOS (bundle binary).
-    /// Suffix-matched so renderer/helper processes ("Google Chrome
-    /// Helper") don't count as the browser being open.
-    fn process_name(self) -> &'static str {
-        match self {
-            SupportedBrowser::Safari => "Safari",
-            SupportedBrowser::Chrome => "Google Chrome",
-            SupportedBrowser::Brave => "Brave Browser",
-            SupportedBrowser::Edge => "Microsoft Edge",
-        }
-    }
-
     /// CFBundleIdentifier — the key TCC stores the Automation decision
     /// under, and what we hand `AEDeterminePermissionToAutomateTarget`
     /// to read that decision back without prompting.
@@ -738,26 +726,12 @@ fn set_perm_inner_at(
 }
 
 pub fn running_supported_browsers() -> Vec<SupportedBrowser> {
-    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
-    let mut sys = System::new();
-    // Name matching only — skip the default per-process CPU/memory/disk/
-    // exe/cmdline refresh, which is system-wide work this 1 s tick (and
-    // the UI's permission polling) would otherwise repeat forever.
-    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
-    let mut out = Vec::new();
-    for browser in SupportedBrowser::all() {
-        let needle = browser.process_name().to_ascii_lowercase();
-        let running = sys.processes().values().any(|p| {
-            p.name()
-                .to_string_lossy()
-                .to_ascii_lowercase()
-                .ends_with(&needle)
-        });
-        if running {
-            out.push(browser);
-        }
-    }
-    out
+    // Launch Services, not a process-table scan: this runs on every full
+    // pass of the 1 s tick and on the UI's permission polling.
+    SupportedBrowser::all()
+        .into_iter()
+        .filter(|browser| crate::running_apps::any_running(&[browser.bundle_id()]))
+        .collect()
 }
 
 // ---- AppleScript ----------------------------------------------------------

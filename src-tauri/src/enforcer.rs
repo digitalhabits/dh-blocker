@@ -918,6 +918,20 @@ fn log_non_compliant_summary(
 
 // ---- Process detection + quit -----------------------------------------
 
+#[cfg(target_os = "macos")]
+fn running_browsers() -> std::collections::HashSet<BrowserKey> {
+    // Launch Services, not a process-table scan, every tick of a block.
+    BrowserKey::enforced()
+        .iter()
+        .copied()
+        .filter(|key| match key.to_web_automation() {
+            Some(browser) => crate::running_apps::any_running(&[browser.bundle_id()]),
+            None => crate::running_apps::any_running(crate::running_apps::FIREFOX),
+        })
+        .collect()
+}
+
+#[cfg(not(target_os = "macos"))]
 fn running_browsers() -> std::collections::HashSet<BrowserKey> {
     use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
     let mut sys = System::new();
