@@ -44,13 +44,13 @@ const TICK: Duration = Duration::from_millis(1000);
 /// to ask again rather than to ask harder.
 const NUDGE_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Unanswered reads the idle restore pass tolerates before it stands down.
+/// Unanswered reads before the idle restore pass backs off.
 /// With nothing blocked, a tab that never answers (a new-tab page has no
 /// content URL) would otherwise keep the watcher reading every tick for as
-/// long as Firefox is open. A tab parked on the block page has a readable
-/// `file://` URL, so it answers well within this many ticks once the engine
-/// is up.
+/// long as Firefox is open. An unreadable active tab says nothing about
+/// parked background tabs, so keep retrying slowly until a read succeeds.
 const IDLE_RESTORE_ATTEMPTS: u32 = 15;
+const IDLE_RESTORE_RETRY: Duration = Duration::from_secs(15);
 
 #[derive(Default)]
 struct Shared {
@@ -195,6 +195,7 @@ struct TickState {
     /// Unanswered reads in the current idle restore pass; see
     /// `IDLE_RESTORE_ATTEMPTS`.
     idle_misses: u32,
+    next_idle_read: Option<Instant>,
 }
 
 impl Default for TickState {
@@ -203,6 +204,7 @@ impl Default for TickState {
             needs_restore: true,
             last_nudge: None,
             idle_misses: 0,
+            next_idle_read: None,
         }
     }
 }
@@ -276,6 +278,7 @@ fn tick_with_io<I: FirefoxIo>(
     if blocking_active {
         state.needs_restore = true;
         state.idle_misses = 0;
+        state.next_idle_read = None;
     } else if !state.needs_restore {
         return Status::Watching;
     } else if io.firefox_frontmost() == Some(false) {
@@ -283,6 +286,10 @@ fn tick_with_io<I: FirefoxIo>(
         // comes to the front, which is the first time anyone can see it.
         // Until then there is nothing worth a process lookup and a tree walk.
         return Status::Watching;
+    }
+
+    if !blocking_active && state.next_idle_read.is_some_and(|next| now < next) {
+        return Status::WaitingForEngine;
     }
 
     let Some(pid) = io.firefox_pid() else {
@@ -302,16 +309,18 @@ fn tick_with_io<I: FirefoxIo>(
             state.last_nudge = Some(now);
         }
         if !blocking_active {
-            state.idle_misses += 1;
+            state.idle_misses = state.idle_misses.saturating_add(1);
             if state.idle_misses >= IDLE_RESTORE_ATTEMPTS {
-                // Nothing is blocked and the tab never answered, so there is
-                // no parked page we could have seen; stop asking.
-                state.needs_restore = false;
-                state.idle_misses = 0;
+                // Fail open on this unreadable tab, but retain restoration
+                // for a parked tab the user may select later.
+                state.next_idle_read = Some(now + IDLE_RESTORE_RETRY);
             }
         }
         return Status::WaitingForEngine;
     };
+
+    state.idle_misses = 0;
+    state.next_idle_read = None;
 
     // Already parked on our block page: restore when the block that put it
     // there no longer applies.

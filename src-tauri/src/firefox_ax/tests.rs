@@ -298,9 +298,9 @@ fn still_enforces_a_live_block_on_a_background_firefox() {
 }
 
 #[test]
-fn gives_up_the_idle_restore_when_the_tab_never_answers() {
+fn backs_off_the_idle_restore_when_the_tab_never_answers() {
     // A new-tab page has no content URL, so the read never answers. With
-    // nothing blocked that must not keep the watcher reading forever.
+    // nothing blocked that must not keep the watcher reading every second.
     let mut io = FakeIo {
         blocks: vec![],
         frontmost: Some(true),
@@ -314,7 +314,59 @@ fn gives_up_the_idle_restore_when_the_tab_never_answers() {
         tick_with_io(&mut io, BLOCK_PAGE, &mut state, start + TICK * i);
     }
     assert_eq!(io.url_reads, IDLE_RESTORE_ATTEMPTS as usize);
+    assert!(state.needs_restore);
+    let retry = start + TICK * (IDLE_RESTORE_ATTEMPTS - 1) + IDLE_RESTORE_RETRY;
+    tick_with_io(&mut io, BLOCK_PAGE, &mut state, retry);
+    assert_eq!(io.url_reads, IDLE_RESTORE_ATTEMPTS as usize + 1);
+    tick_with_io(&mut io, BLOCK_PAGE, &mut state, retry + TICK);
+    assert_eq!(io.url_reads, IDLE_RESTORE_ATTEMPTS as usize + 1);
+}
+
+#[test]
+fn restores_a_parked_tab_after_idle_reads_back_off() {
+    let mut io = FakeIo {
+        blocks: vec![],
+        url: None,
+        ..FakeIo::watching("", &[])
+    };
+    let mut state = TickState::default();
+    let start = Instant::now();
+    for i in 0..IDLE_RESTORE_ATTEMPTS {
+        tick_with_io(&mut io, BLOCK_PAGE, &mut state, start + TICK * i);
+    }
+    io.url = Some(build_blocked_url(
+        BLOCK_PAGE,
+        "https://reddit.com/r/all",
+        &[block(&["reddit.com"])],
+    ));
+    let retry = start + TICK * (IDLE_RESTORE_ATTEMPTS - 1) + IDLE_RESTORE_RETRY;
+    tick_with_io(&mut io, BLOCK_PAGE, &mut state, retry);
+    assert_eq!(io.redirects, vec!["https://reddit.com/r/all".to_string()]);
     assert!(!state.needs_restore);
+}
+
+#[test]
+fn a_live_block_bypasses_the_idle_restore_backoff() {
+    let mut io = FakeIo {
+        blocks: vec![],
+        url: None,
+        ..FakeIo::watching("", &[])
+    };
+    let mut state = TickState::default();
+    let start = Instant::now();
+    for i in 0..IDLE_RESTORE_ATTEMPTS {
+        tick_with_io(&mut io, BLOCK_PAGE, &mut state, start + TICK * i);
+    }
+    io.blocks = vec![block(&["reddit.com"])];
+    io.url = Some("https://reddit.com/r/all".to_string());
+    tick_with_io(
+        &mut io,
+        BLOCK_PAGE,
+        &mut state,
+        start + TICK * IDLE_RESTORE_ATTEMPTS,
+    );
+    assert_eq!(io.redirects.len(), 1);
+    assert!(is_block_page_url(&io.redirects[0], BLOCK_PAGE));
 }
 
 #[test]
