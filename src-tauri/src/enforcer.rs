@@ -398,11 +398,17 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
         return;
     }
 
-    // Only scan browsers we actually judge by the extension. On macOS
-    // that's Firefox alone — scanning a Chromium/Safari profile dir
-    // triggers Sequoia's per-app data-access TCC prompt, and we don't
-    // need it anyway (those are judged by `query_automation_permission`,
-    // which reads the decision without touching disk or prompting).
+    // Resolve Windows methods once for both scanning and compliance. A
+    // method change during a scan must not judge an unscanned (empty)
+    // profile as a failing extension. The next tick picks up the change.
+    #[cfg(target_os = "windows")]
+    let extension_browsers = windows_extension_browsers(&running, |key| {
+        crate::blocking_method::uses_automation(app, key.setting_key())
+    });
+
+    // Only scan browsers we actually judge by the extension. Besides
+    // profile/manifest I/O, each Windows scan repeats process lookups;
+    // none of that is used by the UI Automation compliance path.
     let scan_result = profile_scan::scan_filter(|label| {
         let key = match label {
             "firefox" => BrowserKey::Firefox,
@@ -422,7 +428,11 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
                 key.uses_accessibility_on_macos(app),
             )
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
+        {
+            extension_browsers.contains(&key)
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
             true
         }
@@ -448,7 +458,14 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
 
         // None = compliant (extension OK, or Automation granted) → clear
         // any timer and move on. Some(issue) = act on it.
-        let issue = match compliance_issue(app, key, &scan_result, is_running) {
+        let issue = match compliance_issue(
+            app,
+            key,
+            &scan_result,
+            is_running,
+            #[cfg(target_os = "windows")]
+            extension_browsers.contains(&key),
+        ) {
             None => {
                 cancel_timer(app, state, key, true);
                 continue;
@@ -822,6 +839,7 @@ fn compliance_issue(
     key: BrowserKey,
     scan: &profile_scan::ScanResult,
     is_running: bool,
+    #[cfg(target_os = "windows")] uses_extension: bool,
 ) -> Option<ExtensionIssue> {
     #[cfg(target_os = "macos")]
     {
@@ -860,7 +878,7 @@ fn compliance_issue(
         }
     }
     #[cfg(target_os = "windows")]
-    if crate::blocking_method::uses_automation(app, key.setting_key()) {
+    if !uses_extension {
         return None;
     }
     let b = key.for_status(scan);
@@ -942,6 +960,21 @@ fn judged_by_extension(uses_automation: bool, uses_accessibility: bool) -> bool 
 }
 
 // ---- Process detection + quit -----------------------------------------
+
+/// Windows UI Automation has no extension compliance requirement. Resolve
+/// only running browsers, using the normal method resolver (including policy
+/// fallback), and retain this set for the entire tick.
+#[cfg(target_os = "windows")]
+fn windows_extension_browsers(
+    running: &std::collections::HashSet<BrowserKey>,
+    uses_automation: impl Fn(BrowserKey) -> bool,
+) -> std::collections::HashSet<BrowserKey> {
+    running
+        .iter()
+        .copied()
+        .filter(|key| !uses_automation(*key))
+        .collect()
+}
 
 #[cfg(target_os = "macos")]
 fn running_browsers() -> std::collections::HashSet<BrowserKey> {
