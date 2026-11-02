@@ -12,6 +12,7 @@ dist/
 build/
 appx-build/
 msix-build/
+msix-build-test/
 src-tauri/tauri.signing.generated.conf.json
 *.appx
 *.dmg

@@ -1,0 +1,42 @@
+name: Windows MSIX packaging
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/*msix*.ps1'
+      - 'scripts/build-win-test.ps1'
+      - 'assets/icons/windows-1024.png'
+      - 'src-tauri/tauri.conf.json'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/msix-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/*msix*.ps1'
+      - 'scripts/build-win-test.ps1'
+      - 'assets/icons/windows-1024.png'
+      - 'src-tauri/tauri.conf.json'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/msix-ci.yml'
+jobs:
+  packaging:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Windows MSIX icon resource regression tests
+        shell: powershell
+        run: |
+          # Packaging-only fixture: never execute this payload or publish it.
+          $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP 'msix-icon-fixture'
+          $release = Join-Path $env:CARGO_TARGET_DIR 'x86_64-pc-windows-msvc\release'
+          New-Item -ItemType Directory -Force $release | Out-Null
+          Copy-Item "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" (Join-Path $release 'redd-block.exe')
+          ./scripts/build-msix.ps1 -LocalTest
