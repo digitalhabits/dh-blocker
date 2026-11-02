@@ -9,22 +9,22 @@ importers:
   .:
     dependencies:
       '@tauri-apps/api':
-        specifier: ^2.11.1
+        specifier: ~2.11.1
         version: 2.11.1
       '@tauri-apps/plugin-autostart':
-        specifier: ^2
+        specifier: ~2.5.1
         version: 2.5.1
       '@tauri-apps/plugin-dialog':
-        specifier: ^2.7.3
+        specifier: ~2.7.3
         version: 2.7.3
       '@tauri-apps/plugin-fs':
-        specifier: ^2.5.2
+        specifier: ~2.5.2
         version: 2.5.2
       '@tauri-apps/plugin-opener':
-        specifier: ^2.5.5
+        specifier: ~2.5.5
         version: 2.5.5
       '@tauri-apps/plugin-shell':
-        specifier: ^2.3.6
+        specifier: ~2.3.6
         version: 2.3.6
       emoji-picker-element:
         specifier: ^1.29.1
