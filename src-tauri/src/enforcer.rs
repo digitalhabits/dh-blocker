@@ -417,16 +417,9 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
         }
         #[cfg(target_os = "macos")]
         {
-            if key.uses_automation_on_macos(app) {
-                return matches!(key, BrowserKey::Firefox);
-            }
-            matches!(
-                key,
-                BrowserKey::Firefox
-                    | BrowserKey::Chrome
-                    | BrowserKey::Brave
-                    | BrowserKey::Edge
-                    | BrowserKey::Safari
+            judged_by_extension(
+                key.uses_automation_on_macos(app),
+                key.uses_accessibility_on_macos(app),
             )
         }
         #[cfg(not(target_os = "macos"))]
@@ -850,6 +843,12 @@ fn compliance_issue(
         }
         if key.uses_automation_on_macos(app) {
             if let Some(browser) = key.to_web_automation() {
+                // The watcher scripted it moments ago, which is the grant
+                // working; an osascript probe of our own every tick would
+                // only repeat that.
+                if watcher_confirmed_grant(app, browser) {
+                    return None;
+                }
                 let cached = watcher_automation_cache(app, browser);
                 if crate::web_automation::automation_denied_for_enforcement(
                     browser, cached, is_running,
@@ -874,6 +873,23 @@ fn compliance_issue(
     } else {
         Some(diagnose_issue(b))
     }
+}
+
+#[cfg(target_os = "macos")]
+fn watcher_confirmed_grant(
+    app: &AppHandle,
+    browser: crate::web_automation::SupportedBrowser,
+) -> bool {
+    let Some(state) = app.try_state::<crate::commands::web_automation::WebAutomationState>() else {
+        return false;
+    };
+    let Ok(guard) = state.0.lock() else {
+        return false;
+    };
+    guard
+        .as_ref()
+        .map(|handle| handle.grant_recently_confirmed(browser))
+        .unwrap_or(false)
 }
 
 #[cfg(target_os = "macos")]
@@ -914,6 +930,15 @@ fn log_non_compliant_summary(
         return;
     }
     log_non_compliant(key, key.for_status(scan));
+}
+
+/// Whether a browser's compliance comes from the extension, and so needs its
+/// profile read. Automation and Accessibility are judged by their grant in
+/// `compliance_issue`; reading the profile of a browser on either was disk
+/// work, every tick of a block, whose result nothing looked at.
+#[cfg(target_os = "macos")]
+fn judged_by_extension(uses_automation: bool, uses_accessibility: bool) -> bool {
+    !uses_automation && !uses_accessibility
 }
 
 // ---- Process detection + quit -----------------------------------------
