@@ -132,6 +132,8 @@ pub mod workspace_events;
 // JOMO-style website blocking via macOS Automation (Apple Events) — the
 // macOS replacement for the Safari/Chromium extension. Firefox stays on
 // the extension + enforcer path.
+#[cfg(target_os = "macos")]
+pub mod block_page;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod blocking_method;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
