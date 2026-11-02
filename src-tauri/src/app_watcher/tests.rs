@@ -223,6 +223,134 @@ fn grace_windows_are_long_enough_to_be_usable() {
 // ---- mid-block sightings ----------------------------------------
 
 #[test]
+fn pending_quit_follows_the_current_effective_policy() {
+    let blocked = vec!["Slack".to_string()];
+    let allowed = vec!["Notes".to_string()];
+    assert_eq!(
+        current_entry_origin(&blocked, &allowed, false, "Slack", None),
+        Some(EntryOrigin::Blocklist)
+    );
+    // Stopping Slack's space cancels its timer even while Notes stays blocked.
+    assert_eq!(
+        current_entry_origin(&allowed, &[], false, "Slack", None),
+        None
+    );
+    // The remaining allow policy still blocks Slack, but allows Notes.
+    assert_eq!(
+        current_entry_origin(&[], &allowed, true, "Slack", None),
+        Some(EntryOrigin::Allowlist)
+    );
+    assert_eq!(
+        current_entry_origin(&[], &allowed, true, "Notes", None),
+        None
+    );
+    // A new allowlist can allow an app already in a countdown.
+    assert_eq!(
+        current_entry_origin(&[], &blocked, true, "Slack", None),
+        None
+    );
+    // Explicit blocks still win, even if an overlapping allowlist names Slack.
+    assert_eq!(
+        current_entry_origin(&blocked, &blocked, true, "Slack", None),
+        Some(EntryOrigin::Blocklist)
+    );
+    assert_eq!(
+        current_entry_origin(&[], &allowed, false, "Slack", None),
+        None
+    );
+    assert_eq!(current_entry_origin(&[], &[], true, "Slack", None), None);
+    assert_eq!(
+        current_entry_origin(&[], &allowed, true, "msiexec.exe", None),
+        None
+    );
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[test]
+fn stopping_one_block_cancels_its_tracked_app_while_another_block_remains() {
+    // Use this test process with deadlines far in the future: sweeping cannot
+    // send a quit or kill signal. The unrelated name matches no real process.
+    // Previously the fallback advancement loop kept this PID indefinitely,
+    // even though the effective policy no longer blocked it.
+    let pid = sysinfo::Pid::from_u32(std::process::id());
+    let apps = Arc::new(RwLock::new(HashSet::from([
+        "__dh_unrelated_test_app__".to_string()
+    ])));
+    let allowed = Arc::new(RwLock::new(HashSet::new()));
+    let pending = Arc::new(Mutex::new(HashSet::new()));
+    let mut sys = sysinfo::System::new();
+    let later = Instant::now() + Duration::from_secs(3600);
+    for origin in [EntryOrigin::Blocklist, EntryOrigin::Allowlist] {
+        for phase in [
+            PidPhase::AwaitingUserAck,
+            PidPhase::PreQuit { quit_at: later },
+            PidPhase::PostQuit { kill_at: later },
+        ] {
+            let mut entries = HashMap::from([(
+                pid,
+                PidEntry {
+                    matched_name: "Previously blocked app".to_string(),
+                    phase,
+                    warning_raised: false,
+                    origin,
+                    intention_only: false,
+                },
+            )]);
+            sweep(
+                None,
+                &apps,
+                &allowed,
+                &AtomicBool::new(false),
+                &AtomicBool::new(false),
+                &pending,
+                &mut entries,
+                &mut sys,
+            );
+            assert!(
+                sys.process(pid).is_some(),
+                "test process must still be alive"
+            );
+            assert!(
+                entries.is_empty(),
+                "stopped block left a stale quit timer: {entries:?}"
+            );
+        }
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[test]
+fn stopping_allow_mode_cancels_its_intention_card_with_another_block_active() {
+    let apps = Arc::new(RwLock::new(HashSet::from([
+        "__dh_unrelated_test_app__".to_string()
+    ])));
+    let mut entries = HashMap::from([(
+        allowlist_intention_pid(),
+        PidEntry {
+            matched_name: ALLOWLIST_INTENTION_NAME.to_string(),
+            phase: PidPhase::AwaitingUserAck,
+            warning_raised: false,
+            origin: EntryOrigin::Allowlist,
+            intention_only: true,
+        },
+    )]);
+    sweep(
+        None,
+        &apps,
+        &Arc::new(RwLock::new(HashSet::new())),
+        &AtomicBool::new(false),
+        &AtomicBool::new(false),
+        &Arc::new(Mutex::new(HashSet::new())),
+        &mut entries,
+        &mut sysinfo::System::new(),
+    );
+    assert!(
+        entries.is_empty(),
+        "stopped allow mode left its intention card"
+    );
+}
+
+#[test]
 fn a_blocked_app_opened_mid_block_is_quit_without_ceremony() {
     // Blocklist mode: the user was warned when the block started and has
     // now deliberately launched something on the list.
