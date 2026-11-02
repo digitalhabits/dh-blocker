@@ -103,6 +103,22 @@ pub fn uses_automation(app: &AppHandle, key: &str) -> bool {
     method_for_key(app, key) == Method::Automation
 }
 
+/// True when any browser blocks through Automation, i.e. the Apple Events
+/// watcher has work to do. Without a data path this answers true:
+/// Automation is the default, and parking the watcher on a guess would leave
+/// Safari and Chromium unblocked.
+pub fn any_uses_automation(app: &AppHandle) -> bool {
+    crate::commands::canonical_data_path(app)
+        .map(|p| any_uses_automation_at_path(&p))
+        .unwrap_or(true)
+}
+
+pub fn any_uses_automation_at_path(path: &Path) -> bool {
+    MAC_BLOCKING_METHOD_KEYS
+        .iter()
+        .any(|key| uses_automation_at_path(path, key))
+}
+
 pub fn is_mac_blocking_method_key(key: &str) -> bool {
     MAC_BLOCKING_METHOD_KEYS.contains(&key)
 }
@@ -139,5 +155,45 @@ pub fn extension_hint_target(key: &str) -> Option<crate::extension_install::Brow
         "brave" => Some(BrowserTarget::Brave),
         "edge" => Some(BrowserTarget::Edge),
         _ => None,
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+
+    fn data_file(name: &str, body: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "redd-blocking-method-{name}-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("redd-block-data.json");
+        std::fs::write(&path, body).unwrap();
+        path
+    }
+
+    #[test]
+    fn defaults_want_the_automation_watcher() {
+        let path = data_file("defaults", "{}");
+        assert!(any_uses_automation_at_path(&path));
+    }
+
+    #[test]
+    fn extension_everywhere_lets_the_watcher_park() {
+        let path = data_file(
+            "all-ext",
+            r#"{"settings":{"blockingMethods":{"safari":"extension","chrome":"extension","edge":"extension","brave":"extension"}}}"#,
+        );
+        assert!(!any_uses_automation_at_path(&path));
+    }
+
+    #[test]
+    fn one_automation_browser_keeps_the_watcher_running() {
+        let path = data_file(
+            "one-auto",
+            r#"{"settings":{"blockingMethods":{"safari":"extension","chrome":"extension","edge":"extension"}}}"#,
+        );
+        assert!(any_uses_automation_at_path(&path));
     }
 }

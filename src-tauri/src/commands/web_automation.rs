@@ -44,6 +44,15 @@ pub fn web_automation_start(app: AppHandle, state: State<WebAutomationState>) {
     }
 }
 
+/// Wake or park the watcher after a browser's blocking method changed.
+pub fn refresh_automation_wanted(app: &AppHandle) {
+    let state = app.state::<WebAutomationState>();
+    let slot = state.0.lock().expect("web_automation lock");
+    if let Some(h) = slot.as_ref() {
+        h.refresh_automation_wanted(app);
+    }
+}
+
 /// Pause the watcher without tearing it down. The loop goes idle (sends
 /// no Apple Events) until re-enabled.
 #[tauri::command]
