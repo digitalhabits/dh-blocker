@@ -44,6 +44,14 @@ const TICK: Duration = Duration::from_millis(1000);
 /// to ask again rather than to ask harder.
 const NUDGE_INTERVAL: Duration = Duration::from_secs(5);
 
+/// Unanswered reads the idle restore pass tolerates before it stands down.
+/// With nothing blocked, a tab that never answers (a new-tab page has no
+/// content URL) would otherwise keep the watcher reading every tick for as
+/// long as Firefox is open. A tab parked on the block page has a readable
+/// `file://` URL, so it answers well within this many ticks once the engine
+/// is up.
+const IDLE_RESTORE_ATTEMPTS: u32 = 15;
+
 #[derive(Default)]
 struct Shared {
     enabled: bool,
@@ -117,6 +125,8 @@ trait FirefoxIo {
     fn active_blocks(&mut self) -> Option<Vec<BlockInfo>>;
     fn uses_accessibility(&mut self) -> bool;
     fn trusted(&mut self) -> bool;
+    /// `None` when the frontmost app is unknown (workspace events missing).
+    fn firefox_frontmost(&mut self) -> Option<bool>;
     fn firefox_pid(&mut self) -> Option<i32>;
     fn nudge(&mut self, pid: i32);
     fn active_tab_url(&mut self, pid: i32) -> Option<String>;
@@ -143,6 +153,14 @@ impl FirefoxIo for ProductionIo<'_> {
         crate::accessibility::is_trusted()
     }
 
+    fn firefox_frontmost(&mut self) -> Option<bool> {
+        if !crate::workspace_events::events_active() {
+            return None;
+        }
+        crate::workspace_events::frontmost_bundle_id()
+            .map(|bid| FIREFOX_BUNDLE_IDS.contains(&bid.as_str()))
+    }
+
     fn firefox_pid(&mut self) -> Option<i32> {
         firefox_pid()
     }
@@ -160,17 +178,43 @@ impl FirefoxIo for ProductionIo<'_> {
     }
 }
 
-/// Process-name match, like `web_automation::running_supported_browsers`.
-/// Firefox's main process is plain `firefox`; its content and GPU children
-/// carry other names, so this cannot match them by accident.
+/// Release, Developer Edition and Nightly. All three run a main process
+/// named `firefox`, which is what the pid lookup used to match on.
+const FIREFOX_BUNDLE_IDS: [&str; 3] = [
+    "org.mozilla.firefox",
+    "org.mozilla.firefoxdeveloperedition",
+    "org.mozilla.nightly",
+];
+
+/// Asks Launch Services rather than walking the process table: a full
+/// `sysinfo` refresh every tick was most of this watcher's idle CPU.
 pub fn firefox_pid() -> Option<i32> {
-    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
-    let mut sys = System::new();
-    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
-    sys.processes()
-        .values()
-        .find(|p| p.name().to_string_lossy() == "firefox")
-        .map(|p| p.pid().as_u32() as i32)
+    use cocoa::base::{id, nil};
+    use cocoa::foundation::NSString;
+    use objc::{class, msg_send, sel, sel_impl};
+    objc::rc::autoreleasepool(|| unsafe {
+        for bundle_id in FIREFOX_BUNDLE_IDS {
+            let bid: id = NSString::alloc(nil).init_str(bundle_id);
+            let bid: id = msg_send![bid, autorelease];
+            let apps: id = msg_send![
+                class!(NSRunningApplication),
+                runningApplicationsWithBundleIdentifier: bid
+            ];
+            if apps.is_null() {
+                continue;
+            }
+            let count: usize = msg_send![apps, count];
+            for i in 0..count {
+                let app: id = msg_send![apps, objectAtIndex: i];
+                let terminated: bool = msg_send![app, isTerminated];
+                let pid: i32 = msg_send![app, processIdentifier];
+                if !terminated && pid > 0 {
+                    return Some(pid);
+                }
+            }
+        }
+        None
+    })
 }
 
 /// Per-tick state that outlives one call.
@@ -181,6 +225,9 @@ struct TickState {
     /// watcher does.
     needs_restore: bool,
     last_nudge: Option<Instant>,
+    /// Unanswered reads in the current idle restore pass; see
+    /// `IDLE_RESTORE_ATTEMPTS`.
+    idle_misses: u32,
 }
 
 impl Default for TickState {
@@ -188,6 +235,7 @@ impl Default for TickState {
         Self {
             needs_restore: true,
             last_nudge: None,
+            idle_misses: 0,
         }
     }
 }
@@ -260,7 +308,13 @@ fn tick_with_io<I: FirefoxIo>(
     let blocking_active = web_enforcement_active(&blocks);
     if blocking_active {
         state.needs_restore = true;
+        state.idle_misses = 0;
     } else if !state.needs_restore {
+        return Status::Watching;
+    } else if io.firefox_frontmost() == Some(false) {
+        // Idle restore only: a parked tab is put back the moment Firefox
+        // comes to the front, which is the first time anyone can see it.
+        // Until then there is nothing worth a process lookup and a tree walk.
         return Status::Watching;
     }
 
@@ -279,6 +333,15 @@ fn tick_with_io<I: FirefoxIo>(
         {
             io.nudge(pid);
             state.last_nudge = Some(now);
+        }
+        if !blocking_active {
+            state.idle_misses += 1;
+            if state.idle_misses >= IDLE_RESTORE_ATTEMPTS {
+                // Nothing is blocked and the tab never answered, so there is
+                // no parked page we could have seen; stop asking.
+                state.needs_restore = false;
+                state.idle_misses = 0;
+            }
         }
         return Status::WaitingForEngine;
     };
