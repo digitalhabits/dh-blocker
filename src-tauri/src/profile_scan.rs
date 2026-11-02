@@ -767,9 +767,12 @@ enum ChromiumBrowser {
 /// the browser open; if it's closed, no nag.
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn is_process_running(names: &[&str]) -> bool {
-    use sysinfo::{ProcessesToUpdate, System};
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
     let mut sys = System::new();
-    sys.refresh_processes(ProcessesToUpdate::All, true);
+    // Names only. The default refresh also reads every process's CPU,
+    // memory, command line and environment, and the enforcer runs this for
+    // each running browser every tick of an active block.
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
     sys.processes().values().any(|p| {
         let pname = p.name().to_string_lossy().to_string();
         names.iter().any(|n| pname.eq_ignore_ascii_case(n))
