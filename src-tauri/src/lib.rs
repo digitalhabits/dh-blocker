@@ -725,8 +725,9 @@ pub fn run() {
                 commands::enforcement::auto_start(app.handle());
             }
 
-            // Windows UI Automation is opt-in (or a policy fallback); the watcher checks
-            // each browser's saved blocking method before acting.
+            // Windows UI Automation is opt-in (or a policy fallback). The watcher
+            // sleeps while no browser uses it and checks each browser's method
+            // before acting.
             #[cfg(target_os = "windows")]
             if let Some(url) = block_page::resolve_block_page_url(app.handle()) {
                 uia_web_automation::start(app.handle().clone(), url);

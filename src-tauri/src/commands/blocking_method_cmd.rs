@@ -45,6 +45,8 @@ pub fn set_blocking_method(
     #[cfg(target_os = "macos")]
     super::web_automation::refresh_automation_wanted(&app);
     apply_side_effects(&app, &browser, parsed)?;
+    #[cfg(target_os = "windows")]
+    crate::uia_web_automation::refresh_automation_wanted();
     log::info!("blocking_method: {browser} -> {}", parsed.as_str());
     Ok(blocking_method::read_map_from_path(&path))
 }

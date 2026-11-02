@@ -24,7 +24,8 @@
 // a browser the extension cannot reach anyway.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::path::Path;
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 mod activity;
@@ -58,6 +59,47 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::block_page;
 use crate::blocking_method::{self, Method};
 use crate::native_host;
+
+/// How often the watcher re-checks whether any browser is on Automation.
+/// `set_blocking_method` wakes it at once; this bound is for the policy
+/// fallback, which an administrator can switch on without the app noticing.
+/// Policy changes are rare, so a policy-blocked browser may go unblocked for
+/// up to this long after one — and its extension cannot reach the app then
+/// either, so nothing else covers that window.
+const METHOD_RECHECK: Duration = Duration::from_secs(30);
+
+static METHOD_CHANGED: Mutex<bool> = Mutex::new(false);
+static METHOD_CHANGED_WAKE: Condvar = Condvar::new();
+
+/// Wake the watcher after a browser's blocking method changed.
+pub fn refresh_automation_wanted() {
+    if let Ok(mut changed) = METHOD_CHANGED.lock() {
+        *changed = true;
+    }
+    METHOD_CHANGED_WAKE.notify_all();
+}
+
+/// Consume a pending change notification, waiting up to `timeout` for one.
+fn method_changed_within(timeout: Duration) -> bool {
+    let Ok(changed) = METHOD_CHANGED.lock() else {
+        return false;
+    };
+    let Ok((mut changed, _)) =
+        METHOD_CHANGED_WAKE.wait_timeout_while(changed, timeout, |changed| !*changed)
+    else {
+        return false;
+    };
+    std::mem::take(&mut *changed)
+}
+
+/// True when any browser blocks through UI Automation, explicitly or by the
+/// policy fallback. A failed policy read resolves to the extension, as it
+/// does everywhere else in the method resolver.
+fn automation_wanted(path: &Path) -> bool {
+    blocking_method::WINDOWS_BLOCKING_METHOD_KEYS
+        .iter()
+        .any(|key| blocking_method::method_for_key_at_path(path, key) == Method::Automation)
+}
 
 /// Same cadence as the macOS Automation watcher.
 const TICK: Duration = Duration::from_millis(1000);
@@ -173,8 +215,25 @@ pub fn start(app: AppHandle, block_page_url: String) {
             last_action: HashMap::new(),
             missing_omnibox_logged: HashSet::new(),
         };
+        let mut wanted = automation_wanted(&path);
+        let mut checked = Instant::now();
         loop {
+            if !wanted {
+                // Every browser is on the extension: sleep until a method
+                // changes instead of ticking every second for nothing.
+                method_changed_within(METHOD_RECHECK);
+                wanted = automation_wanted(&path);
+                checked = Instant::now();
+                continue;
+            }
             activity.wait_for_tick(TICK);
+            if method_changed_within(Duration::ZERO) || checked.elapsed() >= METHOD_RECHECK {
+                wanted = automation_wanted(&path);
+                checked = Instant::now();
+                if !wanted {
+                    continue;
+                }
+            }
             watcher.tick(&app);
         }
     });
