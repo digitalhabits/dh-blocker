@@ -160,7 +160,8 @@ pub fn is_msix_packaged_exe_path(_path: &std::path::Path) -> bool {
 }
 
 /// Path the native-messaging manifest should reference right now.
-/// Does not copy files — safe to call from hot paths like profile scan.
+/// Repairs a missing or outdated staged executable; otherwise only reads
+/// metadata, so current installations are cheap to check during profile scans.
 #[cfg(target_os = "windows")]
 fn host_binary_path_for_manifest() -> std::io::Result<String> {
     let source = std::env::current_exe().map_err(|e| std::io::Error::other(e.to_string()))?;
@@ -349,16 +350,26 @@ pub fn native_host_is_current(browser: BrowserTarget) -> bool {
     if !windows_registry_points_at_manifest(browser, &manifest_path) {
         return false;
     }
-    let Ok(manifest_binary) = manifest_binary_path() else {
-        return false;
-    };
-    let Ok(raw) = std::fs::read_to_string(&manifest_path) else {
+    manifest_is_current_at(browser, &expected, &manifest_path)
+}
+
+#[cfg(target_os = "windows")]
+fn manifest_is_current_at(
+    browser: BrowserTarget,
+    expected: &str,
+    manifest_path: &std::path::Path,
+) -> bool {
+    // The caller already resolved (and, if stale, repaired) the host. Do
+    // not call manifest_binary_path here: on MSIX that is an installation
+    // operation which deletes and recopies resource directories on every
+    // status poll, even when the native host is already current.
+    let Ok(raw) = std::fs::read_to_string(manifest_path) else {
         return false;
     };
     let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) else {
         return false;
     };
-    val == manifest_body(browser, &manifest_binary)
+    val == manifest_body(browser, expected)
 }
 
 #[cfg(target_os = "windows")]
@@ -946,4 +957,61 @@ pub fn ensure_firefox_native_host() -> Result<(), String> {
 #[tauri::command]
 pub fn uninstall_native_host() -> Result<(), String> {
     uninstall().map_err(|e| e.to_string())
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_checks_use_the_resolved_host_without_restaging() {
+        let root = std::env::temp_dir().join(format!(
+            "native-host-status-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let manifest = root.join("host.json");
+        // A previously resolved MSIX staging path, deliberately distinct
+        // from this test runner. Checking it must not resolve/stage again.
+        let expected = root.join("redd-block.exe");
+        let expected = expected.to_str().unwrap();
+        for browser in BrowserTarget::all() {
+            let body = manifest_body(browser, expected);
+            std::fs::write(&manifest, body.to_string()).unwrap();
+            assert!(manifest_is_current_at(browser, expected, &manifest));
+            assert!(manifest_is_current_at(browser, expected, &manifest));
+            assert_eq!(
+                std::fs::read_to_string(&manifest).unwrap(),
+                body.to_string()
+            );
+
+            assert!(!manifest_is_current_at(browser, "C:\\wrong.exe", &manifest));
+            let mut wrong_origin = body;
+            let field = if matches!(browser, BrowserTarget::Firefox) {
+                "allowed_extensions"
+            } else {
+                "allowed_origins"
+            };
+            wrong_origin[field] = json!([]);
+            std::fs::write(&manifest, wrong_origin.to_string()).unwrap();
+            assert!(!manifest_is_current_at(browser, expected, &manifest));
+        }
+        std::fs::write(&manifest, "invalid JSON").unwrap();
+        assert!(!manifest_is_current_at(
+            BrowserTarget::Chrome,
+            expected,
+            &manifest
+        ));
+        std::fs::remove_file(&manifest).unwrap();
+        assert!(!manifest_is_current_at(
+            BrowserTarget::Chrome,
+            expected,
+            &manifest
+        ));
+        std::fs::remove_dir(&root).unwrap();
+    }
 }
