@@ -8727,6 +8727,27 @@ body.dark-mode #migration-phase-post .migration-card{
     border-top-color: var(--redd-card);
 }
 
+/* The scrolling card clips anything wider than it, so the how-to panel fits the card and stacks its steps */
+#migration-phase-post .migration-screenshots-wrap{
+    width: auto;
+    margin-left: 0;
+    transform: none;
+}
+
+#migration-phase-post .migration-screenshots-wrap .screenshots-row{
+    flex-direction: column;
+    align-items: stretch;
+}
+
+#migration-phase-post .migration-screenshots-wrap .extension-enforcer-step{
+    flex: none;
+}
+
+#migration-phase-post .migration-screenshots-wrap .extension-enforcer-screenshot-arrow{
+    align-self: center;
+    transform: rotate(90deg);
+}
+
 .migration-post-actions{
     display: flex;
     align-items: stretch;
