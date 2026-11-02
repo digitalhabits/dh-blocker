@@ -288,13 +288,20 @@ fn tick_with_io<I: FirefoxIo>(
         return Status::Watching;
     }
 
+    // Before the back-off check: the lookup is a Launch Services query, and
+    // a Firefox that quit during the back-off must report as not running
+    // rather than as still waiting.
+    let Some(pid) = io.firefox_pid() else {
+        // A relaunched Firefox starts a fresh restore pass instead of
+        // inheriting the old instance's back-off.
+        state.idle_misses = 0;
+        state.next_idle_read = None;
+        return Status::BrowserNotRunning;
+    };
+
     if !blocking_active && state.next_idle_read.is_some_and(|next| now < next) {
         return Status::WaitingForEngine;
     }
-
-    let Some(pid) = io.firefox_pid() else {
-        return Status::BrowserNotRunning;
-    };
 
     let Some(url) = io.active_tab_url(pid) else {
         // No answer: either the engine is still asleep or the tab is not
