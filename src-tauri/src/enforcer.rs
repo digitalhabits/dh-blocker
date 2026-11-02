@@ -398,17 +398,28 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
         return;
     }
 
-    // Resolve Windows methods once for both scanning and compliance. A
-    // method change during a scan must not judge an unscanned (empty)
-    // profile as a failing extension. The next tick picks up the change.
+    // Resolve each running browser's method once for both scanning and
+    // compliance. Reading it again in `compliance_issue` could see a change
+    // made mid-tick and judge an unscanned (empty) profile as a failing
+    // extension, starting a grace timer and revealing the window for a
+    // browser that is fine. The next tick picks up the change.
+    #[cfg(target_os = "macos")]
+    let extension_browsers = extension_browsers(&running, |key| {
+        !judged_by_extension(
+            key.uses_automation_on_macos(app),
+            key.uses_accessibility_on_macos(app),
+        )
+    });
     #[cfg(target_os = "windows")]
-    let extension_browsers = windows_extension_browsers(&running, |key| {
+    let extension_browsers = extension_browsers(&running, |key| {
         crate::blocking_method::uses_automation(app, key.setting_key())
     });
 
-    // Only scan browsers we actually judge by the extension. Besides
-    // profile/manifest I/O, each Windows scan repeats process lookups;
-    // none of that is used by the UI Automation compliance path.
+    // Only scan browsers we actually judge by the extension. On macOS,
+    // scanning a Chromium/Safari profile dir triggers Sequoia's per-app
+    // data-access TCC prompt. On Windows, besides profile/manifest I/O,
+    // each scan repeats process lookups. Neither result is used by the
+    // grant-based compliance paths.
     let scan_result = profile_scan::scan_filter(|label| {
         let key = match label {
             "firefox" => BrowserKey::Firefox,
@@ -421,14 +432,7 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
         if !running.contains(&key) {
             return false;
         }
-        #[cfg(target_os = "macos")]
-        {
-            judged_by_extension(
-                key.uses_automation_on_macos(app),
-                key.uses_accessibility_on_macos(app),
-            )
-        }
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         {
             extension_browsers.contains(&key)
         }
@@ -463,7 +467,7 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
             key,
             &scan_result,
             is_running,
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             extension_browsers.contains(&key),
         ) {
             None => {
@@ -839,7 +843,7 @@ fn compliance_issue(
     key: BrowserKey,
     scan: &profile_scan::ScanResult,
     is_running: bool,
-    #[cfg(target_os = "windows")] uses_extension: bool,
+    #[cfg(any(target_os = "macos", target_os = "windows"))] uses_extension: bool,
 ) -> Option<ExtensionIssue> {
     #[cfg(target_os = "macos")]
     {
@@ -874,6 +878,14 @@ fn compliance_issue(
                     return Some(ExtensionIssue::Automation);
                 }
             }
+            return None;
+        }
+        // The tick's snapshot put this browser on a grant-based method, so
+        // its profile was not scanned, but the live read above no longer
+        // agrees: the method changed mid-tick. Judging the empty scan would
+        // fail an extension nobody has had a chance to read, so this falls
+        // towards compliant for one tick; the next tick scans it.
+        if !uses_extension {
             return None;
         }
     }
@@ -961,18 +973,20 @@ fn judged_by_extension(uses_automation: bool, uses_accessibility: bool) -> bool 
 
 // ---- Process detection + quit -----------------------------------------
 
-/// Windows UI Automation has no extension compliance requirement. Resolve
-/// only running browsers, using the normal method resolver (including policy
-/// fallback), and retain this set for the entire tick.
-#[cfg(target_os = "windows")]
-fn windows_extension_browsers(
+/// The running browsers judged by the extension, resolved once per tick.
+/// `uses_grant_method` is true for a browser on a method judged by its grant
+/// instead (Automation, Accessibility, Windows UI Automation); on Windows it
+/// is the normal method resolver, including the policy fallback. Closed
+/// browsers are never asked about.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn extension_browsers(
     running: &std::collections::HashSet<BrowserKey>,
-    uses_automation: impl Fn(BrowserKey) -> bool,
+    uses_grant_method: impl Fn(BrowserKey) -> bool,
 ) -> std::collections::HashSet<BrowserKey> {
     running
         .iter()
         .copied()
-        .filter(|key| !uses_automation(*key))
+        .filter(|key| !uses_grant_method(*key))
         .collect()
 }
 

@@ -297,12 +297,12 @@ fn the_enforced_set_has_no_duplicates() {
     assert_eq!(seen.len(), 5);
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 #[test]
-fn windows_scans_only_running_extension_browsers() {
+fn scans_only_running_extension_browsers() {
     use std::collections::HashSet;
     let running = HashSet::from([BrowserKey::Chrome, BrowserKey::Firefox, BrowserKey::Brave]);
-    let extension = windows_extension_browsers(&running, |key| {
+    let extension = extension_browsers(&running, |key| {
         assert!(
             running.contains(&key),
             "closed browsers need no method lookup"
@@ -310,24 +310,21 @@ fn windows_scans_only_running_extension_browsers() {
         matches!(key, BrowserKey::Chrome | BrowserKey::Brave)
     });
     assert_eq!(extension, HashSet::from([BrowserKey::Firefox]));
-    assert_eq!(windows_extension_browsers(&running, |_| false), running);
-    assert!(windows_extension_browsers(&running, |_| true).is_empty());
+    assert_eq!(extension_browsers(&running, |_| false), running);
+    assert!(extension_browsers(&running, |_| true).is_empty());
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 #[test]
-fn windows_scan_selection_changes_on_the_next_snapshot() {
+fn scan_selection_changes_on_the_next_snapshot() {
     use std::cell::Cell;
     use std::collections::HashSet;
     let running = HashSet::from([BrowserKey::Firefox]);
     let automation = Cell::new(true);
-    let selected = windows_extension_browsers(&running, |_| automation.get());
+    let selected = extension_browsers(&running, |_| automation.get());
     automation.set(false);
     assert!(!selected.contains(&BrowserKey::Firefox));
-    assert_eq!(
-        windows_extension_browsers(&running, |_| automation.get()),
-        running
-    );
+    assert_eq!(extension_browsers(&running, |_| automation.get()), running);
 }
 
 /// Read-only local measurement of the work removed when every running
@@ -366,7 +363,7 @@ fn windows_automation_profile_scan_cost() {
         !running.is_empty(),
         "open a supported browser for the probe"
     );
-    let extension = windows_extension_browsers(&running, |_| true);
+    let extension = extension_browsers(&running, |_| true);
     let scan = |selected: &std::collections::HashSet<BrowserKey>| {
         std::hint::black_box(profile_scan::scan_filter(|label| {
             selected.iter().any(|key| key.setting_key() == label)
