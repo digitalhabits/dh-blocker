@@ -274,6 +274,9 @@ struct BrowserRuntime {
     state: PermState,
     /// Earliest instant we'll re-attempt an Apple Event after a denial.
     next_attempt: Instant,
+    /// When a tick last scripted this browser successfully; cleared by any
+    /// other outcome. See `GRANT_CONFIRMATION_TTL`.
+    granted_at: Option<Instant>,
 }
 
 impl Default for BrowserRuntime {
@@ -281,6 +284,7 @@ impl Default for BrowserRuntime {
         BrowserRuntime {
             state: PermState::Unknown,
             next_attempt: Instant::now(),
+            granted_at: None,
         }
     }
 }
@@ -343,12 +347,26 @@ impl WebAutomationHandle {
             .collect()
     }
 
+    /// True when a tick scripted `browser` successfully within
+    /// `GRANT_CONFIRMATION_TTL`, so the grant needs no probe of its own.
+    pub fn grant_recently_confirmed(&self, browser: SupportedBrowser) -> bool {
+        let granted_at = self
+            .shared
+            .lock()
+            .ok()
+            .and_then(|s| s.runtimes.get(&browser).and_then(|r| r.granted_at));
+        grant_is_fresh(granted_at, Instant::now())
+    }
+
     /// Persist a permission probe result so the watcher tick and UI agree.
     pub fn record_permission(&self, browser: SupportedBrowser, state: PermState) {
         if let Ok(mut s) = self.shared.lock() {
             let rt = s.runtimes.entry(browser).or_default();
             let prev = rt.state;
             rt.state = state;
+            if state != PermState::Granted {
+                rt.granted_at = None;
+            }
             // Only arm the denial backoff on a fresh transition — UI
             // polls every ~2.5 s and must not keep pushing retries back.
             if state == PermState::Denied && prev != PermState::Denied {
@@ -671,6 +689,22 @@ fn tick_with_io<I: AutomationIo>(
     }
 }
 
+/// Record one tick's outcome for a browser; true when the state changed.
+fn apply_permission(
+    rt: &mut BrowserRuntime,
+    new_state: PermState,
+    denied_retry: Duration,
+    now: Instant,
+) -> bool {
+    let changed = rt.state != new_state;
+    rt.state = new_state;
+    if new_state == PermState::Denied {
+        rt.next_attempt = now + denied_retry;
+    }
+    rt.granted_at = (new_state == PermState::Granted).then_some(now);
+    changed
+}
+
 fn set_perm_inner_at(
     app: &AppHandle,
     shared: &Arc<Mutex<Shared>>,
@@ -682,12 +716,8 @@ fn set_perm_inner_at(
     let mut transitioned_to = None;
     if let Ok(mut s) = shared.lock() {
         let rt = s.runtimes.entry(browser).or_default();
-        if rt.state != new_state {
-            rt.state = new_state;
+        if apply_permission(rt, new_state, denied_retry, now) {
             transitioned_to = Some(new_state);
-        }
-        if new_state == PermState::Denied {
-            rt.next_attempt = now + denied_retry;
         }
     }
     match transitioned_to {
@@ -1072,6 +1102,19 @@ pub fn resolve_permission_state_for_status(
             }
         }
     }
+}
+
+/// How long a successful tick vouches for a browser's Automation grant. While
+/// a block is active every running browser on Automation is scripted at least
+/// every `BACKGROUND_BROWSER_TICK`, and a revoked grant fails that script with
+/// -1743, which clears the confirmation at once. Three passes of margin keeps
+/// a slow tick from making the enforcer spawn its own probe.
+pub const GRANT_CONFIRMATION_TTL: Duration = Duration::from_secs(15);
+
+fn grant_is_fresh(granted_at: Option<Instant>, now: Instant) -> bool {
+    granted_at
+        .map(|t| now.saturating_duration_since(t) <= GRANT_CONFIRMATION_TTL)
+        .unwrap_or(false)
 }
 
 /// Whether the enforcer should treat Automation as missing for this browser.

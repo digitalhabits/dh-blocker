@@ -296,3 +296,17 @@ fn the_enforced_set_has_no_duplicates() {
     }
     assert_eq!(seen.len(), 5);
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn only_extension_browsers_have_their_profile_read() {
+    assert!(judged_by_extension(false, false));
+    assert!(
+        !judged_by_extension(true, false),
+        "Automation is judged by its grant"
+    );
+    assert!(
+        !judged_by_extension(false, true),
+        "Firefox on Accessibility is judged by the grant, not its add-on"
+    );
+}
