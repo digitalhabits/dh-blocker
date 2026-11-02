@@ -27,12 +27,38 @@ pub struct RunningApp {
 
 /// Every live instance of the given bundle ids, in the order given.
 pub fn instances(bundle_ids: &[&str]) -> Vec<RunningApp> {
+    let mut out = Vec::new();
+    find_instance(bundle_ids, |pid, app| {
+        out.push(RunningApp {
+            pid,
+            // SAFETY: `app` is a live NSRunningApplication inside the pool.
+            executable: unsafe { executable_path(app) },
+        });
+        None::<()>
+    });
+    out
+}
+
+/// Stops at the first live instance and skips the executable lookup, which
+/// only `instances` needs.
+pub fn any_running(bundle_ids: &[&str]) -> bool {
+    find_instance(bundle_ids, |_, _| Some(())).is_some()
+}
+
+pub fn first_pid(bundle_ids: &[&str]) -> Option<i32> {
+    find_instance(bundle_ids, |pid, _| Some(pid))
+}
+
+/// Visits live instances in the order given until `f` returns `Some`.
+fn find_instance<T>(
+    bundle_ids: &[&str],
+    mut f: impl FnMut(i32, cocoa::base::id) -> Option<T>,
+) -> Option<T> {
     use cocoa::base::{id, nil};
     use cocoa::foundation::NSString;
     use objc::{class, msg_send, sel, sel_impl};
 
     objc::rc::autoreleasepool(|| unsafe {
-        let mut out = Vec::new();
         for bundle_id in bundle_ids {
             let bid: id = NSString::alloc(nil).init_str(bundle_id);
             let bid: id = msg_send![bid, autorelease];
@@ -51,22 +77,13 @@ pub fn instances(bundle_ids: &[&str]) -> Vec<RunningApp> {
                 if terminated || pid <= 0 {
                     continue;
                 }
-                out.push(RunningApp {
-                    pid,
-                    executable: executable_path(app),
-                });
+                if let Some(found) = f(pid, app) {
+                    return Some(found);
+                }
             }
         }
-        out
+        None
     })
-}
-
-pub fn any_running(bundle_ids: &[&str]) -> bool {
-    !instances(bundle_ids).is_empty()
-}
-
-pub fn first_pid(bundle_ids: &[&str]) -> Option<i32> {
-    instances(bundle_ids).first().map(|a| a.pid)
 }
 
 unsafe fn executable_path(app: cocoa::base::id) -> Option<PathBuf> {
@@ -107,6 +124,8 @@ mod tests {
             assert!(app.pid > 0);
             let exe = app.executable.as_ref().expect("Dock has an executable");
             assert!(exe.ends_with("Dock"), "unexpected executable {exe:?}");
+            assert!(any_running(&["com.apple.dock"]));
+            assert_eq!(first_pid(&["com.apple.dock"]), Some(app.pid));
         }
     }
 }
