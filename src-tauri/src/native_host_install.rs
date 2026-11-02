@@ -170,7 +170,13 @@ fn host_binary_path_for_manifest() -> std::io::Result<String> {
             .ok_or_else(|| std::io::Error::other("cannot resolve LOCALAPPDATA"))?;
         let dest_exe = dest_dir.join(STAGED_NATIVE_HOST_EXE);
         if dest_exe.exists() {
-            if staged_copy_stale(&source, &dest_exe) {
+            // The whole top level, not just the exe: the host also needs
+            // the DLLs beside it, and status polls are now the only cheap
+            // path that would notice one going missing.
+            if source
+                .parent()
+                .map_or(true, |install_dir| stage_is_stale(install_dir, &dest_dir))
+            {
                 ensure_staged_native_host(&source)?;
             }
             return dest_exe
@@ -217,6 +223,36 @@ fn staged_copy_stale(source_exe: &std::path::Path, dest_exe: &std::path::Path) -
         }
         _ => true,
     }
+}
+
+/// Metadata-only check of the MSIX staging dir against the install dir: a
+/// top-level file missing, resized or older than its source, or a top-level
+/// directory missing. Directory contents are not walked; a restage recopies
+/// them wholesale anyway. An unreadable install dir counts as stale, so the
+/// caller falls back to restaging rather than vouching for a copy it could
+/// not compare.
+#[cfg(target_os = "windows")]
+fn stage_is_stale(install_dir: &std::path::Path, stage_dir: &std::path::Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(install_dir) else {
+        return true;
+    };
+    for entry in entries {
+        let Ok(entry) = entry else {
+            return true;
+        };
+        let Ok(ft) = entry.file_type() else {
+            return true;
+        };
+        let staged = stage_dir.join(entry.file_name());
+        if ft.is_dir() {
+            if !staged.is_dir() {
+                return true;
+            }
+        } else if ft.is_file() && staged_copy_stale(&entry.path(), &staged) {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(target_os = "windows")]
@@ -962,6 +998,41 @@ pub fn uninstall_native_host() -> Result<(), String> {
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_stage_missing_a_dll_is_stale() {
+        let root = std::env::temp_dir().join(format!(
+            "native-host-stage-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let install = root.join("install");
+        let stage = root.join("stage");
+        std::fs::create_dir_all(install.join("resources")).unwrap();
+        std::fs::write(install.join(STAGED_NATIVE_HOST_EXE), b"exe").unwrap();
+        std::fs::write(install.join("WebView2Loader.dll"), b"dll").unwrap();
+        std::fs::write(install.join("resources").join("a.txt"), b"a").unwrap();
+        sync_install_dir_to_stage(&install, &stage).unwrap();
+        assert!(!stage_is_stale(&install, &stage));
+
+        std::fs::remove_file(stage.join("WebView2Loader.dll")).unwrap();
+        assert!(stage_is_stale(&install, &stage), "missing DLL");
+        sync_install_dir_to_stage(&install, &stage).unwrap();
+        assert!(!stage_is_stale(&install, &stage));
+
+        std::fs::write(stage.join("WebView2Loader.dll"), b"truncated-or-other").unwrap();
+        assert!(stage_is_stale(&install, &stage), "resized DLL");
+        sync_install_dir_to_stage(&install, &stage).unwrap();
+
+        std::fs::remove_dir_all(stage.join("resources")).unwrap();
+        assert!(stage_is_stale(&install, &stage), "missing resource dir");
+
+        assert!(stage_is_stale(&root.join("no-such-install"), &stage));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn status_checks_use_the_resolved_host_without_restaging() {
