@@ -24,7 +24,7 @@ import {
     formatMinutesAsHHMM, formatTime, generateId,
     snapMinutesToInterval,
 } from './app.js';
-import { NEW_ALLOW_SPACE_UNLOCK_MINUTES, NEW_SPACE_UNLOCK_MINUTES, applyStopToTarget, getBlocklistUnlockMinutes, timedStopLostOwnPause } from './unlock-duration.js';
+import { getLastBreakMinutes, PAUSE_MINUTE_OPTIONS, applyStopToTarget, timedStopLostOwnPause } from './unlock-duration.js';
 import { deriveWhenToBlockKind } from './when-to-block.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
 import {
@@ -32,7 +32,6 @@ import {
     syncBlocklistCreateUi,
     setConfirmModalBlockingLabel,
     isBlocklistAllowlistMode,
-    getSelectedBlocklistModalMode,
 } from './list-mode.js';
 
 export const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
@@ -124,8 +123,7 @@ export function renderStartConfirmBlockingDetails(blocklist, listEl, showAllBtn,
     }
 }
 
-/** Shared by Start and Stop: the Times or Duration row, and the If turned off row,
- *  which is hidden (with its divider) when the space never comes back on. */
+/** Shared timing summary. The legacy unlock row stays hidden: pauses choose their own duration. */
 function renderConfirmTimingRows(prefix, blocklist, { schedule = null, block = null } = {}) {
     const durationLabelEl = document.getElementById(`${prefix}-duration-label`);
     if (durationLabelEl) {
@@ -137,10 +135,10 @@ function renderConfirmTimingRows(prefix, blocklist, { schedule = null, block = n
         else if (block && !isBlockAlwaysOn(block)) durationEl.textContent = formatBlockTimeRemainingShort((block.endTime - Date.now()) / 60000);
         else durationEl.textContent = tSettings('startConfirmDurationManual');
     }
-    const minutes = getBlocklistUnlockMinutes(blocklist);
+    const minutes = getLastBreakMinutes(state.appData.settings);
     const unlockRow = document.getElementById(`${prefix}-unlock-row`);
-    unlockRow?.classList.toggle('hidden', minutes <= 0);
-    unlockRow?.previousElementSibling?.classList.toggle('hidden', minutes <= 0);
+    unlockRow?.classList.add('hidden');
+    unlockRow?.previousElementSibling?.classList.add('hidden');
     const unlockEl = document.getElementById(`${prefix}-unlock`);
     if (unlockEl) {
         unlockEl.textContent = minutes > 0
@@ -157,15 +155,10 @@ function findBlocklistSchedule(blocklistId) {
 export function populateOverrideConfirmModalContent(blocklist, { block = null } = {}) {
     if (!blocklist) return;
 
-    // "Stop 🎯 No Twitter for 24 hours?" when it comes back on by itself.
+    state.pendingPauseSpaceId = blocklist.id;
+    document.getElementById('unlock-duration-select').value = String(getLastBreakMinutes(state.appData.settings));
     const titleEl = document.getElementById('override-modal-title');
-    if (titleEl) {
-        const minutes = getBlocklistUnlockMinutes(blocklist);
-        const space = formatSpaceTitleLabel(blocklist);
-        setSpaceTitle(titleEl, minutes > 0
-            ? tSettingsFmt('stopSpaceForTitleFmt', { space, duration: formatUnlockDurationLabel(minutes) })
-            : tSettingsFmt('stopSpaceTitleFmt', { space }), blocklist.name);
-    }
+    if (titleEl) setSpaceTitle(titleEl, tSettingsFmt('pauseSpaceTitle', { space: formatSpaceTitleLabel(blocklist) }), blocklist.name);
 
     setConfirmModalBlockingLabel(blocklist, 'override-confirm-blocking-label');
 
@@ -180,7 +173,7 @@ export function populateOverrideConfirmModalContent(blocklist, { block = null } 
         schedule: block ? null : findBlocklistSchedule(blocklist.id),
     });
 
-    setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
+    updatePauseDialogDuration();
 }
 
 /**
@@ -1170,16 +1163,13 @@ function applyModalLockedItems(lockedWebsitesList, lockedAppsList) {
  */
 export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { preserveModalItems = false } = {}) {
     const isActive = isBlocklistEditFrictionRequired(blocklist?.id, now);
-    // The unlock duration is locked with the rest of To stop early: lengthening
-    // it while the space runs would be a cheaper way out than the challenge.
+    // Challenge method stays locked; word count may increase.
     const overrideInputs = [
         document.getElementById('override-type'),
         document.getElementById('override-count'),
         document.getElementById('custom-override-text'),
-        document.getElementById('unlock-duration-select'),
     ];
     const overrideTypeSelect = document.getElementById('override-type');
-    const unlockSelect = document.getElementById('unlock-duration-select');
     const overrideCountInput = document.getElementById('override-count');
     const overrideCountWrapperEl = document.getElementById('override-count-wrapper');
     const overrideMethodRowEl = document.getElementById('override-method-row');
@@ -1195,11 +1185,17 @@ export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { prese
     if (isActive) {
         overrideInputs.forEach(el => { if (el) el.disabled = true; });
         overrideTypeSelect?.classList.add('form-select-disabled');
-        unlockSelect?.classList.add('form-select-disabled');
         overrideCountInput?.classList.add('form-input-disabled');
         overrideTimeEstimateEl?.classList.add('time-estimate-disabled');
         overrideMethodRowEl?.classList.add('blocklist-active-locked');
         overrideCountWrapperEl?.classList.add('blocklist-active-locked');
+        if (normalizeOverrideType(blocklist.overrideDifficulty?.type) === 'random-words') {
+            overrideCountInput.disabled = false;
+            overrideCountInput.min = String(normalizeOverrideCount(blocklist.overrideDifficulty?.count, 'random-words'));
+            overrideCountInput.classList.remove('form-input-disabled');
+            overrideCountWrapperEl?.classList.remove('blocklist-active-locked');
+            overrideTimeEstimateEl?.classList.remove('time-estimate-disabled');
+        }
 
         const lockedWebsites = allowRunning ? [] : blocklist.websites || [];
         const lockedApps = allowRunning ? [] : getBlocklistModalLockedApps(blocklist);
@@ -1219,8 +1215,8 @@ export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { prese
     }
 
     overrideInputs.forEach(el => { if (el) el.disabled = false; });
+    if (overrideCountInput) overrideCountInput.min = String(getMinOverrideCountForType('random-words'));
     overrideTypeSelect?.classList.remove('form-select-disabled');
-    unlockSelect?.classList.remove('form-select-disabled');
     overrideCountInput?.classList.remove('form-input-disabled');
     overrideTimeEstimateEl?.classList.remove('time-estimate-disabled');
     overrideMethodRowEl?.classList.remove('blocklist-active-locked');
@@ -1305,13 +1301,6 @@ export function populateBlocklistFormFields(blocklist) {
     state.lastOverrideCountValue = String(overrideCountField.value);
     state.lastCustomOverrideTextValue = customTextArea.value;
     state.lastOverrideTypeValue = document.getElementById('override-type').value;
-
-    const unlockSelect = document.getElementById('unlock-duration-select');
-    // A new space starts on 10 minutes (allow-only: Never); an existing one shows what it has saved.
-    if (unlockSelect) {
-        const newSpaceMinutes = getSelectedBlocklistModalMode() === 'allowlist' ? NEW_ALLOW_SPACE_UNLOCK_MINUTES : NEW_SPACE_UNLOCK_MINUTES;
-        unlockSelect.value = String(blocklist ? getBlocklistUnlockMinutes(blocklist) : newSpaceMinutes);
-    }
 
     // Restore color swatch selection
     document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
@@ -1493,9 +1482,12 @@ export function openOverrideModal(blockId) {
 
 // Close override modal
 export function closeOverrideModal() {
+    if (state.pauseSubmitting) return;
     document.getElementById('override-modal').classList.add('hidden');
     document.getElementById('override-modal').classList.remove('override-frictionless');
     state.overrideBlockId = null;
+    state.pendingPauseSpaceId = null;
+    state.pauseChallengeSnapshot = null;
     state.overrideBlocklistIdForHelper = null;
     getChallengeController('override').reset();
     delete window.overrideScheduleId;
@@ -1509,7 +1501,9 @@ export function initializeOverrideModalChallenge(difficulty, progressColor = nul
     // openOverrideModal and calls this directly (blocking-platform.js), setting
     // state.overrideBlockId itself.
     const controller = getChallengeController('override');
+    state.pauseChallengeSnapshot = JSON.stringify({ difficulty, skipChallenge });
     controller.open({ difficulty, progressColor, skipChallenge });
+    updatePauseDialogDuration();
     const modal = document.getElementById('override-modal');
     modal.classList.toggle('override-frictionless', !!skipChallenge);
     modal.classList.remove('hidden');
@@ -1565,15 +1559,15 @@ export async function resumePausedSchedule(schedule) {
 
 /**
  * A confirmed stop: the override challenge passed (or was waived for a
- * Flexible schedule between blocks). Applies the space's temporary unlock
+ * Flexible schedule between blocks). Applies the dialog's selected pause
  * duration in memory (`applyStopToTarget`) and then syncs every enforcement
  * layer for what actually happened. Returns that outcome, or null when
  * nothing was running or iOS could not register automatic restart.
  */
-export async function stopFocusSpaceTarget({ block = null, schedule = null } = {}) {
+export async function stopFocusSpaceTarget({ block = null, schedule = null, minutes = null } = {}) {
     const blocklistId = schedule?.blocklistId ?? block?.blocklistId ?? null;
     const blocklist = state.appData.blocklists.find(bl => bl.id === blocklistId) || null;
-    const unlockMinutes = getBlocklistUnlockMinutes(blocklist);
+    const unlockMinutes = minutes ?? getLastBreakMinutes(state.appData.settings);
     const stageIOSPause = state.isIOS && unlockMinutes > 0 && !!(block || schedule);
     const stagedTarget = stageIOSPause ? { ...(schedule || block) } : null;
     const outcome = applyStopToTarget(
@@ -1713,18 +1707,9 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
     return outcome;
 }
 
-/**
- * Strictness changed on a stopped space whose restart is pending: redo the stop
- * as if made now with the new setting, so Never cancels the restart and 5 min
- * restarts in 5 min. A running space, or one plainly off, is left alone.
- */
-export async function restopForNewStrictness(blocklistId, now = Date.now()) {
-    const pending = (t) => t.blocklistId === blocklistId && t.isPaused && t.pauseEndTime > now;
-    const block = state.appData.activeBlocks.find(pending) || null;
-    const schedule = block ? null : (state.appData.schedules || []).find(pending) || null;
-    if (!block && !schedule) return null;
-    // Never removes the block, and that path cancels the restart booked at the first stop.
-    return stopFocusSpaceTarget({ block, schedule });
+/** Legacy test/dev entrypoint. Editor changes never reschedule a confirmed pause. */
+export async function restopForNewStrictness() {
+    return null;
 }
 
 export function updateOverridePreview() {
@@ -1755,7 +1740,10 @@ export function syncOverrideCountUi() {
     const countInput = document.getElementById('override-count');
     if (countLabelEl) countLabelEl.textContent = tSettings('overrideWordsToType');
     if (countInput) {
-        countInput.min = String(getMinOverrideCountForType('random-words'));
+        const saved = state.appData.blocklists.find(bl => bl.id === state.editingBlocklistId);
+        countInput.min = String(saved && isBlocklistEditFrictionRequired(saved.id)
+            ? normalizeOverrideCount(saved.overrideDifficulty?.count, 'random-words')
+            : getMinOverrideCountForType('random-words'));
         // Never below the count already on the slider — see getOverrideWordsSliderMax.
         countInput.max = String(getOverrideWordsSliderMax({ currentCount: countInput.value }));
     }
@@ -1810,4 +1798,17 @@ export function applyOverrideTypeUi(type) {
 /** Current-shape copy of a stored difficulty (`{ type, count, customText }`), clamped for this platform. */
 export function cloneOverrideDifficulty(raw) {
     return migrateOverrideDifficultyToWords(raw, { maxWords: getMaxOverrideWords(), countsAreChars: false });
+}
+
+/** Updating duration must not reopen the controller or discard typed words. */
+export function updatePauseDialogDuration() {
+    const select = document.getElementById('unlock-duration-select');
+    if (!select) return;
+    if (!PAUSE_MINUTE_OPTIONS.includes(Number(select.value))) select.value = String(getLastBreakMinutes(state.appData.settings));
+    const never = Number(select.value) === 0;
+    document.getElementById('pause-never-warning')?.classList.toggle('hidden', !never);
+    const space = state.appData.blocklists.find(bl => bl.id === state.pendingPauseSpaceId);
+    getChallengeController('override').setConfirmLabel(never
+        ? tSettingsFmt('switchTurnOffFmt', { name: space?.name || '' })
+        : tSettingsFmt('pauseForDuration', { duration: formatUnlockDurationLabel(Number(select.value)) }));
 }

@@ -444,3 +444,11 @@ export function migrateOverrideDifficultyToWords(raw, { maxWords, countsAreChars
     const words = countsAreChars ? Math.round(parsed / LEGACY_CHARS_PER_WORD) : parsed;
     return { type, count: Math.min(countsAreChars ? legacyMax : max, Math.max(MIN_OVERRIDE_WORDS, words)), customText: '' };
 }
+
+/** Active spaces may only increase the same random-word challenge. Recheck on save. */
+export function resolveActiveOverrideDifficulty(saved, candidate, active) {
+    if (!active) return candidate;
+    const floor = saved || { type: 'random-words', count: DEFAULT_OVERRIDE_WORDS };
+    if (normalizeOverrideType(floor.type) !== 'random-words' || candidate.type !== 'random-words') return { ...floor };
+    return { ...floor, count: Math.max(normalizeOverrideCount(floor.count, 'random-words'), candidate.count) };
+}

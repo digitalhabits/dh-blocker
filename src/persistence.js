@@ -9,7 +9,7 @@ import { normalizeLoadedEulaState } from './onboarding.js';
 import { migrateBlocklistStartOverlaysToGlobal, migrateLegacyScheduleStartOverlays } from './schedule-overlay.js';
 import { migrateLegacyRepeatType } from './when-to-block.js';
 import { getMaxOverrideWords, migrateOverrideDifficultyToWords } from './override-challenge.js';
-import { DEFAULT_UNLOCK_MINUTES, normalizeUnlockMinutes } from './unlock-duration.js';
+import { getLastBreakMinutes } from './unlock-duration.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 
 
@@ -83,18 +83,12 @@ export async function loadData() {
         state.appData.settings.overrideCountUnit = 'words';
         shouldSave = true;
     }
-    // Every space carries a temporary unlock duration. Spaces saved before the
-    // field existed get the 24-hour default: a stop that used to be permanent
-    // now resumes on its own, the stricter of the two readings. The old global
-    // "Default pause length" setting has nothing left to prefill.
-    for (const bl of state.appData.blocklists) {
-        if (bl.unlockMinutes === undefined) {
-            bl.unlockMinutes = DEFAULT_UNLOCK_MINUTES;
-            shouldSave = true;
-        } else if (bl.unlockMinutes !== normalizeUnlockMinutes(bl.unlockMinutes)) {
-            bl.unlockMinutes = normalizeUnlockMinutes(bl.unlockMinutes);
-            shouldSave = true;
-        }
+    // The dialog remembers a global timed choice. Never change existing pauses
+    // or infer a preference from legacy per-space unlockMinutes.
+    const lastBreakMinutes = getLastBreakMinutes(state.appData.settings);
+    if (state.appData.settings.lastBreakMinutes !== lastBreakMinutes) {
+        state.appData.settings.lastBreakMinutes = lastBreakMinutes;
+        shouldSave = true;
     }
     if ('defaultPauseMinutes' in state.appData.settings) {
         delete state.appData.settings.defaultPauseMinutes;

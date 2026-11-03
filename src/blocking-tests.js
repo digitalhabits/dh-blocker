@@ -2650,7 +2650,7 @@
             const neverBlock = createMockBlock(neverBlocklist.id, Date.now() - 1000, forever, { isAlwaysOn: true });
             internals.appData = createMockAppData({ blocklists: [neverBlocklist], activeBlocks: [neverBlock], schedules: [] });
             events = [];
-            const never = await internals.stopFocusSpaceTarget({ block: neverBlock });
+            const never = await internals.stopFocusSpaceTarget({ block: neverBlock, minutes: 0 });
             assert(never?.kind === 'removed', 'T72: Never keeps the existing removal semantics');
 
             // A Manual space's restart is booked with iOS and re-applies its saved apps
@@ -3623,7 +3623,7 @@
             // An allow-only space starts on Never, and a block space opened after it is back on 10.
             internals.openBlocklistModal(null, { mode: 'allowlist' });
             try {
-                assertEqual(document.getElementById('unlock-duration-select')?.value, '0', 'T183: a new allow-only space starts on Never');
+                assertEqual(document.getElementById('unlock-duration-select')?.value, '10', 'T183: creating an allow-only space does not change the pause preference');
             } finally {
                 internals.closeBlocklistModal();
             }
@@ -3920,11 +3920,11 @@
             });
             const settle = (p) => p?.catch?.(() => {});
             settle(internals.restopForNewStrictness(never.id));
-            assert(!internals.appData.activeBlocks.some((b) => b.blocklistId === never.id),
-                'T232: switching a stopped space to Never cancels its pending restart');
+            assertEqual(internals.appData.activeBlocks.find((b) => b.blocklistId === never.id)?.pauseEndTime, pending.pauseEndTime,
+                'T232: legacy editor strictness cannot cancel a confirmed pause');
             settle(internals.restopForNewStrictness(five.id));
             const fiveEnd = internals.appData.activeBlocks.find((b) => b.blocklistId === five.id)?.pauseEndTime;
-            assert(Math.abs(fiveEnd - (now + 5 * 60000)) < 60000, `T233: switching it to 5 min restarts it 5 min from now (got ${fiveEnd - now} ms)`);
+            assertEqual(fiveEnd, pending.pauseEndTime, 'T233: editing settings cannot move a confirmed pause deadline');
             settle(internals.restopForNewStrictness(running.id));
             const runningBlock = internals.appData.activeBlocks.find((b) => b.blocklistId === running.id);
             assert(!!runningBlock && !runningBlock.isPaused, 'T234: a running space is not stopped by a strictness change');

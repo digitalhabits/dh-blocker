@@ -588,16 +588,21 @@ countdown can float over third-party fullscreen Spaces without stealing focus.
    - App watcher: on `set_blocked_apps` and each poll
    - Enforcer: every 5 s via `derive_payload`
 
-### 9.3 Stop = temporary unlock
+### 9.3 Pauses and automatic resumption
 
-Every focus space carries `unlockMinutes` (0 = Never, else one of
-5/10/15/30/60/120/240/480/1440; helpers in `src/unlock-duration.js`, default 24 h
-— also applied to records saved before the field existed). Stopping a running
-space — the card switch, the now-blocking chip, the editor banner's "Turn off",
-or the Android friction gate — first passes the override challenge
-(`openOverrideModal` / `openScheduleOverrideModal`; waived for a Flexible
-schedule sitting between its blocks) and then `stopFocusSpaceTarget` applies the
-duration:
+The shared pause dialog chooses the duration for that confirmation, independently
+of the editor: 5/10/30/60/120/240/480/1440 minutes or Never. A successful timed
+pause remembers `settings.lastBreakMinutes` globally; missing/invalid preferences
+start at **10 minutes**. Cancellation, failure and Never leave the last timed
+choice unchanged. Legacy per-space `unlockMinutes` no longer controls this flow.
+Existing pause deadlines, including 15-minute pauses, are preserved.
+
+The existing typing challenge gates confirmation (waived for Flexible schedules
+between blocks). Changing duration never resets typing. Active random-word
+requirements may increase, but saving cannot lower the saved requirement or
+change the method/custom text while enforcement requires friction.
+
+`stopFocusSpaceTarget` receives the chosen duration explicitly:
 
 - unlock > 0: a **timed pause** — `isPaused` + `pauseEndTime` on the block or
   schedule; the render tick clears it at expiry, iOS additionally registers a
@@ -608,11 +613,14 @@ duration:
 
 While paused, domains/apps from that source are excluded from `derive_payload`
 and app-watcher effective sets, and a schedule pause suppresses upcoming
-segments until it ends. Turning a space back on never asks anything.
+segments until it ends. Paused cards show their return time and Resume now.
+There is no end-time editor; changing challenge settings never reschedules a
+confirmed pause. Turning a space back on never requires a challenge. iOS resume
+registration must succeed before a timed pause commits; failure retains blocking.
 
-Android's native gate (`UnlockActivity`) still prefills its own pause length from
-Kotlin prefs (fallback 10 min); the webview no longer writes that pref, and the
-plugin does not read `unlockMinutes` yet.
+Android's native gate is unchanged and outside this UI rollout's validation
+scope. It still uses its separate Kotlin pause preference (10-minute fallback),
+without synchronization to the shared dialog's remembered choice.
 
 ### 9.4 Merge semantics
 

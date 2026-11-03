@@ -40,6 +40,82 @@ const DESKTOP = { width: 1100, height: 900 };
 /** @type {Screen[]} */
 export const screens = [
     {
+        name: 'pause-main-screen',
+        fixture: { ...fixtures.manualRunning, activeBlocks: fixtures.manualRunning.activeBlocks.map(b => ({ ...b, isPaused: true, pauseEndTime: Date.now() + 600000 })) },
+        platform: 'windows', viewport: DESKTOP,
+    },
+    {
+        name: 'pause-flow-verified', fixture: fixtures.manualRunning, platform: 'windows', viewport: DESKTOP,
+        clip: '#override-modal .modal-content',
+        prepare: async (page) => {
+            await page.click('.blocklist-card[data-id="bl-manual"] .blocklist-switch');
+            const select = page.locator('#unlock-duration-select');
+            if (await select.inputValue() !== '10') throw new Error('Pause must initially select 10 minutes');
+            if (await select.locator('option[value="15"]').count()) throw new Error('15 minutes must not be offered');
+            const words = await page.locator('#challenge-text').innerText();
+            await page.locator('#challenge-input').fill(words);
+            await select.selectOption('5');
+            if (await page.locator('#challenge-input').inputValue() !== words) throw new Error('Duration erased typing');
+            await page.click('#confirm-override-btn');
+            await page.waitForSelector('#override-modal.hidden', { state: 'attached' });
+            await page.waitForFunction(() => window.__REDDBLOCK_INTERNALS__.appData.settings.lastBreakMinutes === 5);
+            // Re-rendering rechecks onboarding against the intentionally incomplete
+            // native stub; uncover the same preview surface as openScreen does.
+            const uncover = () => {
+                document.querySelectorAll('[id$="-onboarding"]').forEach(el => el.classList.add('hidden'));
+                document.getElementById('main-content').classList.remove('hidden');
+            };
+            await page.evaluate(uncover);
+            await page.click('.blocklist-resume-btn');
+            await page.waitForFunction(() => !window.__REDDBLOCK_INTERNALS__.appData.activeBlocks[0].isPaused);
+            await page.evaluate(uncover);
+            await page.click('.blocklist-card[data-id="bl-manual"] .blocklist-switch');
+            if (await select.inputValue() !== '5') throw new Error('Confirmed duration was not remembered');
+            await select.selectOption('0');
+            if (!await page.locator('#pause-never-warning').isVisible()) throw new Error('Missing Never recommendation');
+            const nextWords = await page.locator('#challenge-text').innerText();
+            await page.locator('#challenge-input').fill(nextWords);
+            await page.click('#confirm-override-btn');
+            await page.waitForSelector('#override-modal.hidden', { state: 'attached' });
+            const result = await page.evaluate(() => {
+                const data = window.__REDDBLOCK_INTERNALS__.appData;
+                return { remembered: data.settings.lastBreakMinutes, blocks: data.activeBlocks.length };
+            });
+            if (result.remembered !== 5 || result.blocks !== 0) throw new Error('Never changed the preference or failed to turn off');
+            // Restore a running fixture to preview the next pause's remembered selection.
+            await page.evaluate(() => {
+                const i = window.__REDDBLOCK_INTERNALS__;
+                i.appData.activeBlocks.push({ id: 'b-next', blocklistId: 'bl-manual', startTime: Date.now() - 1000, endTime: 253402300799999, isAlwaysOn: true });
+                i.render();
+            });
+            await page.evaluate(uncover);
+            await page.click('.blocklist-card[data-id="bl-manual"] .blocklist-switch');
+            if (await select.inputValue() !== '5') throw new Error('Never replaced the remembered timed choice');
+        },
+    },
+    {
+        name: 'pause-dialog-iphone', fixture: fixtures.manualRunning, platform: 'iphone', viewport: IPHONE,
+        prepare: async (page) => {
+            await page.click('.blocklist-card[data-id="bl-manual"] .blocklist-switch');
+            await page.locator('#unlock-duration-select').selectOption('0');
+        },
+    },
+    {
+        name: 'pause-editor-active', fixture: fixtures.manualRunning, platform: 'windows', viewport: DESKTOP,
+        prepare: async (page) => {
+            await page.click('.blocklist-card[data-id="bl-manual"] .blocklist-title-text');
+            await page.click('#editor-section-stop-header');
+            const slider = page.locator('#override-count');
+            if (await slider.isDisabled()) throw new Error('Active word count must remain editable');
+            if (await page.locator('#focus-space-editor #unlock-duration-select').count()) throw new Error('Duration still in editor');
+            await slider.fill('100');
+            await slider.dispatchEvent('input');
+            await page.click('#editor-save-btn');
+            await page.waitForFunction(() => window.__REDDBLOCK_INTERNALS__.appData.blocklists[0].overrideDifficulty.count === 100);
+            if (await slider.getAttribute('min') !== '100') throw new Error('Saved word count did not become the new minimum');
+        },
+    },
+    {
         name: 'settings-windows-blocking-methods',
         fixture: fixtures.crowdedWeek,
         platform: 'windows',

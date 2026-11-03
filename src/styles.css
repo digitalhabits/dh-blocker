@@ -17024,3 +17024,9 @@ body:not(.handset-device) #enter-scheduler-modal .editor-panel-back-btn:hover{
     outline: 2px solid var(--accent-color);
     outline-offset: 4px;
 }
+
+/* Pause duration belongs to the confirmation, never the schedule editor. */
+#override-modal .unlock-duration-row { margin: 0 0 12px; padding: 12px 0; border-top: 0; }
+#override-modal .unlock-duration-select { max-width: 100%; }
+#override-modal #pause-never-warning { margin: 0 0 16px; color: var(--text-secondary); }
+.blocklist-resume-btn { background: none; border: 0; color: var(--redd-teal); font: inherit; padding: 6px 0 0; text-decoration: underline; cursor: pointer; }

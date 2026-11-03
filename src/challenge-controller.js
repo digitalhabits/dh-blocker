@@ -319,6 +319,14 @@ export function createChallengeController(elements) {
             return { status: 'rejected' };
         },
 
+        setConfirmLabel(label) {
+            if (stopLabel !== null) stopLabel = label;
+            else {
+                const el = confirmBtnEl?.querySelector('.start-confirm-primary-label') || confirmBtnEl;
+                if (el) el.textContent = label;
+            }
+        },
+
         getTypedValue,
 
         /** Clear state without touching modal visibility (the caller owns that). */

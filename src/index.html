@@ -854,26 +854,6 @@
                                 </div>
                                 <input type="range" id="override-count" class="editor-slider override-words-slider" min="1" max="300" value="15" step="1" aria-labelledby="override-count-label">
                             </div>
-                            <div class="exit-difficulty-row settings-row unlock-duration-row" id="unlock-duration-row">
-                                <div class="exit-difficulty-row-copy settings-row-copy">
-                                    <span class="exit-difficulty-row-label settings-row-label" id="unlock-duration-label">Turn back on after</span>
-                                    <span class="settings-row-hint" id="unlock-duration-hint">If you stop this focus space early, it switches itself back on after this long. Choose "Never" to keep it off until you turn it on yourself.</span>
-                                </div>
-                                <div class="exit-difficulty-row-control settings-row-control">
-                                    <select id="unlock-duration-select" class="form-select unlock-duration-select">
-                                        <option value="0" id="unlock-option-0">Never</option>
-                                        <option value="5" id="unlock-option-5">5 minutes</option>
-                                        <option value="10" id="unlock-option-10" selected>10 minutes</option>
-                                        <option value="15" id="unlock-option-15">15 minutes</option>
-                                        <option value="30" id="unlock-option-30">30 minutes</option>
-                                        <option value="60" id="unlock-option-60">1 hour</option>
-                                        <option value="120" id="unlock-option-120">2 hours</option>
-                                        <option value="240" id="unlock-option-240">4 hours</option>
-                                        <option value="480" id="unlock-option-480">8 hours</option>
-                                        <option value="1440" id="unlock-option-1440">24 hours</option>
-                                    </select>
-                                </div>
-                            </div>
                         </div>
                     </div>
                     <span id="override-count-warning" class="form-hint warning hidden"></span>
@@ -885,7 +865,7 @@
     <button type="button" class="editor-section-header" id="editor-section-advanced-header" aria-expanded="false" aria-controls="editor-section-advanced-body">
         <span class="editor-section-copy">
             <span class="editor-section-title" id="editor-section-advanced-title">Advanced options</span>
-            
+
         </span>
         <span class="editor-section-icon" aria-hidden="true"></span>
     </button>
@@ -1255,7 +1235,26 @@
                         </div>
                     </div>
                 </div>
-                <p id="override-modal-instruction" class="override-challenge-instruction challenge-char-instruction">To stop this focus space early, type the following:</p>
+                <div class="exit-difficulty-row settings-row unlock-duration-row" id="unlock-duration-row">
+                    <div class="exit-difficulty-row-copy settings-row-copy">
+                        <label for="unlock-duration-select" class="exit-difficulty-row-label settings-row-label" id="unlock-duration-label">Turn back on after</label>
+                    </div>
+                    <div class="exit-difficulty-row-control settings-row-control">
+                        <select id="unlock-duration-select" class="form-select unlock-duration-select">
+                            <option value="5" id="unlock-option-5">5 minutes</option>
+                            <option value="10" id="unlock-option-10" selected>10 minutes</option>
+                            <option value="30" id="unlock-option-30">30 minutes</option>
+                            <option value="60" id="unlock-option-60">1 hour</option>
+                            <option value="120" id="unlock-option-120">2 hours</option>
+                            <option value="240" id="unlock-option-240">4 hours</option>
+                            <option value="480" id="unlock-option-480">8 hours</option>
+                            <option value="1440" id="unlock-option-1440">24 hours</option>
+                            <option value="0" id="unlock-option-0">Never — keep turned off</option>
+                        </select>
+                    </div>
+                </div>
+                <p id="pause-never-warning" class="form-hint warning hidden"></p>
+                <p id="override-modal-instruction" class="override-challenge-instruction challenge-char-instruction">To pause this focus space, type the following:</p>
                 <div class="override-challenge-instruction challenge-word-instruction">
                     <strong id="challenge-words-remaining" class="challenge-words-remaining"></strong>
                     <span id="override-modal-word-instruction">Type one word at a time</span>
