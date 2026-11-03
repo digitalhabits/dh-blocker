@@ -62,14 +62,11 @@ export function setSettingsEnforcementSectionExpanded(expanded) {
 }
 
 export function resetSettingsEnforcementSection() {
-    if (__ANDROID_BUILD__) return;
     setSettingsEnforcementSectionExpanded(true);
     setSettingsBlockingMethodExpanded(false);
 }
 
 export function setupSettingsEnforcementSection() {
-    if (__ANDROID_BUILD__) return;
-
     const sectionToggle = document.getElementById('settings-enforcement-section-toggle');
     if (sectionToggle && sectionToggle.dataset.bound !== '1') {
         sectionToggle.dataset.bound = '1';
@@ -137,7 +134,6 @@ export function getEnforcementToggleInputs() {
 }
 
 export async function updateAllEnforcementToggleLocks() {
-    if (__ANDROID_BUILD__) return;
     for (const toggle of getEnforcementToggleInputs()) {
         await updateEnforcementToggleLock(toggle);
     }
@@ -167,7 +163,6 @@ export async function onEnforcementToggleChange(changedToggle) {
 }
 
 export async function wireEnforcementToggle() {
-    if (__ANDROID_BUILD__) return;
     if (state.isIOS) return;
     const toggles = getEnforcementToggleInputs();
     if (!toggles.length) return;
@@ -207,7 +202,6 @@ export function syncBlockingMethodRowVisibility(browsers = {}) {
 }
 
 export function syncBlockingMethodLabelIcons() {
-    if (__ANDROID_BUILD__) return;
     for (const key of ALL_BLOCKING_METHOD_KEYS) {
         const icon = document.getElementById(`settings-blocking-method-${key}-icon`);
         if (icon) icon.src = browserIconUrl(key);
@@ -227,7 +221,6 @@ export function syncBlockingMethodSelects(methods = getBlockingMethodsMap()) {
 }
 
 export async function wireBlockingMethodSettings() {
-    if (__ANDROID_BUILD__) return;
     if (!state.isMacOSDesktop && !state.isWindowsDesktop) return;
 
     let browsers = lastOnboardingState?.browsers || state.lastMigrationBrowserState?.browsers || {};
@@ -292,7 +285,6 @@ export function safariUsesExtensionMode() {
 let activeSafariFdaOnboardingSession = null;
 
 export function hideSafariFdaOnboardingUi() {
-    if (__ANDROID_BUILD__) return;
     const session = activeSafariFdaOnboardingSession;
     if (!session) return;
     session.overlay?.classList.add('hidden');
@@ -304,7 +296,6 @@ export function hideSafariFdaOnboardingUi() {
 
 /** Safari FDA onboarding — same layout/copy pattern as the EULA screen. */
 export function applySafariFdaOnboardingLanguage() {
-    if (__ANDROID_BUILD__) return;
     const shield = document.getElementById('fda-onboarding-shield-logo');
     if (shield) {
         shield.src = logoReddShieldUrl;
@@ -326,7 +317,6 @@ export function applySafariFdaOnboardingLanguage() {
 }
 
 export async function syncSafariFdaOnboardingGrantButton() {
-    if (__ANDROID_BUILD__) return;
     const grantBtn = document.getElementById('fda-onboarding-grant-btn');
     const whyEl = document.getElementById('fda-onboarding-why');
     if (!grantBtn) return false;
@@ -349,7 +339,6 @@ export async function syncSafariFdaOnboardingGrantButton() {
 }
 
 export async function finalizeSafariFdaOnboardingGrant(statusEl) {
-    if (__ANDROID_BUILD__) return;
     if (statusEl) {
         statusEl.classList.remove('hidden');
         statusEl.textContent = tSettings('safariFdaOnboardingGrantedStatus');
@@ -368,7 +357,6 @@ export async function finalizeSafariFdaOnboardingGrant(statusEl) {
 }
 
 export function showSafariFdaOnboardingOverlay() {
-    if (__ANDROID_BUILD__) return;
     if (!safariUsesExtensionMode()) {
         return Promise.resolve();
     }
@@ -455,7 +443,6 @@ export function showSafariFdaOnboardingOverlay() {
 }
 
 export async function presentSafariFdaOnboardingUi() {
-    if (__ANDROID_BUILD__) return;
     const session = activeSafariFdaOnboardingSession;
     if (!session) return;
     document.getElementById('settings-modal')?.classList.add('hidden');
@@ -496,7 +483,6 @@ export async function pollSafariFdaUntilGranted({ refreshSettings = false } = {}
 }
 
 export async function ensureSafariExtensionFdaBeforeSetup() {
-    if (__ANDROID_BUILD__) return;
     if (!safariUsesExtensionMode()) return;
     let granted = false;
     try {
@@ -513,7 +499,6 @@ export async function ensureSafariExtensionFdaBeforeSetup() {
 }
 
 export async function syncSafariFdaSettingsRow() {
-    if (__ANDROID_BUILD__) return;
     const row = document.getElementById('settings-safari-fda-row');
     const statusEl = document.getElementById('settings-safari-fda-status');
     const grantBtn = document.getElementById('settings-safari-fda-grant-btn');
@@ -545,7 +530,6 @@ export async function syncSafariFdaSettingsRow() {
 /// the same as a missing grant, and saying so stops the row claiming Firefox
 /// is unprotected for the second or two after the browser launches.
 export async function syncFirefoxAxSettingsRow() {
-    if (__ANDROID_BUILD__) return;
     const row = document.getElementById('settings-firefox-ax-row');
     const statusEl = document.getElementById('settings-firefox-ax-status');
     const grantBtn = document.getElementById('settings-firefox-ax-grant-btn');
@@ -837,7 +821,6 @@ let lastAccessibilityTrusted = null;
 /// Re-read the grant for the setup screen's synchronous status checks. A
 /// failed read keeps the last known value instead of guessing either way.
 export async function refreshAccessibilityTrustedStatus() {
-    if (__ANDROID_BUILD__) return false;
     if (!browserUsesAccessibility('firefox')) return lastAccessibilityTrusted === true;
     try {
         lastAccessibilityTrusted = !!(await invoke('accessibility_trusted'));
@@ -863,7 +846,6 @@ export async function refreshAutomationPermissionStatus({
     launchProbeBrowser = null,
     launchProbeBrowsers = null,
 } = {}) {
-    if (__ANDROID_BUILD__) return lastAutomationPermissionByKey;
     if (!state.isMacOSDesktop) return lastAutomationPermissionByKey;
     const now = Date.now();
     if (!force && now - lastAutomationPermissionFetchAt < AUTOMATION_PERMISSION_FETCH_MIN_MS) {
@@ -1131,7 +1113,6 @@ export function browserStatusHint(key, entry, b, status) {
 }
 
 export function renderSafariDuplicateExtensionPanel(row, key) {
-    if (__ANDROID_BUILD__) return;
     const panel = document.createElement('div');
     panel.className = 'safari-duplicate-panel';
 
@@ -1254,13 +1235,11 @@ export function migrationMacCopyKey(state) {
 }
 
 export function invalidateMigrationMacCopyCache() {
-    if (__ANDROID_BUILD__) return;
     state.lastMigrationHeaderCopyKey = '';
     state.lastMigrationHowtoCopyKey = '';
 }
 
 export function syncMigrationMacHowto(state) {
-    if (__ANDROID_BUILD__) return;
     if (!appState.isMacOSDesktop) return;
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
@@ -1298,7 +1277,6 @@ export function isMacFreshMigrationPost() {
 }
 
 export function syncMigrationPostHeader(state) {
-    if (__ANDROID_BUILD__) return;
     const header = document.getElementById('migration-post-header');
     const checklist = document.getElementById('migration-checklist');
     const readyBanner = document.getElementById('migration-setup-ready-banner');
@@ -1654,7 +1632,6 @@ export function migrationBrowserRenderSignature(state) {
 }
 
 export function updateMigrationBrowserChecklist(state) {
-    if (__ANDROID_BUILD__) return;
     const checklistItem = document.getElementById('migration-checklist-ext');
     const browsers = state?.browsers || {};
     const keys = migrationBrowserKeys(state);
@@ -1684,7 +1661,6 @@ export function updateMigrationBrowserChecklist(state) {
 }
 
 export function renderBrowserInstallButtons(state, { force = false } = {}) {
-    if (__ANDROID_BUILD__) return;
     appState.lastMigrationBrowserState = state;
     void applyEnforcementDescCopy(state);
     // Keep the header subtitle in sync with the live scan (the macOS
@@ -2082,13 +2058,11 @@ export async function pollMigrationCompliance({ launchProbe = false } = {}) {
 }
 
 export function startMigrationPolling() {
-    if (__ANDROID_BUILD__) return;
     if (state.migrationPollIntervalId) return;
     state.migrationPollIntervalId = setInterval(pollMigrationCompliance, MIGRATION_POLL_MS);
 }
 
 export function stopMigrationPolling() {
-    if (__ANDROID_BUILD__) return;
     if (state.migrationPollIntervalId) {
         clearInterval(state.migrationPollIntervalId);
         state.migrationPollIntervalId = null;
@@ -2109,8 +2083,7 @@ export function onAppForeground() {
 }
 
 export function setupAppForegroundRefresh() {
-    if (__ANDROID_BUILD__) return;
-    if (state.isIOS || state.isAndroid) return;
+    if (state.isIOS) return;
     window.addEventListener('focus', onAppForeground);
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') onAppForeground();
@@ -2168,7 +2141,6 @@ let behaviourBannerDismissedThisSession = false;
 export let lastOnboardingState = null;
 
 export async function updateBehaviourChangeBanner(state) {
-    if (__ANDROID_BUILD__) return;
     const banner = document.getElementById('behaviour-change-banner');
     if (!banner) return;
 
@@ -2347,7 +2319,6 @@ export function joinBrowserNames(list) {
 // new Settings → Advanced Options entry. Centralised so both call
 // sites stay in sync if the overlay's API changes.
 export async function openExtensionSetupOverlay() {
-    if (__ANDROID_BUILD__) return;
     try {
         const fresh = await invoke('onboarding_state');
         state.migrationOnboardingDismissed = false;
@@ -2371,8 +2342,7 @@ export function finishOnboardingReplayToMainUi() {
 }
 
 export async function restartOnboardingFromSettings() {
-    if (__ANDROID_BUILD__) return;
-    if (state.isIOS || state.isAndroid) return;
+    if (state.isIOS) return;
     document.getElementById('settings-modal')?.classList.add('hidden');
     setLanguagePickerOpen(false);
     await presentWelcomeOnboarding(finishOnboardingReplayToMainUi);
@@ -2388,8 +2358,7 @@ export async function restartOnboardingFromSettings() {
 let lastBannerRefreshAt = 0;
 export const BANNER_REFRESH_THROTTLE_MS = 5_000;
 export async function refreshBehaviourBannerIfStale({ force = false } = {}) {
-    if (__ANDROID_BUILD__) return;
-    if (state.isIOS || state.isAndroid) return;
+    if (state.isIOS) return;
     if (state.migrationOnboardingActive) return; // overlay is the source of truth
     if (!state.startupInitializationComplete) return;
     const now = Date.now();
@@ -2425,7 +2394,6 @@ export function stopEnforcerClosedBannerPoll() {
 }
 
 export function ensureEnforcerClosedBannerPoll() {
-    if (__ANDROID_BUILD__) return;
     if (enforcerClosedBannerStates.size === 0) {
         stopEnforcerClosedBannerPoll();
         return;
@@ -2440,7 +2408,6 @@ export function ensureEnforcerClosedBannerPoll() {
 }
 
 export async function syncEnforcerClosedBannersWithCompliance(state) {
-    if (__ANDROID_BUILD__) return;
     if (enforcerClosedBannerStates.size === 0) {
         stopEnforcerClosedBannerPoll();
         return;
@@ -2470,8 +2437,7 @@ export async function syncEnforcerClosedBannersWithCompliance(state) {
 }
 
 export function setupEnforcerUiAlerts() {
-    if (__ANDROID_BUILD__) return;
-    if (state.isIOS || state.isAndroid || enforcerUiAlertsAttached) return;
+    if (state.isIOS || enforcerUiAlertsAttached) return;
     enforcerUiAlertsAttached = true;
     tauriAPI.onEnforcerGraceUpdate((event) => {
         const payload = event?.payload || {};
@@ -2529,7 +2495,6 @@ let webAutomationUiAlertsAttached = false;
 // matters — the watcher stops probing it, so the resolved event that
 // would normally retire the banner can never arrive.
 export function clearPendingAutomationWarning(key) {
-    if (__ANDROID_BUILD__) return;
     if (!key) return;
     let removed = false;
     for (const label of [...webAutomationPendingBrowsers.keys()]) {
@@ -2542,7 +2507,6 @@ export function clearPendingAutomationWarning(key) {
 }
 
 export async function startWebAutomationWatcher() {
-    if (__ANDROID_BUILD__) return;
     if (!state.isMacOSDesktop) return;
     try {
         await tauriAPI.webAutomationStart();
@@ -2552,7 +2516,6 @@ export async function startWebAutomationWatcher() {
 }
 
 export function setupWebAutomationUiAlerts() {
-    if (__ANDROID_BUILD__) return;
     if (!state.isMacOSDesktop || webAutomationUiAlertsAttached) return;
     webAutomationUiAlertsAttached = true;
     tauriAPI.onWebAutomationPermissionNeeded(async (event) => {
@@ -2608,7 +2571,6 @@ export function setupWebAutomationUiAlerts() {
 // parked just above `#behaviour-change-banner` in the top banner stack,
 // mirroring how the enforcer banners insert themselves.
 export function ensureWebAutomationBanner() {
-    if (__ANDROID_BUILD__) return;
     let banner = document.getElementById(WEB_AUTOMATION_BANNER_ID);
     if (banner) return banner;
 
@@ -2659,7 +2621,6 @@ export function ensureWebAutomationBanner() {
 }
 
 export function renderWebAutomationPermissionBanner() {
-    if (__ANDROID_BUILD__) return;
     const labels = [...webAutomationPendingBrowsers.keys()];
     if (labels.length === 0) {
         document.getElementById(WEB_AUTOMATION_BANNER_ID)?.classList.add('hidden');
@@ -2857,7 +2818,6 @@ export function enforcerCopy(payload) {
 }
 
 export function renderEnforcerCountdownInstruction(el, baseText) {
-    if (__ANDROID_BUILD__) return;
     if (!el) return;
     el.replaceChildren();
     let base = (baseText || '').trim();
@@ -2873,7 +2833,6 @@ export function renderEnforcerCountdownInstruction(el, baseText) {
 }
 
 export function renderEnforcerActionCopy(banner, payload, copy) {
-    if (__ANDROID_BUILD__) return;
     const key = enforcerBannerKey(payload);
     const isClosed = banner.classList.contains('extension-enforcer-action-banner-closed');
     const isActiveCountdown = !!copy.countdown && !isClosed;
@@ -3016,7 +2975,6 @@ export function formatBrowserList(labels) {
 }
 
 export function ensureActiveEnforcerActionBanner() {
-    if (__ANDROID_BUILD__) return;
     let banner = document.getElementById(ENFORCER_ACTIVE_BANNER_ID);
     if (banner) return banner;
 
@@ -3070,7 +3028,6 @@ export function ensureActiveEnforcerActionBanner() {
 }
 
 export function ensureClosedEnforcerActionBanner() {
-    if (__ANDROID_BUILD__) return;
     let banner = document.getElementById(ENFORCER_CLOSED_BANNER_ID);
     if (banner) return banner;
 
@@ -3117,7 +3074,6 @@ export function ensureClosedEnforcerActionBanner() {
 }
 
 export function ensureEnforcerActionBanner(payload) {
-    if (__ANDROID_BUILD__) return;
     const key = enforcerBannerKey(payload);
     let banner = document.getElementById(enforcerBannerId(key));
     if (banner) return { banner, key };
@@ -3373,7 +3329,6 @@ export async function copyEnforcerUrlChip(button) {
 }
 
 export function scheduleEnforcerScreenshotSync(wrap) {
-    if (__ANDROID_BUILD__) return;
     if (!wrap) return;
     requestAnimationFrame(() => {
         syncEnforcerScreenshotHeights(wrap);
@@ -3386,14 +3341,12 @@ export function scheduleEnforcerScreenshotSync(wrap) {
 }
 
 export function syncAllEnforcerScreenshotHeights() {
-    if (__ANDROID_BUILD__) return;
     document.querySelectorAll('.extension-enforcer-screenshots-wrap:not(.hidden)')
         .forEach(scheduleEnforcerScreenshotSync);
 }
 
 /** Size enforcer how-to screenshots to fill remaining viewport height. */
 export function syncEnforcerScreenshotHeights(wrap) {
-    if (__ANDROID_BUILD__) return;
     if (!wrap || wrap.classList.contains('hidden')) {
         if (wrap) {
             wrap.style.maxHeight = '';
@@ -3475,7 +3428,6 @@ export function applyScreenshotContainerLayout(container, steps, { browserKey } 
 }
 
 export function renderEnforcerScreenshots(container, steps, browserKey) {
-    if (__ANDROID_BUILD__) return;
     if (!container || !steps?.length) return;
     const stepsKey = `${browserKey}:${steps.map(s => s.src).join(',')}`;
     if (container.dataset.stepsKey === stepsKey) return;
@@ -3555,7 +3507,6 @@ export function partitionEnforcerStates(states) {
 }
 
 export function renderEnforcerAutomationActionRow(automationStates, mode) {
-    if (__ANDROID_BUILD__) return;
     const row = document.createElement('div');
     row.className = 'extension-enforcer-browser-action-row extension-enforcer-automation-row';
 
@@ -3609,7 +3560,6 @@ export function renderEnforcerAutomationActionRow(automationStates, mode) {
 }
 
 export function renderEnforcerActionRows(states, mode) {
-    if (__ANDROID_BUILD__) return;
     const { automation, focus } = partitionEnforcerStates(states);
     const frag = document.createDocumentFragment();
     if (automation.length) frag.appendChild(renderEnforcerAutomationActionRow(automation, mode));
@@ -3618,7 +3568,6 @@ export function renderEnforcerActionRows(states, mode) {
 }
 
 export function renderEnforcerBrowserActionRow(state, mode) {
-    if (__ANDROID_BUILD__) return;
     const row = document.createElement('div');
     row.className = 'extension-enforcer-browser-action-row';
 
@@ -3713,7 +3662,6 @@ export function resetEnforcerClosedBannerCycle() {
 }
 
 export function renderCombinedEnforcerActionBanner() {
-    if (__ANDROID_BUILD__) return;
     const banner = ensureActiveEnforcerActionBanner();
     const states = [...enforcerActionBannerStates.entries()].map(([key, state]) => ({ key, ...state }));
     if (states.length === 0) {
@@ -3802,7 +3750,6 @@ export function renderCombinedEnforcerActionBanner() {
 }
 
 export function updateEnforcerActionBannerCountdown() {
-    if (__ANDROID_BUILD__) return;
     if (enforcerActionBannerStates.size === 0) return;
     for (const [key, state] of enforcerActionBannerStates) {
         const remainingSecs = Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000));
@@ -3827,7 +3774,6 @@ export function updateEnforcerActionBannerCountdown() {
 }
 
 export function renderEnforcerActionBanner(payload) {
-    if (__ANDROID_BUILD__) return;
     if (!payload || !payload.browser) return;
     const key = enforcerBannerKey(payload);
     if (enforcerActionBannerStates.size === 0) {
@@ -3854,7 +3800,6 @@ export function renderEnforcerActionBanner(payload) {
 }
 
 export function renderCombinedEnforcerClosedBanner() {
-    if (__ANDROID_BUILD__) return;
     const banner = ensureClosedEnforcerActionBanner();
     if (hasActiveEnforcerCountdown()) {
         banner.classList.add('hidden');
@@ -3941,7 +3886,6 @@ export function renderCombinedEnforcerClosedBanner() {
 }
 
 export function renderEnforcerClosedBanner(payload) {
-    if (__ANDROID_BUILD__) return;
     if (!payload || (!payload.browser && !payload.label)) return;
     const key = enforcerBannerKey(payload);
     enforcerActionBannerStates.delete(key);

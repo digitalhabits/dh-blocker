@@ -438,9 +438,7 @@ stays the default, so existing installs are unaffected.
 
 - **Reads** take `AXWebArea`'s `AXURL` — the document's real URL — rather than
   the address-bar string, which is a display form with the scheme hidden,
-  `www.` sometimes trimmed and IDN rendered for humans. This is the parsing
-  hazard `BrowserUrlParserTest` exists for on Android, avoided rather than
-  parsed.
+  `www.` sometimes trimmed and IDN rendered for humans. Using the document URL avoids parsing those display-only variations.
 - **The active tab only.** Accessibility exposes the laid-out document, so a
   blocked page in a background tab is caught when the user switches to it.
 - **Redirects** press Firefox's "Open Location" menu item and type the URL,
@@ -593,8 +591,7 @@ countdown can float over third-party fullscreen Spaces without stealing focus.
 Every focus space carries `unlockMinutes` (0 = Never, else one of
 5/10/15/30/60/120/240/480/1440; helpers in `src/unlock-duration.js`, default 24 h
 — also applied to records saved before the field existed). Stopping a running
-space — the card switch, the now-blocking chip, the editor banner's "Turn off",
-or the Android friction gate — first passes the override challenge
+space — the card switch, the now-blocking chip, or the editor banner's "Turn off" — first passes the override challenge
 (`openOverrideModal` / `openScheduleOverrideModal`; waived for a Flexible
 schedule sitting between its blocks) and then `stopFocusSpaceTarget` applies the
 duration:
@@ -609,10 +606,6 @@ duration:
 While paused, domains/apps from that source are excluded from `derive_payload`
 and app-watcher effective sets, and a schedule pause suppresses upcoming
 segments until it ends. Turning a space back on never asks anything.
-
-Android's native gate (`UnlockActivity`) still prefills its own pause length from
-Kotlin prefs (fallback 10 min); the webview no longer writes that pref, and the
-plugin does not read `unlockMinutes` yet.
 
 ### 9.4 Merge semantics
 
@@ -637,14 +630,13 @@ relies on backends to observe the file change — no helper IPC.
 Persisted on each blocklist as `overrideDifficulty`:
 
 - `type`: `random-words` | `custom`
-- `count`: a number of **words** on every platform (1–1000 desktop, 1–100 iOS/Android; five-letter words), chosen with the "To stop early" slider; the desktop slider tops out at `settings.maxOverrideWords` (50–1000, default 300)
+- `count`: a number of **words** on every platform (1–1000 desktop, 1–100 iOS; five-letter words), chosen with the "To stop early" slider; the desktop slider tops out at `settings.maxOverrideWords` (50–1000, default 300)
 - `customText`: typed verbatim for `custom`
 
 `appData.settings.overrideCountUnit === 'words'` marks a store that has been
 migrated; before v3.9 desktop stored a character target and offered gibberish
 and a "max difficulty" flag, all folded into word counts on load by
-`migrateOverrideDifficultyToWords` (`src/override-challenge.js`). Android's
-native gate maps `count` straight onto `frictionWordCount`.
+`migrateOverrideDifficultyToWords` (`src/override-challenge.js`).
 
 ### 10.2 Blocklist duplication
 

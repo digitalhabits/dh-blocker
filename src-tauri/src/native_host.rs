@@ -801,7 +801,7 @@ fn match_schedule_now(schedule: &Value, now_ms: u64) -> Option<ScheduleMatch> {
         .unwrap_or(false);
     // `isPaused` with no `pauseEndTime` is a schedule the user switched OFF
     // (the card switch writes exactly this after the override challenge). The
-    // frontend engine, Android and iOS all read it as "paused until turned on
+    // frontend engine and iOS all read it as "paused until turned on
     // again", and desktop must agree or a switched-off space would keep
     // blocking on macOS/Windows only.
     if paused {

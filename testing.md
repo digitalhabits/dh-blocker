@@ -28,7 +28,7 @@ Tier 0 and Tier 1 overlap in kind but not in reach. Tier 1 owns the
 *composed* question — schedule windows, overlaps, allowlist resolution — and
 runs the real runner inside a page. Tier 0 exists for the leaf functions that
 composition is built out of, which previously had no home above Tier 2: things
-like `normalizeUnlockMinutes`, `androidFrictionChallengeFields` or
+like `normalizeUnlockMinutes` or
 `isProtectedApp` are pure, are asserted in milliseconds, and do not need a
 browser to be meaningful. When a case fits both, prefer Tier 1 — it is the
 layer closer to observed behavior.
@@ -64,9 +64,6 @@ matching the layer you changed:
 | A single pure helper in `src/` — boundaries, malformed input | `test/tier0/` (Tier 0) |
 | Blocking/schedule/allowlist logic in `src/` | `src/blocking-tests.js` (Tier 1) |
 | Desktop enforcement semantics — derivation, URL decisions, payloads | `#[cfg(test)]` in the Rust module |
-| Android blocking decisions / schedule persistence | `SchedulesTest` |
-| Android interception or friction-gate behavior | `BlockerServiceTest` / `UnlockActivityTest` (Robolectric) |
-| Android URL-bar parsing / a new browser | `BrowserUrlParserTest` fixtures |
 | Command paths, persistence round-trips | `src/integration-tests.js` (Tier 2) |
 | Appearance or layout regressions | reuse or add a screen in `test/ui/screens.js`, then `pnpm ui:shoot --screen=<name> --measure` and **look at it** |
 
@@ -110,7 +107,6 @@ screens or a direct UI check suffice.
   UIA selectors via .NET and verifies redirect to a temporary local file and
   restore. Its page includes lookalike Firefox IDs to exercise toolbar scoping.
   This does **not** run the Rust watcher or prove policy/schedule/MSIX behavior.
-- **Android Kotlin**: `cd src-tauri/gen/android && ./gradlew :tauri-plugin-android-blocker:testDebugUnitTest`
 
 ---
 
@@ -121,7 +117,7 @@ summarized below:
 
 | Workflow | Job | Runs | Trigger |
 | --- | --- | --- | --- |
-| `ci.yml` | Frontend bundle | `vite:build`, `vite:build:android`, `verify:android-bundle` | every PR, every push to `main` |
+| `ci.yml` | Frontend bundle | `vite:build` | every PR, every push to `main` |
 | `ci.yml` | Tier 0 unit tests | `pnpm test:tier0` — vitest over `test/tier0/**` | every PR, every push to `main` |
 | `ci.yml` | Tier 1 logic tests | `pnpm test:tier1` — `runBlockingTests()` in headless Chromium | every PR, every push to `main` |
 | `ci.yml` | iOS one-off activity timing | Foundation-only Swift host tests on macOS: `scripts/ci/test-ios-activity-timing.sh`, `test-ios-schedule-registration.sh`, `test-ios-schedule-data.sh`, and `test-ios-start-warnings.sh` (run in four time zones) | every PR, every push to `main` |
@@ -129,12 +125,11 @@ summarized below:
 | `release.yml` | macOS (.pkg) | `cargo test --lib` before signing | every release run |
 | `rust-ci.yml` | Rust unit tests | `cargo test --lib` on `macos-latest` | `src-tauri/**` changes, on PRs and `main` |
 | `rust-ci.yml` | Clippy (desktop) | `cargo clippy --lib --bins --tests --locked -- -D warnings` on `macos-latest` **and** `windows-latest` | `src-tauri/**` changes, on PRs and `main` |
-| `android-ci.yml` | Android debug + release APK | debug APK build, `:tauri-plugin-android-blocker:testDebugUnitTest`, then a release APK build + strip assertion | `src/**`, `src-tauri/**`, plugin, build config, on PRs and `main` |
 | `e2e-ci.yml` | Tier 2 (macOS + Windows) | `runIntegrationTests('full')` against a real built app over WebDriver | Tier 2 sources, `e2e/**`, `vite.config.js`, on PRs and `main` |
 
 Notes on the non-obvious choices:
 
-- **`ci.yml`, `rust-ci.yml`, `android-ci.yml` and `e2e-ci.yml` also run on pushes to `main`.**
+- **`ci.yml`, `rust-ci.yml` and `e2e-ci.yml` also run on pushes to `main`.**
   PR checks run against the merge preview, not the commit that ends up on
   `main`, and there is no merge queue — two independently-green PRs can land a
   broken `main`. The push trigger is also the only coverage for commits that
@@ -153,35 +148,13 @@ Notes on the non-obvious choices:
 
 - **Rust runs on macOS, not Linux.** `web_automation.rs`, `window_inventory.rs`
   and `workspace_events.rs` are `#[cfg(target_os = "macos")]`, and the
-  `cfg(not(ios|android))` modules depend on macOS/Windows-only crates, so the
+  `cfg(not(ios))` modules depend on macOS/Windows-only crates, so the
   lib does not compile on a Linux runner at all. The full Windows backend
   suite runs in the Windows desktop clippy job with `cargo test --lib --locked`,
   including method policy, shared block-page decisions, and IPC registration.
   The job also runs `pnpm vite:build`
   first — `tauri_build::build()` refuses to run when the configured
   `frontendDist` (`../dist`) is missing.
-- **Kotlin tests run after the APK build, in the same job.** `settings.gradle`
-  applies the generated, gitignored `tauri.settings.gradle`, which is what adds
-  `:tauri-android` and `:tauri-plugin-android-blocker` to the build. Gradle
-  cannot configure the project until the Tauri CLI has written it.
-- **A debug APK does not cover the release packaging path.** Release merges
-  consumer ProGuard files, runs R8, runs lintVital and strips native libraries;
-  debug does none of those. Two release-only failures reached `main` while this
-  job was green — Tauri's plugin crates declaring a `consumer-rules.pro` they do
-  not ship, and a lint crash in AGP 9.1.1 / Kotlin 2.2.21 — and
-  `scripts/build-android-play.sh` runs those same Gradle tasks, so the Play
-  build was broken too. The job therefore ends with a single-ABI release APK
-  build, plus an assertion that the packaged library carries no `.symtab` /
-  `.strtab`. That last check exists because nothing in the Android toolchain
-  notices if `strip = true` leaves `[profile.release]`: AGP's own strip task
-  removes DWARF sections only, and a Cargo release build emits none, so the
-  symbol table would quietly return (~4 MB per ABI).
-- **The Robolectric suites need network on their first run.** Robolectric
-  fetches an `android-all` runtime jar from Maven for the SDK level pinned in
-  `src/test/resources/robolectric.properties` and caches it. CI has network, so
-  this only shows up as a slower first run; offline, those two suites fail while
-  the plain-JUnit ones still pass.
-
 **Tier 2 runs in CI** (`e2e-ci.yml`) against a real built app, because it drives
 the actual Tauri command layer and cannot run on a bare page like Tier 1. See
 "Tier 2 under WebDriver" below. Running it by hand from the dev console still
@@ -201,7 +174,7 @@ cases belong — boundary values, malformed input, "exact match, not substring".
 
 - Cases: `test/tier0/**/*.test.js`
 - Config: `vitest.config.mjs` (kept separate from `vite.config.js`, which
-  carries the index.html rewriting, PurgeCSS and Android asset-pruning plugins
+  carries the index.html rewriting plugins
   that mean nothing when the entry point is a test file)
 - Run: `pnpm test:tier0`
 
@@ -210,7 +183,7 @@ cases belong — boundary values, malformed input, "exact match, not substring".
 | File | Module under test |
 | --- | --- |
 | `blocklist-utils.test.js` | protected apps/domains, always-on detection, iOS Screen Time selection normalization, legacy quick-start cleanup, focus-space colours |
-| `schedule-engine.test.js` | Android payload mapping (day names, friction fields), repeat classification, one-off enforcement windows, pause state, weekday indexing |
+| `schedule-engine.test.js` | repeat classification, one-off enforcement windows, pause state, weekday indexing |
 | `time-inputs.test.js` | end-time field parsing |
 | `unlock-duration.test.js` | the temporary unlock menu (0 = Never … 1440), fallback to the 24 h default, what a confirmed stop does to a block or schedule in memory |
 
@@ -219,10 +192,6 @@ cases belong — boundary values, malformed input, "exact match, not substring".
 - `environment: 'jsdom'`. Most of these modules are leaf-ish, but several
   import siblings that touch `document` at import time; jsdom means a Tier 0
   test never has to hand-roll a DOM just to get an import to resolve.
-- `__ANDROID_BUILD__` is defined as `false`, so modules resolve the same
-  branches they do in a desktop build. A helper whose Android behavior differs
-  needs the runtime `state.isAndroid` flag, not the compile-time constant — see
-  the note in `AGENTS.md`.
 - Tests that mutate the shared `state` object must restore it (`try`/`finally`);
   vitest runs a file's tests in one module registry, so a leaked `state.appData`
   is visible to every later case in that file.
@@ -516,7 +485,7 @@ Add an entry to `test/ui/screens.js`; do not edit the driver. Always set
 Windows, so an unstamped screenshot taken on Linux silently claims to be a
 Windows one. Stamping it is also how mobile-only problems become visible:
 hover-dependent affordances such as native `title` tooltips do not exist on iOS
-or Android, and only show up as missing when the page is rendered as those.
+devices, and only show up as missing when the page is rendered as those.
 
 ---
 
@@ -550,84 +519,12 @@ Run these before merging changes to `web_automation.rs`, `native_host.rs`,
 
 ---
 
-## Android Kotlin unit tests
-
-```
-cd src-tauri/gen/android && ./gradlew :tauri-plugin-android-blocker:testDebugUnitTest
-```
-
-CI runs this too, as a step of the Android debug-APK job (`android-ci.yml`);
-on failure the HTML report is uploaded as the `kotlin-unit-test-report`
-artifact.
-
-| Suite | Covers | Runner |
-| --- | --- | --- |
-| `BrowserUrlParserTest` | URL-bar text → blockable domain, per browser | plain JUnit |
-| `SchedulesTest` | which schedule blocks an app/domain; session, pause and time-window gating; SharedPreferences round-trip | plain JUnit |
-| `BlockerServiceTest` | an accessibility event → the friction gate launches with the right payload, or provably does not (keyguard, self-package, throttle, unblocked app) | Robolectric |
-| `UnlockActivityTest` | the friction gate: challenge generation and validation, pause commit, dismissal paths | Robolectric |
-
-Why this matters more than it looks: **Android shares none of the desktop
-enforcement code.** `Schedules.kt` re-implements the semantics
-`native_host::derive_payload` derives on desktop, and nothing but these suites
-keeps the two in step. A change to blocking semantics needs a case on both
-sides.
-
-### `BrowserUrlParserTest`: fixtures dumped from real devices
-
-Android website blocking hinges on reading the URL out of each browser's URL
-bar via the accessibility tree. That parsing lives in
-`tauri-plugin-android-blocker/.../service/BrowserUrlParser.kt` — deliberately
-free of Android framework types so it runs as a plain JVM test.
-
-`BrowserUrlParserTest` pins **verbatim URL-bar strings dumped from real
-devices** (`adb shell uiautomator dump`), quirks included. This matters because
-a browser-specific quirk here fails *silently*: the browser stays in the
-supported-package map, extraction just returns nothing, and that browser never
-blocks with no error anywhere. That is exactly how Samsung Internet's invisible
-`U+200E` LTR-mark prefix went unnoticed.
-
-**When adding or fixing a browser:** open a site in it, `uiautomator dump` the
-tree, add the raw `text` value of its URL-bar node as a fixture, then verify on
-a device (`logcat -s BlockerService` should log `Blocking website …`). The unit
-test proves parsing; only the device proves the accessibility event actually
-arrives and the friction gate launches.
-
-### Environment notes
-
-- `isReturnDefaultValues = true` keeps plain-JUnit tests from throwing on
-  `android.util.Log`. Robolectric supplies its own framework implementation and
-  is unaffected.
-- A real `org.json` is on the test classpath ahead of the stub, so
-  `Schedules`'s persistence round-trips actually round-trip instead of silently
-  producing empty data.
-- Robolectric emulates the SDK level pinned in
-  `src/test/resources/robolectric.properties` rather than following `compileSdk`,
-  so bumping `compileSdk` does not silently change what the tests run against.
-- `isIncludeAndroidResources = true` lets `UnlockActivityTest` inflate
-  `R.layout.activity_unlock` and resolve `R.string` / `R.color`.
-- `androidx.work:work-testing` supplies the WorkManager that
-  `Schedules.pauseSchedule` enqueues a `ReEnableWorker` into; without it the
-  gate's confirm path throws.
-
-### What these do not cover
-
-- The **website interception path** in `BlockerService`, which reads the browser
-  accessibility tree via `rootInActiveWindow`. Robolectric cannot populate that
-  for an AccessibilityService. The parsing half is covered by
-  `BrowserUrlParserTest`; the end-to-end half stays on the manual checklist.
-- `ScheduleManager`'s real WorkManager scheduling, and anything that depends on
-  a real device's accessibility grant.
-
----
-
 ## Tier Comparison
 
 - **Tier 0 (unit)**: narrow but exhaustive per helper, fastest feedback, proves nothing about composition — and it runs in jsdom, which has no layout engine, so never a claim about appearance.
 - **Tier 1 (logic)**: high breadth of logic permutations, zero system mutation.
 - **Tier 2 (integration)**: moderate breadth, Tauri command paths with the `current_blocking` enforcement snapshot as read-back.
 - **Rust unit tests**: enforcement decision logic (URL matching, allowlist composition, payload derivation).
-- **Android Kotlin unit tests**: URL-bar parsing against fixtures dumped from real devices, plus schedule decisions, the friction gate and event interception.
 - **UI shots**: appearance and layout geometry, from fixtures, in a real browser. Renders; does not assert.
 - **Manual checklist**: required for website enforcement, permissions, enforcer behaviour, and visual UX on real devices.
 

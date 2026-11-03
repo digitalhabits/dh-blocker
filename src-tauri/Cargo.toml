@@ -19,12 +19,6 @@ debug = 1
 
 [profile.release]
 incremental = false
-# Strip the symbol table from release binaries. This is not redundant with the
-# Android build: AGP's `strip<Variant>DebugSymbols` task runs the equivalent of
-# `llvm-strip --strip-debug`, which only removes DWARF sections — and a Cargo
-# release build emits none, so the task is a no-op while `.symtab`/`.strtab`
-# ride along into the APK. Measured on 3.8.9, that was 4.19 MB of the 13.96 MB
-# arm64 library, and 12.9 MB across the four ABIs of the universal APK.
 strip = true
 
 [lib]
@@ -109,9 +103,6 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.
 [target.'cfg(target_os = "ios")'.dependencies]
 tauri-plugin-screentime = { path = "../tauri-plugin-screentime" }
 
-[target.'cfg(target_os = "android")'.dependencies]
-tauri-plugin-android-blocker = { path = "../tauri-plugin-android-blocker" }
-
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.61", features = [
   "Win32_UI_Shell",
@@ -141,7 +132,7 @@ windows = { version = "0.61", features = [
 sysinfo = "0.33"
 tauri-plugin-notification = "2"
 
-[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+[target.'cfg(not(target_os = "ios"))'.dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["fs", "io-util"] }

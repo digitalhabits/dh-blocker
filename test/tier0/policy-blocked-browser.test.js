@@ -114,7 +114,7 @@ describe('policy-blocked browsers on Windows', () => {
         const { state } = await import('../../src/state.js');
         const { ensureExtensionSetupOnboardingShown, EXT_ONBOARDING_DISMISSED_KEY } = await import('../../src/onboarding.js');
         state.isIOS = false;
-        state.isAndroid = false;
+
         state.migrationOnboardingActive = false;
         state.migrationOnboardingDismissed = false;
         state.firstRunExtensionSetupPending = true;
@@ -149,7 +149,7 @@ describe('policy-blocked browsers on Windows', () => {
         const { ensureExtensionSetupOnboardingShown, EXT_ONBOARDING_DISMISSED_KEY } = await import('../../src/onboarding.js');
         const { invoke } = await import('@tauri-apps/api/core');
         state.isIOS = false;
-        state.isAndroid = false;
+
         state.migrationOnboardingActive = false;
         state.firstRunExtensionSetupPending = true;
         state.appData.settings.onboardingComplete = false;

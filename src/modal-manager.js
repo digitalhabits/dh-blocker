@@ -88,7 +88,7 @@ export function stopHelperUiRefreshLoop() {
 }
 
 export async function refreshOpenHelperUi() {
-    if (helperUiRefreshInFlight || state.isIOS || state.isAndroid) return;
+    if (helperUiRefreshInFlight || state.isIOS) return;
 
     const settingsVisible = isModalVisible('settings-modal');
     if (!settingsVisible) {
@@ -108,7 +108,7 @@ export async function refreshOpenHelperUi() {
 }
 
 export function startHelperUiRefreshLoop() {
-    if (state.isIOS || state.isAndroid || helperUiRefreshTimer != null) return;
+    if (state.isIOS || helperUiRefreshTimer != null) return;
     helperUiRefreshTimer = setInterval(() => {
         void refreshOpenHelperUi();
     }, HELPER_UI_REFRESH_MS);

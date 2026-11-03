@@ -7,15 +7,6 @@ fn main() {
         build_and_link_safari_bridge();
     }
 
-    // Align the native library's LOAD segments to 16 KB pages on Android
-    // (Android 15+ 16 KB page-size devices; Play Store requires it for uploads
-    // from Nov 2025). NDK r28+ makes this the linker default, but we build with
-    // r27, so opt in. Done via rustc-link-arg rather than .cargo/config.toml
-    // rustflags, which the Tauri Android build overrides through RUSTFLAGS.
-    if std::env::var("CARGO_CFG_TARGET_OS").ok().as_deref() == Some("android") {
-        println!("cargo:rustc-link-arg=-Wl,-z,max-page-size=16384");
-    }
-
     watch_icon_assets();
 
     tauri_build::build();

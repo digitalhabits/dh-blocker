@@ -217,7 +217,7 @@ export const LEGACY_MAX_OVERRIDE_WORDS = 300;
 export const MIN_MAX_OVERRIDE_WORDS_SETTING = 50;
 export const DEFAULT_MAX_OVERRIDE_WORDS_SETTING = LEGACY_MAX_OVERRIDE_WORDS;
 export const MAX_OVERRIDE_WORDS_SETTING_STEP = 50;
-/** Phones: Android's native gate clamps at its 111-word list anyway. */
+/** iOS keeps the shorter mobile challenge ceiling. */
 export const MAX_OVERRIDE_WORDS_MOBILE = 100;
 export const MAX_CUSTOM_OVERRIDE_CHARS = 7500;
 /** Letters per generated word (the pool is five-letter words). */
@@ -240,7 +240,7 @@ export function buildWordChallengeState(text) {
 }
 
 export function isMobileOverrideChallengePlatform() {
-    return state.isIOS || state.isAndroid;
+    return state.isIOS;
 }
 
 /** Phones type the challenge one word at a time; desktop types the whole text. */
@@ -284,8 +284,7 @@ export function normalizeMaxOverrideWordsSetting(value) {
  * only, so lowering the setting cannot make an existing space easier to stop.
  * A space already above the setting gets a slider long enough to hold its
  * count, or opening the editor and saving would quietly cut the challenge.
- * Phones ignore the setting — Android's native gate serves at most its own
- * word list.
+ * iOS uses the fixed mobile ceiling instead of this desktop setting.
  */
 export function getOverrideWordsSliderMax({
     maxSetting = state.appData?.settings?.maxOverrideWords,

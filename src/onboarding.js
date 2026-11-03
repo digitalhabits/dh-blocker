@@ -31,7 +31,7 @@ export function isLocalDevRun() {
 export async function resetDevOnlyEulaAcceptance() {
     // Mobile debug builds run through Vite too, but they should behave like
     // installed apps here: once the EULA is accepted, keep respecting it.
-    state.forceShowEulaThisSession = !state.isIOS && !state.isAndroid && isLocalDevRun();
+    state.forceShowEulaThisSession = !state.isIOS && isLocalDevRun();
 }
 
 export function getAcceptedEulaRevision() {
@@ -124,7 +124,7 @@ export async function runInitialOnboardingSequence() {
         updateOnboardingVisibility();
         return;
     }
-    if (!state.isIOS && !state.isAndroid) {
+    if (!state.isIOS) {
         if (shouldShowRebrandNotice()) {
             await presentRebrandNotice();
         } else if (!hasSeenRebrandNotice()) {
@@ -154,7 +154,7 @@ export function hasSeenRebrandNotice() {
 }
 
 export function shouldShowRebrandNotice() {
-    if (state.isIOS || state.isAndroid) return false;
+    if (state.isIOS) return false;
     return hasSeenAnyOnboarding() && !hasSeenRebrandNotice();
 }
 
@@ -413,7 +413,7 @@ function wireMigrationFinishDelegation() {
 
 export async function runDesktopOnboarding() {
     if (__SYSTEM_TEST_BUILD__) return;
-    if (state.isIOS || state.isAndroid) return;
+    if (state.isIOS) return;
     try {
         const pendingAtLaunch = await invoke('migration_pending');
         const wasUpgrade = await invoke('migration_was_pending_at_launch');
@@ -619,7 +619,7 @@ export function windowsBrowserSetupIsAutomatic(browsers) {
 }
 
 export async function ensureExtensionSetupOnboardingShown() {
-    if (state.isIOS || state.isAndroid || state.migrationOnboardingActive) return;
+    if (state.isIOS || state.migrationOnboardingActive) return;
     if (safariUsesExtensionMode()) {
         await ensureSafariExtensionFdaBeforeSetup();
     }
@@ -722,7 +722,6 @@ export async function showMigrationOnboarding(phase, onboardingState, opts = {})
     await focusBack();
     setTimeout(focusBack, 250);
 }
-
 
 export function pauseMigrationOnboardingForBackNavigation() {
     document.getElementById('migration-onboarding')?.classList.add('hidden');

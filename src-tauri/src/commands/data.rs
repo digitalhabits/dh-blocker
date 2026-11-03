@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 // Only `set_window_size` needs this, and that command is desktop-only.
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 use tauri::WebviewWindow;
 use tauri::{AppHandle, Manager};
 
@@ -295,9 +295,9 @@ pub(crate) fn import_shared_data_into_per_user(
                 src.display(),
                 dest.display()
             );
-            // Android keeps no overlay-assets folder beside the data file
+            // iOS keeps no overlay-assets folder beside the data file
             // (`overlay_assets` is desktop-only), so there is nothing to merge.
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            #[cfg(not(target_os = "ios"))]
             if let Some(dest_dir) = dest.parent() {
                 import_overlay_assets(dest_dir, shared_dirs);
             }
@@ -326,7 +326,7 @@ pub(crate) fn import_shared_data_into_per_user(
 /// Failure falls toward a blank overlay, never a missing blocklist: the data
 /// file is already in place by the time this runs, and a copy error is logged
 /// and otherwise ignored.
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 fn import_overlay_assets(dest_dir: &std::path::Path, shared_dirs: &[PathBuf]) {
     use super::overlay_assets::OVERLAY_ASSETS_DIR;
     let dest = dest_dir.join(OVERLAY_ASSETS_DIR);
@@ -349,7 +349,7 @@ fn import_overlay_assets(dest_dir: &std::path::Path, shared_dirs: &[PathBuf]) {
 }
 
 /// Recursive copy that never replaces a file already present at `dest`.
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 fn copy_dir_merge(src: &std::path::Path, dest: &std::path::Path) -> std::io::Result<()> {
     fs::create_dir_all(dest)?;
     for entry in fs::read_dir(src)? {
@@ -537,7 +537,7 @@ pub(crate) fn write_data_file_atomic(
         // Drop the shared parse cache so the enforcement loops re-read
         // this write even if it landed within the filesystem's
         // timestamp granularity (see data_cache.rs).
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        #[cfg(not(target_os = "ios"))]
         crate::data_cache::invalidate(path);
     }
     result
@@ -775,7 +775,7 @@ fn preserve_backend_settings(data_path: &std::path::Path, data: &mut AppData) {
 
 /// Set window size (used after onboarding) - desktop only
 #[tauri::command]
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 pub fn set_window_size(window: WebviewWindow, width: f64, height: f64) -> Result<(), String> {
     use tauri::LogicalSize;
     window
@@ -787,7 +787,7 @@ pub fn set_window_size(window: WebviewWindow, width: f64, height: f64) -> Result
 
 /// Set window size - no-op on mobile (always fullscreen)
 #[tauri::command]
-#[cfg(any(target_os = "ios", target_os = "android"))]
+#[cfg(target_os = "ios")]
 pub fn set_window_size(_width: f64, _height: f64) -> Result<(), String> {
     Ok(())
 }
