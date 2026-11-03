@@ -135,6 +135,8 @@ mod legacy_registration;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod native_browser_inventory;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub mod native_failure;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod native_health;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod native_host_install;
@@ -711,6 +713,7 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             {
                 commands::app_blocking::register(app);
+                native_failure::start(app.handle().clone());
             }
 
             // Windows website blocking always uses UI Automation.
@@ -932,6 +935,8 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::migration_was_pending_at_launch,
         commands::user_came_from_v1x,
         commands::get_system_diagnostics,
+        native_failure::native_warning_visible,
+        native_failure::native_website_status,
         commands::onboarding_state,
         commands::check_helper_status,
         commands::install_helper,
@@ -986,6 +991,8 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::migration_was_pending_at_launch,
         commands::user_came_from_v1x,
         commands::get_system_diagnostics,
+        native_failure::native_warning_visible,
+        native_failure::native_website_status,
         commands::onboarding_state,
         commands::check_helper_status,
         commands::install_helper,

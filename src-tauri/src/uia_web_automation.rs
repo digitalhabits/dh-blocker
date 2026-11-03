@@ -203,15 +203,16 @@ impl Watcher {
                 "suspended",
                 Some("Desktop locked, disconnected, or display asleep"),
             );
-
+            crate::native_failure::clear_all();
             return;
         }
         self.pending.retain(live_restore_window);
         let now = Instant::now();
         let Some((hwnd, browser)) = foreground_browser_window() else {
+            crate::native_failure::clear_all();
             return;
         };
-
+        crate::native_failure::retain_browsers(&[browser.label()]);
         let key = hwnd.0 as isize;
         if self
             .last_action
@@ -224,6 +225,7 @@ impl Watcher {
         // Read the blocks only once a window needs judging; idle ticks with
         // no browser in front cost two Win32 calls.
         let Some(path) = crate::commands::canonical_data_path(app) else {
+            crate::native_failure::clear_all();
             return;
         };
         let eula_accepted = crate::data_cache::read(&path).is_some_and(|data| {
@@ -236,15 +238,18 @@ impl Watcher {
             })
         });
         if !eula_accepted {
+            crate::native_failure::clear_all();
             return;
         }
         let (_domains, blocks) = website_policy::derive_payload(&path);
         let restore_key = restore_window_key(hwnd);
         if !polling::needs_address_bar(!blocks.is_empty(), self.pending.count(&restore_key)) {
+            crate::native_failure::clear_browser(browser.label());
             self.omnibox = None;
             return;
         }
         if self.activity.suspended() {
+            crate::native_failure::clear_all();
             return;
         }
 
@@ -254,15 +259,17 @@ impl Watcher {
                 "unavailable",
                 Some("Foreground browser address bar unavailable; blocking unverified"),
             );
-
+            crate::native_failure::clear_browser(browser.label());
             return;
         };
         let text = match read_address_bar(&omnibox) {
             Ok(AddressBar::Editing) => {
+                crate::native_failure::clear_browser(browser.label());
                 return;
             }
             Ok(AddressBar::Showing(text)) => text,
             Err(e) => {
+                crate::native_failure::clear_browser(browser.label());
                 log::debug!(
                     "uia_web_automation: reading {} address bar failed: {e}",
                     browser.label()
@@ -275,16 +282,47 @@ impl Watcher {
             .pending
             .plan(&restore_key, &text, &blocks, &self.block_page_url)
         else {
+            crate::native_failure::clear_browser(browser.label());
             return;
         };
         self.last_action
             .retain(|_, t| now.duration_since(*t) < ACTION_COOLDOWN);
         self.last_action.insert(key, now);
         if self.activity.suspended() {
+            crate::native_failure::clear_all();
             return;
         }
         match navigate(&omnibox, hwnd, &target, &self.activity) {
             Ok(()) => {
+                if block_page::is_block_page_url(&target, &self.block_page_url) {
+                    if let Some(original) = block_page::address_bar_text_to_url(&text) {
+                        let mut pid = 0;
+                        unsafe {
+                            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+                        }
+                        crate::native_failure::verify_redirect(
+                            app,
+                            browser.label(),
+                            pid,
+                            &original,
+                            &target,
+                            &restore_key,
+                            || {
+                                if self.activity.suspended()
+                                    || unsafe { GetForegroundWindow() } != hwnd
+                                {
+                                    return None;
+                                }
+                                match read_address_bar(&omnibox).ok()? {
+                                    AddressBar::Showing(text) => {
+                                        block_page::address_bar_text_to_url(&text)
+                                    }
+                                    AddressBar::Editing => None,
+                                }
+                            },
+                        );
+                    }
+                }
                 self.pending
                     .navigated(&restore_key, &target, &self.block_page_url);
                 log::info!(
@@ -298,6 +336,7 @@ impl Watcher {
             );
             }
             Err(e) => {
+                crate::native_failure::clear_browser(browser.label());
                 log::warn!(
                     "uia_web_automation: navigating {} window failed: {e}",
                     browser.label()
@@ -307,6 +346,7 @@ impl Watcher {
     }
 
     fn omnibox_for(&mut self, hwnd: HWND, browser: UiaBrowser) -> Option<IUIAutomationElement> {
+        crate::native_failure::retain_browsers(&[browser.label()]);
         let key = hwnd.0 as isize;
         if let Some((cached_hwnd, element)) = &self.omnibox {
             if *cached_hwnd == key {

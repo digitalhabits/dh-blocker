@@ -230,6 +230,7 @@ export function onAppForeground() {
     if (state.migrationOnboardingActive) { void pollMigrationCompliance(); return; }
     if (hasAcceptedEula() && state.startupInitializationComplete) {
         void refreshNativePermissionsIfStale({ force: true });
+        void hydrateNativeWarnings();
         renderNativeEnforcementWarning();
     }
 }
@@ -365,8 +366,11 @@ export function buildAutomationBrowserRow(key, entry, browserScan) {
     return row;
 }
 
+const nativeWarnings = new Map();
 const permissionWarnings = new Map();
+let warningCountdownTimer = null;
 let nativeAlertsAttached = false;
+let nativeWarningGeneration = 0;
 export function renderNativeEnforcementWarning() {
     let banner = document.getElementById('native-enforcement-warning');
     if (!banner) {
@@ -388,16 +392,93 @@ export function renderNativeEnforcementWarning() {
         banner.appendChild(message);
         document.querySelector('.app-container')?.prepend(banner);
     }
-    banner.classList.toggle('hidden', permissionWarnings.size === 0);
+    banner.classList.toggle('hidden', nativeWarnings.size === 0 && permissionWarnings.size === 0);
     const text = banner.querySelector('.native-enforcement-warning-text');
     const messages = [...permissionWarnings.entries()].map(([browser, reason]) => browser + ': ' + reason);
+    for (const warning of nativeWarnings.values()) {
+        const browser = warning.browser;
+        const key = warning.diagnosticOnly ? 'nativeWarningDiagnosticFmt' : warning.deadline == null ? 'nativeWarningAwaitingVisibleFmt' : 'nativeWarningCountdownFmt';
+        messages.push(tSettingsFmt(key, { browser, reason: warning.reason, seconds: Math.max(0, Math.ceil((warning.deadline - Date.now()) / 1000)) }));
+    }
     if (text) text.textContent = messages.join(' ');
+    requestAnimationFrame(() => void acknowledgeVisibleNativeWarnings());
+    const counting = [...nativeWarnings.values()].some(warning => !warning.diagnosticOnly);
+    if (counting && !warningCountdownTimer) warningCountdownTimer = setInterval(renderNativeEnforcementWarning, 1000);
+    if (!counting && warningCountdownTimer) { clearInterval(warningCountdownTimer); warningCountdownTimer = null; }
 }
-
 export function setupNativeEnforcementAlerts() {
     if (__ANDROID_BUILD__ || state.isIOS || state.isAndroid || nativeAlertsAttached) return;
     nativeAlertsAttached = true;
-    void listen('native-permission-changed', () => {
-        void refreshNativePermissionsIfStale({ force: true });
-    }).catch(() => { nativeAlertsAttached = false; });
+    void (async () => {
+        await Promise.all([
+            listen('native-permission-changed', () => { void refreshNativePermissionsIfStale({ force: true }); }),
+            listen('native-enforcement-warning', ({ payload }) => showNativeEnforcementWarning(payload)),
+            listen('native-enforcement-recovered', ({ payload }) => {
+                nativeWarningGeneration++;
+                const browser = String(payload?.browser || payload);
+                for (const [key, warning] of nativeWarnings) if (warning.browser === browser) nativeWarnings.delete(key);
+                renderNativeEnforcementWarning();
+            }),
+        ]);
+        await hydrateNativeWarnings();
+    })().catch(() => { nativeAlertsAttached = false; });
+}
+
+
+export function showNativeEnforcementWarning(payload) {
+    if (__ANDROID_BUILD__ || state.isIOS || state.isAndroid || !payload?.browser) return;
+    nativeWarningGeneration++;
+    const key = String(payload.warningId ?? payload.browser);
+    const previous = nativeWarnings.get(key);
+    const serverDeadline = payload.warningVisible === true && Number.isFinite(payload.remainingGraceSeconds) ? Date.now() + payload.remainingGraceSeconds * 1000 : null;
+    nativeWarnings.set(key, {
+        browser: String(payload.browser), warningId: payload.warningId,
+        reason: nativeFailureReason(payload.reason),
+        diagnosticOnly: payload.diagnosticOnly !== false,
+        deadline: serverDeadline != null ? Math.min(previous?.deadline ?? Infinity, serverDeadline) : previous?.deadline ?? (payload.warningId == null ? Date.now() + Math.max(0, Number(payload.graceSeconds) || 60) * 1000 : null),
+        acknowledged: payload.warningVisible === true || previous?.acknowledged || false,
+    });
+    renderNativeEnforcementWarning();
+}
+
+export function nativeFailureReason(reason) {
+    const key = { PermissionDenied: 'nativeReasonPermissionDenied', AccessPrevented: 'nativeReasonAccessPrevented', BlockedUrlRemains: 'nativeReasonBlockedUrlRemains' }[reason];
+    return key ? tSettings(key) : String(reason || tSettings('nativeReasonAccessPrevented'));
+}
+
+const nativeWarningAcksInFlight = new Set();
+export async function acknowledgeVisibleNativeWarnings() {
+    if (__ANDROID_BUILD__ || document.hidden || document.visibilityState !== 'visible') return;
+    const banner = document.getElementById('native-enforcement-warning');
+    if (!banner || banner.classList.contains('hidden')) return;
+    const rect = banner.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.top >= window.innerHeight) return;
+    const x = Math.max(0, Math.min(window.innerWidth - 1, rect.left + rect.width / 2));
+    const y = Math.max(0, Math.min(window.innerHeight - 1, rect.top + rect.height / 2));
+    const top = document.elementFromPoint?.(x, y);
+    if (!top || !banner.contains(top)) return;
+    for (const warning of nativeWarnings.values()) {
+        if (warning.warningId == null || warning.acknowledged || nativeWarningAcksInFlight.has(warning.warningId)) continue;
+        nativeWarningAcksInFlight.add(warning.warningId);
+        try {
+            if (await invoke('native_warning_visible', { warningId: warning.warningId })) {
+                warning.acknowledged = true;
+                if (warning.deadline == null) warning.deadline = Date.now() + 60000;
+            }
+        } catch (_) { /* No ACK means no automatic close. */ }
+        finally { nativeWarningAcksInFlight.delete(warning.warningId); }
+    }
+}
+export async function hydrateNativeWarnings() {
+    if (__ANDROID_BUILD__ || state.isIOS || state.isAndroid) return;
+    try {
+        const generation = nativeWarningGeneration;
+        const status = await invoke('native_website_status');
+        const warnings = status?.pendingWarnings;
+        if (!Array.isArray(warnings) || generation !== nativeWarningGeneration) return;
+        const pending = new Set(warnings.map(warning => String(warning.warningId ?? warning.browser)));
+        for (const key of nativeWarnings.keys()) if (!pending.has(key)) nativeWarnings.delete(key);
+        for (const warning of warnings) showNativeEnforcementWarning(warning);
+        renderNativeEnforcementWarning();
+    } catch (_) { /* Foreground events retry the snapshot. */ }
 }

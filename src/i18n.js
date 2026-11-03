@@ -8,12 +8,12 @@ export const SETTINGS_TRANSLATIONS = {
         nativePermissionSubtitle: "Allow the missing permissions to block websites.",
         nativeOpenBrowserFmt: "Open {browser}",
         nativeReviewPermissions: "Review browser permissions",
-
-
-
-
-
-
+        nativeReasonPermissionDenied: "The required browser permission is missing.",
+        nativeReasonAccessPrevented: "The browser could not be controlled.",
+        nativeReasonBlockedUrlRemains: "The blocked page could not be redirected.",
+        nativeWarningDiagnosticFmt: "{browser}: {reason} Blocking is currently unavailable; this warning does not automatically close the browser.",
+        nativeWarningCountdownFmt: "{browser}: {reason} The browser and all its windows will close in {seconds} seconds unless blocking recovers.",
+        nativeWarningAwaitingVisibleFmt: "{browser}: {reason} The browser and all its windows will close after a 60-second visible warning unless blocking recovers.",
         nativePermissionAutomationDenied: "Allow Automation in System Settings.",
         nativePermissionUnconfirmed: "Browser access has not yet been confirmed. Open the browser to check access.",
         nativePermissionAccessibilityDenied: "Allow Accessibility in System Settings.",
@@ -860,12 +860,12 @@ export const SETTINGS_TRANSLATIONS = {
         nativePermissionSubtitle: "Giv de manglende tilladelser for at blokere hjemmesider.",
         nativeOpenBrowserFmt: "Åbn {browser}",
         nativeReviewPermissions: "Gennemgå browsertilladelser",
-
-
-
-
-
-
+        nativeReasonPermissionDenied: "Den nødvendige browsertilladelse mangler.",
+        nativeReasonAccessPrevented: "Browseren kunne ikke styres.",
+        nativeReasonBlockedUrlRemains: "Den blokerede side kunne ikke omdirigeres.",
+        nativeWarningDiagnosticFmt: "{browser}: {reason} Blokering er i øjeblikket utilgængelig. Denne advarsel lukker ikke automatisk browseren.",
+        nativeWarningCountdownFmt: "{browser}: {reason} Browseren og alle dens vinduer lukkes om {seconds} sekunder, medmindre blokering virker igen.",
+        nativeWarningAwaitingVisibleFmt: "{browser}: {reason} Browseren og alle dens vinduer lukkes efter en synlig advarsel på 60 sekunder, medmindre blokering virker igen.",
         nativePermissionAutomationDenied: "Tillad Automatisering i Systemindstillinger.",
         nativePermissionUnconfirmed: "Adgang til browseren er endnu ikke bekræftet. Åbn browseren for at kontrollere adgangen.",
         nativePermissionAccessibilityDenied: "Tillad Tilgængelighed i Systemindstillinger.",
@@ -1714,12 +1714,12 @@ export const SETTINGS_TRANSLATIONS = {
         nativePermissionSubtitle: "请授予阻止网站所需的权限。",
         nativeOpenBrowserFmt: "打开 {browser}",
         nativeReviewPermissions: "检查浏览器权限",
-
-
-
-
-
-
+        nativeReasonPermissionDenied: "缺少所需的浏览器权限。",
+        nativeReasonAccessPrevented: "无法控制浏览器。",
+        nativeReasonBlockedUrlRemains: "无法重定向被阻止的网页。",
+        nativeWarningDiagnosticFmt: "{browser}：{reason} 目前无法阻止网站。此警告不会自动关闭浏览器。",
+        nativeWarningCountdownFmt: "{browser}：{reason} 如果网站阻止功能未恢复，浏览器及其所有窗口将在 {seconds} 秒后关闭。",
+        nativeWarningAwaitingVisibleFmt: "{browser}：{reason} 如果网站阻止功能未恢复，浏览器及其所有窗口将在显示 60 秒警告后关闭。",
         nativePermissionAutomationDenied: "请在系统设置中允许自动化。",
         nativePermissionUnconfirmed: "尚未确认浏览器访问权限。请打开浏览器以检查访问权限。",
         nativePermissionAccessibilityDenied: "请在系统设置中允许辅助功能。",
