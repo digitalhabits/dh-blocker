@@ -97,7 +97,15 @@ export const screens = [
         name: 'pause-dialog-iphone', fixture: fixtures.manualRunning, platform: 'iphone', viewport: IPHONE,
         prepare: async (page) => {
             await page.click('.blocklist-card[data-id="bl-manual"] .blocklist-switch');
+            await assertCompactPhonePause(page);
+        },
+    },
+    {
+        name: 'pause-dialog-iphone-small-never', fixture: fixtures.manualRunning, platform: 'iphone', viewport: { width: 320, height: 568 },
+        prepare: async (page) => {
+            await page.click('.blocklist-card[data-id="bl-manual"] .blocklist-switch');
             await page.locator('#unlock-duration-select').selectOption('0');
+            await assertCompactPhonePause(page);
         },
     },
     {
@@ -810,3 +818,19 @@ export const screens = [
         },
     },
 ];
+
+async function assertCompactPhonePause(page) {
+    const labelFits = await page.locator('#unlock-duration-label').evaluate(el =>
+        el.getBoundingClientRect().height <= parseFloat(getComputedStyle(el).lineHeight) * 2 + 1);
+    if (!labelFits) throw new Error('Pause duration label wraps into more than two lines');
+    for (const selector of ['.start-confirm-summary-card', '.challenge-word-instruction', '#pause-never-warning', '.challenge-progress']) {
+        if (await page.locator(`#override-modal ${selector}`).isVisible()) throw new Error(`Redundant phone pause content: ${selector}`);
+    }
+    for (const selector of ['#unlock-duration-select', '#challenge-word-progress', '#challenge-current-word', '#challenge-word-input', '#confirm-override-btn']) {
+        const box = await page.locator(selector).boundingBox();
+        const viewport = page.viewportSize();
+        if (!box || box.x < 0 || box.x + box.width > viewport.width + 1 || box.y + box.height > viewport.height + 1) {
+            throw new Error(`Phone pause control does not fit: ${selector}`);
+        }
+    }
+}
