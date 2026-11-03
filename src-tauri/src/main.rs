@@ -7,37 +7,17 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 fn main() {
-    // Debug builds load `.env` from the workspace root so dev-only
-    // settings (REDD_DEV_EXT_ID, etc.) are picked up by `pnpm dev`,
-    // direct `cargo run`, and the browser-spawned native-host process
-    // alike. Production builds skip this entirely — release users
-    // should never have a `.env` adjacent to the bundle anyway.
+    // Load local development configuration only in debug builds.
     #[cfg(debug_assertions)]
     {
         let _ = dotenvy::from_filename("../.env");
         let _ = dotenvy::dotenv();
     }
 
-    // When invoked by a browser as a native-messaging host, branch
-    // into the stdio loop before Tauri tries to start a UI. The flag
-    // is passed to the binary by the browser when it spawns us via the
-    // native-messaging manifest.
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    if redd_block_lib::native_host::is_native_host_invocation() {
-        #[cfg(target_os = "windows")]
-        redd_block_lib::windows_process::set_native_host_process_directory();
-        redd_block_lib::native_host::run();
-    }
-
-    // `--uninstall` tears down per-browser native-messaging manifests,
-    // External-Extensions install hints, the Windows watchdog Scheduled
-    // Task, and any leftover legacy-helper artefacts, then exits.
-    // Called from the NSIS pre-uninstall hook on Windows; also useful
-    // for an `Uninstall.app` shim or a manual `redd-block --uninstall`.
+    // OS uninstallation retires app-owned registrations and legacy residue.
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     if std::env::args().skip(1).any(|a| a == "--uninstall") {
         let _ = redd_block_lib::native_host_install::uninstall();
-        let _ = redd_block_lib::extension_install::uninstall();
         #[cfg(target_os = "windows")]
         {
             redd_block_lib::watchdog::unregister();

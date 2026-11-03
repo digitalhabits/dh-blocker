@@ -7,7 +7,7 @@ For iOS builds, run **section 14 (iOS-Specific)** on a physical device.
 
 **Platform notes (v3):**
 - **macOS Safari/Chrome/Brave/Edge:** website blocking via **Automation** (no extension).
-- **macOS Firefox + all Windows browsers:** Digital Habits: Focus **extension** + native messaging.
+- **macOS Firefox:** Accessibility. **Windows Chrome/Edge/Brave/Firefox:** native UI Automation.
 - **No helper daemon, no hosts-file writes** for blocking (v1 cleanup may still strip old markers once).
 
 ---
@@ -29,7 +29,7 @@ For iOS builds, run **section 14 (iOS-Specific)** on a physical device.
 - [ ] Create blocklist with 2 websites (e.g., example.com, test.com)
 - [ ] Start a 2-minute one-off block
 - [ ] **macOS (Safari/Chrome/Brave/Edge):** verify blocked URLs redirect to bundled block page
-- [ ] **macOS Firefox / Windows:** verify blocked URLs redirect to extension block page
+- [ ] **macOS Firefox / Windows:** verify blocked URLs redirect to bundled block page
 - [ ] If blocklist includes apps: add a safe app (e.g., Calculator, Notes), start block, verify warning → quit flow; end block and verify app opens normally
 - [ ] Wait for expiration
 - [ ] Verify sites are unblocked
@@ -115,8 +115,8 @@ For iOS builds, run **section 14 (iOS-Specific)** on a physical device.
 ### Diagnostics
 - [ ] Settings → Diagnostics opens without error
 - [ ] **macOS:** Automation permission status per browser (Safari, Chrome, Brave, Edge)
-- [ ] **macOS Firefox / Windows:** extension installed / enabled / private-browsing status per browser
-- [ ] **Windows only:** native-messaging manifest paths listed and present on disk
+- [ ] **macOS Firefox:** Accessibility grant and truthful worker health; **Windows:** native worker health
+- [ ] No profile lists, extension scans or native-host registration controls
 - [ ] Copy to clipboard works
 
 ### Still Not Working
@@ -134,8 +134,7 @@ Test on a profile with v1 residue (or simulated hosts markers + legacy launchd p
 
 - [ ] Launch → admin/UAC prompt to remove legacy daemon (user can cancel → retry banner)
 - [ ] After success: hosts markers gone, legacy plist/binary cleaned, `migrationRanAtVersion` stamped
-- [ ] **Windows:** native-messaging manifests written for Chromium/Firefox
-- [ ] **macOS:** Chromium native-messaging manifests **not** auto-written (Automation path); Firefox manual
+- [ ] Only app-owned legacy registrations/hints removed; no browser profile, user extension or organisation-policy changes
 - [ ] Relaunch → idempotent, no re-prompt
 
 ---
@@ -153,8 +152,8 @@ Requires two local accounts, A and B, both of which have launched the app.
 signature gives it a different identity from the Store listing, so uninstall
 the Store copy as B first). Almost every Windows user is on the Store, and a
 Store app's writes under `%APPDATA%` are redirected into the package's private
-folder unless `build-msix.ps1` excludes the directory; the native host runs
-outside the package and would never see the file.
+folder unless `build-msix.ps1` excludes the directory; verify the canonical
+per-user data path across package updates.
 
 - [ ] 1. **Reproduce first, on the currently released build.** As A, set a
       blocklist. Log in as B: B sees A's list, and B's edits fail to persist.
@@ -166,8 +165,7 @@ outside the package and would never see the file.
 - [ ] 4. Edit B's list → A's is unchanged; edit A's → B's is unchanged. Both
       accounts can now actually save.
 - [ ] 5. In each account, confirm a blocked domain is still blocked in a
-      browser, and that the native host resolved the same per-user file the app
-      writes (`native-host.log` sits next to it). As B, also confirm the file
+      browser, using the same per-user rules the app writes. As B, also confirm the file
       is on the real disk at `%APPDATA%\com.reddblock\redd-block-data.json` and
       not only under `%LOCALAPPDATA%\Packages\<package>\LocalCache\Roaming\`
 - [ ] 5b. As either account, set a start-overlay picture on a schedule
@@ -180,30 +178,17 @@ outside the package and would never see the file.
 
 ---
 
-## 10. Website Blocking Compliance & Enforcer
+## 10. Native website diagnostics and recovery
 
-Requires `settings.enforcementEnabled` (opt-in in extension/setup dialog). Grace period defaults to 60 s (user-configurable 5–300 s); **same duration for first and repeat offenses**.
+Use the [desktop validation matrix](../docs/pr3-validation.md). Website failure
+escalation is a separate dependent PR; this layer cannot close browsers.
 
-### macOS — Safari, Chrome, Brave, Edge (Automation)
-
-- [ ] Setup row shows per-browser Automation status
-- [ ] Revoke Automation for browser X in System Settings → during active block, grace banner appears
-- [ ] Re-grant before timer expires → banner clears, browser stays open
-- [ ] Let timer expire → browser force-quit; `enforcer://browser-closed` event
-- [ ] Start block → navigate to blocked domain → redirect to bundled `blocked.html` within ~1 s
-- [ ] **Allowlist (Automation):** start allowlist with `github.com` only → open `reddit.com` → bundled `blocked.html` subtitle says site is not on your current allowlist; pill/countdown/source rows still populate from block metadata
-
-### macOS Firefox / Windows (extension)
-
-- [ ] Missing/disabled extension or private-browsing not allowed → setup/compliance banner
-- [ ] During active block with enforcement on: disable extension → grace countdown → force-quit at expiry
-- [ ] Re-enable before expiry → grace clears
-- [ ] Navigate to blocked domain → extension `blocked.html` with metadata
-- [ ] **Allowlist (extension):** start allowlist with `github.com` only → open `reddit.com` → extension `blocked.html` shows the same allowlist subtitle, pill, site row, reason, and countdown as Automation (via `mode=allowlist` query param)
-
-### Native messaging (Windows + macOS Firefox)
-- [ ] Block active → blocked domain redirects in browser
-- [ ] Native host spawned on demand (check logs if available)
+- [ ] Grant/deny/revoke/recover each macOS permission during an active block
+- [ ] Missing grants identify the browser and provide a recovery action
+- [ ] Firefox warm-up remains distinguishable from a denied Accessibility grant
+- [ ] Diagnostics report worker/resource errors without claiming enforcement
+- [ ] Exact original URL restores after end/pause, app restart and package update
+- [ ] Old user extensions remain installed; no communication is attempted and no promise is made about their standalone behaviour
 
 ---
 
@@ -420,14 +405,14 @@ Persistence and time zone:
 
 Same channel split as blocklist mode: **macOS Safari/Chrome/Brave/Edge** enforce
 via Automation; **macOS Firefox + all Windows browsers** via the Digital Habits: Focus
-extension. App allow-mode uses the in-process app watcher (macOS + Windows;
+native transports. App allow-mode uses the in-process app watcher (macOS + Windows;
 no Linux). Run the website checks once per channel.
 
 Before manual checks, run the automated allowlist coverage: Tier 1 Category 14
 (`Cmd+Shift+T`), Tier 2 Group H (`runIntegrationTests('full')`), and
 `cargo test --lib` in `src-tauri`.
 
-### Websites (per channel: Automation, then extension)
+### Websites (Apple Events, Firefox Accessibility, Windows UI Automation)
 
 - [ ] Create allow-mode focus space (e.g. allow `github.com` only); card shows "Allows N"
 - [ ] Start manual block: `github.com` loads; `reddit.com` redirects to the block page
@@ -476,7 +461,7 @@ space active. Log: `~/Library/Logs/com.reddblock/Digital Habits Blocker.log`
   sit beside `redd-block.exe` and match the source hashes.
 - [ ] Install the signed package on a clean Windows account/VM without the
   source checkout (so the development fallback cannot hide missing resources).
-- [ ] With Chrome, Edge, Brave and Firefox in Automation mode and no extension,
+- [ ] With Chrome, Edge, Brave and Firefox,
   activate a safe website block: the browser opens the packaged block page
   under `C:/Program Files/WindowsApps/...`, including its script and icon.
 - [ ] End the block and confirm the original URL restores, including its query

@@ -4,14 +4,7 @@ import { state, appState } from './state.js';
 import { invoke } from '@tauri-apps/api/core';
 import { tSettings } from './i18n.js';
 import { hasSeenAnyOnboarding, saveData } from './persistence.js';
-import {
-    AUTOMATION_BROWSER_KEYS, BROWSER_STORE_LINKS, bannerHeadlineKey, browserIconUrl,
-    browserUsesAutomation, ensureSafariExtensionFdaBeforeSetup, invalidateMigrationMacCopyCache,
-    lastAutomationPermissionByKey, lastOnboardingState, openExtensionSetupOverlay,
-    refreshAutomationPermissionStatus, renderBrowserInstallButtons, safariUsesExtensionMode,
-    startMigrationPolling, startWebAutomationWatcher, stopMigrationPolling,
-    syncMigrationPostHeader, updateBehaviourChangeBanner, wireEnforcementToggle,
-} from './enforcement.js';
+import { AUTOMATION_BROWSER_KEYS, BROWSER_INFO, browserIconUrl, browserUsesAutomation, lastAutomationPermissionByKey, lastOnboardingState, openNativePermissionSetup, refreshAutomationPermissionStatus, renderNativePermissionRows, startMigrationPolling, startWebAutomationWatcher, stopMigrationPolling, refreshNativePermissions } from './enforcement.js';
 import {
     applyEulaOnboardingLanguage, applyMigrationOverlayStaticCopy, applyRebrandOnboardingLanguage,
     applyWelcomeOnboardingLanguage, resetWelcomeDemoPanel,
@@ -99,7 +92,7 @@ export function hasAcceptedEula() {
 //
 // Friendly one-screen intro shown once per machine, before the EULA.
 // Sets context (open-source, who built it) before legal acceptance
-// and the macOS Automation / Firefox extension setup overview.
+// and the macOS Automation / Firefox native permission setup overview.
 //
 // Persistence: `state.appData.settings.welcomeOnboardingShown` (boolean).
 // Wiped by `scripts/dev-reset-fda-onboarding.sh` (incl. --nuke; it also
@@ -228,8 +221,8 @@ export function syncSetupBannerHeadline() {
         headlineEl.textContent = tSettings(state.isMacOSDesktop ? 'setupBrowsersBannerHeadlineMac' : 'setupBrowsersBannerHeadline');
         return;
     }
-    const detectedKeys = Object.keys(BROWSER_STORE_LINKS).filter(k => browsers[k] && browsers[k].installed);
-    headlineEl.textContent = tSettings(bannerHeadlineKey(browsers, detectedKeys));
+    const detectedKeys = Object.keys(BROWSER_INFO).filter(k => browsers[k] && browsers[k].installed);
+
 }
 
 export function showEulaOnboardingScreen() {
@@ -249,7 +242,7 @@ export function showEulaOnboardingScreen() {
 
 export function isFirstRunOnboardingInProgress() {
     if (!hasAcceptedEula()) return false;
-    return state.firstRunExtensionSetupPending && !state.migrationOnboardingDismissed;
+    return state.firstRunNativePermissionSetupPending && !state.migrationOnboardingDismissed;
 }
 
 export function continueFirstRunOnboardingFromWelcome() {
@@ -286,40 +279,13 @@ export function firefoxInstalledFromState(state) {
     return !!b.installed;
 }
 
-export async function resolveEnforcementCopyFirefoxInstalled(state) {
-    if (!appState.isMacOSDesktop) return false;
-    const fromState = firefoxInstalledFromState(state);
-    if (fromState !== null) {
-        enforcementCopyFirefoxInstalled = fromState;
-        return fromState;
-    }
-    enforcementCopyFirefoxInstalled = await detectWelcomeFirefoxInstalled();
-    return enforcementCopyFirefoxInstalled;
-}
 
-export function migrationEnforcementDescHtml(firefoxInstalled = enforcementCopyFirefoxInstalled) {
-    if (!state.isMacOSDesktop) {
-        return tSettings('migrationEnforcementDescExtension');
-    }
-    return tSettings(firefoxInstalled
-        ? 'migrationEnforcementDescMacFirefox'
-        : 'migrationEnforcementDescMacAutomation');
-}
 
-export function settingsEnforcementHintHtml(firefoxInstalled = enforcementCopyFirefoxInstalled) {
-    if (!state.isMacOSDesktop) {
-        return tSettings('settingsEnforcementRowHintExtension');
-    }
-    return tSettings(firefoxInstalled
-        ? 'settingsEnforcementRowHintMacFirefox'
-        : 'settingsEnforcementRowHintMacAutomation');
-}
 
-export async function applyEnforcementDescCopy(state) {
-    await resolveEnforcementCopyFirefoxInstalled(state);
-    setHtmlById('enforcement-toggle-desc-text', migrationEnforcementDescHtml());
-    setHtmlById('settings-enforcement-toggle-desc-text', settingsEnforcementHintHtml());
-}
+
+
+
+
 
 export function setHtmlById(id, html) {
     const el = document.getElementById(id);
@@ -330,71 +296,25 @@ export function returnToWelcomeFromEula() {
     presentWelcomeOnboarding(continueFirstRunOnboardingFromWelcome);
 }
 
-// ---- Desktop onboarding (v1.1+) --------------------------------------------
-//
-// - Runs the idempotent first-launch migration (strip hosts markers,
-//   uninstall legacy privileged helper, register native-messaging
-//   manifests).
-// - Queries onboarding_state to decide whether to surface the
-//   Automation permission banner (macOS TCC) and/or the extension
-//   compliance banner.
-// - No-ops on iOS.
-
-// Migration / extension-install onboarding state machine.
-//
-// Drives a single full-screen overlay used in three trigger contexts:
-//   1. v1.x residue on disk → "pre" phase (explanation + admin prompt
-//      → cleanup → swap to "post" phase).
-//   2. v1.x residue cleaned this launch → "post" phase, framed as
-//      "Cleanup complete" + browser install checklist.
-//   3. Fresh user (never had v1.x; just accepted EULA) with the
-//      ReDD Focus extension not yet compliant in any detected
-//      browser → same screen as #2 but framed as "Welcome" (no
-//      cleanup language). Dismissal persisted in localStorage so we
-//      don't nag every launch — the slim extension-compliance
-//      banner takes over after that.
-//
-// While the screen is open, the enforcer is paused (set in
-// commands::enforcement::auto_start when migration was pending at
-// launch). We resume it explicitly when the user dismisses post.
-/** True while the welcome → EULA → extension-setup chain is in progress. */
-// While the migration post-phase is on screen, the user is bouncing
-// between this window and Safari (or Chrome/Firefox/etc.) toggling
-// extension settings. The window-`focus` listener below already
-// re-polls on tab-back, but a user who has Safari and ReDD Blocker
-// side-by-side never triggers focus events as they click toggles.
-// Run a low-frequency poll so the checklist ticks itself off within
-// the "up to 20 seconds" window the UI already promises. Cleared
-// when the overlay is dismissed.
-/** Preserves "Show me how" across `renderBrowserInstallButtons` poll refreshes. */
-/** Preserves Safari duplicate "How did this happen?" across poll refreshes. */
-/** Snapshot for re-rendering localized browser rows when language changes mid-overlay. */
-/** Skips full DOM rebuild on poll when compliance state is unchanged (prevents icon flash). */
-/** Skips header/how-to HTML rewrites on poll when copy inputs are unchanged (prevents logo flash). */
+// Desktop onboarding preserves legacy cleanup and requests only missing native browser permissions.
 export const MIGRATION_POLL_MS = 2500;
-export const EXT_ONBOARDING_DISMISSED_KEY = 'reddBlockExtOnboardingDismissed';
+export const NATIVE_ONBOARDING_DISMISSED_KEY = 'reddBlockNativePermissionOnboardingDismissed';
 
 /** Bumped each Setup open so a late Done/Skip finish cannot dismiss a newer one. */
 let migrationSetupEpoch = 0;
 
-/** Hide Setup immediately, then finish enforcer/persist work in the background. */
-async function finishExtensionSetup() {
+/** Hide Setup, start native watchers and persist completion. */
+export async function finishNativePermissionSetup() {
     const epoch = migrationSetupEpoch;
     hideMigrationOnboarding();
-    try {
-        await invoke('enforcer_start');
-    } catch (e) {
-        console.warn('[migration] enforcer_start failed:', e);
-    }
+
     await startWebAutomationWatcher();
-    try { localStorage.setItem(EXT_ONBOARDING_DISMISSED_KEY, String(Date.now())); }
+    try { localStorage.setItem(NATIVE_ONBOARDING_DISMISSED_KEY, String(Date.now())); }
     catch (_) { /* localStorage may be disabled; harmless */ }
-    await persistOnboardingComplete();
-    await persistMacAutomationIntroShown();
-    if (epoch !== migrationSetupEpoch) return;
+    await persistOnboardingComplete();    if (epoch !== migrationSetupEpoch) return;
     try {
         const fresh = await invoke('onboarding_state');
-        await updateBehaviourChangeBanner(fresh);
+        await refreshNativePermissions(fresh);
     } catch (e) { /* no-op */ }
 }
 
@@ -407,7 +327,7 @@ function wireMigrationFinishDelegation() {
         const btn = event.target?.closest?.('#migration-done-btn, #migration-skip-btn');
         if (!btn || btn.disabled) return;
         if (!appState.migrationOnboardingActive) return;
-        void finishExtensionSetup();
+        void finishNativePermissionSetup();
     }, true);
 }
 
@@ -424,10 +344,7 @@ export async function runDesktopOnboarding() {
             return;
         }
         if (wasUpgrade && !state.migrationOnboardingDismissed) {
-            // Residue cleaned this launch (or by an earlier launch
-            // before the user dismissed). Show the post-cleanup
-            // screen so they know what changed and install the
-            // extension. Cleanup-mode framing.
+            // Complete legacy cleanup, then request only missing native permissions.
             const onboardingState = await invoke('onboarding_state');
             await showMigrationOnboarding('post', onboardingState, { mode: 'after-cleanup' });
             return;
@@ -435,39 +352,20 @@ export async function runDesktopOnboarding() {
 
         const onboardingState = await invoke('onboarding_state');
 
-        // Returning macOS upgraders: one-time intro before the full browser-
-        // setup overlay (which would take over the window and hide this).
-        if (await maybeShowMacAutomationIntro(onboardingState)) {
-            return;
-        }
-
-        // Fresh-user case: surface the extension setup screen until the
-        // user dismisses it. renderBrowserInstallButtons falls back to a
-        // Chrome row when no installed browsers are detected yet.
-        await ensureExtensionSetupOnboardingShown();
+        // Windows needs no setup; macOS requests only missing native permissions.
+        await ensureNativePermissionSetupShown();
 
         if (state.migrationOnboardingActive) return;
 
-        await updateBehaviourChangeBanner(onboardingState);
+        await refreshNativePermissions(onboardingState);
     } catch (e) {
         console.warn('[onboarding] state check failed:', e);
     }
 }
 
-export function hasMacAutomationIntroBeenShown() {
-    return state.appData?.settings?.macAutomationIntroShown === true;
-}
 
-export async function persistMacAutomationIntroShown() {
-    if (!state.appData.settings) state.appData.settings = {};
-    if (state.appData.settings.macAutomationIntroShown) return;
-    state.appData.settings.macAutomationIntroShown = true;
-    try {
-        await saveData();
-    } catch (e) {
-        console.warn('[mac-automation-intro] persist failed:', e);
-    }
-}
+
+
 
 export async function persistOnboardingComplete() {
     if (!state.appData.settings) state.appData.settings = {};
@@ -480,173 +378,46 @@ export async function persistOnboardingComplete() {
     }
 }
 
-export function applyMacAutomationIntroCopy() {
-    const setText = (id, text) => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = text;
-    };
-    const setHtml = (id, html) => {
-        const el = document.getElementById(id);
-        if (el) el.innerHTML = html;
-    };
 
-    setText('mac-automation-intro-badge-text', tSettings('macAutomationIntroBadge'));
-    setText('mac-automation-intro-title', tSettings('macAutomationIntroTitle'));
-    setHtml('mac-automation-intro-lead', tSettings('macAutomationIntroLeadHtml'));
-    setText('mac-automation-intro-automation-browsers-label', tSettings('macAutomationIntroAutomationBrowsers'));
-    setText('mac-automation-intro-automation-method', tSettings('macAutomationIntroAutomationMethod'));
-    setText('mac-automation-intro-firefox-label', tSettings('macAutomationIntroFirefoxLabel'));
-    setText('mac-automation-intro-extension-method', tSettings('macAutomationIntroExtensionMethod'));
-    setHtml('mac-automation-intro-unchanged', tSettings('macAutomationIntroUnchangedHtml'));
-    setText('mac-automation-intro-dismiss-btn', tSettings('macAutomationIntroDismissBtn'));
-    setText('mac-automation-intro-review-btn', tSettings('macAutomationIntroReviewBtn'));
 
-    const stack = document.getElementById('mac-automation-intro-automation-icons');
-    if (stack && !stack.dataset.ready) {
-        for (const key of ['safari', 'chrome', 'edge', 'brave']) {
-            const img = document.createElement('img');
-            img.src = browserIconUrl(key);
-            img.alt = '';
-            img.className = 'mac-automation-intro-stack-icon';
-            stack.appendChild(img);
-        }
-        stack.dataset.ready = '1';
-    }
-    const firefoxIcon = document.getElementById('mac-automation-intro-firefox-icon');
-    if (firefoxIcon) firefoxIcon.src = browserIconUrl('firefox');
-}
 
-export function hideMacAutomationIntroModal() {
-    document.getElementById('mac-automation-intro-modal')?.classList.add('hidden');
-}
 
-export async function dismissMacAutomationIntroModal({ openSetup = false } = {}) {
-    await persistMacAutomationIntroShown();
-    hideMacAutomationIntroModal();
-    if (openSetup) {
-        await openExtensionSetupOverlay();
-    }
-}
 
-// True when ReDD Focus was previously set up in a browser that now
-// blocks via Automation — i.e. they used the old extension-based model.
-export function hadLegacyAutomationBrowserExtension(state) {
-    const browsers = state?.browsers || {};
-    for (const key of AUTOMATION_BROWSER_KEYS) {
-        const b = browsers[key];
-        if (!b?.installed) continue;
-        const profiles = b.profiles || [];
-        if (key === 'safari') {
-            if (profiles.some((p) => p.installed)) return true;
-            continue;
-        }
-        const def = profiles.find((p) => p.isDefault) || profiles[0];
-        if (def?.installed) return true;
-    }
-    return false;
-}
 
-export async function shouldShowMacAutomationIntro(onboardingState) {
-    if (!appState.isMacOSDesktop || !hasAcceptedEula() || !hasWelcomeOnboardingBeenShown()) return false;
-    if (hasMacAutomationIntroBeenShown() || appState.migrationOnboardingActive) return false;
-
-    const extDismissed = !!localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
-    const returningUser = appState.appData?.settings?.onboardingComplete === true || extDismissed;
-    if (!returningUser) return false;
-
-    // Fresh first-run path after EULA — browser-setup overlay covers it.
-    if (appState.firstRunExtensionSetupPending && !extDismissed) return false;
-
-    await refreshAutomationPermissionStatus();
-    const browsers = onboardingState?.browsers || {};
-    const automationKeys = AUTOMATION_BROWSER_KEYS.filter(
-        (k) => browsers[k]?.installed && browserUsesAutomation(k),
-    );
-    if (automationKeys.length === 0) {
-        await persistMacAutomationIntroShown();
-        return false;
-    }
-
-    const allAutomationGranted = automationKeys.every(
-        (k) => (lastAutomationPermissionByKey[k] || 'unknown') === 'granted',
-    );
-    if (allAutomationGranted) {
-        await persistMacAutomationIntroShown();
-        return false;
-    }
-
-    // Prefer the legacy-extension signal for ambiguous cases; anyone who
-    // already finished onboarding is treated as an upgrader.
-    if (!hadLegacyAutomationBrowserExtension(onboardingState)
-        && appState.appData?.settings?.onboardingComplete !== true) {
-        return false;
-    }
-
-    return true;
-}
-
-export async function maybeShowMacAutomationIntro(onboardingState) {
-    if (!(await shouldShowMacAutomationIntro(onboardingState))) return false;
-    applyMacAutomationIntroCopy();
-    document.getElementById('migration-onboarding')?.classList.add('hidden');
-    appState.migrationOnboardingActive = false;
-    stopMigrationPolling();
-    document.getElementById('main-content')?.classList.remove('hidden');
-    document.getElementById('mac-automation-intro-modal')?.classList.remove('hidden');
-    return true;
-}
-
-export function setupMacAutomationIntroModal() {
-    const modal = document.getElementById('mac-automation-intro-modal');
-    if (!modal || modal._wired) return;
-    modal._wired = true;
-
-    document.getElementById('mac-automation-intro-dismiss-btn')
-        ?.addEventListener('click', () => { void dismissMacAutomationIntroModal(); });
-    document.getElementById('mac-automation-intro-review-btn')
-        ?.addEventListener('click', () => { void dismissMacAutomationIntroModal({ openSetup: true }); });
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) void dismissMacAutomationIntroModal();
-    });
-}
-
-export function windowsBrowserSetupIsAutomatic(browsers) {
-    const keys = browsers
-        ? ['chrome', 'edge', 'brave', 'firefox'].filter(key => browsers[key]?.installed)
-        : ['chrome', 'edge', 'brave', 'firefox'];
+export function windowsBrowserSetupIsAutomatic() {
     return state.isWindowsDesktop
-        && keys.length > 0 && keys.every(key => browserUsesAutomation(key, browsers?.[key]));
+        && ['chrome', 'edge', 'brave', 'firefox'].every(browserUsesAutomation);
 }
 
-export async function ensureExtensionSetupOnboardingShown() {
+export async function ensureNativePermissionSetupShown() {
     if (state.isIOS || state.isAndroid || state.migrationOnboardingActive) return;
-    if (safariUsesExtensionMode()) {
-        await ensureSafariExtensionFdaBeforeSetup();
-    }
-    const dismissed = localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
-    if (!state.firstRunExtensionSetupPending && (dismissed || state.migrationOnboardingDismissed)) return;
-    // Explicit Windows Automation choices require no browser setup action.
+
+    const dismissed = localStorage.getItem(NATIVE_ONBOARDING_DISMISSED_KEY);
+    if (!state.firstRunNativePermissionSetupPending && (dismissed || state.migrationOnboardingDismissed)) return;
+    // Windows defaults require no browser permission or installation action.
     // Complete the same startup/persistence work without showing a checklist.
     if (windowsBrowserSetupIsAutomatic()) {
-        await finishExtensionSetup();
+        await finishNativePermissionSetup();
         return;
     }
     try {
-        if (state.firstRunExtensionSetupPending) {
+        if (state.firstRunNativePermissionSetupPending) {
             state.migrationOnboardingDismissed = false;
         }
         const onboardingState = await invoke('onboarding_state');
-        if (windowsBrowserSetupIsAutomatic(onboardingState?.browsers)) {
-            await finishExtensionSetup();
-            return;
-        }
+        await refreshAutomationPermissionStatus({ force: true });
+        if (!onboardingState?.browsers) throw new Error('Native browser inventory unavailable');
+        const missingAutomation = AUTOMATION_BROWSER_KEYS.some(key => onboardingState?.browsers?.[key]?.installed && lastAutomationPermissionByKey[key] !== 'granted');
+        const missingAccessibility = onboardingState?.browsers?.firefox?.installed && !(await invoke('accessibility_trusted'));
+        if (!missingAutomation && !missingAccessibility) { await finishNativePermissionSetup(); return; }
         await showMigrationOnboarding('post', onboardingState, { mode: 'fresh' });
     } catch (e) {
-        console.warn('[onboarding] extension setup overlay failed:', e);
+        console.warn('[onboarding] native permission setup failed:', e);
     }
 }
 
 export async function showMigrationOnboarding(phase, onboardingState, opts = {}) {
+    if (phase === 'post' && state.isWindowsDesktop) { await finishNativePermissionSetup(); return; }
     const screen = document.getElementById('migration-onboarding');
     const pre = document.getElementById('migration-phase-pre');
     const post = document.getElementById('migration-phase-post');
@@ -681,7 +452,7 @@ export async function showMigrationOnboarding(phase, onboardingState, opts = {})
             titleRow?.classList.add('hidden');
             cleanupItems.forEach(el => el.classList.add('hidden'));
         }
-        howto?.classList.toggle('hidden', mode !== 'fresh');
+        howto?.classList.add('hidden');
     }
 
     // Reveal before wiring so a wiring error cannot leave a blank main UI.
@@ -694,7 +465,7 @@ export async function showMigrationOnboarding(phase, onboardingState, opts = {})
     try {
         if (phase === 'post') {
             state.lastMigrationBrowserRenderSignature = '';
-            syncMigrationPostHeader(onboardingState);
+            // Permission rows own the native setup heading.
             wireMigrationPostPhase(onboardingState);
         } else if (phase === 'pre') {
             wireMigrationPrePhase();
@@ -733,13 +504,13 @@ export function pauseMigrationOnboardingForBackNavigation() {
 export function syncMigrationPostBackButtonVisibility() {
     const backBtn = document.getElementById('migration-back-btn');
     if (backBtn) {
-        backBtn.classList.toggle('hidden', !state.firstRunExtensionSetupPending);
+        backBtn.classList.toggle('hidden', !state.firstRunNativePermissionSetupPending);
     }
 }
 
-export async function returnFromExtensionSetupOnboarding() {
-    if (!state.firstRunExtensionSetupPending) return;
-    state.extensionSetupPausedForBackNavigation = true;
+export async function returnFromNativePermissionSetup() {
+    if (!state.firstRunNativePermissionSetupPending) return;
+    state.nativePermissionSetupPausedForBackNavigation = true;
     pauseMigrationOnboardingForBackNavigation();
     showEulaOnboardingScreen();
 }
@@ -751,12 +522,12 @@ export function hideMigrationOnboarding() {
     if (main) main.classList.remove('hidden');
     state.migrationOnboardingActive = false;
     state.migrationOnboardingDismissed = true;
-    state.firstRunExtensionSetupPending = false;
+    state.firstRunNativePermissionSetupPending = false;
     state.migrationShowMeHowExpandedKeys.clear();
     state.migrationSafariDuplicateHelpExpanded = false;
     state.lastMigrationBrowserState = null;
     state.lastMigrationBrowserRenderSignature = '';
-    invalidateMigrationMacCopyCache();
+
     stopMigrationPolling();
 }
 
@@ -859,24 +630,24 @@ export function wireMigrationPrePhase() {
 }
 
 export function wireMigrationPostPhase(onboardingState) {
-    renderBrowserInstallButtons(onboardingState);
+    renderNativePermissionRows(onboardingState);
     // macOS: the first paint shows Automation rows as 'unknown' because
     // the native status query is async. Fetch it, then re-render so the
     // rows settle to their real Allowed / needs-permission state.
     if (appState.isMacOSDesktop) {
         refreshAutomationPermissionStatus().then(() => {
             if (appState.migrationOnboardingActive) {
-                renderBrowserInstallButtons(onboardingState, { force: true });
+                renderNativePermissionRows(onboardingState, { force: true });
             }
         });
     }
-    wireEnforcementToggle();
+
     syncMigrationPostBackButtonVisibility();
     const backBtn = document.getElementById('migration-back-btn');
     if (backBtn && !backBtn._listenerAdded) {
         backBtn._listenerAdded = true;
         backBtn.addEventListener('click', () => {
-            void returnFromExtensionSetupOnboarding();
+            void returnFromNativePermissionSetup();
         });
     }
 }

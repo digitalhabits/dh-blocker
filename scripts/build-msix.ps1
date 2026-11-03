@@ -281,10 +281,6 @@ $manifest | Out-File -FilePath (Join-Path $stagingDir "AppxManifest.xml") -Encod
 
 Write-Host "  [3/4] Staging files..." -ForegroundColor Gray
 
-# Custom MSIX packaging bypasses Tauri's bundler resource staging. Honor the
-# configured file map explicitly, with destinations relative to redd-block.exe.
-& (Join-Path $PSScriptRoot "stage-msix-resources.ps1") -ProjectRoot $ProjectRoot -StagingDir $stagingDir
-
 Copy-Item $tauriExe $stagingDir
 Write-Host "    Copied redd-block.exe ($([math]::Round((Get-Item $tauriExe).Length / 1MB, 1)) MB)" -ForegroundColor Gray
 
@@ -300,6 +296,9 @@ if (Test-Path $resourceDir) {
     Write-Host "    Copied resources/" -ForegroundColor Gray
 }
 
+# Custom MSIX packaging bypasses Tauri's bundler resource staging. Honor the
+# configured file map explicitly, with destinations relative to redd-block.exe.
+& (Join-Path $PSScriptRoot "stage-msix-resources.ps1") -ProjectRoot $ProjectRoot -StagingDir $stagingDir
 # Shell image qualifiers are resolved through PRI, not by directory scanning.
 # Manifest logo paths intentionally omit scale/targetsize qualifiers.
 $makepri = Join-Path $makeappx.DirectoryName 'makepri.exe'

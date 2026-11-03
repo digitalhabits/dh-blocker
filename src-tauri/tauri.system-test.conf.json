@@ -48,10 +48,7 @@
       "entitlements": "entitlements.system-test.macos.plist",
       "infoPlist": "Info.system-test.plist",
       "hardenedRuntime": true,
-      "minimumSystemVersion": "11.0",
-      "frameworks": [
-        "target/safari-bridge/libsafari_bridge.dylib"
-      ]
+      "minimumSystemVersion": "11.0"
     }
   }
 }

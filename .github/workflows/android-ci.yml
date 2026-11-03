@@ -81,8 +81,8 @@ jobs:
       # essentially free.
       #
       # Scope caveat: on this target every module gated
-      # `cfg(not(any(ios, android)))` drops out — app_watcher, enforcer,
-      # native_host, native_host_install, extension_install, blocking_method,
+      # `cfg(not(any(ios, android)))` drops out — app_watcher, native_failure,
+      # website_policy, native_host_install, native_browser_inventory,
       # profile_scan, data_cache — on top of the macOS/Windows-only ones. That
       # is ~11k of the ~18k lines in src-tauri/src, so this lints the shared
       # command surface and nothing of the desktop enforcement engine. It is

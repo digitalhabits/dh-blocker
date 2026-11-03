@@ -119,10 +119,6 @@ function installTauriStub(context, appData) {
             // installed raises the macOS automation intro modal over every
             // other screen in the list.
             onboarding_state: { browsers: { firefox: { installed: true } } },
-            // Served from the fixture, not invented here: the settings screen
-            // re-reads the methods over this command and would otherwise
-            // overwrite the fixture's own with null.
-            get_blocking_methods: (appData && appData.settings && appData.settings.blockingMethods) || {},
             // Firefox's Accessibility row asks for this; false is the state
             // worth screenshotting, since it is the one with copy and a button.
             accessibility_trusted: false,
@@ -213,7 +209,7 @@ async function openScreen(browser, screen, eulaRevision) {
         internals.render();
 
         // Gates that depend on backend answers we deliberately do not fake
-        // (migration, full-disk access, extension setup). Every overlay in
+        // (migration and native browser permissions). Every overlay in
         // showExclusiveOnboardingScreen's list ends in `-onboarding`, so this
         // also covers ones added later. Must run after render(), which re-runs
         // the onboarding visibility pass and would otherwise re-hide the app.

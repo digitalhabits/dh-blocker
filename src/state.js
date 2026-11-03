@@ -83,7 +83,7 @@ export const state = {
     startupInitializationComplete: false, // Track whether post-onboarding startup already ran
     migrationOnboardingActive: false,
     migrationOnboardingDismissed: false,
-    firstRunExtensionSetupPending: false,
+    firstRunNativePermissionSetupPending: false,
     migrationPollIntervalId: null,
     migrationShowMeHowExpandedKeys: new Set(),
     migrationSafariDuplicateHelpExpanded: false,
@@ -91,7 +91,7 @@ export const state = {
     lastMigrationBrowserRenderSignature: '',
     lastMigrationHeaderCopyKey: '',
     lastMigrationHowtoCopyKey: '',
-    extensionSetupPausedForBackNavigation: false,
+    nativePermissionSetupPausedForBackNavigation: false,
     forceShowEulaThisSession: false,
 };
 

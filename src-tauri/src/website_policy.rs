@@ -1,373 +1,9 @@
-// Native-messaging host mode for the ReDD Focus browser extension.
-//
-// The main binary is registered as the native-messaging host for the
-// patched ReDD Focus extension on Chrome / Brave / Edge / Firefox (and
-// on macOS, the Safari extension uses SafariWebExtensionHandler.swift
-// directly — this file is not involved there).
-//
-// When the browser spawns this binary, it passes arguments like
-// `--native-host chrome-extension://<id>/` (Chromium) or the extension
-// id (Firefox). We detect the flag early in `main()` and branch into
-// `run()` instead of starting the Tauri UI.
-//
-// Wire protocol (Chromium / Firefox):
-//   each message is a 4-byte little-endian length followed by a
-//   UTF-8 JSON payload. stdin = extension -> host, stdout = host ->
-//   extension, stderr = free for logging.
-//
-// Responsibilities:
-//   - read redd-block-data.json from the app-data dir,
-//   - derive the current blocklist (active-blocks ∩ blocklists.websites
-//     at time `now()`),
-//   - push `{ "blocklist": [...] }` on connect,
-//   - re-derive + re-push on file change (via notify) and every 30 s
-//     (for time-only schedule transitions),
-//   - drop the empty list when nothing is active so the extension
-//     clears cleanly.
-
-use std::io::{Read, Write};
-use std::path::PathBuf;
-use std::sync::mpsc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-use serde::{Deserialize, Serialize};
+//! Effective desktop policy, independent of browser transport.
+use serde::Serialize;
 use serde_json::Value;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-const POLL_INTERVAL: Duration = Duration::from_secs(30);
-
-/// The app writes a browser key here to ask that browser's extension to open
-/// its own chrome://extensions page: Chromium drops such URLs from the command line.
-pub const OPEN_SETTINGS_FILE: &str = "open-extension-settings";
-
-enum HostEvent {
-    Refresh,
-    OpenSettings,
-    Recv(String),
-    StdinClosed,
-    StdinError(String),
-}
-
-/// Return true if argv signals that the browser invoked us as a
-/// native-messaging host. Native-messaging manifests can't pass custom
-/// args, so we sniff for browser-supplied argv markers instead:
-///   - explicit `--native-host` flag (smoke-test path)
-///   - `chrome-extension://<id>/` (Chromium-family argv[1])
-///   - the Firefox extension ID (Firefox argv[1])
-///   - `--parent-window=...` (Windows argv suffix from chromium / Firefox)
-pub fn is_native_host_invocation() -> bool {
-    for arg in std::env::args().skip(1) {
-        if arg == "--native-host" {
-            return true;
-        }
-        if arg.starts_with("chrome-extension://") {
-            return true;
-        }
-        if arg == crate::native_host_install::FIREFOX_EXT_ID {
-            return true;
-        }
-        if arg.starts_with("--parent-window=") {
-            return true;
-        }
-    }
-    false
-}
-
-/// Entry point. Blocks until stdin closes.
-pub fn run() -> ! {
-    #[cfg(target_os = "windows")]
-    crate::windows_process::set_native_host_process_directory();
-
-    // `browser=` stays last: diagnostics reads everything after it.
-    let launcher = launching_browser();
-    log_to_file(&format!(
-        "spawned pid={} exe={:?} argv={:?} browser={launcher}",
-        std::process::id(),
-        std::env::current_exe().ok(),
-        std::env::args().collect::<Vec<_>>(),
-    ));
-
-    let data_path = match resolve_data_path() {
-        Some(p) => p,
-        None => {
-            log_to_file("resolve_data_path returned None; exiting");
-            std::process::exit(1);
-        }
-    };
-
-    // Push once on connect.
-    let (domains, blocks) = derive_payload(&data_path);
-    send_payload(&domains, &blocks, false);
-
-    // Background refresh: file-watch + 30 s poll. Read stdin on its
-    // own thread so native-host updates do not depend on the extension
-    // sending heartbeat messages. Native messaging is commonly quiet
-    // extension -> host after connect; blocking this thread on stdin
-    // would otherwise prevent pause/stop updates from ever being
-    // pushed until the browser writes something.
-    let (tx, rx) = mpsc::channel::<HostEvent>();
-    let settings_path = data_path.with_file_name(OPEN_SETTINGS_FILE);
-    // Blocklist edits are fine at 2 s. The settings request is polled fast:
-    // the app's foreground grant only lasts until the user's next input.
-    let (slow, fast) = (Duration::from_secs(2), Duration::from_millis(250));
-    spawn_file_watcher(&data_path, slow, tx.clone(), || HostEvent::Refresh);
-    spawn_file_watcher(&settings_path, fast, tx.clone(), || HostEvent::OpenSettings);
-    spawn_poller(tx.clone());
-    spawn_stdin_reader(tx);
-
-    // On any refresh signal (file-watch or poll tick), re-derive and
-    // push. Stdin events only keep lifecycle/logging wired up.
-    loop {
-        match rx.recv() {
-            Ok(HostEvent::Refresh) => {
-                log_to_file("refresh signal; deriving payload");
-                let (domains, blocks) = derive_payload(&data_path);
-                send_payload(&domains, &blocks, false);
-            }
-            // A full payload, not a bare flag: older extensions replace their
-            // rules with whatever a frame carries.
-            Ok(HostEvent::OpenSettings) => {
-                let key = std::fs::read_to_string(&settings_path).unwrap_or_default();
-                let (domains, blocks) = derive_payload(&data_path);
-                send_payload(&domains, &blocks, opens_settings_for(&key, &launcher));
-            }
-            Ok(HostEvent::Recv(s)) => {
-                log_to_file(&format!("recv: {s}"));
-            }
-            Ok(HostEvent::StdinClosed) => {
-                log_to_file("stdin EOF; exiting");
-                std::process::exit(0);
-            }
-            Ok(HostEvent::StdinError(e)) => {
-                log_to_file(&format!("stdin read error: {e}; exiting"));
-                std::process::exit(1);
-            }
-            Err(_) => {
-                log_to_file("event channel closed; exiting");
-                std::process::exit(1);
-            }
-        }
-    }
-}
-
-/// The browser that launched us. Chromium on Windows goes through
-/// `cmd.exe /d /s /c`, so step over it; Firefox (and macOS) launch directly.
-/// "unknown" when a parent has gone or its PID was reused (it started after us).
-fn launching_browser() -> String {
-    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
-    let mut sys = System::new();
-    sys.refresh_processes_specifics(
-        ProcessesToUpdate::All,
-        true,
-        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
-    );
-    let mut pid = Pid::from_u32(std::process::id());
-    for _ in 0..2 {
-        let Some(child) = sys.process(pid) else { break };
-        let Some(parent) = child.parent().and_then(|p| sys.process(p)) else {
-            break;
-        };
-        if parent.start_time() > child.start_time() {
-            break;
-        }
-        let name = parent.name().to_string_lossy().to_lowercase();
-        if name != "cmd.exe" {
-            return format!("{name}{}", exe_version(parent.exe()));
-        }
-        pid = parent.pid();
-    }
-    "unknown".into()
-}
-
-#[cfg(target_os = "windows")]
-fn exe_version(exe: Option<&std::path::Path>) -> String {
-    use windows::core::{w, PCWSTR};
-    use windows::Win32::Storage::FileSystem::{
-        GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW, VS_FIXEDFILEINFO,
-    };
-    let Some(exe) = exe else {
-        return String::new();
-    };
-    let path = crate::native_host_install::to_wide(&exe.to_string_lossy());
-    unsafe {
-        let size = GetFileVersionInfoSizeW(PCWSTR(path.as_ptr()), None);
-        let mut buf = vec![0u8; size as usize];
-        if size == 0
-            || GetFileVersionInfoW(PCWSTR(path.as_ptr()), None, size, buf.as_mut_ptr().cast())
-                .is_err()
-        {
-            return String::new();
-        }
-        let (mut info, mut len) = (std::ptr::null_mut(), 0u32);
-        if !VerQueryValueW(buf.as_ptr().cast(), w!("\\"), &mut info, &mut len).as_bool()
-            || info.is_null()
-        {
-            return String::new();
-        }
-        let f = &*(info as *const VS_FIXEDFILEINFO);
-        let (ms, ls) = (f.dwProductVersionMS, f.dwProductVersionLS);
-        format!(" {}.{}.{}.{}", ms >> 16, ms & 0xffff, ls >> 16, ls & 0xffff)
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn exe_version(_exe: Option<&std::path::Path>) -> String {
-    String::new()
-}
-
-/// The extension only sends small messages; refuse larger ones before allocating.
-const MAX_INBOUND_BYTES: usize = 1 << 20;
-
-fn read_payload(reader: &mut impl Read, len: usize) -> std::io::Result<Vec<u8>> {
-    if len > MAX_INBOUND_BYTES {
-        return Err(std::io::Error::other("message too large"));
-    }
-    let mut payload = vec![0u8; len];
-    reader.read_exact(&mut payload)?;
-    Ok(payload)
-}
-
-fn spawn_stdin_reader(tx: mpsc::Sender<HostEvent>) {
-    std::thread::spawn(move || {
-        let stdin = std::io::stdin();
-        let mut stdin_lock = stdin.lock();
-        loop {
-            let mut len_buf = [0u8; 4];
-            match stdin_lock.read_exact(&mut len_buf) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                    let _ = tx.send(HostEvent::StdinClosed);
-                    return;
-                }
-                Err(e) => {
-                    let _ = tx.send(HostEvent::StdinError(e.to_string()));
-                    return;
-                }
-            }
-            let len = u32::from_le_bytes(len_buf) as usize;
-            let payload = match read_payload(&mut stdin_lock, len) {
-                Ok(payload) => payload,
-                Err(e) => {
-                    let _ = tx.send(HostEvent::StdinError(format!("payload: {e}")));
-                    return;
-                }
-            };
-
-            // We accept but don't currently act on extension -> host
-            // messages beyond logging. Heartbeats from the extension
-            // could live here later.
-            if let Ok(s) = std::str::from_utf8(&payload) {
-                let _ = tx.send(HostEvent::Recv(s.to_string()));
-            }
-        }
-    });
-}
-
-/// Send a payload to the extension over stdout. Emits both the legacy flat
-/// `blocklist` (domain strings) and the richer `blocks` array
-/// (per-block metadata: name, emoji, color, mode, source, startedAt, endsAt).
-/// `blocklist` remains the backward-compatible contract: only blocklist-mode
-/// website domains belong there. `blocks` is additive, so allowlist-only
-/// website sessions intentionally serialize as an empty flat `blocklist` plus
-/// one or more allowlist entries in `blocks`.
-fn send_payload(domains: &[String], blocks: &[BlockInfo], open_settings: bool) {
-    let body = match payload_json(domains, blocks, open_settings) {
-        Ok(b) => b,
-        Err(e) => {
-            log_to_file(&format!("serialize error: {e}"));
-            return;
-        }
-    };
-    let len = (body.len() as u32).to_le_bytes();
-    let stdout = std::io::stdout();
-    let mut lock = stdout.lock();
-    if lock
-        .write_all(&len)
-        .and_then(|_| lock.write_all(&body))
-        .is_err()
-    {
-        // The browser likely closed the pipe; exit cleanly.
-        std::process::exit(0);
-    }
-    let _ = lock.flush();
-    log_to_file(&format!(
-        "sent blocklist ({} domains, {} blocks)",
-        domains.len(),
-        blocks.len()
-    ));
-}
-
-fn payload_json(
-    domains: &[String],
-    blocks: &[BlockInfo],
-    open_settings: bool,
-) -> serde_json::Result<Vec<u8>> {
-    #[derive(Serialize)]
-    struct Msg<'a> {
-        blocklist: &'a [String],
-        blocks: &'a [BlockInfo],
-        #[serde(
-            rename = "openExtensionSettings",
-            skip_serializing_if = "std::ops::Not::not"
-        )]
-        open_settings: bool,
-    }
-    let msg = Msg {
-        blocklist: domains,
-        blocks,
-        open_settings,
-    };
-    serde_json::to_vec(&msg)
-}
-
-/// Whether the browser key the app wrote names the browser that launched us
-/// (`launcher` is `launching_browser()`, e.g. "msedge.exe 156.0…").
-fn opens_settings_for(key: &str, launcher: &str) -> bool {
-    match key.trim() {
-        "chrome" => launcher.starts_with("chrome.exe"),
-        "edge" => launcher.starts_with("msedge.exe"),
-        "brave" => launcher.starts_with("brave.exe"),
-        _ => false,
-    }
-}
-
-fn spawn_file_watcher(
-    path: &std::path::Path,
-    every: Duration,
-    tx: mpsc::Sender<HostEvent>,
-    event: fn() -> HostEvent,
-) {
-    let path = path.to_path_buf();
-    // We poll mtime rather than depend on the `notify` crate so this
-    // module stays dependency-light and works identically on every OS.
-    std::thread::spawn(move || {
-        let mut last = mtime(&path);
-        loop {
-            std::thread::sleep(every);
-            let current = mtime(&path);
-            if current != last {
-                last = current;
-                let _ = tx.send(event());
-            }
-        }
-    });
-}
-
-fn spawn_poller(tx: mpsc::Sender<HostEvent>) {
-    std::thread::spawn(move || loop {
-        std::thread::sleep(POLL_INTERVAL);
-        let _ = tx.send(HostEvent::Refresh);
-    });
-}
-
-fn mtime(path: &std::path::Path) -> Option<SystemTime> {
-    std::fs::metadata(path).and_then(|m| m.modified()).ok()
-}
-
-/// Per-block metadata sent alongside the flat `blocklist`. Mirrors the
-/// additive `blocks[]` shape the ReDD Focus extension reads and forwards to
-/// `blocked.html` for the pill / source / countdown UI. Consumers must treat
-/// every field here as optional/backward-compatible and fall back to legacy
-/// flat-blocklist behavior when `blocks` or `mode` are absent.
+/// Metadata for one effective website policy segment and its block page.
 #[derive(Debug, Clone, Serialize)]
 pub struct BlockInfo {
     #[serde(rename = "blocklistId")]
@@ -383,7 +19,7 @@ pub struct BlockInfo {
     pub mode: String,
     pub domains: Vec<String>,
     /// Apps from the blocklist for this active segment (blocked or allowed
-    /// depending on `mode`). Omitted on the extension wire when empty.
+    /// depending on `mode`). Omitted from diagnostics when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub apps: Vec<String>,
     pub source: &'static str, // "schedule" | "activeBlock"
@@ -391,11 +27,6 @@ pub struct BlockInfo {
     pub ends_at: Option<u64>,
     #[serde(rename = "startedAt", skip_serializing_if = "Option::is_none")]
     pub started_at: Option<u64>,
-}
-
-#[cfg(test)]
-fn default_blocklist_mode() -> String {
-    "blocklist".to_string()
 }
 
 pub fn blocklist_mode_is_allowlist(mode: &str) -> bool {
@@ -412,12 +43,9 @@ type BlocklistMeta = (
     Vec<String>,
 );
 
-/// Read redd-block-data.json and compute (a) the deduped legacy flat
-/// blocklist domain list, (b) the additive per-block metadata array sorted
-/// ascending by `endsAt`. This is the single source of truth for what the
-/// extension sees on every frame.
+/// Derive effective domains and policy segments from persisted user rules.
 pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInfo>) {
-    // mtime-keyed parse cache: this runs on every watcher/enforcer tick,
+    // mtime-keyed parse cache: this runs on every native watcher tick,
     // but the file only changes on user actions. The derivation below
     // stays live (it depends on now()); only the parse is cached.
     let data = match crate::data_cache::read(data_path) {
@@ -495,7 +123,7 @@ pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInf
             None => continue,
         };
         if let Some((name, emoji, color, mode, websites, apps)) = blocklist_meta(id) {
-            // Flat `blocklist` is legacy extension blacklist semantics — only
+            // The flat blocked-domain union contains only
             // blocklist-mode domains belong here. Allowlist enforcement reads
             // `blocks[].mode` + `blocks[].domains` instead.
             if !blocklist_mode_is_allowlist(&mode) {
@@ -959,72 +587,6 @@ fn local_time_components_full(now_ms: u64) -> Option<(u8, u8, u8, u8)> {
             local.wSecond as u8,
         ))
     }
-}
-
-/// Canonical app-data path for the running user.
-///
-/// The native host runs as a child of the user's browser (not as the
-/// Tauri app), so it can't ask Tauri for `app_data_dir()`. It does not
-/// need to: `canonical_data_path_static` resolves the same per-user path
-/// without a handle, and routing through it is what keeps the host and
-/// the app on one file. Both run as the same user — the browser that
-/// spawned us was launched by them.
-///
-/// Order:
-///   1. The canonical per-user path, if it already exists.
-///   2. `<app data>/com.redd.block/...` — an earlier bundle id used by
-///      some pre-v1.0 builds; keeps native-messaging working through the
-///      migration window.
-///   3. The canonical path regardless, so file-watch picks up its first
-///      write.
-pub fn resolve_data_path() -> Option<PathBuf> {
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        None
-    }
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    {
-        let canonical = crate::commands::canonical_data_path_static();
-        if canonical.exists() {
-            return Some(canonical);
-        }
-        if let Some(base) = dirs::data_dir() {
-            let legacy = base.join("com.redd.block").join("redd-block-data.json");
-            if legacy.exists() {
-                return Some(legacy);
-            }
-        }
-        Some(canonical)
-    }
-}
-
-/// Append a line to a debug log alongside the app-data file. The
-/// installed browser also captures stderr into its own log; this file
-/// is just so the user (or us) can find out what happened.
-fn log_to_file(msg: &str) {
-    let Some(mut path) = resolve_data_path() else {
-        return;
-    };
-    path.pop();
-    path.push("native-host.log");
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-    {
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let _ = writeln!(f, "[{ts}] {msg}");
-    }
-    // Also emit to stderr; browsers capture it.
-    let _ = writeln!(std::io::stderr(), "{msg}");
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DerivedBlocklist {
-    pub domains: Vec<String>,
 }
 
 /// Canonical form of a stored website entry: lowercased, without a leading

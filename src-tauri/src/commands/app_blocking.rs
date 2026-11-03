@@ -156,8 +156,8 @@ pub fn list_pending_blocking_warnings() -> Vec<app_watcher::PendingBlockingWarni
 /// merge so allowlist enforcement survives periodic syncs and `save_data`.
 pub fn sync_blocked_apps_from_disk(app: &AppHandle) {
     let path = super::canonical_data_path_static();
-    let desired_blocked = crate::native_host::derive_blocked_apps(&path);
-    let desired_allowed = crate::native_host::derive_allowed_apps(&path);
+    let desired_blocked = crate::website_policy::derive_blocked_apps(&path);
+    let desired_allowed = crate::website_policy::derive_allowed_apps(&path);
     let allowlist_active = !desired_allowed.is_empty();
     let state = app.state::<AppWatcherState>();
     let mut slot = match state.0.lock() {

@@ -122,7 +122,7 @@
     }
 
     // v3 enforcement read-back: `get_system_diagnostics` → `current_blocking`
-    // is the Rust-derived snapshot of what the extension / Automation watcher
+    // is the Rust-derived snapshot of what the native website watchers
     // enforce (flat blocked `domains`, per-block `blocks[]` with mode, and the
     // allowlist unions). It re-derives from redd-block-data.json at call time,
     // so an awaited saveData is enough — no watcher latency to wait out.
@@ -137,7 +137,11 @@
 
     async function assertEnforcedDomain(testName, domain) {
         const cb = await getCurrentBlockingOrThrow(testName);
-        assertOrThrow(cb.domains.includes(domain), `${testName}: ${domain} missing from current_blocking.domains`);
+        if (!cb.domains.includes(domain)) {
+            const diagnostics = await getTauriAPI().getSystemDiagnostics();
+            const evidence = { nowIso: new Date().toISOString(), nowLocal: new Date().toString(), timezoneOffsetMinutes: new Date().getTimezoneOffset(), inMemorySchedules: getAppData()?.schedules, current_blocking: cb, savedAppData: diagnostics?.app_data?.pretty_json };
+            throw new Error(`${testName}: ${domain} missing from current_blocking.domains; evidence=${JSON.stringify(evidence)}`);
+        }
     }
 
     async function assertNotEnforcedDomain(testName, domain) {
@@ -207,6 +211,50 @@
         };
         appData.schedules.push(sched);
         return sched;
+    }
+
+    // These schedules exercise pause/read-back behavior, not one-shot expiry.
+    function activeIntegrationSchedule(now = new Date()) {
+        const hour = now.getHours();
+        return {
+            repeatType: 'forever',
+            segments: [{
+                startHour: hour,
+                startMinute: 0,
+                endHour: (hour + 1) % 24,
+                endMinute: 0,
+                days: [(now.getDay() + 6) % 7],
+            }],
+        };
+    }
+
+    function futureIntegrationSchedule(now = new Date(), startsInMinutes = 1, durationMinutes = 30) {
+        const start = new Date(now.getTime() + startsInMinutes * 60000);
+        const end = new Date(start.getTime() + durationMinutes * 60000);
+        return {
+            repeatType: 'forever',
+            segments: [{
+                startHour: start.getHours(),
+                startMinute: start.getMinutes(),
+                endHour: end.getHours(),
+                endMinute: end.getMinutes(),
+                days: [(start.getDay() + 6) % 7],
+            }],
+        };
+    }
+
+    function addFutureIntegrationSchedule(blocklistId, startsInMinutes = 1, durationMinutes = 30) {
+        const fixture = futureIntegrationSchedule(new Date(), startsInMinutes, durationMinutes);
+        assertOrThrow(fixture.repeatType === 'forever', 'Future integration fixtures must be recurring');
+        return addSchedule(blocklistId, fixture.segments, { repeatType: fixture.repeatType });
+    }
+
+    async function addActiveIntegrationSchedule(blocklistId) {
+        const fixture = activeIntegrationSchedule();
+        // Active fixtures test snapshots, overlap and pause state, not one-shot lifetime.
+        // A recurring fixture avoids the inherited overnight one-shot render-expiry path.
+        assertOrThrow(fixture.repeatType === 'forever', 'Active integration fixtures must be recurring');
+        return addSchedule(blocklistId, fixture.segments, { repeatType: fixture.repeatType });
     }
 
     function removeTestDataFromAppState() {
@@ -406,14 +454,7 @@
         if (skip) return skip;
 
         const bl = addTestBlocklist({ websites: [TEST_DOMAINS.shared], name: 'A3' });
-        const hour = new Date().getHours();
-        addSchedule(bl.id, [{
-            startHour: hour,
-            startMinute: 0,
-            endHour: (hour + 1) % 24,
-            endMinute: 0,
-            days: [currentDayMon0()]
-        }]);
+        await addActiveIntegrationSchedule(bl.id);
 
         await callSaveData();
         const result = await callUpdateHostsFile();
@@ -428,14 +469,7 @@
 
         return runIsolatedIntegrationTest('A4', async () => {
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.future], name: 'A4' });
-            const hour = new Date().getHours();
-            addSchedule(bl.id, [{
-                startHour: (hour + 1) % 24,
-                startMinute: 0,
-                endHour: (hour + 2) % 24,
-                endMinute: 0,
-                days: [currentDayMon0()]
-            }]);
+            addFutureIntegrationSchedule(bl.id, 60, 60);
 
             await callSaveData();
             const result = await callUpdateHostsFile();
@@ -524,14 +558,7 @@
 
         return runIsolatedIntegrationTest('A8', async () => {
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.shared], apps: ['Calculator'], name: 'A8' });
-            const hour = new Date().getHours();
-            addSchedule(bl.id, [{
-                startHour: hour,
-                startMinute: 0,
-                endHour: (hour + 1) % 24,
-                endMinute: 0,
-                days: [currentDayMon0()]
-            }]);
+            await addActiveIntegrationSchedule(bl.id);
             await callSaveData();
             await callUpdateHostsFile();
             await assertEnforcedDomain('A8', TEST_DOMAINS.shared);
@@ -555,14 +582,7 @@
 
         return runIsolatedIntegrationTest('A9', async () => {
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.future], name: 'A9' });
-            const hour = new Date().getHours();
-            addSchedule(bl.id, [{
-                startHour: hour,
-                startMinute: 0,
-                endHour: (hour + 1) % 24,
-                endMinute: 0,
-                days: [currentDayMon0()]
-            }]);
+            await addActiveIntegrationSchedule(bl.id);
             await callSaveData();
             await callUpdateHostsFile();
 
@@ -586,19 +606,7 @@
 
         return runIsolatedIntegrationTest('A10', async () => {
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.future], name: 'A10' });
-            const now = new Date();
-            const startMinute = (now.getMinutes() + 1) % 60;
-            const endMinute = (startMinute + 30) % 60;
-            const startHour = startMinute < now.getMinutes() ? (now.getHours() + 1) % 24 : now.getHours();
-            const endHour = endMinute < startMinute ? (startHour + 1) % 24 : startHour;
-
-            addSchedule(bl.id, [{
-                startHour,
-                startMinute,
-                endHour,
-                endMinute,
-                days: [currentDayMon0()]
-            }]);
+            addFutureIntegrationSchedule(bl.id);
             await callSaveData();
             await callUpdateHostsFile();
             await assertNotEnforcedDomain('A10', TEST_DOMAINS.a);
@@ -677,14 +685,7 @@
 
         const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.shared], name: 'B2' });
         addActiveBlock(bl.id, { durationMs: 120000 });
-        const hour = new Date().getHours();
-        addSchedule(bl.id, [{
-            startHour: hour,
-            startMinute: 0,
-            endHour: (hour + 1) % 24,
-            endMinute: 0,
-            days: [currentDayMon0()]
-        }]);
+        await addActiveIntegrationSchedule(bl.id);
         await callSaveData();
         const result = await callUpdateHostsFile();
         assertOrThrow(result && result.success, 'B2: one-off + schedule merge failed');
@@ -868,7 +869,7 @@
         const diag = await tauriAPI.getHelperDiagnostics();
         assertOrThrow(diag, 'E2: diagnostics command returned nothing');
         assertOrThrow(diag.app_version === status.version, `E2: app_version mismatch (${diag.app_version} !== ${status.version})`);
-        assertOrThrow(['automation', 'extension', 'unsupported'].includes(diag.backend), `E2: unexpected backend label (${diag.backend})`);
+        assertOrThrow(['automation', 'uia', 'unsupported'].includes(diag.backend), `E2: unexpected backend label (${diag.backend})`);
         return { passed: true };
     }
 
@@ -1456,6 +1457,9 @@
         }
         return results;
     }
+
+    // Test-only fixture contract; this suite is also injected as a plain script in Tier 2.
+    window.__REDDBLOCK_INTEGRATION_FIXTURES__ = { activeIntegrationSchedule, futureIntegrationSchedule };
 
     // Export
     window.runIntegrationTests = runIntegrationTests;

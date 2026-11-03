@@ -332,7 +332,7 @@ export const FOCUS_SPACE_COLOR_PALETTE = [
 // "host == entry or a subdomain of entry", so a stored `www.example.com` would
 // never match `example.com` and the site would stay reachable at its bare
 // domain. `www.com` is a real domain and is kept. Mirrored on desktop by
-// `normalize_website_entry` in src-tauri/src/native_host.rs.
+// `normalize_website_entry` in src-tauri/src/website_policy.rs.
 export function stripLeadingWww(host) {
     const bare = host.replace(/^www\./, '');
     return bare.includes('.') ? bare : host;

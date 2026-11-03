@@ -4,16 +4,14 @@
 // unrelated to what this module does; scoping the allow here keeps the
 // `-D warnings` clippy gate meaningful for every other lint.
 
-// Tauri commands for browser-extension-based blocking (Windows path).
+// Shared desktop window shell for independent app-blocking warnings.
 //
-// The UI calls these during onboarding and background enforcement. All
+// The UI calls these during native blocking warnings and lifecycle events. All
 // commands are desktop-only; on iOS the Screen Time API handles
 // enforcement and these commands aren't registered.
 
 use std::sync::Mutex;
 use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
-
-use crate::profile_scan;
 
 /// Geometry of the main window before we shrink it for the app-blocking
 /// force-quit countdown. Restored when the last warning layer clears.
@@ -53,25 +51,6 @@ const WARNING_SHELL_MIN_H: f64 = 200.0;
 /// Cap so an enormous block list cannot create an unusably tall window.
 const WARNING_SHELL_MAX_H: f64 = 1280.0;
 
-/// True when Firefox is installed on this machine (app bundle / exe on
-/// disk). Used by the welcome screen before a full profile scan.
-#[tauri::command]
-pub fn is_firefox_installed() -> bool {
-    profile_scan::firefox_app_installed()
-}
-
-/// Scan every supported browser profile for ReDD Focus extension
-/// compliance. Returns the raw scan result so the UI can render a
-/// per-browser status.
-#[tauri::command]
-pub async fn scan_browser_profiles() -> Result<profile_scan::ScanResult, String> {
-    // Spawn on a blocking worker so the synchronous filesystem scan
-    // doesn't block the Tauri async runtime.
-    tauri::async_runtime::spawn_blocking(profile_scan::scan)
-        .await
-        .map_err(|e| format!("join error: {e}"))
-}
-
 /// Force the app to the foreground after a focus-stealing modal
 /// (osascript admin prompt, file picker, etc.). Tauri's
 /// `window.set_focus` from JS calls `makeKeyAndOrderFront` but does
@@ -86,7 +65,7 @@ pub fn activate_app(window: tauri::Window) {
 /// Show the main window and put the app in Regular activation
 /// policy (Dock icon + menu bar visible). Used by the tray click,
 /// the dock-icon Reopen handler, the "Reopen Main Window" menu
-/// item, and the enforcer when it surfaces compliance alerts.
+/// item, and app-blocking recovery actions.
 pub fn reveal_app(app: &AppHandle) {
     #[cfg(target_os = "macos")]
     {
@@ -836,229 +815,4 @@ pub fn hide_main_window(window: tauri::Window) {
         #[cfg(target_os = "macos")]
         crate::set_macos_activation_policy(false);
     });
-}
-
-/// True when every running-and-present browser is compliant. Shortcut
-/// for the onboarding gate; the UI can also derive this itself from
-/// `scan_browser_profiles`.
-#[tauri::command]
-pub async fn browser_profiles_compliant() -> Result<bool, String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        let r = profile_scan::scan();
-        profile_scan::compliant(&r)
-    })
-    .await
-    .map_err(|e| format!("join error: {e}"))
-}
-
-/// Open Safari → Settings → Extensions via AppleScript. Needs
-/// Accessibility permission for System Events; tries both the legacy
-/// toolbar layout and the Ventura+ sidebar layout.
-#[cfg(target_os = "macos")]
-#[allow(dead_code)] // used on macOS; dead on Windows
-pub(crate) fn open_safari_extensions_settings_applescript() -> Result<(), String> {
-    const SCRIPT: &str = concat!(
-        "tell application \"Safari\" to activate\n",
-        "delay 0.4\n",
-        "tell application \"System Events\"\n",
-        "  tell process \"Safari\"\n",
-        "    keystroke \",\" using command down\n",
-        "    delay 1.0\n",
-        "    set extClicked to false\n",
-        "    try\n",
-        "      click button \"Extensions\" of toolbar 1 of window 1\n",
-        "      set extClicked to true\n",
-        "    end try\n",
-        "    if not extClicked then\n",
-        "      try\n",
-        "        click button \"Extensions\" of group 1 of scroll area 1 of group 1 of group 2 of splitter group 1 of group 1 of window 1\n",
-        "        set extClicked to true\n",
-        "      end try\n",
-        "    end if\n",
-        "    if not extClicked then\n",
-        "      repeat with theRow in (UI elements of scroll area 1 of group 1 of group 2 of splitter group 1 of group 1 of window 1)\n",
-        "        try\n",
-        "          if name of theRow is \"Extensions\" then\n",
-        "            click theRow\n",
-        "            set extClicked to true\n",
-        "            exit repeat\n",
-        "          end if\n",
-        "        end try\n",
-        "      end repeat\n",
-        "    end if\n",
-        "    if not extClicked then error \"Could not open Safari Extensions settings\"\n",
-        "  end tell\n",
-        "end tell\n",
-    );
-    let out = std::process::Command::new("osascript")
-        .args(["-e", SCRIPT])
-        .output()
-        .map_err(|e| format!("osascript: {e}"))?;
-    if out.status.success() {
-        Ok(())
-    } else {
-        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-#[allow(dead_code)] // used on macOS; dead on Windows
-pub(crate) fn open_safari_extensions_settings_applescript() -> Result<(), String> {
-    Err("Safari is macOS-only".into())
-}
-
-/// Open the browser's extension-management UI so the user can enable
-/// ReDD Focus or allow it in private/incognito windows.
-#[tauri::command]
-pub fn open_browser_extension_settings(browser: String) -> Result<(), String> {
-    let browser = browser.trim();
-    let normalized = browser.to_ascii_lowercase();
-    let url = match normalized.as_str() {
-        "firefox" => "about:addons".to_string(),
-        "edge" => format!(
-            "edge://extensions/?id={}",
-            crate::native_host_install::EDGE_ADDONS_EXT_ID
-        ),
-        "brave" => format!(
-            "brave://extensions/?id={}",
-            crate::native_host_install::CHROMIUM_EXT_ID
-        ),
-        _ => format!(
-            "chrome://extensions/?id={}",
-            crate::native_host_install::CHROMIUM_EXT_ID
-        ),
-    };
-
-    #[cfg(target_os = "macos")]
-    {
-        if normalized == "safari" {
-            match open_safari_extensions_settings_applescript() {
-                Ok(()) => return Ok(()),
-                Err(e) => {
-                    log::warn!(
-                        "osascript for Safari Extensions settings failed ({e}), activating Safari"
-                    );
-                    let _ = std::process::Command::new("/usr/bin/open")
-                        .args(["-a", "Safari"])
-                        .output();
-                }
-            }
-            return Ok(());
-        }
-
-        let app_name = match normalized.as_str() {
-            "brave" => "Brave Browser",
-            "edge" => "Microsoft Edge",
-            "firefox" => "Firefox",
-            _ => "Google Chrome",
-        };
-        let out = std::process::Command::new("/usr/bin/open")
-            .args(["-a", app_name, &url])
-            .output()
-            .map_err(|e| format!("spawn /usr/bin/open: {e}"))?;
-        if !out.status.success() {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            return Err(format!(
-                "`open -a {app_name}` exited with {}: {}",
-                out.status,
-                stderr.trim()
-            ));
-        }
-        Ok(())
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        // Chromium ignores chrome:// / edge:// URLs on the command line, so
-        // the extension opens its own page when the native host relays this.
-        if normalized != "firefox" {
-            let path = crate::native_host::resolve_data_path().ok_or("no data path")?;
-            // We are foreground right after the click; without this grant
-            // Windows only flashes the browser's taskbar button.
-            unsafe {
-                use windows::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
-                let _ = AllowSetForegroundWindow(ASFW_ANY);
-            }
-            return std::fs::write(
-                path.with_file_name(crate::native_host::OPEN_SETTINGS_FILE),
-                &normalized,
-            )
-            .map_err(|e| e.to_string());
-        }
-        // Reuse the same exe-path lookup that profile_scan uses for
-        // install detection.  Launching the browser directly (instead
-        // of `cmd /c start`) avoids slow PATH searches.
-        let exe = profile_scan::find_browser_exe(&normalized)
-            .ok_or_else(|| format!("Could not find {browser} executable"))?;
-        std::process::Command::new(&exe)
-            .arg(&url)
-            .spawn()
-            .map_err(|e| format!("launch {}: {e}", exe.display()))?;
-        Ok(())
-    }
-
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    {
-        let _ = url;
-        Err("open_browser_extension_settings unsupported on this platform".into())
-    }
-}
-
-#[allow(dead_code)] // used on macOS; dead on Windows
-fn is_mac_app_store_url(url: &str) -> bool {
-    let lower = url.to_ascii_lowercase();
-    lower.starts_with("macappstore://")
-        || lower.starts_with("itms-apps://")
-        || (lower.contains("apps.apple.com") && lower.contains("/app/"))
-}
-
-/// Open a specific URL in a specific browser.  Used by the enforcer
-/// "Install ReDD Focus" button so the store page opens in the correct
-/// browser instead of triggering the OS "choose an app" dialog.
-#[tauri::command]
-pub fn open_url_in_browser(browser: String, url: String) -> Result<(), String> {
-    let normalized = browser.trim().to_ascii_lowercase();
-
-    #[cfg(target_os = "macos")]
-    {
-        // App Store links must use plain `open`, not `open -a Safari` — the
-        // latter loads apps.apple.com in the browser instead of the store.
-        if is_mac_app_store_url(&url) {
-            std::process::Command::new("/usr/bin/open")
-                .arg(&url)
-                .output()
-                .map_err(|e| format!("open App Store URL: {e}"))?;
-            return Ok(());
-        }
-
-        let app_name = match normalized.as_str() {
-            "brave" => "Brave Browser",
-            "edge" => "Microsoft Edge",
-            "firefox" => "Firefox",
-            "safari" => "Safari",
-            _ => "Google Chrome",
-        };
-        std::process::Command::new("/usr/bin/open")
-            .args(["-a", app_name, &url])
-            .output()
-            .map_err(|e| format!("open -a {app_name}: {e}"))?;
-        Ok(())
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let exe = profile_scan::find_browser_exe(&normalized)
-            .ok_or_else(|| format!("Could not find {browser} executable"))?;
-        std::process::Command::new(&exe)
-            .arg(&url)
-            .spawn()
-            .map_err(|e| format!("launch {}: {e}", exe.display()))?;
-        Ok(())
-    }
-
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    {
-        let _ = (url, normalized);
-        Err("open_url_in_browser unsupported on this platform".into())
-    }
 }

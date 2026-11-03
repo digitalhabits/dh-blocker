@@ -1,26 +1,8 @@
 use super::*;
-use serde::Deserialize;
 use serde_json::{json, Value};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
-
-#[derive(Debug, Deserialize)]
-struct HostPayloadCompat {
-    blocklist: Vec<String>,
-    #[serde(default)]
-    blocks: Vec<CompatBlockInfo>,
-}
-
-#[derive(Debug, Deserialize)]
-struct CompatBlockInfo {
-    #[serde(rename = "blocklistId")]
-    blocklist_id: String,
-    #[serde(default = "default_blocklist_mode")]
-    mode: String,
-    #[serde(default)]
-    domains: Vec<String>,
-}
 
 fn temp_json_path(name: &str) -> PathBuf {
     let unique = SystemTime::now()
@@ -378,67 +360,6 @@ fn derive_payload_strips_leading_www_from_stored_websites() {
         .find(|b| b.blocklist_id == "bl-allow")
         .unwrap();
     assert_eq!(allow.domains, vec!["github.com".to_string()]);
-}
-
-#[test]
-fn current_payload_serializes_empty_legacy_blocklist_with_additive_allowlist_blocks() {
-    #[derive(Serialize)]
-    struct Msg<'a> {
-        blocklist: &'a [String],
-        blocks: &'a [BlockInfo],
-    }
-
-    let domains = Vec::<String>::new();
-    let blocks = vec![BlockInfo {
-        blocklist_id: "allow".to_string(),
-        name: Some("Allow".to_string()),
-        emoji: None,
-        color: None,
-        mode: "allowlist".to_string(),
-        domains: vec!["github.com".to_string()],
-        apps: vec![],
-        source: "activeBlock",
-        ends_at: Some(999),
-        started_at: Some(111),
-    }];
-
-    let payload = serde_json::to_value(Msg {
-        blocklist: &domains,
-        blocks: &blocks,
-    })
-    .unwrap();
-
-    assert_eq!(payload.get("blocklist").unwrap(), &json!([]));
-    assert_eq!(payload["blocks"][0]["mode"], "allowlist");
-    assert_eq!(payload["blocks"][0]["domains"], json!(["github.com"]));
-}
-
-#[test]
-fn extension_payload_compat_accepts_legacy_flat_blocklist_only_shape() {
-    let payload: HostPayloadCompat = serde_json::from_value(json!({
-        "blocklist": ["reddit.com"]
-    }))
-    .unwrap();
-
-    assert_eq!(payload.blocklist, vec!["reddit.com".to_string()]);
-    assert!(payload.blocks.is_empty());
-}
-
-#[test]
-fn extension_payload_compat_defaults_missing_block_mode_to_blocklist() {
-    let payload: HostPayloadCompat = serde_json::from_value(json!({
-        "blocklist": ["reddit.com"],
-        "blocks": [{
-            "blocklistId": "legacy-block",
-            "domains": ["reddit.com"]
-        }]
-    }))
-    .unwrap();
-
-    assert_eq!(payload.blocks.len(), 1);
-    assert_eq!(payload.blocks[0].blocklist_id, "legacy-block");
-    assert_eq!(payload.blocks[0].mode, "blocklist");
-    assert_eq!(payload.blocks[0].domains, vec!["reddit.com".to_string()]);
 }
 
 #[test]
@@ -907,34 +828,4 @@ fn unpaused_allowlist_schedule_puts_allow_mode_in_force() {
         crate::web_automation::url_is_blocked("https://unrelated.invalid/", &blocks),
         "allow mode from a schedule should block a host outside the allowlist"
     );
-}
-
-#[test]
-fn read_payload_refuses_oversized_messages_before_reading() {
-    let mut reader = std::io::Cursor::new(vec![7u8; 4]);
-    let err = read_payload(&mut reader, MAX_INBOUND_BYTES + 1).unwrap_err();
-    assert_eq!(err.kind(), std::io::ErrorKind::Other);
-    assert_eq!(read_payload(&mut reader, 4).unwrap(), vec![7u8; 4]);
-}
-
-#[test]
-fn open_settings_request_only_reaches_the_clicked_browser() {
-    assert!(opens_settings_for("chrome", "chrome.exe 154.0.8037.99"));
-    assert!(opens_settings_for("edge\n", "msedge.exe 156.0.4314.50"));
-    assert!(!opens_settings_for("chrome", "msedge.exe 156.0.4314.50"));
-    assert!(!opens_settings_for("edge", "unknown"));
-    assert!(!opens_settings_for("", "chrome.exe"));
-}
-
-#[test]
-fn open_settings_flag_rides_on_a_full_payload() {
-    // Older extensions replace their rules with each frame, so the flag must
-    // never arrive without the blocklist beside it.
-    let domains = vec!["x.com".to_string()];
-    let with: Value = serde_json::from_slice(&payload_json(&domains, &[], true).unwrap()).unwrap();
-    assert_eq!(with["openExtensionSettings"], true);
-    assert_eq!(with["blocklist"], json!(["x.com"]));
-    let without: Value =
-        serde_json::from_slice(&payload_json(&domains, &[], false).unwrap()).unwrap();
-    assert!(without.get("openExtensionSettings").is_none());
 }

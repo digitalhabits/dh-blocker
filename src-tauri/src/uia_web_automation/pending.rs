@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::{block_page, native_host::BlockInfo};
+use crate::{block_page, website_policy::BlockInfo};
 
 #[derive(Default)]
 pub(super) struct Pending {
@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn redirect_expiry_and_restore_require_observed_completion() {
-        let blocks = vec![crate::native_host::BlockInfo {
+        let blocks = vec![crate::website_policy::BlockInfo {
             blocklist_id: "one".into(),
             mode: "blocklist".into(),
             domains: vec!["example.com".into()],

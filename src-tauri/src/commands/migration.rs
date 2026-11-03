@@ -292,6 +292,9 @@ pub fn uninstall_legacy_helper_sync() -> Result<bool, String> {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct OnboardingState {
+    /// Installed applications only; no browser-owned profile data is read.
+    pub browsers:
+        std::collections::BTreeMap<String, crate::native_browser_inventory::BrowserInstallation>,
     /// True if this build migrated anything in this launch
     /// (hosts cleaned, helper removed, autostart registered).
     pub migrated_this_launch: bool,
@@ -302,11 +305,6 @@ pub struct OnboardingState {
     /// True for users crossing the v1 → v2 architecture boundary in
     /// this launch. Drives the one-time "what's new" welcome card.
     pub show_upgrade_welcome: bool,
-    /// True when every running-and-present browser has a compliant
-    /// default profile.
-    pub extension_compliant: bool,
-    /// Detailed per-browser scan.
-    pub browsers: crate::profile_scan::ScanResult,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -346,12 +344,7 @@ pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String
     // version. If there is residue, we run the elevated migration
     // regardless of whether we've stamped this version before.
     if !migration_pending_sync() {
-        // Nothing to do — install native-host manifests on non-macOS
-        // platforms and stamp the version so we don't keep checking.
-        #[cfg(not(target_os = "macos"))]
-        if let Err(e) = crate::native_host_install::install() {
-            log::warn!("native-host install during migration failed: {e}");
-        }
+        // No legacy residue remains; record completion.
         stamp_version(&data_path, &mut data, &current);
         return Ok(true);
     }
@@ -370,11 +363,6 @@ pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String
     if migration_pending_sync() {
         log::warn!("elevated migration returned ok but residue is still present");
         return Ok(false);
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    if let Err(e) = crate::native_host_install::install() {
-        log::warn!("native-host install during migration failed: {e}");
     }
 
     stamp_version(&data_path, &mut data, &current);
@@ -396,17 +384,11 @@ pub async fn onboarding_state(_app: tauri::AppHandle) -> Result<OnboardingState,
     let show_upgrade_welcome = snapshot_initial_state() && !migration_pending;
     let migrated_this_launch = show_upgrade_welcome;
 
-    let browsers = tauri::async_runtime::spawn_blocking(crate::profile_scan::scan_for_onboarding)
-        .await
-        .map_err(|e| e.to_string())?;
-    let extension_compliant = crate::profile_scan::compliant(&browsers);
-
     Ok(OnboardingState {
+        browsers: crate::native_browser_inventory::installed(),
         migrated_this_launch,
         migration_pending,
         show_upgrade_welcome,
-        extension_compliant,
-        browsers,
     })
 }
 

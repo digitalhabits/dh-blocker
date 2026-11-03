@@ -127,18 +127,7 @@
             </div>
         </div>
 
-        <!-- Persistent "set up the extension" reminder. Surfaces on
-             every launch whenever any installed browser is missing
-             the Digital Habits: Focus extension (or has it disabled / not
-             allowed in private). Distinct from the one-time welcome
-             overlay — this is a slim, low-key footer-style note that
-             stays visible as a status indicator until the user is
-             compliant or installs the extension. The × button
-             dismisses for the current session only; the banner
-             reappears next launch / on focus refresh if still
-             relevant, so the reminder doesn't silently disappear
-             forever the way a localStorage-persisted dismissal
-             would. -->
+
         <!-- App-blocking close-down countdown. Replaces the always-on-top
              warning panel once the user has clicked "Let's go!"; ticks
              down to the polite Cmd-Q (T+30s) and then through the
@@ -155,30 +144,8 @@
             </div>
         </div>
 
-        <!-- Combined setup banner: extension compliance reminder. -->
-        <div id="behaviour-change-banner" class="update-banner setup-banner hidden">
-            <div class="update-banner-content">
-                <svg class="setup-banner-info-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-                    <circle cx="12" cy="12" r="11" fill="currentColor"></circle>
-                    <circle cx="12" cy="7.5" r="1.3" fill="white"></circle>
-                    <rect x="11" y="10" width="2" height="8" rx="1" fill="white"></rect>
-                </svg>
-                <div class="setup-banner-message">
-                    <strong id="setup-banner-headline" class="setup-banner-headline">Enable Digital Habits: Focus in your browsers</strong>
-                    <span id="behaviour-change-text" class="setup-banner-body"></span>
-                    <div class="setup-banner-actions-row">
-                        <button id="behaviour-change-help" class="update-banner-btn" type="button">Set up browsers</button>
-                    </div>
-                </div>
-            </div>
-            <button id="behaviour-change-dismiss" class="update-banner-dismiss" title="Dismiss for this session">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-            </button>
-        </div>
+
+
 
         <div id="eula-onboarding" class="onboarding-screen hidden">
             <div class="eula-onboarding-inner">
@@ -400,50 +367,10 @@
             </div>
         </div>
 
-        <!-- Safari extension mode: Full Disk Access to read Extensions.plist. -->
-        <div id="fda-onboarding" class="onboarding-screen hidden">
-            <div class="welcome-onboarding-layout">
-                <header class="welcome-onboarding-header">
-                    <div class="welcome-onboarding-title-row">
-                        <img id="fda-onboarding-shield-logo"
-                             class="welcome-shield-logo"
-                             src=""
-                             alt=""
-                             aria-hidden="true">
-                        <h1 id="fda-onboarding-title">Grant Full Disk Access for Safari</h1>
-                    </div>
-                </header>
 
-                <div class="welcome-onboarding-card legal-onboarding-card">
-                    <p id="fda-onboarding-why" class="migration-explainer"></p>
-                    <p id="fda-onboarding-status" class="migration-status hidden"></p>
-                    <div class="eula-onboarding-actions">
-                        <button id="fda-onboarding-back-btn"
-                                class="eula-back-btn"
-                                type="button">
-                            Back
-                        </button>
-                        <button id="fda-onboarding-grant-btn"
-                                class="modal-btn primary-btn onboarding-primary-btn eula-continue-btn"
-                                type="button">
-                            Open Full Disk Access settings
-                        </button>
-                    </div>
-                    <p id="fda-onboarding-howto" class="legal-onboarding-note">
-                        System Settings → Privacy &amp; Security → Full Disk Access
-                    </p>
-                    <img id="fda-onboarding-screenshot"
-                         class="fda-onboarding-screenshot"
-                         src=""
-                         alt="Full Disk Access settings with Digital Habits: Blocker toggled on">
-                </div>
-            </div>
-        </div>
 
-        <!-- v1.x → 2.0 migration onboarding. Full-screen, gates main UI
-             on first launch after upgrade. Two phases driven by JS:
-             "pre" = welcome + admin-permission ask, "post" = cleanup
-             complete + install browser extension. -->
+
+
         <div id="migration-onboarding" class="onboarding-screen hidden">
             <div class="onboarding-content migration-onboarding-content">
                 <!-- Phase: pre-cleanup. Shown when migration_pending=true. -->
@@ -459,7 +386,7 @@
                     </div>
                     <div class="onboarding-focus-card migration-card">
                         <p id="migration-pre-explainer" class="migration-explainer">
-                            Digital Habits: Blocker now blocks websites through a browser extension instead of a system-level helper.
+                            Digital Habits: Blocker now blocks websites directly instead of using a system-level helper.
                             We need to:
                         </p>
                         <ul class="migration-bullets">
@@ -470,7 +397,7 @@
                         <p id="migration-pre-warn" class="migration-explainer migration-explainer-warn">
                             You'll see <strong>one</strong> admin password prompt. Blocking will pause briefly during
                             the changeover. After cleanup, Digital Habits: Blocker sets up the <strong>Digital Habits: Focus</strong>
-                            browser extension in your browsers automatically — you just need to allow it in
+                            native website blocking — allow any missing browser permissions in
                             private/incognito tabs.
                         </p>
                         <button id="migration-continue-btn"
@@ -479,11 +406,7 @@
                     </div>
                 </div>
 
-                <!-- Phase: install browser extension. Shown both
-                     after a v1.x → 2.0 cleanup AND on first launch
-                     for new users who haven't installed the extension
-                     yet. JS swaps the headline + checklist depending
-                     on which case it is. -->
+
                 <div id="migration-phase-post" class="migration-phase hidden">
                     <div id="migration-post-title-row" class="welcome-onboarding-title-row migration-onboarding-title-row">
                         <div class="onboarding-icon migration-onboarding-icon">
@@ -495,20 +418,7 @@
                                 Digital Habits: Focus in each browser you use.</p>
                         </div>
                     </div>
-                    <header id="migration-post-header" class="migration-post-header welcome-onboarding-header hidden">
-                        <div class="welcome-onboarding-title-row">
-                            <img id="migration-post-header-shield-logo"
-                                 class="welcome-shield-logo"
-                                 src=""
-                                 alt=""
-                                 aria-hidden="true">
-                            <div class="welcome-onboarding-title-text">
-                                <h1 id="migration-post-header-title" class="migration-post-header-title"></h1>
-                                <div id="migration-post-header-subtitle"
-                                     class="migration-post-header-subtitle welcome-onboarding-subtitle"></div>
-                            </div>
-                        </div>
-                    </header>
+
                     <div class="onboarding-focus-card migration-card">
                         <ul id="migration-checklist" class="migration-checklist">
                             <li class="checklist-done migration-cleanup-only">
@@ -519,23 +429,10 @@
                                 <span class="checklist-mark">✓</span>
                                 <span id="migration-checklist-blocks-label">Your blocklists are preserved</span>
                             </li>
-                            <li id="migration-checklist-ext" class="checklist-todo">
-                                <span id="migration-checklist-ext-lines">Enable Digital Habits: Focus in your browsers<br><span
-                                        style="font-weight:400;opacity:0.7">and allow it in private/incognito
-                                        tabs</span></span>
-                            </li>
+
                         </ul>
 
-                        <div id="migration-howto" class="migration-howto hidden">
-                            <h3 id="migration-howto-title">Setting up Digital Habits: Focus</h3>
-                            <ol>
-                                <li id="migration-howto-li1">Digital Habits: Blocker tried to add Digital Habits: Focus to your installed browsers
-                                    automatically — <strong>restart each browser</strong> to pick it up.</li>
-                                <li id="migration-howto-li2" class="hidden"></li>
-                                <li id="migration-howto-li3">Once enabled, <strong>allow it in private/incognito tabs</strong>
-                                    so blocking works in private windows too.</li>
-                            </ol>
-                        </div>
+
 
                         <div id="migration-setup-ready-banner" class="migration-setup-ready-banner hidden" role="status">
                             <svg class="migration-setup-ready-icon" width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -555,31 +452,7 @@
                              The server-side guard in enforcement_toggle.rs
                              rejects disable attempts during active blocks even
                              if someone bypasses the UI lock. -->
-                        <div id="enforcement-toggle-section" class="enforcement-toggle-section enforcement-off">
-                            <div class="enforcement-toggle-row">
-                                <div class="enforcement-toggle-text">
-                                    <strong class="enforcement-toggle-headline">
-                                        <svg class="enforcement-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                                        </svg>
-                                        <span id="enforcement-toggle-headline-text">Browser enforcement</span>
-                                    </strong>
-                                    <span id="enforcement-toggle-desc-text" class="enforcement-toggle-desc">To hold yourself accountable, your <strong>browser is automatically closed</strong> if you turn off Automation during blocking.</span>
-                                </div>
-                                <label class="enforcement-switch" for="enforcement-toggle-input">
-                                    <input type="checkbox" id="enforcement-toggle-input" class="enforcement-toggle-input" />
-                                    <span class="enforcement-slider"></span>
-                                </label>
-                            </div>
-                            <p class="enforcement-toggle-disable-note">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                                    <line x1="12" y1="9" x2="12" y2="13"></line>
-                                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                                </svg>
-                                <span id="enforcement-toggle-disable-note-text">Once on, you can only turn enforcement off when no blocks are running.</span>
-                            </p>
-                        </div>
+
 
                         <div class="migration-post-actions">
                             <div class="migration-post-action-row">
@@ -885,7 +758,7 @@
     <button type="button" class="editor-section-header" id="editor-section-advanced-header" aria-expanded="false" aria-controls="editor-section-advanced-body">
         <span class="editor-section-copy">
             <span class="editor-section-title" id="editor-section-advanced-title">Advanced options</span>
-            
+
         </span>
         <span class="editor-section-icon" aria-hidden="true"></span>
     </button>
@@ -1916,7 +1789,7 @@
                     <section id="settings-help-section" class="settings-section settings-help-section desktop-only" aria-labelledby="settings-help-label">
                         <h4 id="settings-help-label" class="settings-section-heading">Something not working?</h4>
                         <div class="settings-help-actions">
-                            <button id="settings-setup-btn" class="settings-help-btn" type="button">
+                            <button id="settings-setup-btn" class="macos-only settings-help-btn" type="button">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                     <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
@@ -1970,142 +1843,12 @@
                                 <input type="range" id="settings-max-words-input" class="editor-slider" min="50" max="1000" value="300" step="50" aria-labelledby="settings-max-words-label" aria-describedby="settings-max-words-hint">
                             </div>
 
-                            <div class="settings-row">
-                                <div class="settings-row-copy">
-                                    <span id="settings-enforcement-row-label" class="settings-row-label">Auto-close browser if blocking is bypassed</span>
-                                    <span id="settings-enforcement-toggle-desc-text" class="settings-row-hint">If Automation is switched off mid-block.</span>
-                                </div>
-                                <div class="settings-row-control">
-                                    <label class="enforcement-switch enforcement-switch-with-tip" for="settings-enforcement-toggle-input">
-                                        <input type="checkbox" id="settings-enforcement-toggle-input" class="enforcement-toggle-input" />
-                                        <span class="enforcement-slider"></span>
-                                        <span id="settings-enforcement-toggle-disable-note-text" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
-                                    </label>
-                                </div>
-                            </div>
 
-                            <div id="settings-grace-row" class="settings-row settings-grace-row hidden">
-                                <div class="settings-row-copy">
-                                    <span id="grace-period-label-text" class="settings-row-label">Grace period</span>
-                                    <span id="grace-period-hint-text" class="settings-row-hint">Seconds to re-enable before the browser closes.</span>
-                                </div>
-                                <div id="settings-grace-input-wrap" class="settings-row-control settings-grace-input-wrap">
-                                    <input id="grace-seconds-input" type="number" inputmode="numeric" min="5" max="300" step="5"
-                                        class="grace-seconds-input" value="60" aria-describedby="grace-period-hint-text">
-                                    <span id="grace-input-lock-tooltip" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
-                                </div>
-                            </div>
-                            <p id="grace-error" class="grace-error hidden"></p>
 
-                            <div id="settings-blocking-method-section" class="settings-blocking-method-section desktop-only">
-                                <button id="settings-blocking-method-toggle" type="button"
-                                    class="settings-enforcement-subsection-toggle"
-                                    aria-expanded="false"
-                                    aria-controls="settings-blocking-method-content">
-                                    <div class="settings-blocking-method-toggle-copy">
-                                        <span id="settings-blocking-method-toggle-label" class="settings-row-label">Blocking mechanism</span>
-                                        <span id="settings-blocking-method-hint" class="settings-row-hint">Whether website blocking should use Automation or the Digital Habits: Focus browser extension (try the latter if blocking is lagging).</span>
-                                    </div>
-                                    <svg class="settings-enforcement-chevron" width="14" height="14" viewBox="0 0 24 24"
-                                        fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-                                        stroke-linejoin="round" aria-hidden="true">
-                                        <polyline points="6 9 12 15 18 9"></polyline>
-                                    </svg>
-                                </button>
-                                <div id="settings-blocking-method-content" class="settings-enforcement-subsection-content hidden">
-                                    <div class="settings-blocking-method-rows">
-                                        <div class="settings-row">
-                                            <div class="settings-row-copy">
-                                                <span class="settings-blocking-method-label">
-                                                    <img id="settings-blocking-method-safari-icon" class="settings-blocking-method-icon" src="" alt="" aria-hidden="true">
-                                                    <span id="settings-blocking-method-safari-label" class="settings-row-label">Safari</span>
-                                                </span>
-                                            </div>
-                                            <div class="settings-row-control">
-                                                <select id="blocking-method-safari" class="blocking-method-select" aria-label="Safari blocking method">
-                                                    <option value="automation">Automation</option>
-                                                    <option value="extension">Extension</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                        <div id="settings-safari-fda-row" class="settings-row settings-safari-fda-row hidden">
-                                            <div class="settings-row-copy">
-                                                <p id="settings-safari-fda-status" class="settings-row-hint"></p>
-                                            </div>
-                                            <div class="settings-row-control">
-                                                <button id="settings-safari-fda-grant-btn" type="button" class="modal-btn primary-btn settings-safari-fda-grant-btn">Grant access</button>
-                                            </div>
-                                        </div>
-                                        <div class="settings-row">
-                                            <div class="settings-row-copy">
-                                                <span class="settings-blocking-method-label">
-                                                    <img id="settings-blocking-method-chrome-icon" class="settings-blocking-method-icon" src="" alt="" aria-hidden="true">
-                                                    <span id="settings-blocking-method-chrome-label" class="settings-row-label">Chrome</span>
-                                                </span>
-                                            </div>
-                                            <div class="settings-row-control">
-                                                <select id="blocking-method-chrome" class="blocking-method-select" aria-label="Chrome blocking method">
-                                                    <option value="automation">Automation</option>
-                                                    <option value="extension">Extension</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                        <div class="settings-row">
-                                            <div class="settings-row-copy">
-                                                <span class="settings-blocking-method-label">
-                                                    <img id="settings-blocking-method-edge-icon" class="settings-blocking-method-icon" src="" alt="" aria-hidden="true">
-                                                    <span id="settings-blocking-method-edge-label" class="settings-row-label">Edge</span>
-                                                </span>
-                                            </div>
-                                            <div class="settings-row-control">
-                                                <select id="blocking-method-edge" class="blocking-method-select" aria-label="Edge blocking method">
-                                                    <option value="automation">Automation</option>
-                                                    <option value="extension">Extension</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                        <div class="settings-row">
-                                            <div class="settings-row-copy">
-                                                <span class="settings-blocking-method-label">
-                                                    <img id="settings-blocking-method-brave-icon" class="settings-blocking-method-icon" src="" alt="" aria-hidden="true">
-                                                    <span id="settings-blocking-method-brave-label" class="settings-row-label">Brave</span>
-                                                </span>
-                                            </div>
-                                            <div class="settings-row-control">
-                                                <select id="blocking-method-brave" class="blocking-method-select" aria-label="Brave blocking method">
-                                                    <option value="automation">Automation</option>
-                                                    <option value="extension">Extension</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                        <!-- Firefox has no AppleScript dictionary for tabs, so its
-                                             choice is the extension or the Accessibility API, never
-                                             Automation. app.js rebuilds these options per browser. -->
-                                        <div class="settings-row">
-                                            <div class="settings-row-copy">
-                                                <span class="settings-blocking-method-label">
-                                                    <img id="settings-blocking-method-firefox-icon" class="settings-blocking-method-icon" src="" alt="" aria-hidden="true">
-                                                    <span id="settings-blocking-method-firefox-label" class="settings-row-label">Firefox</span>
-                                                </span>
-                                            </div>
-                                            <div class="settings-row-control">
-                                                <select id="blocking-method-firefox" class="blocking-method-select" aria-label="Firefox blocking method">
-                                                    <option value="extension">Extension</option>
-                                                    <option value="accessibility">Accessibility</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                        <div id="settings-firefox-ax-row" class="settings-row settings-safari-fda-row hidden">
-                                            <div class="settings-row-copy">
-                                                <p id="settings-firefox-ax-status" class="settings-row-hint"></p>
-                                            </div>
-                                            <div class="settings-row-control">
-                                                <button id="settings-firefox-ax-grant-btn" type="button" class="modal-btn primary-btn settings-safari-fda-grant-btn">Allow access</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+
+
+
+
                         </div>
                         </div>
                         </div>
@@ -2140,20 +1883,7 @@
                     <p id="uninstall-finder-warning-text" class="uninstall-finder-info-text"></p>
                 </div>
 
-                <div id="uninstall-firefox-callout" class="uninstall-firefox-callout hidden">
-                    <div class="uninstall-firefox-callout-header">
-                        <div class="uninstall-firefox-callout-title">
-                            <img id="uninstall-firefox-callout-logo"
-                                 class="uninstall-firefox-callout-logo"
-                                 src=""
-                                 alt=""
-                                 aria-hidden="true">
-                            <span id="uninstall-firefox-callout-title-text"></span>
-                        </div>
-                        <span id="uninstall-firefox-callout-badge" class="uninstall-firefox-callout-badge"></span>
-                    </div>
-                    <p id="uninstall-firefox-callout-detail" class="uninstall-firefox-callout-detail"></p>
-                </div>
+
 
                 <label id="uninstall-delete-data-row" class="uninstall-delete-data-row">
                     <input type="checkbox" id="uninstall-delete-data-checkbox" />
@@ -2168,53 +1898,7 @@
         </div>
 
         <!-- macOS Automation upgrade intro (one-time, returning users) -->
-        <div id="mac-automation-intro-modal" class="modal-overlay hidden">
-            <div class="modal-content mac-automation-intro-modal">
-                <div class="mac-automation-intro-badge">
-                    <svg class="mac-automation-intro-badge-icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
-                        <path fill="currentColor" d="M12 2l1.8 5.5L19 9.3l-5.2 1.8L12 16.5 10.2 11 5 9.3l5.2-1.8L12 2z"/>
-                        <path fill="currentColor" d="M19 14l.9 2.7 2.7.9-2.7.9-.9 2.7-.9-2.7-2.7-.9 2.7-.9.9-2.7z"/>
-                    </svg>
-                    <span id="mac-automation-intro-badge-text"></span>
-                </div>
-                <h3 id="mac-automation-intro-title"></h3>
-                <p id="mac-automation-intro-lead" class="mac-automation-intro-lead"></p>
 
-                <div class="mac-automation-intro-browser-panel settings-panel">
-                    <div class="mac-automation-intro-browser-row">
-                        <div class="mac-automation-intro-browser-label">
-                            <span id="mac-automation-intro-automation-icons" class="mac-automation-intro-icons-stack" aria-hidden="true"></span>
-                            <span id="mac-automation-intro-automation-browsers-label"></span>
-                        </div>
-                        <span class="mac-automation-intro-method-pill mac-automation-intro-method-pill--automation">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M5 12h14"></path>
-                                <path d="M13 6l6 6-6 6"></path>
-                            </svg>
-                            <span id="mac-automation-intro-automation-method"></span>
-                        </span>
-                    </div>
-                    <div class="mac-automation-intro-browser-row">
-                        <div class="mac-automation-intro-browser-label">
-                            <img id="mac-automation-intro-firefox-icon"
-                                 class="mac-automation-intro-browser-icon"
-                                 src=""
-                                 alt=""
-                                 aria-hidden="true">
-                            <span id="mac-automation-intro-firefox-label"></span>
-                        </div>
-                        <span id="mac-automation-intro-extension-method" class="mac-automation-intro-method-pill mac-automation-intro-method-pill--extension"></span>
-                    </div>
-                </div>
-
-                <p id="mac-automation-intro-unchanged" class="mac-automation-intro-unchanged"></p>
-
-                <div class="modal-buttons">
-                    <button id="mac-automation-intro-dismiss-btn" class="modal-btn cancel-btn" type="button"></button>
-                    <button id="mac-automation-intro-review-btn" class="modal-btn primary-btn" type="button"></button>
-                </div>
-            </div>
-        </div>
 
         <!-- Override All Blocks Modal -->
         <div id="override-all-modal" class="modal-overlay hidden">

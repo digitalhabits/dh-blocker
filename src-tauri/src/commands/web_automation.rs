@@ -1,7 +1,7 @@
 // Tauri commands that control the JOMO-style website-automation watcher
 // (macOS only). The watcher itself lives in `crate::web_automation`; this
 // is the thin command/lifecycle layer the frontend and app setup drive,
-// mirroring `commands/enforcement.rs`.
+// shared by startup and post-EULA initialization.
 
 use std::sync::Mutex;
 
@@ -30,6 +30,11 @@ pub fn web_automation_start(app: AppHandle, state: State<WebAutomationState>) {
         match crate::block_page::resolve_block_page_url(&app) {
             Some(url) => *slot = Some(web_automation::start(app.clone(), url)),
             None => {
+                crate::native_health::record_health(
+                    "macosAppleEvents",
+                    "unavailable",
+                    Some("Bundled block page unavailable"),
+                );
                 log::warn!("web_automation: not starting — no block page URL");
                 return;
             }
@@ -41,15 +46,6 @@ pub fn web_automation_start(app: AppHandle, state: State<WebAutomationState>) {
         if !ok {
             log::info!("web_automation: web_automation_start ignored — EULA not accepted");
         }
-    }
-}
-
-/// Wake or park the watcher after a browser's blocking method changed.
-pub fn refresh_automation_wanted(app: &AppHandle) {
-    let state = app.state::<WebAutomationState>();
-    let slot = state.0.lock().expect("web_automation lock");
-    if let Some(h) = slot.as_ref() {
-        h.refresh_automation_wanted(app);
     }
 }
 
@@ -69,7 +65,7 @@ pub fn web_automation_pause(state: State<WebAutomationState>) {
 /// Apple Event lock with the automation tick and must not block UI.
 #[tauri::command]
 pub async fn web_automation_permission_status(
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, WebAutomationState>,
     launch_probe: Option<bool>,
     launch_probe_browser: Option<String>,
@@ -83,7 +79,6 @@ pub async fn web_automation_permission_status(
         .into_iter()
         .filter(|s| !s.trim().is_empty())
         .collect();
-    let app_for_filter = app.clone();
     let cached = state
         .0
         .lock()
@@ -96,7 +91,6 @@ pub async fn web_automation_permission_status(
     let list = tauri::async_runtime::spawn_blocking(move || {
         SupportedBrowser::all()
             .into_iter()
-            .filter(|b| crate::blocking_method::uses_automation(&app_for_filter, b.settings_key()))
             .map(|b| {
                 let cached_state = cached
                     .as_ref()
@@ -170,8 +164,8 @@ pub fn register<R: tauri::Runtime>(app: &tauri::App<R>) {
 }
 
 /// Auto-start the watcher at launch, paused until the EULA is accepted
-/// (and any v1.x→2.0 migration onboarding is finished). Unlike the
-/// enforcer this does NOT wait on FDA — Apple Events don't need it. The
+/// (and any legacy migration is finished). Apple Events need per-browser
+/// Automation permission, rather than Full Disk Access. The
 /// watcher only sends Apple Events while a block is actually active, so a
 /// started-and-enabled watcher is silent until the first block, at which
 /// point the per-browser Automation prompt appears.
@@ -179,6 +173,11 @@ pub fn auto_start(app: &AppHandle) {
     let url = match crate::block_page::resolve_block_page_url(app) {
         Some(u) => u,
         None => {
+            crate::native_health::record_health(
+                "macosAppleEvents",
+                "unavailable",
+                Some("Bundled block page unavailable"),
+            );
             log::warn!("web_automation: skipping auto_start — no block page URL");
             return;
         }

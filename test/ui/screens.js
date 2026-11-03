@@ -39,39 +39,38 @@ const DESKTOP = { width: 1100, height: 900 };
 
 /** @type {Screen[]} */
 export const screens = [
+    ...['native-no-browser', 'native-all-granted'].map(name => ({
+        name, fixture: fixtures.singleSchedule, platform: 'mac', viewport: DESKTOP,
+        prepare: async page => {
+            await page.evaluate(async allGranted => {
+                const { tauriAPI } = await import('/tauri-api.js');
+                const ui = await import('/enforcement.js');
+                const { showMigrationOnboarding } = await import('/onboarding.js');
+                const invoke = window.__TAURI_INTERNALS__.invoke;
+                window.__TAURI_INTERNALS__.invoke = command => command === 'onboarding_state' ? Promise.resolve({ browsers: allGranted ? { chrome: { installed: true } } : {} }) : command === 'accessibility_trusted' ? Promise.resolve(true) : invoke(command);
+                tauriAPI.webAutomationPermissionStatus = async () => allGranted ? [{ label: 'Chrome', state: 'granted', running: true }] : [];
+                await ui.refreshAutomationPermissionStatus({ force: true });
+                await showMigrationOnboarding('post', { browsers: allGranted ? { chrome: { installed: true } } : {} }, { mode: 'fresh' });
+            }, name === 'native-all-granted');
+            await page.waitForSelector('#migration-onboarding', { state: 'hidden' });
+            if (await page.locator('#migration-browser-buttons button').count()) throw new Error('Granted or absent browsers must not have setup actions');
+        },
+    })),
+
     {
-        name: 'settings-windows-blocking-methods',
+        name: 'settings-windows-native',
         fixture: fixtures.crowdedWeek,
         platform: 'windows',
         viewport: DESKTOP,
-        clip: '#settings-blocking-method-section',
+        clip: '#settings-modal .modal-content',
         prepare: async (page) => {
             await page.click('#settings-btn');
             await page.waitForSelector('#settings-modal:not(.hidden)');
-            await page.evaluate(async () => {
-                const { state } = await import('/state.js');
-                const ui = await import('/enforcement.js');
-                state.isWindowsDesktop = true;
-                state.isMacOSDesktop = false;
-                state.appData.settings.blockingMethods = {};
-                ui.syncBlockingMethodRowVisibility(Object.fromEntries(['chrome', 'edge', 'brave', 'firefox'].map(key => [key, { installed: true }])));
-                ui.syncBlockingMethodSelects();
-                ui.syncBlockingMethodLabelIcons();
-            });
-            if (await page.getAttribute('#settings-enforcement-section-toggle', 'aria-expanded') !== 'true') {
-                await page.click('#settings-enforcement-section-toggle');
-            }
-            await page.click('#settings-blocking-method-toggle');
-            await page.locator('#settings-blocking-method-section').scrollIntoViewIfNeeded();
-            const dimensions = await page.locator('#settings-blocking-method-section').evaluate(el => {
-                const rect = el.getBoundingClientRect();
-                return { width: rect.width, height: rect.height };
-            });
-            if (dimensions.width < 300 || dimensions.height < 150) throw new Error('Blocking method settings are not visible');
-            for (const key of ['chrome', 'edge', 'brave', 'firefox']) {
-                if (!await page.locator(`#blocking-method-${key}`).isVisible()) throw new Error(`Missing ${key} selector`);
-            }
-            if (await page.locator('#blocking-method-safari').isVisible()) throw new Error('Safari must be hidden on Windows');
+            if (await page.locator('#settings-setup-btn').isVisible()) throw new Error('Windows must not show the macOS permission setup action');
+            if (await page.locator('.blocking-method-select').count()) throw new Error('Native blocking has no method selector');
+            const box = await page.locator('#settings-modal .modal-content').boundingBox();
+            console.log('[Windows settings geometry]', JSON.stringify(box));
+            if (!box || box.width < 300 || box.height < 150) throw new Error('Settings are not visible');
         },
     },
     // ---- Whole app, per platform -------------------------------------------
@@ -577,43 +576,20 @@ export const screens = [
         },
     },
     {
-        // Settings → Blocking mechanism, with Firefox on the Accessibility
-        // method. Firefox's options differ from every other browser's
-        // (extension / accessibility, never automation), and the grant row
-        // below it only exists in this state.
-        name: 'settings-blocking-method-firefox-accessibility',
-        fixture: fixtures.firefoxAccessibility,
-        platform: 'mac',
-        viewport: DESKTOP,
-        clip: '#settings-blocking-method-section',
-        prepare: async (page) => {
-            await page.click('#settings-btn');
-            await page.waitForSelector('#settings-modal:not(.hidden)');
-            if (await page.getAttribute('#settings-enforcement-section-toggle', 'aria-expanded') !== 'true') {
-                await page.click('#settings-enforcement-section-toggle');
-            }
-            if (await page.getAttribute('#settings-blocking-method-toggle', 'aria-expanded') !== 'true') {
-                await page.click('#settings-blocking-method-toggle');
-            }
-            await page.waitForSelector('#settings-firefox-ax-row:not(.hidden)');
-            await page.locator('#settings-blocking-method-section').scrollIntoViewIfNeeded();
-        },
-    },
-    {
-        // Browser setup with Firefox on Accessibility and the grant missing:
-        // the Firefox row asks for Accessibility, never for the extension.
-        name: 'setup-firefox-accessibility',
-        fixture: fixtures.firefoxAccessibility,
+        name: 'native-permissions-missing',
+        fixture: fixtures.singleSchedule,
         platform: 'mac',
         viewport: DESKTOP,
         clip: '#migration-onboarding',
         prepare: async (page) => {
-            // Settings → Help → Setup: the banner's own entry point only
-            // shows once a background compliance poll has run.
-            await page.click('#settings-btn');
-            await page.waitForSelector('#settings-modal:not(.hidden)');
-            await page.locator('#settings-setup-btn').click();
-            await page.waitForSelector('#migration-onboarding:not(.hidden) #migration-browser-buttons .migration-browser-row');
+            await page.evaluate(async () => {
+                const { showMigrationOnboarding } = await import('/onboarding.js');
+                await showMigrationOnboarding('post', { browsers: { chrome: { installed: true, running: true } } }, { mode: 'fresh' });
+            });
+            await page.waitForSelector('#migration-browser-buttons button');
+            const box = await page.locator('#migration-browser-buttons').boundingBox();
+            console.log('[native permission actions geometry]', JSON.stringify(box));
+            if (!box || box.width < 300 || box.height < 50) throw new Error('Native permission actions are not visible');
         },
     },
     {
@@ -734,3 +710,32 @@ export const screens = [
         },
     },
 ];
+
+screens.push({
+    name: 'native-permissions-revoked', fixture: fixtures.singleSchedule, platform: 'mac', viewport: DESKTOP,
+    prepare: async page => {
+        await page.evaluate(async () => {
+            const { tauriAPI } = await import('/tauri-api.js');
+            const { refreshNativePermissions } = await import('/enforcement.js');
+            tauriAPI.webAutomationPermissionStatus = async () => [{ label: 'Chrome', state: 'denied', running: true }];
+            await refreshNativePermissions({ browsers: { chrome: { installed: true } } });
+        });
+        await page.waitForTimeout(400);
+        const banner = page.locator('#native-enforcement-warning');
+        const box = await banner.boundingBox();
+        console.log('[revoked permission warning geometry]', JSON.stringify(box));
+        if (!box || box.width < 300 || box.height < 35) throw new Error('Permission warning is not legible');
+        if (!await banner.locator('button').isVisible()) throw new Error('Permission recovery action is missing');
+    },
+});
+screens.push({
+    name: 'native-windows-onboarding', fixture: fixtures.singleSchedule, platform: 'windows', viewport: DESKTOP,
+    prepare: async page => {
+        await page.evaluate(async () => {
+            const { showMigrationOnboarding } = await import('/onboarding.js');
+            await showMigrationOnboarding('post', { browsers: { chrome: { installed: true }, firefox: { installed: true } } }, { mode: 'fresh' });
+        });
+        await page.waitForSelector('#migration-onboarding', { state: 'hidden' });
+        if (await page.locator('#migration-browser-buttons button').count()) throw new Error('Windows has no browser setup actions');
+    },
+});

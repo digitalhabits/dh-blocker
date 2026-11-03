@@ -89,7 +89,7 @@ function pad2(n) {
 
 /**
  * "All day" is stored as start == end (the switch writes 00:00 – 00:00).
- * Desktop (`native_host`) and iOS (`ScheduleData`) both enforce a range whose
+ * Desktop (`website_policy`) and iOS (`ScheduleData`) both enforce a range whose
  * end equals its start as a full day, so it needs no field of its own.
  */
 export function isAllDaySegment(seg) {

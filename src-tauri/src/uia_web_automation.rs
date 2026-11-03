@@ -1,6 +1,5 @@
 // Website blocking on Windows through UI Automation. Chrome, Edge, Brave and
-// Firefox use this method after opt-in; Chromium also defaults to it when
-// native-messaging policy blocks the host. Explicit extension mode skips it.
+// Firefox use this method; legacy extension selections are ignored.
 // Active ticks read the foreground browser address bar and redirect blocked
 // sites to the bundled page. Parked pages restore when the rule no longer
 // applies. URL decisions are shared with macOS in block_page.rs.
@@ -24,8 +23,7 @@
 // a browser the extension cannot reach anyway.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 mod activity;
@@ -57,49 +55,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::block_page;
-use crate::blocking_method::{self, Method};
-use crate::native_host;
-
-/// How often the watcher re-checks whether any browser is on Automation.
-/// `set_blocking_method` wakes it at once; this bound is for the policy
-/// fallback, which an administrator can switch on without the app noticing.
-/// Policy changes are rare, so a policy-blocked browser may go unblocked for
-/// up to this long after one — and its extension cannot reach the app then
-/// either, so nothing else covers that window.
-const METHOD_RECHECK: Duration = Duration::from_secs(30);
-
-static METHOD_CHANGED: Mutex<bool> = Mutex::new(false);
-static METHOD_CHANGED_WAKE: Condvar = Condvar::new();
-
-/// Wake the watcher after a browser's blocking method changed.
-pub fn refresh_automation_wanted() {
-    if let Ok(mut changed) = METHOD_CHANGED.lock() {
-        *changed = true;
-    }
-    METHOD_CHANGED_WAKE.notify_all();
-}
-
-/// Consume a pending change notification, waiting up to `timeout` for one.
-fn method_changed_within(timeout: Duration) -> bool {
-    let Ok(changed) = METHOD_CHANGED.lock() else {
-        return false;
-    };
-    let Ok((mut changed, _)) =
-        METHOD_CHANGED_WAKE.wait_timeout_while(changed, timeout, |changed| !*changed)
-    else {
-        return false;
-    };
-    std::mem::take(&mut *changed)
-}
-
-/// True when any browser blocks through UI Automation, explicitly or by the
-/// policy fallback. A failed policy read resolves to the extension, as it
-/// does everywhere else in the method resolver.
-fn automation_wanted(path: &Path) -> bool {
-    blocking_method::WINDOWS_BLOCKING_METHOD_KEYS
-        .iter()
-        .any(|key| blocking_method::method_for_key_at_path(path, key) == Method::Automation)
-}
+use crate::website_policy;
 
 /// Same cadence as the macOS Automation watcher.
 const TICK: Duration = Duration::from_millis(1000);
@@ -118,19 +74,6 @@ enum UiaBrowser {
 }
 
 impl UiaBrowser {
-    fn should_watch(self, method: Method) -> bool {
-        method == Method::Automation
-    }
-
-    fn setting_key(self) -> &'static str {
-        match self {
-            UiaBrowser::Chrome => "chrome",
-            UiaBrowser::Edge => "edge",
-            UiaBrowser::Brave => "brave",
-            UiaBrowser::Firefox => "firefox",
-        }
-    }
-
     fn window_class(self) -> &'static str {
         match self {
             UiaBrowser::Firefox => "MozillaWindowClass",
@@ -188,6 +131,7 @@ impl UiaBrowser {
 /// Screen-off and locked/disconnected sessions suspend the worker. Idle ticks
 /// never query a browser unless its window has a pending restore.
 pub fn start(app: AppHandle, block_page_url: String) {
+    crate::native_health::record_health("windowsUIA", "starting", None);
     let activity = activity::start();
     std::thread::spawn(move || {
         // UI Automation clients belong in the multithreaded apartment; this
@@ -197,12 +141,22 @@ pub fn start(app: AppHandle, block_page_url: String) {
             match CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER) {
                 Ok(a) => a,
                 Err(e) => {
+                    crate::native_health::record_health(
+                        "windowsUIA",
+                        "unavailable",
+                        Some(&format!("COM initialization failed: {e}")),
+                    );
                     log::warn!("uia_web_automation: cannot create IUIAutomation: {e}");
                     return;
                 }
             }
         };
         let Some(path) = crate::commands::canonical_data_path(&app) else {
+            crate::native_health::record_health(
+                "windowsUIA",
+                "unavailable",
+                Some("App data path unavailable"),
+            );
             return;
         };
         let pending = pending::Pending::load(path.with_file_name("uia-pending-restores.json"));
@@ -215,25 +169,13 @@ pub fn start(app: AppHandle, block_page_url: String) {
             last_action: HashMap::new(),
             missing_omnibox_logged: HashSet::new(),
         };
-        let mut wanted = automation_wanted(&path);
-        let mut checked = Instant::now();
         loop {
-            if !wanted {
-                // Every browser is on the extension: sleep until a method
-                // changes instead of ticking every second for nothing.
-                method_changed_within(METHOD_RECHECK);
-                wanted = automation_wanted(&path);
-                checked = Instant::now();
-                continue;
-            }
             activity.wait_for_tick(TICK);
-            if method_changed_within(Duration::ZERO) || checked.elapsed() >= METHOD_RECHECK {
-                wanted = automation_wanted(&path);
-                checked = Instant::now();
-                if !wanted {
-                    continue;
-                }
-            }
+            crate::native_health::record_health(
+                "windowsUIA",
+                "running",
+                Some("Foreground-only worker; OS redirect validation remains pending"),
+            );
             watcher.tick(&app);
         }
     });
@@ -256,6 +198,12 @@ struct Watcher {
 impl Watcher {
     fn tick(&mut self, app: &AppHandle) {
         if self.activity.suspended() {
+            crate::native_health::record_health(
+                "windowsUIA",
+                "suspended",
+                Some("Desktop locked, disconnected, or display asleep"),
+            );
+
             return;
         }
         self.pending.retain(live_restore_window);
@@ -263,6 +211,7 @@ impl Watcher {
         let Some((hwnd, browser)) = foreground_browser_window() else {
             return;
         };
+
         let key = hwnd.0 as isize;
         if self
             .last_action
@@ -277,13 +226,19 @@ impl Watcher {
         let Some(path) = crate::commands::canonical_data_path(app) else {
             return;
         };
-        if !browser.should_watch(blocking_method::method_for_key_at_path(
-            &path,
-            browser.setting_key(),
-        )) {
+        let eula_accepted = crate::data_cache::read(&path).is_some_and(|data| {
+            data.get("settings").is_some_and(|settings| {
+                settings
+                    .get("eulaAcceptedRevision")
+                    .and_then(|v| v.as_u64())
+                    .is_some_and(|r| r > 0)
+                    || settings.get("eulaAccepted").and_then(|v| v.as_bool()) == Some(true)
+            })
+        });
+        if !eula_accepted {
             return;
         }
-        let (_domains, blocks) = native_host::derive_payload(&path);
+        let (_domains, blocks) = website_policy::derive_payload(&path);
         let restore_key = restore_window_key(hwnd);
         if !polling::needs_address_bar(!blocks.is_empty(), self.pending.count(&restore_key)) {
             self.omnibox = None;
@@ -294,10 +249,18 @@ impl Watcher {
         }
 
         let Some(omnibox) = self.omnibox_for(hwnd, browser) else {
+            crate::native_health::record_health(
+                "windowsUIA",
+                "unavailable",
+                Some("Foreground browser address bar unavailable; blocking unverified"),
+            );
+
             return;
         };
         let text = match read_address_bar(&omnibox) {
-            Ok(AddressBar::Editing) => return,
+            Ok(AddressBar::Editing) => {
+                return;
+            }
             Ok(AddressBar::Showing(text)) => text,
             Err(e) => {
                 log::debug!(
@@ -334,10 +297,12 @@ impl Watcher {
                 }
             );
             }
-            Err(e) => log::warn!(
-                "uia_web_automation: navigating {} window failed: {e}",
-                browser.label()
-            ),
+            Err(e) => {
+                log::warn!(
+                    "uia_web_automation: navigating {} window failed: {e}",
+                    browser.label()
+                );
+            }
         }
     }
 
@@ -504,6 +469,9 @@ fn navigate(
         if activity.suspended() {
             return Err("desktop suspended".into());
         }
+        if GetForegroundWindow() != hwnd {
+            return Err("window lost the foreground before focus".into());
+        }
         omnibox.SetFocus().map_err(|e| format!("focus: {e}"))?;
         let value: IUIAutomationValuePattern = omnibox
             .GetCurrentPatternAs(UIA_ValuePatternId)
@@ -548,14 +516,6 @@ fn navigate(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn watcher_respects_selected_method_for_every_browser() {
-        for browser in UiaBrowser::all() {
-            assert!(browser.should_watch(Method::Automation));
-            assert!(!browser.should_watch(Method::Extension));
-        }
-    }
 
     #[test]
     fn firefox_requires_its_own_process_and_window_class() {

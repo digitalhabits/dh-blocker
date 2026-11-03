@@ -7,13 +7,12 @@ import { saveData, updateHostsFile } from './persistence.js';
 import { render } from './render.js';
 import { cancelIOSRestart, handleBlocklistSelect, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
 import { updateBlockedApps, openExternal, isHelperInstallCancelled, checkHelperStatus, requestScreentimeAuth } from './blocking-platform.js';
-import { attachCopyChipHandlers, extensionsUrlChipHtml, restartOnboardingFromSettings, BROWSER_STORE_LINKS, MAC_BLOCKING_METHOD_KEYS, browserBlockingMethod, browserIconUrl, browserUsesAutomation, lastOnboardingState, openExtensionSetupOverlay, updateGraceSettingLock } from './enforcement.js';
+import { restartOnboardingFromSettings, BROWSER_INFO, MAC_BLOCKING_METHOD_KEYS, browserBlockingMethod, browserIconUrl, browserUsesAutomation, lastOnboardingState, openNativePermissionSetup } from './enforcement.js';
 import { hasAnyBlockingStateToClear, hasAnyEnforcedBlocks, isOneOffBlockStillActive, refreshDesktopHelperStatus, scheduleCanStillBecomeActive, syncSchedulesToHelper } from './schedule-engine.js';
 import { tauriAPI, openUrl } from './tauri-api.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage } from './i18n.js';
 import { invoke } from '@tauri-apps/api/core';
 import { ask, message } from '@tauri-apps/plugin-dialog';
-import logoReddFocusUrl from './images/logo-reddfocus.svg';
 import { escapeHtml } from './utils.js';
 import { DEFAULT_OVERRIDE_WORDS, MAX_OVERRIDE_WORDS_DESKTOP, MAX_OVERRIDE_WORDS_SETTING_STEP, MIN_MAX_OVERRIDE_WORDS_SETTING, getDifficultyTypingCharCount, getMaxOverrideWords, getOverrideEstimatedMinutes, normalizeMaxOverrideWordsSetting, normalizeOverrideCount } from './override-challenge.js';
 import {
@@ -24,15 +23,15 @@ import {
 export function setupHelpMenuLinks() {
     tauriAPI.onMenuHelpReportIssue(() => {
         openExternal('https://github.com/digitalhabits/dh-blocker/issues');
-    }).catch(() => { });
+    }).catch(() => { /* no action needed */ });
 
     tauriAPI.onMenuHelpContactUs(() => {
         openExternal('mailto:team@digitalhabits.org');
-    }).catch(() => { });
+    }).catch(() => { /* no action needed */ });
 
     tauriAPI.onMenuHelpWhoWeAre(() => {
         openExternal('https://digitalhabits.org/#team-anchor');
-    }).catch(() => { });
+    }).catch(() => { /* no action needed */ });
 }
 
 // Setup Helper Settings in the settings modal
@@ -155,8 +154,8 @@ export async function confirmHelperRemoved() {
     const status = await refreshDesktopHelperStatus();
     const removed = !(status?.installed || status?.running);
 
-    await updateHelperStatusIndicator().catch(() => { });
-    await checkHelperStatus().catch(() => { });
+    await updateHelperStatusIndicator().catch(() => { /* no action needed */ });
+    await checkHelperStatus().catch(() => { /* no action needed */ });
 
     if (!removed) {
         return {
@@ -419,7 +418,7 @@ export async function refreshDiagnosticsModalContent({ showLoading = false, load
     };
 
     let diag = null;
-    let enforcementEnabled = false;
+
     try {
         const diagnosticsTimeoutMs = 20_000;
         diag = await Promise.race([
@@ -431,11 +430,9 @@ export async function refreshDiagnosticsModalContent({ showLoading = false, load
                 );
             }),
         ]);
-        try {
-            enforcementEnabled = !!(await invoke('get_enforcement_enabled'));
-        } catch (_) { /* non-desktop */ }
+
         stopLoadingTimer();
-        content.innerHTML = renderSystemDiagnostics(diag, { enforcementEnabled });
+        content.innerHTML = renderSystemDiagnostics(diag);
         updateDiagnosticsModalChrome(diag);
         if (!loadingShown) {
             restoreDiagnosticsScrollState(content, scrollState);
@@ -491,25 +488,13 @@ export function diagnosticsTriState(values) {
     return 'na';
 }
 
-export function diagnosticsBrowserProfiles(key, b) {
-    const profiles = b?.profiles || [];
-    if (key === 'safari') return profiles;
-    const def = profiles.find(p => p.isDefault) || profiles[0];
-    return def ? [def] : [];
-}
 
-// Extension setup from on-disk profile scan — independent of whether the browser is running.
-export function diagnosticsBrowserExtensionState(key, b) {
-    const profiles = diagnosticsBrowserProfiles(key, b);
-    return {
-        installed: diagnosticsTriState(profiles.map(p => p.installed)),
-        enabled: diagnosticsTriState(profiles.map(p => p.enabled)),
-        privateBrowsing: diagnosticsTriState(profiles.map(p => p.privateBrowsing)),
-    };
-}
+
+
+
 
 export function diagnosticsAutomationEntry(d, key) {
-    const label = BROWSER_STORE_LINKS[key]?.label || key;
+    const label = BROWSER_INFO[key]?.label || key;
     const list = d.automation?.browsers || [];
     const entry = list.find((b) => String(b.label || '').toLowerCase() === key);
     return entry?.state || 'unknown';
@@ -587,7 +572,7 @@ export function renderDiagnosticsEnforcementSection(cb) {
 
 // Render the structured SystemDiagnostics struct as HTML sections.
 // Designed for both user-readable scan AND copy-as-JSON for support.
-export function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
+export function renderSystemDiagnostics(d) {
     const fmtTs = (ms) => ms ? new Date(ms).toLocaleString() : '—';
     const e = (s) => escapeHtml(String(s));
     let html = '';
@@ -624,125 +609,18 @@ export function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) 
     html += diagnosticsKvRow(e(tSettings('diagnosticsStampedAt')), `<span class="diag-muted">${e(fmtTs(m.ran_at_ms))}</span>`);
     html += '</div></div>';
 
-    // Full Disk Access (macOS)
-    if (d.fda?.applicable) {
-        const f = d.fda;
-        const choiceLabel = f.onboarding_choice || tSettings('diagnosticsMarkerNotSet');
-        html += '<div class="diagnostics-section">';
-        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsFullDiskAccess'))}</div>`;
-        html += '<div class="diagnostics-card">';
-        html += diagnosticsKvRow(e(tSettings('diagnosticsFdaLiveGranted')), diagnosticsOkNoValue(f.live_granted === true));
-        html += diagnosticsKvRow(
-            e(tSettings('diagnosticsSafariPlistReadable')),
-            f.safari_plist_readable == null
-                ? '<span class="diag-muted">—</span>'
-                : diagnosticsOkNoValue(f.safari_plist_readable === true),
-        );
-        html += diagnosticsKvRow(e(tSettings('diagnosticsOnboardingMarker')), `<span class="diag-muted">${e(choiceLabel)}</span>`);
-        if (f.safariNeedsFdaAccess != null) {
-            const fdaRequired = f.safariNeedsFdaAccess === true;
-            html += diagnosticsKvRow(
-                e(tSettings('diagnosticsSafariFdaRequired')),
-                fdaRequired
-                    ? `<span class="diag-error">${e(tSettings('diagnosticsYes'))}</span>`
-                    : `<span class="diag-ok">${e(tSettings('diagnosticsNo'))}</span>`,
-            );
-        }
-        html += '</div></div>';
-    }
-
-    // Automation (macOS)
     if (d.automation?.applicable) {
-        html += '<div class="diagnostics-section">';
-        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsAutomationSection'))}</div>`;
-        html += `<p class="diagnostics-section-desc">${e(tSettings('diagnosticsAutomationSectionHint'))}</p>`;
-        html += '<div class="diagnostics-card diagnostics-table-wrap"><table class="diagnostics-table diagnostics-table-labeled-status"><thead><tr>';
-        html += `<th>${e(tSettings('diagnosticsThBrowser'))}</th>`;
-        html += `<th>${e(tSettings('diagnosticsThAutomation'))}</th>`;
-        html += '</tr></thead><tbody>';
-        for (const key of ['safari', 'chrome', 'brave', 'edge']) {
-            const b = d.browsers[key];
-            if (!b?.installed) continue;
-            if (key !== 'safari' && !browserUsesAutomation(key)) continue;
-            const label = BROWSER_STORE_LINKS[key]?.label || key;
-            const autoState = diagnosticsAutomationEntry(d, key);
-            html += '<tr>';
-            html += `<td><div class="diagnostics-browser-cell"><img class="diagnostics-browser-icon" src="${browserIconUrl(key)}" alt="" width="20" height="20">${e(label)}</div></td>`;
-            html += `<td>${diagnosticsAutomationStatusCell(autoState)}</td>`;
-            html += '</tr>';
+        html += '<div class="diagnostics-section"><div class="diagnostics-section-title">Automation</div><div class="diagnostics-card">';
+        for (const browser of d.automation.browsers || []) {
+            html += diagnosticsKvRow(e(browser.label), diagnosticsAutomationStatusCell(browser.state));
         }
-        html += '</tbody></table></div></div>';
-    }
-
-    // Browsers (extension)
-    const extensionBrowserKeys = state.isMacOSDesktop
-        ? MAC_BLOCKING_METHOD_KEYS.filter((k) => browserBlockingMethod(k) === 'extension')
-        : ['chrome', 'brave', 'edge', 'firefox', 'safari'];
-    const browsersHint = state.isMacOSDesktop
-        ? tSettings('diagnosticsBrowsersSectionHintMacExtension')
-        : tSettings('diagnosticsBrowsersSectionHint');
-    html += '<div class="diagnostics-section">';
-    html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsBrowsersSection'))}</div>`;
-    html += `<p class="diagnostics-section-desc">${e(browsersHint)}</p>`;
-    html += '<div class="diagnostics-card diagnostics-table-wrap"><table class="diagnostics-table"><thead><tr>';
-    html += `<th>${e(tSettings('diagnosticsThBrowser'))}</th>`;
-    html += `<th>${e(tSettings('diagnosticsThExtInstalled'))}</th>`;
-    html += `<th>${e(tSettings('diagnosticsThExtEnabled'))}</th>`;
-    html += `<th>${e(tSettings('diagnosticsThExtPrivate'))}</th>`;
-    // Windows only: organisation policy that stops the browser reaching Blocker (none for Firefox/Safari)
-    const policies = d.native_host?.policies;
-    if (policies) html += `<th>${e(tSettings('diagnosticsThPolicy'))}</th>`;
-    html += '</tr></thead><tbody>';
-    for (const key of extensionBrowserKeys) {
-        const b = d.browsers[key];
-        if (!b?.installed) continue;
-        const label = BROWSER_STORE_LINKS[key]?.label || key;
-        const ext = diagnosticsBrowserExtensionState(key, b);
-        html += '<tr>';
-        html += `<td><div class="diagnostics-browser-cell"><img class="diagnostics-browser-icon" src="${browserIconUrl(key)}" alt="" width="20" height="20">${e(label)}</div></td>`;
-        html += `<td>${diagnosticsStatusDot(ext.installed)}</td>`;
-        html += `<td>${diagnosticsStatusDot(ext.enabled)}</td>`;
-        html += `<td>${diagnosticsStatusDot(ext.privateBrowsing)}</td>`;
-        if (policies) {
-            html += policies.find(p => p.browser === key)?.blocked
-                ? `<td><span class="diag-error">${e(tSettings('diagnosticsPolicyBlocks'))}</span></td>`
-                : `<td><span class="diag-muted">${e(tSettings('diagnosticsPolicyNone'))}</span></td>`;
-        }
-        html += '</tr>';
-    }
-    html += '</tbody></table></div></div>';
-
-    // Windows: newest host launch per browser, from native-host.log
-    const connections = d.native_host?.last_connections;
-    if (connections) {
-        html += '<div class="diagnostics-section">';
-        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsConnectionsSection'))}</div>`;
-        html += '<div class="diagnostics-card">';
-        html += connections.length
-            ? connections.map(c => diagnosticsKvRow(e(c.browser), `<span class="diag-muted">${e(fmtTs(c.at * 1000))}</span>`)).join('')
-            : `<p class="diagnostics-section-desc">${e(tSettings('diagnosticsConnectionsNone'))}</p>`;
         html += '</div></div>';
     }
-
-    // Enforcement
-    html += '<div class="diagnostics-section">';
-    html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsEnforcementSection'))}</div>`;
-    html += '<div class="diagnostics-card">';
-    if (!state.isIOS && !state.isAndroid) {
-        const forceLabel = enforcementEnabled
-            ? tSettings('diagnosticsForceCloseEnabled')
-            : tSettings('diagnosticsForceCloseDisabled');
-        const forceClass = enforcementEnabled ? 'diag-ok' : 'diag-muted';
-        html += diagnosticsKvRow(
-            e(tSettings('diagnosticsForceClose')),
-            `<span class="${forceClass}">${e(forceLabel)}</span>`,
-        );
+    if (d.native_website_failures) {
+        html += '<div class="diagnostics-section"><div class="diagnostics-section-title">' + e(tSettings('nativeDiagnosticsTitle')) + '</div><div class="diagnostics-card">';
+        html += '<p class="diagnostics-section-desc">' + e(tSettings('nativeDiagnosticsHint')) + '</p>';
+        html += '<pre class="diagnostics-pre">' + e(JSON.stringify(d.native_website_failures, null, 2)) + '</pre></div></div>';
     }
-    html += diagnosticsKvRow(e(tSettings('diagnosticsGracePeriod')), `${e(d.enforcer.grace_seconds)} s`);
-    if (d.watchdog) {
-        html += diagnosticsKvRow(e(tSettings('diagnosticsWatchdog')), diagnosticsYesNoValue(d.watchdog.task_present));
-    }
-    html += '</div></div>';
 
     // Recent log
     if (d.recent_log && d.recent_log.length > 0) {
@@ -875,10 +753,11 @@ export async function refreshDiagnosticsModalManual() {
 // Setup, onboarding replay, and diagnostics from Settings → Help.
 export function setupSettingsHelpButtons() {
     const setupBtn = document.getElementById('settings-setup-btn');
+    if (setupBtn) setupBtn.style.display = state.isMacOSDesktop ? '' : 'none';
     if (setupBtn && !setupBtn.dataset.wired) {
         setupBtn.dataset.wired = '1';
         setupBtn.addEventListener('click', () => {
-            openExtensionSetupOverlay().catch((e) => {
+            openNativePermissionSetup().catch((e) => {
                 console.warn('[settings-help] setup overlay failed:', e);
             });
         });
@@ -932,84 +811,13 @@ export function updateOverrideAllButtonVisibility() {
 
     if (row) row.classList.toggle('hidden', !showOverride);
     updateManageSectionVisibility();
-    updateGraceSettingLock();
+
     // Cheap, and catches app-data changes that bypass the language pass
 }
 
 // Show challenge for removing helper when blocks are active
 
 
-// Setup the configurable browser-extension grace period.
-// Backend reads `settings.extensionGraceSeconds` from the data file
-// on every grace-start (no app restart needed). Backend rejects
-// increases when at least one block is currently active.
-// ---- Installed Apps Picker Modal ------------------------------------------
-// Shows a searchable list of installed apps (scanned from Start Menu on
-// Windows, /Applications on macOS) so users don't have to navigate the
-// OS file picker to find executables.
-
-
-// Setup the configurable browser-extension grace period.
-export function setupGraceSetting() {
-    const input = document.getElementById('grace-seconds-input');
-    const errorEl = document.getElementById('grace-error');
-    if (!input) return;
-
-    const showError = (msg) => {
-        if (!errorEl) return;
-        errorEl.textContent = msg;
-        errorEl.classList.toggle('hidden', !msg);
-    };
-
-    // Load current value and reflect locked state.
-    const refresh = async () => {
-        try {
-            const secs = await invoke('get_extension_grace_seconds');
-            input.value = secs;
-            updateGraceSettingLock();
-        } catch (e) {
-            console.warn('[grace] read failed:', e);
-        }
-    };
-    refresh();
-
-    let lastGood = parseInt(input.value, 10) || 60;
-    input.addEventListener('change', async () => {
-        const now = Date.now();
-        const nowDate = new Date(now);
-        if (hasAnyEnforcedBlocks(now, nowDate)) {
-            input.value = lastGood;
-            updateGraceSettingLock();
-            return;
-        }
-
-        const raw = parseInt(input.value, 10);
-        if (!Number.isFinite(raw)) {
-            input.value = lastGood;
-            return;
-        }
-        const clamped = Math.max(5, Math.min(300, raw));
-        input.value = clamped;
-        try {
-            const applied = await invoke('set_extension_grace_seconds', { seconds: clamped });
-            input.value = applied;
-            lastGood = applied;
-            showError('');
-        } catch (e) {
-            const msg = typeof e === 'string' ? e : (e && e.message) || 'Could not update grace period.';
-            showError(msg);
-            input.value = lastGood;
-        }
-    });
-}
-
-// Settings → Enforcement → "Maximum words to stop early". Desktop only (the
-// panel is hidden on phones, whose native gate caps the count itself).
-//
-// Not locked during an active block, unlike the grace period next to it: the
-// setting only decides how far each space's "How many words" slider reaches and
-// never clamps a stored count (see getOverrideWordsSliderMax), so lowering it
-// mid-block makes nothing easier to stop.
 export function syncMaxOverrideWordsSetting() {
     const input = document.getElementById('settings-max-words-input');
     const valueEl = document.getElementById('settings-max-words-value');
@@ -1133,57 +941,14 @@ export function closeOverrideAllModal() {
 // (no app = no enforcer), so we want the user to deliberately stop
 // blocking first via the existing override path.
 
-export function firefoxHasReddFocusExtension(firefox) {
-    const profiles = firefox?.profiles;
-    if (!Array.isArray(profiles) || profiles.length === 0) return false;
-    return profiles.some((p) => p.installed);
-}
+
 
 export function applyUninstallConfirmModalStaticCopy() {
     syncUninstallDeleteDataCopy();
-
     const finderText = document.getElementById('uninstall-finder-warning-text');
     if (finderText) finderText.innerHTML = tSettings('uninstallFinderWarningHtml');
-
-    const logo = document.getElementById('uninstall-firefox-callout-logo');
-    if (logo) {
-        logo.src = logoReddFocusUrl;
-        logo.alt = '';
-    }
-
-    const titleText = document.getElementById('uninstall-firefox-callout-title-text');
-    if (titleText) titleText.textContent = tSettings('uninstallFirefoxCalloutTitle');
-
-    const badge = document.getElementById('uninstall-firefox-callout-badge');
-    if (badge) badge.textContent = tSettings('uninstallExtFirefoxBadge');
-
-    const detail = document.getElementById('uninstall-firefox-callout-detail');
-    if (detail) {
-        detail.innerHTML = tSettings('uninstallFirefoxCalloutDetailHtml')
-            .replace('{URL_CHIP}', extensionsUrlChipHtml('firefox'));
-        attachCopyChipHandlers(detail);
-    }
 }
 
-export function syncUninstallConfirmModal(browsers) {
-    applyUninstallConfirmModalStaticCopy();
-    const callout = document.getElementById('uninstall-firefox-callout');
-    if (!callout) return;
-    const showFirefox = !!(browsers && firefoxHasReddFocusExtension(browsers.firefox));
-    callout.classList.toggle('hidden', !showFirefox);
-}
-
-export async function fetchInstalledBrowsersForUninstall() {
-    try {
-        return await invoke('scan_browser_profiles');
-    } catch (e) {
-        if (lastOnboardingState?.browsers) {
-            console.warn('uninstall: scan_browser_profiles failed, using cached browser state', e);
-            return lastOnboardingState.browsers;
-        }
-        throw e;
-    }
-}
 
 let uninstallConfirmResolver = null;
 
@@ -1203,13 +968,7 @@ export async function showUninstallConfirmModal() {
     if (checkbox) checkbox.checked = false;
     syncUninstallDeleteDataCopy();
 
-    try {
-        const browsers = await fetchInstalledBrowsersForUninstall();
-        syncUninstallConfirmModal(browsers);
-    } catch (e) {
-        console.warn('uninstall: browser scan failed — hiding Firefox callout', e);
-        syncUninstallConfirmModal(null);
-    }
+    applyUninstallConfirmModalStaticCopy();
 
     return new Promise((resolve) => {
         uninstallConfirmResolver = resolve;

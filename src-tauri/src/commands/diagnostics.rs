@@ -9,8 +9,7 @@
 
 use serde::Serialize;
 
-use crate::native_host;
-use crate::profile_scan;
+use crate::website_policy;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AppInfo {
@@ -34,11 +33,6 @@ pub struct MigrationInfo {
     /// Unix-millis of the last in-app migration completion. None
     /// when the .pkg preinstall did the cleanup (no in-app run).
     pub ran_at_ms: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct EnforcerInfo {
-    pub grace_seconds: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -69,75 +63,21 @@ pub struct WatchdogInfo {
     pub task_present: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[cfg(target_os = "windows")]
-pub struct NativeHostInfo {
-    pub staged_exe_path: Option<String>,
-    pub staged_exe_exists: bool,
-    /// Last lines from `native-host.log` next to redd-block-data.json.
-    pub log_tail: Vec<String>,
-    /// Organisation policies that can stop each browser reaching the host.
-    pub policies: Vec<crate::browser_policy::NativeMessagingPolicy>,
-    /// Newest host launch per browser, from the whole log.
-    pub last_connections: Vec<LastConnection>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg(target_os = "windows")]
-pub struct LastConnection {
-    /// Launching browser (`msedge.exe 141.0.1.2`), or for lines logged before
-    /// that was recorded, which store's extension copy connected.
-    pub browser: String,
-    /// Unix seconds.
-    pub at: u64,
-}
-
-/// Newest `spawned` line per browser in `native-host.log`, newest first.
-#[cfg(target_os = "windows")]
-pub fn last_connections(log: &str) -> Vec<LastConnection> {
-    use crate::native_host_install::{CHROMIUM_EXT_ID, EDGE_ADDONS_EXT_ID, FIREFOX_EXT_ID};
-    let mut out: Vec<LastConnection> = Vec::new();
-    for line in log.lines().filter(|l| l.contains("] spawned ")) {
-        let Some(at) = line
-            .strip_prefix('[')
-            .and_then(|l| l.split(']').next()?.parse().ok())
-        else {
-            continue;
-        };
-        let browser = match line.split_once(" browser=") {
-            Some((_, b)) => b,
-            None if line.contains(EDGE_ADDONS_EXT_ID) => "Edge Add-ons extension",
-            None if line.contains(CHROMIUM_EXT_ID) => "Chrome Web Store extension",
-            None if line.contains(FIREFOX_EXT_ID) => "Firefox",
-            None => continue,
-        };
-        out.retain(|c| c.browser != browser);
-        out.push(LastConnection {
-            browser: browser.to_string(),
-            at,
-        });
-    }
-    out.sort_by_key(|c| std::cmp::Reverse(c.at));
-    out
-}
-
 /// Snapshot of what's actually being enforced right now. The
 /// `domains` / `blocks` fields are produced by reusing
-/// `native_host::derive_payload` — i.e. literally the same function
-/// that pushes the blocklist to the browser extension on every
-/// frame. The `apps` list is read straight out of the in-process
+/// `website_policy::derive_payload` — i.e. literally the same function
+/// used by the native website watchers. The `apps` list is read straight out of the in-process
 /// app watcher's effective set. Both fields are derived data, never
 /// recomputed from scratch in this module.
 #[derive(Debug, Clone, Serialize)]
 pub struct CurrentBlocking {
-    /// Flat, deduped, lowercase domain list — what the extension
-    /// receives in `{ "blocklist": [...] }`.
+    /// Flat, deduplicated blocked-domain union.
     pub domains: Vec<String>,
     /// Per-block breakdown: which blocklist contributed the domains,
     /// whether the source is an `activeBlock` (one-off) or a
     /// `schedule`, and the segment's start/end timestamps. Sorted
     /// ascending by `endsAt`.
-    pub blocks: Vec<native_host::BlockInfo>,
+    pub blocks: Vec<website_policy::BlockInfo>,
     /// Effective blocked-app set the in-process watcher will kill on
     /// its next poll tick. Empty when no blocked apps are active or
     /// the watcher has not been started.
@@ -165,48 +105,21 @@ pub struct AppDataInfo {
     pub error: Option<String>,
 }
 
-/// macOS Full Disk Access snapshot. On other platforms every field is
-/// inert (`applicable = false`) so the diagnostics JSON shape is
-/// stable across targets.
-#[derive(Debug, Clone, Serialize)]
-pub struct FdaInfo {
-    pub applicable: bool,
-    /// Live probe — can this process open the system TCC database?
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub live_granted: Option<bool>,
-    /// Can Safari's Extensions.plist be read right now?
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub safari_plist_readable: Option<bool>,
-    /// Value stored in `fda-onboarded.v1`: `granted`, `revoked`, or
-    /// empty when the marker is missing.
-    pub onboarding_choice: String,
-    /// From the latest Safari profile scan — true when the setup
-    /// banner would show a grant-FDA action.
-    #[serde(
-        rename = "safariNeedsFdaAccess",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub safari_needs_fda_access: Option<bool>,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct SystemDiagnostics {
     pub app: AppInfo,
     pub migration: MigrationInfo,
-    pub fda: FdaInfo,
-    pub browsers: profile_scan::ScanResult,
-    pub enforcer: EnforcerInfo,
     pub autostart: AutostartInfo,
     pub automation: AutomationInfo,
+    /// Observed native failures; an empty set does not prove watcher health.
+    pub native_website_failures: serde_json::Value,
     #[cfg(target_os = "windows")]
     pub watchdog: WatchdogInfo,
-    #[cfg(target_os = "windows")]
-    pub native_host: NativeHostInfo,
     /// Last N lines of the rolling app log, newest last. Empty in
     /// release builds (we only enable tauri-plugin-log in debug).
     pub recent_log: Vec<String>,
     /// What's *actually* being enforced at the time this struct is
-    /// built — domains pushed to the browser extension and apps
+    /// built — effective native website rules and apps
     /// loaded into the watcher.
     pub current_blocking: CurrentBlocking,
     /// Snapshot of the on-disk app-data file. Surfaced so the user
@@ -239,11 +152,6 @@ fn assemble_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
     };
 
     let migration = collect_migration_info(&app);
-    let browsers = profile_scan::scan_for_diagnostics();
-    let fda = collect_fda_info_for_diagnostics(&browsers);
-    let enforcer = EnforcerInfo {
-        grace_seconds: super::grace::get_extension_grace_seconds(app.clone()),
-    };
     let autostart = AutostartInfo {
         enabled: autostart_enabled(&app),
     };
@@ -254,9 +162,6 @@ fn assemble_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
         task_present: crate::watchdog::is_registered(),
     };
 
-    #[cfg(target_os = "windows")]
-    let native_host = collect_native_host_info(&app);
-
     let recent_log = read_recent_log_lines(50);
     let current_blocking = collect_current_blocking(&app);
     let app_data = collect_app_data_info(&app);
@@ -264,15 +169,11 @@ fn assemble_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
     SystemDiagnostics {
         app: app_info,
         migration,
-        fda,
-        browsers,
-        enforcer,
         autostart,
         automation,
+        native_website_failures: crate::native_health::snapshot(),
         #[cfg(target_os = "windows")]
         watchdog,
-        #[cfg(target_os = "windows")]
-        native_host,
         recent_log,
         current_blocking,
         app_data,
@@ -299,31 +200,15 @@ fn assemble_system_diagnostics_minimal() -> SystemDiagnostics {
             ran_at_version: None,
             ran_at_ms: None,
         },
-        fda: FdaInfo {
-            applicable: false,
-            live_granted: None,
-            safari_plist_readable: None,
-            onboarding_choice: String::new(),
-            safari_needs_fda_access: None,
-        },
-        browsers: profile_scan::scan_for_diagnostics(),
-        enforcer: EnforcerInfo { grace_seconds: 0 },
         autostart: AutostartInfo { enabled: false },
         automation: AutomationInfo {
             applicable: false,
             browsers: vec![],
         },
+        native_website_failures: serde_json::json!({"available":false,"reason":"diagnostics worker failed"}),
         #[cfg(target_os = "windows")]
         watchdog: WatchdogInfo {
             task_present: false,
-        },
-        #[cfg(target_os = "windows")]
-        native_host: NativeHostInfo {
-            staged_exe_path: None,
-            staged_exe_exists: false,
-            log_tail: vec![],
-            policies: vec![],
-            last_connections: vec![],
         },
         recent_log: vec![],
         current_blocking: CurrentBlocking {
@@ -343,12 +228,12 @@ fn assemble_system_diagnostics_minimal() -> SystemDiagnostics {
 }
 
 /// Build a snapshot of what's currently being enforced. Reuses
-/// `native_host::derive_payload` for domains (single source of truth
-/// for the extension push) and reads the in-memory app-watcher set
+/// `website_policy::derive_payload` for domains (single source of truth
+/// for native website decisions) and reads the in-memory app-watcher set
 /// for apps — no re-derivation is done here.
 fn collect_current_blocking(app: &tauri::AppHandle) -> CurrentBlocking {
     let (domains, blocks) = match super::canonical_data_path(app) {
-        Some(p) => native_host::derive_payload(&p),
+        Some(p) => website_policy::derive_payload(&p),
         None => (Vec::new(), Vec::new()),
     };
     let apps = collect_current_blocked_apps(app);
@@ -366,10 +251,10 @@ fn collect_current_blocking(app: &tauri::AppHandle) -> CurrentBlocking {
 }
 
 /// Sorted union of `domains` from active allowlist-mode blocks.
-fn allowed_domains_from_blocks(blocks: &[native_host::BlockInfo]) -> Vec<String> {
+fn allowed_domains_from_blocks(blocks: &[website_policy::BlockInfo]) -> Vec<String> {
     let mut set = std::collections::BTreeSet::new();
     for b in blocks {
-        if native_host::blocklist_mode_is_allowlist(&b.mode) {
+        if website_policy::blocklist_mode_is_allowlist(&b.mode) {
             for d in &b.domains {
                 set.insert(d.clone());
             }
@@ -392,7 +277,7 @@ fn collect_current_allowed_apps(app: &tauri::AppHandle) -> Vec<String> {
         return from_watcher;
     }
     super::canonical_data_path(app)
-        .map(|p| native_host::derive_allowed_apps(&p))
+        .map(|p| website_policy::derive_allowed_apps(&p))
         .unwrap_or_default()
 }
 
@@ -423,7 +308,7 @@ fn collect_current_blocked_apps(app: &tauri::AppHandle) -> Vec<String> {
     // Watcher not seeded yet — show what the on-disk data says should
     // be active so app-only schedules aren't reported as empty.
     super::canonical_data_path(app)
-        .map(|p| native_host::derive_blocked_apps(&p))
+        .map(|p| website_policy::derive_blocked_apps(&p))
         .unwrap_or_default()
 }
 
@@ -485,45 +370,6 @@ fn strip_diagnostics_only_execution_fields(value: &mut serde_json::Value) {
             }
         }
         _ => {}
-    }
-}
-
-/// FDA snapshot for diagnostics — marker only, no live plist read.
-/// Reading Safari's protected Extensions.plist here can stall on TCC
-/// while the modal is open.
-#[cfg(target_os = "macos")]
-fn collect_fda_info_for_diagnostics(browsers: &profile_scan::ScanResult) -> FdaInfo {
-    let safari_ext = !crate::blocking_method::uses_automation_at_path(
-        &crate::commands::canonical_data_path_static(),
-        "safari",
-    );
-    let marker_granted = crate::cross_app_consent::user_chose_to_grant_safari_fda();
-    let choice = crate::cross_app_consent::safari_fda_onboarding_choice_label();
-    FdaInfo {
-        applicable: safari_ext,
-        live_granted: if safari_ext {
-            Some(marker_granted)
-        } else {
-            None
-        },
-        safari_plist_readable: None,
-        onboarding_choice: if safari_ext { choice } else { String::new() },
-        safari_needs_fda_access: if safari_ext {
-            Some(browsers.safari.needs_fda_access)
-        } else {
-            None
-        },
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn collect_fda_info_for_diagnostics(_browsers: &profile_scan::ScanResult) -> FdaInfo {
-    FdaInfo {
-        applicable: false,
-        live_granted: None,
-        safari_plist_readable: None,
-        onboarding_choice: String::new(),
-        safari_needs_fda_access: None,
     }
 }
 
@@ -632,15 +478,6 @@ fn collect_automation_info_cached(app: &tauri::AppHandle) -> AutomationInfo {
 
     let browsers = SupportedBrowser::all()
         .into_iter()
-        .filter(|b| {
-            let key = match b {
-                SupportedBrowser::Safari => "safari",
-                SupportedBrowser::Chrome => "chrome",
-                SupportedBrowser::Brave => "brave",
-                SupportedBrowser::Edge => "edge",
-            };
-            crate::blocking_method::uses_automation(app, key)
-        })
         .map(|b| {
             let state = cached
                 .as_ref()
@@ -704,40 +541,6 @@ fn read_recent_log_lines(max_lines: usize) -> Vec<String> {
     let lines: Vec<&str> = raw.lines().collect();
     let start = lines.len().saturating_sub(max_lines);
     lines[start..].iter().map(|s| s.to_string()).collect()
-}
-
-#[cfg(target_os = "windows")]
-fn collect_native_host_info(app: &tauri::AppHandle) -> NativeHostInfo {
-    let staged = crate::native_host_install::staged_native_host_exe();
-    let staged_exe_path = staged.as_ref().map(|p| p.display().to_string());
-    let staged_exe_exists = staged.is_some_and(|p| p.exists());
-    let (mut log_tail, mut connections) = (Vec::new(), Vec::new());
-    if let Some(data) = super::canonical_data_path(app) {
-        let mut log_path = data;
-        log_path.pop();
-        log_path.push("native-host.log");
-        if let Ok(raw) = std::fs::read_to_string(&log_path) {
-            let lines: Vec<&str> = raw.lines().collect();
-            let start = lines.len().saturating_sub(30);
-            log_tail = lines[start..].iter().map(|s| s.to_string()).collect();
-            connections = last_connections(&raw);
-        }
-    }
-    use crate::native_host_install::BrowserTarget;
-    NativeHostInfo {
-        staged_exe_path,
-        staged_exe_exists,
-        log_tail,
-        policies: [
-            BrowserTarget::Chrome,
-            BrowserTarget::Edge,
-            BrowserTarget::Brave,
-        ]
-        .into_iter()
-        .filter_map(crate::browser_policy::read)
-        .collect(),
-        last_connections: connections,
-    }
 }
 
 fn log_dir_candidates() -> Vec<std::path::PathBuf> {

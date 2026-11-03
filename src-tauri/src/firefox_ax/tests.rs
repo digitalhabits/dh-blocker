@@ -54,9 +54,6 @@ impl FirefoxIo for FakeIo {
     fn active_blocks(&mut self) -> Option<Vec<BlockInfo>> {
         Some(self.blocks.clone())
     }
-    fn uses_accessibility(&mut self) -> bool {
-        self.accessibility
-    }
     fn trusted(&mut self) -> bool {
         self.trusted
     }
@@ -84,14 +81,15 @@ fn tick(io: &mut FakeIo, state: &mut TickState) -> Status {
 }
 
 #[test]
-fn does_nothing_when_firefox_is_on_the_extension() {
+fn obsolete_extension_selection_cannot_disable_native_firefox() {
     let mut io = FakeIo {
         accessibility: false,
         ..FakeIo::watching("https://reddit.com/r/all", &["reddit.com"])
     };
     let mut state = TickState::default();
-    assert_eq!(tick(&mut io, &mut state), Status::Inactive);
-    assert!(io.redirects.is_empty(), "must not touch the extension path");
+    assert!(!io.accessibility);
+    assert_eq!(tick(&mut io, &mut state), Status::Watching);
+    assert_eq!(io.redirects.len(), 1);
 }
 
 #[test]

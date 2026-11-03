@@ -1,40 +1,19 @@
-// JOMO-style website blocking via macOS automation (Apple Events).
-//
-// Instead of relying on a browser extension to redirect blocked sites,
-// this module drives Safari and Chromium-based browsers (Chrome, Brave,
-// Edge) directly with AppleScript: every TICK it reads each *running*
-// supported browser's open-tab URLs, and for any tab sitting on a
-// blocked domain it sets that tab's URL to the bundled block page —
-// the exact same `blocked.html` the extension uses, just reached via a
-// `file://` URL with the same query params. When a site is no longer
-// blocked (ended / paused / allowlist changed), tabs still parked on
-// the block page are restored to their original URL — same rule as the
-// extension's `restoreUnblockedTabs`.
-//
-// This is the macOS replacement for the extension on Safari + Chromium.
-// Firefox has no usable scripting dictionary, so it stays on the
-// extension + enforcer path (see enforcer.rs). Windows has a narrower
-// counterpart for policy-managed PCs in uia_web_automation.rs; the URL
-// decisions both share live in block_page.rs.
-//
-// Trade-off vs. the extension path: this requires **Automation** TCC
-// permission ("ReDD Blocker wants to control Google Chrome"). The first
-// Apple Event to each browser surfaces the system prompt; if the user
-// denies it, osascript returns -1743 and we surface a
-// `web-automation://permission-needed` event the UI turns into a
-// "grant access" affordance. The hardened-runtime entitlement
-// `com.apple.security.automation.apple-events` (entitlements.macos.plist)
-// is what makes the signed build allowed to ask at all.
-//
-// Structurally this mirrors app_watcher.rs: one polling thread, a
-// shared enabled flag, and graceful per-tick work. The blocked-domain
-// list is read straight from the canonical data file via
-// `native_host::derive_payload` — the same single source of truth the
-// extension's native host and the enforcer use.
+//! Native macOS website blocking through Apple Events.
+//!
+//! Safari, Chrome, Brave and Edge tabs are read and redirected to the bundled
+//! file block page. Parked tabs return to their original destination when the
+//! effective policy no longer blocks them. Firefox uses Accessibility in
+//! firefox_ax.rs; Windows uses UI Automation in uia_web_automation.rs.
+//!
+//! Automation permission is required for each browser. Positive denial is
+//! surfaced to the frontend as a recovery action and a diagnostic warning.
+//! All termination signals remain gated pending live platform validation.
+//! The effective policy comes from website_policy::derive_payload and URL
+//! decisions are shared through block_page.rs. No browser profiles are read.
 
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::{Arc, Condvar, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -42,7 +21,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::block_page::{plan_actions, Tab};
 pub use crate::block_page::{url_is_blocked, web_enforcement_active};
-use crate::native_host::{self, BlockInfo};
+use crate::website_policy::{self, BlockInfo};
 
 /// How often we sweep running browsers. 1s keeps redirects feeling
 /// near-instant (type a blocked URL, get bounced within a tick) without
@@ -69,7 +48,7 @@ const DENIED_RETRY: Duration = Duration::from_secs(30);
 const DENIED_RETRY_WHILE_BLOCKING: Duration = Duration::from_secs(5);
 
 /// Serialize every Apple Event / osascript call. Concurrent access from
-/// the automation tick (background thread), the enforcer, and Tauri
+/// the automation tick (background thread) and Tauri
 /// commands on the main thread can deadlock macOS's AppleEvent manager
 /// and freeze the app (beach ball).
 static APPLE_EVENTS: Mutex<()> = Mutex::new(());
@@ -173,7 +152,7 @@ impl SupportedBrowser {
 ///   - `Unknown`  — not decided yet, target not running, or query error.
 ///
 /// Only `Denied` is a positive "automation is off" signal; callers must
-/// not treat `Unknown` as off (mirrors the enforcer's rule against acting
+/// not treat `Unknown` as off (follows the native recovery rule against acting
 /// on unmeasurable state).
 #[cfg(target_os = "macos")]
 pub fn query_automation_permission(browser: SupportedBrowser) -> PermState {
@@ -301,30 +280,15 @@ impl Default for BrowserRuntime {
 struct Shared {
     enabled: bool,
     runtimes: HashMap<SupportedBrowser, BrowserRuntime>,
-    /// False when every browser is on the extension: the loop then waits on
-    /// `wake` instead of ticking, so extension-only installs pay nothing.
-    automation_wanted: bool,
 }
 
 /// Handle returned from `start`. Drop it (or call `set_enabled(false)`)
 /// to make the loop go idle.
 pub struct WebAutomationHandle {
     shared: Arc<Mutex<Shared>>,
-    wake: Arc<Condvar>,
 }
 
 impl WebAutomationHandle {
-    /// Re-read whether any browser blocks through Automation and wake the
-    /// loop if one now does. Call after anything that changes a browser's
-    /// method; `set_blocking_method` is the only writer today.
-    pub fn refresh_automation_wanted(&self, app: &AppHandle) {
-        let wanted = crate::blocking_method::any_uses_automation(app);
-        if let Ok(mut s) = self.shared.lock() {
-            s.automation_wanted = wanted;
-        }
-        self.wake.notify_all();
-    }
-
     pub fn set_enabled(&self, enabled: bool) {
         if let Ok(mut s) = self.shared.lock() {
             s.enabled = enabled;
@@ -374,13 +338,9 @@ impl WebAutomationHandle {
 /// of the bundled blocked.html (no query string), resolved once by the
 /// caller from the Tauri resource dir.
 pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
-    let shared = Arc::new(Mutex::new(Shared {
-        automation_wanted: crate::blocking_method::any_uses_automation(&app),
-        ..Shared::default()
-    }));
-    let wake = Arc::new(Condvar::new());
+    crate::native_health::record_health("macosAppleEvents", "starting", None);
+    let shared = Arc::new(Mutex::new(Shared::default()));
     let shared_thread = shared.clone();
-    let wake_thread = wake.clone();
     std::thread::spawn(move || {
         // When true, the next idle ticks run a full restore sweep for
         // tabs still parked on blocked.html. Set while website
@@ -392,12 +352,12 @@ pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
         // frontmost one) was scripted — drives BACKGROUND_BROWSER_TICK.
         let mut last_full_pass: Option<Instant> = None;
         loop {
-            // No browser on Automation: block until a method changes rather
-            // than waking every second to find nothing to script.
-            if let Ok(guard) = shared_thread.lock() {
-                drop(wake_thread.wait_while(guard, |s| !s.automation_wanted));
-            }
             std::thread::sleep(TICK);
+            crate::native_health::record_health(
+                "macosAppleEvents",
+                "running",
+                Some("Worker active; per-browser permissions are reported separately"),
+            );
             let enabled = shared_thread.lock().map(|s| s.enabled).unwrap_or(false);
             if !enabled {
                 continue;
@@ -417,7 +377,7 @@ pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
             );
         }
     });
-    WebAutomationHandle { shared, wake }
+    WebAutomationHandle { shared }
 }
 
 fn tick(
@@ -446,7 +406,6 @@ trait AutomationIo {
     fn events_active(&self) -> bool;
     fn frontmost_bundle_id(&self) -> Option<String>;
     fn running_browsers(&mut self) -> Vec<SupportedBrowser>;
-    fn uses_automation(&mut self, browser: SupportedBrowser) -> bool;
     fn read_tabs(&mut self, browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError>;
     fn apply_actions(
         &mut self,
@@ -470,31 +429,20 @@ struct ProductionAutomationIo<'a> {
 impl AutomationIo for ProductionAutomationIo<'_> {
     fn active_blocks(&mut self) -> Option<Vec<BlockInfo>> {
         let path = crate::commands::canonical_data_path(self.app)?;
-        let (_domains, blocks) = native_host::derive_payload(&path);
-        Some(blocks)
+        Some(website_policy::derive_payload(&path).1)
     }
-
     fn events_active(&self) -> bool {
         crate::workspace_events::events_active()
     }
-
     fn frontmost_bundle_id(&self) -> Option<String> {
         crate::workspace_events::frontmost_bundle_id()
     }
-
     fn running_browsers(&mut self) -> Vec<SupportedBrowser> {
         running_supported_browsers()
     }
-
-    fn uses_automation(&mut self, browser: SupportedBrowser) -> bool {
-        let key = browser.settings_key();
-        crate::blocking_method::uses_automation(self.app, key)
-    }
-
     fn read_tabs(&mut self, browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
         read_tabs(browser)
     }
-
     fn apply_actions(
         &mut self,
         browser: SupportedBrowser,
@@ -502,7 +450,6 @@ impl AutomationIo for ProductionAutomationIo<'_> {
     ) -> Result<(), AutomationError> {
         apply_actions(browser, actions)
     }
-
     fn set_permission(
         &mut self,
         shared: &Arc<Mutex<Shared>>,
@@ -512,6 +459,13 @@ impl AutomationIo for ProductionAutomationIo<'_> {
         now: Instant,
     ) {
         set_perm_inner_at(self.app, shared, browser, state, denied_retry, now);
+        if state != PermState::Unknown {
+            crate::native_health::permission_changed(
+                self.app,
+                browser.label(),
+                state == PermState::Granted,
+            );
+        }
     }
 }
 
@@ -579,10 +533,7 @@ fn tick_with_io<I: AutomationIo>(
         *last_full_pass = Some(now);
     }
 
-    let running = candidates
-        .into_iter()
-        .filter(|browser| io.uses_automation(*browser))
-        .collect::<Vec<_>>();
+    let running = candidates;
     let no_automation_browsers = running.is_empty();
     // Count every action a restore pass *planned*, not just the ones that
     // reported an error. `apply_actions` wraps each `set URL` in its own
@@ -675,7 +626,7 @@ fn tick_with_io<I: AutomationIo>(
     // Idle restore latch: clear only after a full pass that found
     // nothing left to restore (and we actually scanned, or there were
     // no automation browsers to scan). Denial-backoff skips must not
-    // clear the latch — retry next tick. Matches the extension's
+    // clear the latch — retry next tick. Uses the parked-tab
     // restoreUnblockedTabs retry-until-clean behavior.
     if restore_pass && full_pass && restore_actions == 0 && (scanned > 0 || no_automation_browsers)
     {
@@ -747,13 +698,13 @@ pub fn running_supported_browsers() -> Vec<SupportedBrowser> {
     let mut out = Vec::new();
     for browser in SupportedBrowser::all() {
         let needle = browser.process_name().to_ascii_lowercase();
-        let running = sys.processes().values().any(|p| {
+        let running = sys.processes().values().find(|p| {
             p.name()
                 .to_string_lossy()
                 .to_ascii_lowercase()
                 .ends_with(&needle)
         });
-        if running {
+        if running.is_some() {
             out.push(browser);
         }
     }
@@ -987,7 +938,7 @@ end if"#,
 }
 
 /// Apple Event probe that launches the browser if needed. The only
-/// reliable way to detect a Settings toggle while the enforcer has the
+/// reliable way to detect a Settings toggle while the app has the
 /// browser closed — `AEDeterminePermissionToAutomateTarget` returns -600
 /// ("target not running") for both grant and deny until an event reaches
 /// the app.
@@ -1100,7 +1051,7 @@ pub fn resolve_permission_state_for_status(
     }
 }
 
-/// Whether the enforcer should treat Automation as missing for this browser.
+/// Whether native recovery has positive evidence of denied Automation.
 ///
 /// The silent TCC read (`query_automation_permission`) often returns
 /// `Unknown` in dev builds even after osascript fails with -1743, so we

@@ -48,10 +48,7 @@
       "entitlements": "entitlements.macos.plist",
       "signingIdentity": "Developer ID Application: Centre for Digital Habits CIC (JD647S9RT6)",
       "hardenedRuntime": true,
-      "minimumSystemVersion": "11.0",
-      "frameworks": [
-        "target/safari-bridge/libsafari_bridge.dylib"
-      ]
+      "minimumSystemVersion": "11.0"
     }
   }
 }

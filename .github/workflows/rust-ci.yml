@@ -15,7 +15,6 @@ on:
     branches: [main]
     paths:
       - 'src-tauri/**'
-      - 'scripts/build-safari-bridge.sh'
       - 'scripts/*msix*.ps1'
       - '.github/workflows/rust-ci.yml'
   # Duplicated rather than anchored — GitHub Actions does not support YAML
@@ -24,7 +23,6 @@ on:
     branches: [main]
     paths:
       - 'src-tauri/**'
-      - 'scripts/build-safari-bridge.sh'
       - 'scripts/*msix*.ps1'
       - '.github/workflows/rust-ci.yml'
 
@@ -59,8 +57,6 @@ jobs:
       - run: pnpm vite:build
       # `--lib` on purpose: bare `cargo test` also compiles the stale
       # `test_watcher` example binary, which no longer builds (see testing.md).
-      # build.rs compiles the Swift SafariServices bridge first; macOS runners
-      # ship the Xcode toolchain it needs.
       #
       # `--locked` on purpose too: without it, a Cargo.lock that has drifted
       # out of sync with Cargo.toml is silently re-resolved in every checkout
@@ -81,7 +77,7 @@ jobs:
 
   # Static analysis for the desktop enforcement engine. The Android job's
   # clippy run compiles out everything gated `cfg(not(any(ios, android)))` —
-  # app_watcher, enforcer, native_host, profile_scan — plus every macOS- and
+  # app_watcher, website_policy, native_failure — plus every macOS- and
   # Windows-only module, so roughly 60% of src-tauri/src had no lint coverage
   # at all until this job existed.
   #
@@ -113,7 +109,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Same reason as the test job: build.rs validates that ../dist exists.
       - run: pnpm vite:build
-      # `--lib --bins --tests` includes the native-host entrypoint and unit
+      # `--lib --bins --tests` includes the desktop entrypoint and unit
       # tests while still skipping the stale `test_watcher` example.
       - name: cargo clippy --lib --bins --tests
         working-directory: src-tauri

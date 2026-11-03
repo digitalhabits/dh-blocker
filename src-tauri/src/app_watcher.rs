@@ -2062,7 +2062,7 @@ fn sweep(
 /// unsaved-work prompts. Crucially NOT the same as a POSIX signal:
 /// SIGTERM bypasses Cocoa's `applicationShouldTerminate:` and would
 /// silently destroy unsaved documents.
-/// Polite per-PID quit used by the enforcer as well as this watcher.
+/// Polite per-PID quit used by this independent app watcher.
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) fn request_graceful_quit(pid: sysinfo::Pid, name: &str, proc_: &sysinfo::Process) {
     request_graceful_quit_impl(pid, name, proc_);
@@ -2122,8 +2122,7 @@ fn request_graceful_quit_impl(pid: sysinfo::Pid, name: &str, _proc: &sysinfo::Pr
     // process's top-level windows — the closest Win32 primitive to
     // Cmd-Q. Apps that ask "save changes?" on a normal close get
     // to run that prompt instead of being TerminateProcess-ed
-    // mid-write. This is the same primitive `enforcer::quit_browser`
-    // uses to politely close non-compliant browsers.
+    // mid-write.
     use crate::windows_process::hidden_command;
 
     let raw_pid = pid.as_u32().to_string();

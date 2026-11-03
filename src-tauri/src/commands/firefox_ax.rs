@@ -17,9 +17,7 @@ impl Default for FirefoxAxState {
     }
 }
 
-/// Start the Firefox watcher if it is not already running. Idempotent, and
-/// safe to call when Firefox is on the extension: the tick itself checks the
-/// selected method every pass, so switching methods needs no restart.
+/// Start the native Firefox watcher if it is not already running. Idempotent.
 ///
 /// Gated on EULA acceptance like the Automation watcher. It is *not* gated on
 /// the Accessibility grant: the watcher reports `NotTrusted` so the UI can
@@ -31,6 +29,11 @@ pub fn firefox_ax_start(app: AppHandle, state: State<FirefoxAxState>) {
         match crate::block_page::resolve_block_page_url(&app) {
             Some(url) => *slot = Some(firefox_ax::start(app.clone(), url)),
             None => {
+                crate::native_health::record_health(
+                    "macosFirefoxAX",
+                    "unavailable",
+                    Some("Bundled block page unavailable"),
+                );
                 log::warn!("firefox_ax: not starting — no block page URL");
                 return;
             }
@@ -42,16 +45,6 @@ pub fn firefox_ax_start(app: AppHandle, state: State<FirefoxAxState>) {
         if !ok {
             log::info!("firefox_ax: start ignored — EULA not accepted");
         }
-    }
-}
-
-/// Wake or park the watcher after Firefox's blocking method changed.
-pub fn refresh_accessibility_wanted(app: &AppHandle) {
-    use tauri::Manager;
-    let state = app.state::<FirefoxAxState>();
-    let slot = state.0.lock().expect("firefox_ax lock");
-    if let Some(h) = slot.as_ref() {
-        h.refresh_accessibility_wanted(app);
     }
 }
 
@@ -115,14 +108,16 @@ pub fn register<R: tauri::Runtime>(app: &tauri::App<R>) {
 /// Auto-start at launch, paused until onboarding is done — the same gate as
 /// the Automation watcher.
 ///
-/// Starting unconditionally (rather than only when Firefox is set to
-/// Accessibility) keeps method switching instant: the tick re-reads the
-/// method every pass and goes idle in one tick when it is not selected. An
-/// idle tick reads nothing and synthesises nothing.
+/// With no active website policy the watcher reads and synthesises nothing.
 pub fn auto_start(app: &AppHandle) {
     let url = match crate::block_page::resolve_block_page_url(app) {
         Some(u) => u,
         None => {
+            crate::native_health::record_health(
+                "macosFirefoxAX",
+                "unavailable",
+                Some("Bundled block page unavailable"),
+            );
             log::warn!("firefox_ax: skipping auto_start — no block page URL");
             return;
         }

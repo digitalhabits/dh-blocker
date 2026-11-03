@@ -4223,23 +4223,23 @@
         const { state } = await import('./state.js');
         const { windowsBrowserSetupIsAutomatic } = await import('./onboarding.js');
         const windows = state.isWindowsDesktop;
+        const mac = state.isMacOSDesktop;
         const methods = state.appData.settings.blockingMethods;
         try {
             state.isWindowsDesktop = true;
+            state.isMacOSDesktop = false;
             state.appData.settings.blockingMethods = {};
-            assert(!windowsBrowserSetupIsAutomatic(), 'Windows defaults retain extension setup');
-            state.appData.settings.blockingMethods = Object.fromEntries(
-                ['chrome', 'edge', 'brave', 'firefox'].map(key => [key, 'automation']));
-            assert(windowsBrowserSetupIsAutomatic(), 'Explicit automation for every browser skips setup');
+            assert(windowsBrowserSetupIsAutomatic(), 'Windows defaults skip browser setup');
             for (const browser of ['chrome', 'edge', 'brave', 'firefox']) {
                 state.appData.settings.blockingMethods = { [browser]: 'extension' };
-                assert(!windowsBrowserSetupIsAutomatic(), 'Explicit extension mode retains setup: ' + browser);
+                assert(windowsBrowserSetupIsAutomatic(), 'Legacy extension settings cannot restore setup: ' + browser);
             }
             state.isWindowsDesktop = false;
             state.appData.settings.blockingMethods = {};
             assert(!windowsBrowserSetupIsAutomatic(), 'Other platforms retain their setup flow');
         } finally {
             state.isWindowsDesktop = windows;
+            state.isMacOSDesktop = mac;
             state.appData.settings.blockingMethods = methods;
         }
     }

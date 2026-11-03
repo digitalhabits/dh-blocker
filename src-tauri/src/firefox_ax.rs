@@ -23,7 +23,7 @@
 //! so Firefox cannot drift into blocking a different set of URLs than the
 //! other browsers. Only the transport differs.
 
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tauri::AppHandle;
@@ -32,7 +32,7 @@ use crate::block_page::{
     build_blocked_url, is_block_page_url, original_url_from_block_page, url_is_blocked,
     web_enforcement_active,
 };
-use crate::native_host::{self, BlockInfo};
+use crate::website_policy::{self, BlockInfo};
 
 /// Same cadence as the Automation watcher: the user notices a redirect that
 /// takes longer than about a second.
@@ -50,9 +50,6 @@ struct Shared {
     /// Last read outcome, for the diagnostics UI: the grant can be revoked
     /// mid-session and the user deserves to be told enforcement has stopped.
     status: Status,
-    /// False while Firefox is on the extension (the default): the loop then
-    /// waits on `wake` instead of ticking every second for nothing.
-    accessibility_wanted: bool,
 }
 
 /// What the watcher can report about itself.
@@ -75,27 +72,9 @@ pub enum Status {
 
 pub struct FirefoxAxHandle {
     shared: Arc<Mutex<Shared>>,
-    wake: Arc<Condvar>,
-}
-
-/// Whether Firefox is on the Accessibility method. Without a data path the
-/// resolver answers its own default, which is not Accessibility: Firefox then
-/// stays on the extension, the same as an install that never opted in.
-fn accessibility_wanted(app: &AppHandle) -> bool {
-    crate::blocking_method::uses_accessibility(app, "firefox")
 }
 
 impl FirefoxAxHandle {
-    /// Re-read Firefox's method and wake the loop if it is now Accessibility.
-    /// `set_blocking_method` is the only writer of the methods.
-    pub fn refresh_accessibility_wanted(&self, app: &AppHandle) {
-        let wanted = accessibility_wanted(app);
-        if let Ok(mut s) = self.shared.lock() {
-            s.accessibility_wanted = wanted;
-        }
-        self.wake.notify_all();
-    }
-
     pub fn set_enabled(&self, enabled: bool) {
         if let Ok(mut s) = self.shared.lock() {
             s.enabled = enabled;
@@ -115,7 +94,6 @@ impl FirefoxAxHandle {
 /// `web_automation` uses.
 trait FirefoxIo {
     fn active_blocks(&mut self) -> Option<Vec<BlockInfo>>;
-    fn uses_accessibility(&mut self) -> bool;
     fn trusted(&mut self) -> bool;
     fn firefox_pid(&mut self) -> Option<i32>;
     fn nudge(&mut self, pid: i32);
@@ -131,30 +109,22 @@ struct ProductionIo<'a> {
 impl FirefoxIo for ProductionIo<'_> {
     fn active_blocks(&mut self) -> Option<Vec<BlockInfo>> {
         let path = crate::commands::canonical_data_path(self.app)?;
-        let (_domains, blocks) = native_host::derive_payload(&path);
-        Some(blocks)
+        Some(website_policy::derive_payload(&path).1)
     }
-
-    fn uses_accessibility(&mut self) -> bool {
-        crate::blocking_method::uses_accessibility(self.app, "firefox")
-    }
-
     fn trusted(&mut self) -> bool {
-        crate::accessibility::is_trusted()
+        let trusted = crate::accessibility::is_trusted();
+        crate::native_health::permission_changed(self.app, "Firefox", trusted);
+        trusted
     }
-
     fn firefox_pid(&mut self) -> Option<i32> {
         firefox_pid()
     }
-
     fn nudge(&mut self, pid: i32) {
         crate::accessibility::nudge_accessibility(pid);
     }
-
     fn active_tab_url(&mut self, pid: i32) -> Option<String> {
         crate::accessibility::active_tab_url(pid)
     }
-
     fn redirect(&mut self, pid: i32, url: &str) -> Result<bool, String> {
         crate::accessibility::redirect_active_tab(pid, url)
     }
@@ -196,27 +166,18 @@ impl Default for TickState {
 /// the bundled blocked.html, resolved by the caller just as for the
 /// Automation watcher.
 pub fn start(app: AppHandle, block_page_url: String) -> FirefoxAxHandle {
-    let shared = Arc::new(Mutex::new(Shared {
-        accessibility_wanted: accessibility_wanted(&app),
-        ..Shared::default()
-    }));
-    let wake = Arc::new(Condvar::new());
+    crate::native_health::record_health("macosFirefoxAX", "starting", None);
+    let shared = Arc::new(Mutex::new(Shared::default()));
     let shared_thread = shared.clone();
-    let wake_thread = wake.clone();
     std::thread::spawn(move || {
         let mut state = TickState::default();
         loop {
-            // Firefox on the extension: block until its method changes. What
-            // the tick would do here is report Inactive and drop the restore
-            // latch, so do both before sleeping.
-            if let Ok(mut guard) = shared_thread.lock() {
-                if !guard.accessibility_wanted {
-                    guard.status = Status::Inactive;
-                    state.needs_restore = false;
-                    drop(wake_thread.wait_while(guard, |s| !s.accessibility_wanted));
-                }
-            }
             std::thread::sleep(TICK);
+            crate::native_health::record_health(
+                "macosFirefoxAX",
+                "running",
+                Some("Worker active; Accessibility status is reported separately"),
+            );
             let enabled = shared_thread.lock().map(|s| s.enabled).unwrap_or(false);
             if !enabled {
                 continue;
@@ -233,7 +194,7 @@ pub fn start(app: AppHandle, block_page_url: String) -> FirefoxAxHandle {
             }
         }
     });
-    FirefoxAxHandle { shared, wake }
+    FirefoxAxHandle { shared }
 }
 
 fn tick_with_io<I: FirefoxIo>(
@@ -242,15 +203,6 @@ fn tick_with_io<I: FirefoxIo>(
     state: &mut TickState,
     now: Instant,
 ) -> Status {
-    if !io.uses_accessibility() {
-        // Switching Firefox back to the extension leaves the latch armed, so
-        // the next pass still restores anything parked on the block page —
-        // but that pass can only run while this watcher is selected. The
-        // extension path does its own restoring, so dropping the latch here
-        // would not strand a tab.
-        state.needs_restore = false;
-        return Status::Inactive;
-    }
     if !io.trusted() {
         return Status::NotTrusted;
     }

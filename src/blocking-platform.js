@@ -278,7 +278,7 @@ export function collectScheduleBlockedApps(now = Date.now()) {
 
 /** Apps the active allow-mode spaces (manual or scheduled) want kept open —
  *  the watcher quits everything else. Mirrors `derive_allowed_apps` in
- *  native_host.rs, which the Rust 2 s disk sync uses between our pushes. */
+ *  website_policy.rs, which the Rust 2 s disk sync uses between our pushes. */
 export function collectAllowedApps(now = Date.now()) {
     const set = new Set();
     const nowDate = new Date(now);
@@ -1357,7 +1357,7 @@ export async function acceptEula() {
         await checkAndroidPermissions();
     } else {
         if (!state.appData.settings.onboardingComplete) {
-            state.firstRunExtensionSetupPending = true;
+            state.firstRunNativePermissionSetupPending = true;
         }
         updateOnboardingVisibility();
     }
