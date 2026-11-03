@@ -10,6 +10,21 @@ fn main() {
     watch_icon_assets();
 
     tauri_build::build();
+
+    // Tauri embeds its application manifest only in binary targets. Rust's
+    // library test executable also links the dialog plugin, whose import of
+    // TaskDialogIndirect requires Common Controls v6 before main can run.
+    // Without this dependency it exits with STATUS_ENTRYPOINT_NOT_FOUND.
+    // Generate a manifest for the otherwise unmanifested tests. Binary targets
+    // already carry Tauri's full manifest as a resource, so disable linker
+    // generation for those targets to avoid a duplicate MANIFEST resource.
+    if std::env::var("CARGO_CFG_TARGET_OS").ok().as_deref() == Some("windows")
+        && std::env::var("CARGO_CFG_TARGET_ENV").ok().as_deref() == Some("msvc")
+    {
+        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+        println!("cargo:rustc-link-arg=/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'");
+        println!("cargo:rustc-link-arg-bins=/MANIFEST:NO");
+    }
 }
 
 fn watch_icon_assets() {

@@ -560,6 +560,12 @@ For release, run the **manual test checklist** (section **14. iOS-Specific**, in
 
 ## Common troubleshooting
 
+- **Windows Rust tests exit with `0xc0000139` before running any tests:**
+  - The dialog plugin imports `TaskDialogIndirect`, which requires a Common
+    Controls v6 manifest. Tauri embeds its manifest only in binary targets;
+    `src-tauri/build.rs` supplies one for the library test executable too.
+  - Keep the binary-specific `/MANIFEST:NO` override: the app already has
+    Tauri's resource manifest, and generating another produces `CVT1100`.
 - **Tier 1 not running:**
   - confirm `src/index.html` includes `test-utils.js` and `blocking-tests.js`.
   - confirm shortcut handler in `src/app.js` is active in current build.
