@@ -125,6 +125,7 @@ import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, getEf
 import { checkForAppUpdate, getLatestVersionPlatformKey, isVersionHigher, resolveMicrosoftStorePackage, updateBannerWhatsNewButtonHtml } from './update-banner.js';
 import { updateDownloadInProgress } from './update-banner.js';
 import { setupUsagePingToggle, startUsagePing } from './usage-ping.js';
+import { applyStoreReviewPromptCopy, startStoreReviewPrompt } from './store-review-prompt.js';
 import { applyStartWarningsLanguage, setupStartWarningsOnboarding, setupStartWarningsToggle, syncIOSStartWarnings } from './ios-start-warnings.js';
 import { getChallengeController } from './challenge-controller.js';
 import { getMaxOverrideCountForType, getOverrideEstimatedMinutes, getTypingCharsPerMinuteForType, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
@@ -335,6 +336,7 @@ export async function runPostAcceptanceStartup() {
         // Anonymous daily usage ping (Mac, Windows, iOS; off in Settings).
         startUsagePing();
         state.startupInitializationComplete = true;
+        startStoreReviewPrompt();
     })();
 
     try {
@@ -421,6 +423,7 @@ function setupEventListeners() {
             return;
         }
         eulaContinueBtn.textContent = tSettings('eulaContinueBtn');
+        startStoreReviewPrompt();
     });
 
     document.getElementById('eula-back-btn')?.addEventListener('click', () => {
@@ -2939,6 +2942,7 @@ export function applySettingsLanguage() {
     setText('settings-blocklists-io-hint', tSettings('settingsBlocklistsIoHint'));
     setText('settings-usage-ping-label', tSettings('settingsUsagePingLabel'));
     setText('settings-usage-ping-hint', tSettings('settingsUsagePingHint'));
+    applyStoreReviewPromptCopy();
     setText('settings-export-blocklists-btn-label', tSettings('settingsExportBlocklistsBtn'));
     setText('settings-import-blocklists-btn-label', tSettings('settingsImportBlocklistsBtn'));
     setText('uninstall-confirm-title', tSettings('uninstallConfirmTitle'));

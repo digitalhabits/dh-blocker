@@ -15049,6 +15049,81 @@ body.ios-phone #blocklist-modal .custom-swatch .custom-icon{
     font-size: 17px;
 }
 
+.store-review-prompt{
+    position: fixed;
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1995;
+    width: min(420px, calc(100vw - 32px));
+    animation: slideUp 0.3s ease;
+}
+.store-review-prompt.hidden{ display: none; }
+.store-review-prompt-content{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 16px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-card);
+    background: var(--panel-bg);
+    box-shadow: var(--redd-shadow-card-hover);
+    text-align: left;
+}
+.store-review-prompt-top,
+.store-review-prompt-stars,
+.store-review-prompt-actions{ display: flex; align-items: center; }
+.store-review-prompt-top{ justify-content: space-between; gap: 8px; }
+.store-review-prompt-stars{ gap: 2px; color: #e0a100; }
+.store-review-prompt-stars svg{ display: block; fill: currentColor; }
+.store-review-prompt-actions{ flex-wrap: wrap; gap: 12px; margin-top: 2px; }
+.store-review-prompt-dismiss,
+#store-review-no-thanks{
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font: inherit;
+}
+.store-review-prompt-dismiss{
+    display: inline-flex;
+    margin: -4px -6px 0 0;
+    padding: 4px;
+    border-radius: 6px;
+}
+.store-review-prompt-dismiss:hover{
+    background: var(--element-hover-bg);
+    color: var(--text-secondary);
+}
+#store-review-prompt-body{
+    margin: 0;
+    font-family: var(--font-body);
+    font-size: 0.95rem;
+    font-weight: 500;
+    line-height: 1.4;
+    color: var(--text-primary);
+}
+.store-review-leave-link{
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 14px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.25rem;
+    border-radius: 8px;
+    border: 1px solid #005d53;
+    background: #005d53;
+    color: #fff;
+    text-decoration: none;
+}
+.store-review-leave-link:hover{
+    background: #004d45;
+    border-color: #004d45;
+    color: #fff;
+}
+#store-review-no-thanks{ padding: 4px 0; font-size: 0.875rem; font-weight: 500; }
+#store-review-no-thanks:hover{ color: var(--text-secondary); }
+
 /* Undo Toast */
 .undo-toast{
     position: fixed;
