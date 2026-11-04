@@ -427,24 +427,6 @@ function setupEventListeners() {
         returnToWelcomeFromEula();
     });
 
-    // EULA onboarding: delegated listeners so localized HTML can rebuild links/text without losing handlers.
-    const eulaRoot = document.getElementById('eula-onboarding');
-    if (eulaRoot) {
-        eulaRoot.addEventListener(
-            'click',
-            (event) => {
-                const toggleHost = event.target.closest('[data-toggle-target]');
-                if (toggleHost && eulaRoot.contains(toggleHost) && !event.target.closest('a')) {
-                    const target = document.getElementById(toggleHost.dataset.toggleTarget);
-                    if (!target) return;
-                    target.checked = !target.checked;
-                    target.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-            },
-            true
-        );
-    }
-
     document.getElementById('ios-screentime-grant-btn')?.addEventListener('click', async () => {
         const btn = document.getElementById('ios-screentime-grant-btn');
         const note = document.getElementById('ios-screentime-onboarding-note');

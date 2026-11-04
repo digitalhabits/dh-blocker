@@ -9093,6 +9093,7 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     font-size: 14px;
     line-height: 1.5;
     color: var(--text-secondary);
+    cursor: pointer;
 }
 
 .legal-onboarding-checkbox-row input[type="checkbox"]{
