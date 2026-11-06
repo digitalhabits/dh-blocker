@@ -1,312 +1,65 @@
+<img src="assets/icons/128x128.png" alt="Digital Habits: Blocker app icon" width="128" height="128">
+
 # Digital Habits: Blocker
 
-Block distracting websites and apps with manual or scheduled Focus Spaces and customisable difficulty to override. Stay focused on what matters.
+Make room for what matters by blocking distracting websites and apps. Choose when you want to focus and how much effort it should take to change your mind.
+
+**[Download Digital Habits: Blocker](https://digitalhabits.org/tools/blocker)** · [Read the manual & FAQ](https://digitalhabits.org/tools/blocker)
 
 Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and the University of Maastricht (Dr Konrad Kollnig), as part of the Centre for Digital Habits ([digitalhabits.org](https://digitalhabits.org)).
 
-Android is maintained separately in [digitalhabits/dh-blocker-android](https://github.com/digitalhabits/dh-blocker-android). The retired Tauri Android implementation remains available in Git history.
+## Get started
 
-## Features
+1. **[Download the app for your device](https://digitalhabits.org/tools/blocker)** and install it.
+2. Open the app and follow the setup prompts for your device and browsers.
+3. Create a Focus Space, choose the websites or apps to block or allow, and set your stopping challenge.
+4. Start your Focus Space now, or set a daily or weekly schedule.
 
-- **Cross-Platform** — Works on macOS 11+, Windows 10+, and iOS (iPad/iPhone) from the same Tauri UI codebase.
-- **Website Blocking** — Digital Habits: Blocker decides what to block. On **macOS**, Safari/Chrome/Brave/Edge use **Automation** (no extension); **Firefox** uses the Digital Habits: Focus extension. On **Windows**, Chrome/Brave/Edge/Firefox use the extension. On **iOS**, blocking uses Screen Time.
-- **App Blocking** — Closes distracting apps on desktop (warning overlay → save window → polite quit → force-close if needed), uses Screen Time shield overlays on iOS.
-- **Focus Spaces** — Create multiple Focus Spaces with custom names, colors, and emojis, each blocking or allowing only what you choose
-- **Manual Focus Spaces** — Switch a Focus Space on whenever you need it; it runs until you turn it off
-- **Scheduled Focus Spaces** — Run a Focus Space daily or weekly at set times (e.g., block social media Mon-Fri 9am-5pm), until you stop it or until a date you choose
-- **Week Schedule** — See all your scheduled and active Focus Spaces on an interactive weekly timeline
-- **Stop-Early Challenge** — Type random words or your own text to stop a Focus Space early, so you can't stop one on impulse
-- **Background Operation** — Focus Spaces continue even when the app is closed
-- **Theme Options** — Auto, light, or dark mode
+## Make your own Focus Spaces
 
-## How it works
+A **Focus Space** is a set of websites or apps you want to block — or a set you want to allow while everything else is blocked. You could create one for work, another for studying, and another for winding down in the evening.
 
-> **v3 (current).** Digital Habits: Blocker is a single unprivileged app — no helper daemon, no `hosts` file writes. On **macOS**, Safari/Chrome/Brave/Edge website blocking uses **Automation** (Apple Events); **Firefox** still uses the Digital Habits: Focus extension. On **Windows**, all supported browsers use the extension. macOS may ask for your password **once** when cleaning up leftover v1.x components.
+- **Start whenever you need to**, or set a daily or weekly schedule.
+- **Choose what stays available**, so you can still use the tools you need.
+- **Make stopping a block deliberate.** Set a typing challenge, using random words or your own text, to help you resist switching a block off on impulse.
+- **See your week at a glance**, with your Focus Spaces together on a weekly calendar.
+- **Close the window and carry on.** Blocking continues in the background.
 
-Digital Habits: Blocker is **one app**. When you start a block, it does two things:
+## Devices and setup
 
-| | What gets blocked | Who does the blocking (desktop) |
-|---|-------------------|----------------------------------|
-| **Websites** | URLs in your blocklists | **macOS:** Automation for Safari/Chrome/Brave/Edge; Digital Habits: Focus extension for Firefox. **Windows:** Digital Habits: Focus extension |
-| **Apps** | Programs in your blocklists | **Digital Habits: Blocker** — closes them for you |
+The app supports macOS, Windows, iPhone, iPad and Android. Setup differs by device:
 
-```mermaid
-flowchart LR
-  RB[Digital Habits: Blocker]
-  RB --> WEB[Websites<br/>Automation or extension]
-  RB --> APP[Apps<br/>closed by Digital Habits: Blocker]
-```
+| Device | Requirements | What to set up |
+| --- | --- | --- |
+| Mac | macOS 11 (Big Sur) or later | Allow the app to control Safari, Chrome, Brave or Edge when prompted. For Firefox, install the Digital Habits: Focus browser extension. |
+| Windows PC | Windows 10, version 1809, or later | Follow the browser setup prompts. Website blocking normally uses the Digital Habits: Focus browser extension. |
+| iPhone or iPad | iOS 16 or later | Give the app Screen Time permission when prompted. No browser extension is needed. |
+| Android phone or tablet | Android 8 or later | Enable the app in your device's Accessibility settings so it can block distractions. |
 
-### Website blocking (desktop)
+On a Mac, the browser permission is called **Automation** in System Settings → Privacy & Security. Full Disk Access is not required.
 
-**Digital Habits: Blocker** stores your blocklists and enforces them. macOS and Windows use different plumbing — see the tables below.
+For Firefox on Mac, install [Digital Habits: Focus from the Firefox Add-ons store](https://addons.mozilla.org/en-US/firefox/addon/digitalhabits-focus/) and allow it in private windows too.
 
-**macOS**
+## What to expect while focusing
 
-| Browser | How blocking works | Extension setup |
-|---------|-------------------|-----------------|
-| Safari, Chrome, Brave, Edge | **Automation** (Apple Events) — Digital Habits: Blocker redirects blocked tabs | Digital Habits: Blocker prompts for Automation in System Settings → Privacy & Security → Automation |
-| Firefox | Digital Habits: Focus extension | Install manually from the [Digital Habits: Focus Firefox add-on](https://addons.mozilla.org/en-US/firefox/addon/digitalhabits-focus/) — Digital Habits: Blocker does **not** auto-install on macOS |
+**Blocking stays on when you close the window.** On Mac and Windows, the app stays in the menu bar or system tray. Use the app to pause or stop a Focus Space and complete any required challenge.
 
-**Windows**
+**Save your work before blocking desktop apps.** The app gives you a warning and time to save work in apps that are already open, then closes them. If you reopen a blocked app, it is closed again. Unsaved work can be lost.
 
-| Browser | How blocking works | Extension setup |
-|---------|-------------------|-----------------|
-| Chrome, Brave, Edge, Firefox | Native messaging (stdio) — the extension wakes Digital Habits: Blocker in the background to fetch the blocklist | Digital Habits: Blocker can auto-install extension hints where supported |
+**You choose whether browsers should be closed if blocking stops working.** This extra protection is optional and off by default.
 
-**How native messaging works (Windows)**
+**Upgrading from an older version?** If you previously used Fristed or ReDD Block 1.x, the app handles the clean-up on first launch. On Mac, this may ask for your password once.
 
-1. The extension needs the current blocklist.
-2. The browser **cannot read Digital Habits: Blocker's window**, so it wakes up Digital Habits: Blocker **in the background** — same app you installed, **no new window appears**.
-3. Digital Habits: Blocker sends the list to the extension and exits.
-4. The extension blocks matching sites.
+## Help and feedback
 
-You never open anything extra or run a second program. It's just how Chrome/Firefox talk to local apps.
+For setup instructions and answers to common questions, see the [manual & FAQ](https://digitalhabits.org/tools/blocker).
 
-While a block is active, Digital Habits: Blocker can warn you or quit browsers if website blocking stops working (e.g. Automation denied on Safari/Chrome, or the Firefox extension disabled).
+If something is not working, check that you have completed the setup prompts and enabled the required permissions or browser extension.
 
-### App blocking (desktop)
+You can [report a problem or suggest an improvement](https://github.com/digitalhabits/dh-blocker/issues). Include your device, operating system, browser (if relevant), and what happened. Please leave out private information.
 
-| Step | What happens |
-|------|----------------|
-| 1 | **"Let's go!"** warning — you click when ready |
-| 2 | **30 seconds** to save work and quit on your own |
-| 3 | Digital Habits: Blocker asks the app to close politely |
-| 4 | Still open after **10 seconds**? Force-closed |
+## For developers
 
-If you **open** a blocked app mid-block, Digital Habits: Blocker skips the warning and closes it on the fast path.
+The Android app is developed separately in [digitalhabits/dh-blocker-android](https://github.com/digitalhabits/dh-blocker-android).
 
-Digital Habits: Blocker runs from the menu bar / system tray and can start at login so blocking continues across sessions.
-
-### iOS
-
-No browser extension — Digital Habits: Blocker uses **Screen Time** to shield websites and apps. Scheduled blocks work via a background monitor extension even when the app is closed. Details: [architecture.md](architecture.md).
-
-### Permissions (desktop)
-
-- **Extensions:** install Digital Habits: Focus in Firefox (macOS) or in each browser you use on Windows.
-- **macOS — Automation:** Safari, Chrome, Brave, and Edge need **Automation** permission so Digital Habits: Blocker can redirect blocked tabs. Digital Habits: Blocker walks you through this during setup; no Full Disk Access is required.
-- **macOS — Firefox:** install Digital Habits: Focus manually from the Add-ons store and allow it in private windows.
-- **No** admin or UAC prompt at install time (macOS may ask once when cleaning up leftover v1.x components).
-
-### Upgrading from v1.x
-
-If you previously ran Digital Habits: Blocker, **Fristed**, or ReDD Block 1.x (helper daemon + hosts file), the first launch after upgrade:
-
-1. Cleans up the old hosts-file entries and helper daemon (macOS may ask for your password once).
-2. Registers launch-at-login and (on Windows) native-messaging manifests for the extension.
-3. Walks you through browser setup — Automation for Safari/Chrome/Brave/Edge on macOS; Digital Habits: Focus extension on Windows and for Firefox on macOS.
-
-### Developers
-
-Implementation details and module map: [architecture.md](architecture.md) (v3 current; v2/v1 historical). The [browser-ext-migration/](browser-ext-migration/) folder documents the v2 extension architecture — still accurate for **Windows**; macOS website blocking moved to Automation in v3.
-
-## Local Development
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) (20.19+ or 22.12+; required by Vite 8)
-- [Rust](https://www.rust-lang.org/tools/install) (latest stable)
-- [Tauri CLI](https://tauri.app/start/prerequisites/)
-
-**Windows additional requirements:**
-- Visual Studio Build Tools with C++ workload
-
-**iOS additional requirements:**
-- Xcode 26.5+ (the iOS 26.5 SDK is needed for `ManagedSettingsStore.refresh`; older Xcodes fail to compile the Screen Time plugin)
-- An Apple Developer account
-- A physical iOS device (Screen Time APIs don't work in the simulator)
-
-### Getting Started
-
-```bash
-# Clone the repository
-git clone https://github.com/digitalhabits/dh-blocker.git
-cd dh-blocker
-
-# Install dependencies
-pnpm install
-
-# Run in development mode
-pnpm dev
-
-# Run on iOS device (opens Xcode, then press ⌘R to build)
-pnpm dev:ios
-
-```
-
-The app will open automatically. Hot-reloading is enabled for both frontend (Vite) and backend (Tauri).
-
-### Building
-
-```bash
-# macOS: Universal binary (Intel + Apple Silicon) → .app
-pnpm build:mac
-
-# macOS: Wrap the .app into a signed/notarized .pkg installer
-# (outputs Digital-Habits-Blocker-{version}.pkg)
-pnpm build:mac-pkg
-
-# macOS: Both in one go (.app + .pkg)
-pnpm build:mac-all
-
-# Windows: NSIS/MSI installers (x64 + ARM64) — direct download / S3
-pnpm build:win
-
-# Windows: Microsoft Store (MSIX for Partner Center upload; same pipeline as digital-habits-to-do)
-pnpm build:win-store
-
-# iOS: Build IPA for App Store upload (via Transporter)
-pnpm build:ios
-
-```
-
-For Store builds, set `WINDOWS_IDENTITY_NAME` and `WINDOWS_PUBLISHER` in `.env` (Partner Center → Product identity). Release tags submit the MSIX to Partner Center from CI (What’s new from `changelog.md` via `scripts/changelog-to-store-whats-new.js` — write entries per [`changelog-style.md`](changelog-style.md); see [docs/microsoft-store-ci.md](docs/microsoft-store-ci.md)). Manual upload still works from `for-distribution/<target>/`. Run `node scripts/generate-icons-from-svg.js` first if `assets/icons/1024x1024.png` is missing.
-
-**Local sideload:** `build:win-store` MSIX files are unsigned (Partner Center signs on upload). Sign and install in an **elevated** PowerShell (cert goes in `LocalMachine\TrustedPeople`):
-
-```powershell
-pnpm sign:win-store-msix -MsixPath "for-distribution/aarch64-pc-windows-msvc/Digital-Habits-Blocker_3.1.5.0_arm64.msix" -Install
-```
-
-Also turn on **Settings → System → For developers → Developer Mode**. If `0x800B0109` persists, remove old packages first: `Get-AppxPackage *ReDDBlock* | Remove-AppxPackage`.
-
-Built artifacts are copied to `for-distribution/` for upload or direct distribution.
-
-### Testing
-
-Testing is organized into automated tiers, a screenshot harness, and a manual checklist (see [testing.md](testing.md)):
-
-**0. Unit Tests (vitest, instant)**
-
-Pure helpers from `src/`, in isolation. No browser, no app.
-
-```bash
-pnpm test:tier0
-```
-
-**1. Unit Tests (in-app, instant)**
-
-Tests blocking logic — time-based scenarios, overlaps, overrides, override-all state transitions, and challenge difficulty selection. No system modification.
-
-```bash
-pnpm dev                   # Start the app
-# Press Cmd+Shift+T (Mac) or Ctrl+Shift+T (Windows)
-# Or type in the dev console: runBlockingTests()
-```
-
-**2. Integration Tests (in-app, profile-based)**
-
-Creates real blocks using safe `.invalid` domains and exercises app → Tauri command paths (save, pause/resume, scoped clear, app-blocking commands, migration hosts cleanup). Does **not** fully prove website blocking on v3 — use the manual checklist for Automation redirects and extension enforcement.
-
-```bash
-# In the dev console:
-runIntegrationTests('core')   # default, faster critical checks
-runIntegrationTests('full')   # core + expanded non-UI coverage
-```
-
-**3. UI Screenshots (headless browser, seconds)**
-
-Renders app screens from fixture data and writes PNGs to `artifacts/ui/`. No Rust toolchain and no Tauri build — just Vite and a Chromium, so it runs on a laptop or in CI on Linux. Nothing else in the stack renders: jsdom has no layout engine, so a `styles.css` change can be wrong in every visible way and still be green.
-
-```bash
-pnpm ui:shoot                                    # every screen
-pnpm ui:shoot --screen=week-crowded --measure    # one screen, with measured geometry
-```
-
-**4. Manual Checklist**
-
-See `scripts/manual-test-checklist.md` for the full pre-release checklist. Key items: macOS Automation setup + enforcer (Safari/Chrome/Brave/Edge), Firefox/Windows extension install, hide-on-close + launch-at-login, v1.x migration cleanup, Screen Time (iOS).
-
-## Project Structure
-
-```
-redd-block/
-├── src/                          # Frontend (HTML/JS/CSS)
-│   ├── index.html                # Main app layout
-│   ├── app.js                    # App logic & UI
-│   └── styles.css                # Styling
-├── src-tauri/                    # Tauri backend (Rust)
-│   ├── src/
-│   │   ├── lib.rs                # App setup, tray, hide-on-close, autostart
-│   │   ├── app_watcher.rs        # In-process app watcher (sysinfo poll + quit)
-│   │   ├── enforcer.rs           # Compliance enforcer (Automation TCC on macOS Safari/Chromium; extension elsewhere)
-│   │   ├── web_automation.rs     # macOS Automation tab blocking (Safari, Chrome, Brave, Edge)
-│   │   ├── native_host.rs        # Headless native-messaging host (Windows / Firefox blocklist feed)
-│   │   ├── native_host_install.rs # Registers native-messaging manifests (Windows; skipped on macOS)
-│   │   ├── profile_scan.rs       # Reads browser profile files
-│   │   └── commands/             # IPC commands (data, apps, migration, …)
-│   ├── blocked/                  # Block page bundled for macOS Automation redirects
-│   ├── entitlements.macos.plist  # macOS Automation (Apple Events) entitlement
-│   ├── gen/apple/                # Generated Xcode project
-│   ├── tauri.conf.json           # Shared Tauri config
-│   ├── tauri.ios.conf.json       # iOS-specific config
-│   ├── tauri.macos.conf.json     # macOS-specific config
-│   └── tauri.windows.conf.json   # Windows-specific config
-├── tauri-plugin-screentime/      # iOS Screen Time plugin
-│   ├── ios/Sources/              # Swift plugin (FamilyActivityPicker, ManagedSettings)
-│   ├── src/                      # Rust bindings
-│   └── permissions/              # Plugin permissions
-├── browser-ext-migration/
-│   ├── MIGRATION_PLAN.md         # Rollout plan + remaining-work checklist
-│   ├── FUTURE_OPTIONS.md         # Parked localhost fallback + signed .pkg notes
-├── scripts/                      # Build/signing (build-mac.sh, build-mac-pkg.sh, …)
-├── docs/                         # GitHub Pages (version info, App Store privacy policy)
-└── vite.config.js                # Vite dev server config
-```
-
-## Version Management
-
-| Component | Version Location |
-|-----------|------------------|
-| **App** | `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` |
-| **Published versions** | `docs/latest-versions.json` (macOS, Windows, iOS, plus `sha256.macosPkg` and `sizeBytes.macosPkg` for in-app macOS updates) |
-
-Use `./scripts/bump-version.sh <version>` to update the app version in all files at once.
-
-## Data Storage
-
-### App Data
-
-Every platform stores app data **per user**. Each account on a shared
-computer gets its own blocklists, schedules and settings.
-
-| Platform | Canonical location |
-|----------|--------------------|
-| macOS | `~/Library/Application Support/com.reddblock/redd-block-data.json` |
-| Windows | `%AppData%\com.reddblock\redd-block-data.json` |
-| iOS | App sandbox (managed by Tauri) |
-
-Legacy v1 paths under `com.redd.block` are still read as a fallback during migration.
-
-Earlier builds kept one machine-wide file instead
-(`/var/lib/redd-block/...` on macOS, `%PROGRAMDATA%\Digital Habits Blocker\...`
-on Windows). On first launch each account copies that file into its own store
-and then diverges from it; the machine-wide copy is left in place, because the
-other accounts on the machine have not necessarily upgraded yet.
-
-Contains blocklists, schedules, active blocks, and settings.
-
-On **Windows** and **macOS Firefox**, the native-messaging host re-reads this file to derive the current blocklist. On **macOS Safari/Chrome/Brave/Edge**, the Automation watcher reads the same file via `derive_payload()`.
-
-### Uninstall Behavior
-
-User data is preserved unless manually deleted. Uninstalling the app also removes:
-
-- the launch-at-login / login-item entry registered by `tauri-plugin-autostart`,
-- the native-messaging manifests and registry keys (Windows) written by `install_native_host` (macOS uses Automation instead and does not auto-write Firefox manifests).
-
-Active blocks stop firing once the app is gone because the app itself is now the enforcement engine. A paid-for-itself "keep blocking after uninstall" mode is no longer provided.
-
-## Requirements
-
-- **macOS**: 11.0+ (Big Sur or later) — Automation-based website blocking for Safari and Chromium browsers
-- **Windows**: 10+ (version 1809 or later)
-- **iOS**: 16.0+ (iPhone and iPad)
-- **Linux**: Coming soon
-
-## Tech Debt
-
-- **Rename `updateHostsFile()`**: misleading now that no platform writes a hosts file for blocking. Consider renaming to `syncWebsiteBlocking()`.
-- **Rewrite Tier 2 integration tests** (`src/integration-tests.js`): hosts-file assertions are v1-era; update to validate v3 enforcement paths.
-- **Frontend still calls legacy `*_via_helper` commands** via the shim in `src-tauri/src/commands/helper_shim.rs`. Rewrite `src/app.js` to call modern command names directly and delete the shim.
+See the [developer guide](DEVELOPMENT.md) for local setup and builds, the [architecture guide](architecture.md) for implementation details, and the [testing guide](testing.md) for checks and test instructions.

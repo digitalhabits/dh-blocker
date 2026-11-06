@@ -1,8 +1,9 @@
 # Digital Habits: Blocker Testing Tiers
 
-This document expands the `README.md` testing section with a deeper technical explanation of each tier, how to run it, what it validates, and what it does not validate.
+This is the reference for test commands, suite selection and coverage limits.
+For local build setup, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
-Terminology in this file follows `README.md`:
+Terminology:
 
 - **Tier 0** = plain unit tests over pure `src/` helpers (vitest, no app shell)
 - **Tier 1** = in-app logic tests
@@ -85,6 +86,11 @@ but do not require a new screenshot fixture or geometry assertion when existing
 screens or a direct UI check suffice.
 
 ---
+
+The UI fixtures `pause-flow-verified`, `pause-editor-active`, and
+`pause-dialog-iphone` cover the remembered-duration flow, an active word-count
+increase, and the mobile Never recommendation. Their native transport is stubbed;
+they do not establish real-device enforcement.
 
 ## Quick run guide
 

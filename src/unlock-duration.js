@@ -1,16 +1,19 @@
-// Auto-start after stop — what "stop" means for a focus space.
-//
-// Every focus space carries `unlockMinutes`. Stopping a running space (the
-// card switch) pauses it for that long and it turns
-// itself back on afterwards. 0 is
-// "Never": a Manual block is removed and a Daily / Weekly schedule is switched
-// off open-ended (`isPaused` with no `pauseEndTime`, honoured by every
-// enforcement layer).
-//
-// Pure helpers only (Tier 0). No DOM, no `state`.
+// Pause durations and legacy import compatibility. Pure helpers only.
+// The dialog uses PAUSE_MINUTE_OPTIONS and settings.lastBreakMinutes; legacy
+// per-space unlockMinutes values are retained only for older data/imports.
 
-/** Minutes offered in the editor; 0 = Never. */
+/** Legacy per-space values accepted on import; 0 = Never. */
 export const UNLOCK_MINUTE_OPTIONS = Object.freeze([0, 5, 10, 15, 30, 60, 120, 240, 480, 1440]);
+
+// Keep legacy values above for imported data; new pauses no longer offer 15 minutes.
+export const PAUSE_MINUTE_OPTIONS = Object.freeze([5, 10, 30, 60, 120, 240, 480, 1440, 0]);
+export function getLastBreakMinutes(settings) {
+    const minutes = Number(settings?.lastBreakMinutes);
+    return minutes > 0 && PAUSE_MINUTE_OPTIONS.includes(minutes) ? minutes : 10;
+}
+export function rememberBreakMinutes(settings, minutes) {
+    if (minutes > 0 && PAUSE_MINUTE_OPTIONS.includes(minutes)) settings.lastBreakMinutes = minutes;
+}
 
 /** 24 hours. Also applied to spaces saved before this field existed. */
 export const DEFAULT_UNLOCK_MINUTES = 1440;

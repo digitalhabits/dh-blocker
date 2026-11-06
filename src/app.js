@@ -89,7 +89,7 @@ import {
     syncScheduleOverlayCustomiseEditorState, syncScheduleOverlayCustomiseTitle,
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
-import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, isEnterSchedulerModalOpen, openBlocklistModal, openOverrideModal, refreshSelectedBlocklistUi, restopForNewStrictness, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncColorSwatchInk, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
+import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, isEnterSchedulerModalOpen, openBlocklistModal, openOverrideModal, refreshSelectedBlocklistUi, updatePauseDialogDuration, initializeOverrideModalChallenge, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncColorSwatchInk, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
 import { enhanceNativeSelects } from './custom-select.js';
 import { expandBlocklistCard, renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, deleteBlocklist, isBlocklistEditFrictionRequired, pendingDelete, saveBlocklistOrderFromDOM, setUndoToastMessage } from './blocklists.js';
 import {
@@ -111,7 +111,7 @@ import {
     syncUninstallConfirmModal, updateCleanHostsBtnState, updateHelperStatusIndicator,
     updateManageSectionVisibility, updateOverrideAllButtonVisibility,
 } from './settings.js';
-import { normalizeUnlockMinutes } from './unlock-duration.js';
+import { getLastBreakMinutes, rememberBreakMinutes } from './unlock-duration.js';
 import { turnFocusSpaceOn } from './focus-space-switch.js';
 import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, getEffectiveViewportWidth, bindUiZoomLayoutObserver } from './theme.js';
 import { checkForAppUpdate, getLatestVersionPlatformKey, isVersionHigher, resolveMicrosoftStorePackage, updateBannerWhatsNewButtonHtml } from './update-banner.js';
@@ -120,7 +120,7 @@ import { setupUsagePingToggle, startUsagePing } from './usage-ping.js';
 import { applyStoreReviewPromptCopy, startStoreReviewPrompt } from './store-review-prompt.js';
 import { applyStartWarningsLanguage, setupStartWarningsOnboarding, setupStartWarningsToggle, syncIOSStartWarnings } from './ios-start-warnings.js';
 import { getChallengeController } from './challenge-controller.js';
-import { getMaxOverrideCountForType, getOverrideEstimatedMinutes, getTypingCharsPerMinuteForType, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
+import { resolveActiveOverrideDifficulty, DEFAULT_OVERRIDE_WORDS, getMaxOverrideCountForType, getOverrideEstimatedMinutes, getTypingCharsPerMinuteForType, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
 import { escapeHtml, cleanUrlForDisplay, parseRgbFromColorString, rgbToHex, rgbToHsl, hslToRgb, getRelativeLuminance, getEnteringChipColor, getContrastTextColor } from './utils.js';
 import { SETTINGS_TRANSLATIONS, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List, tSettings, tSettingsFmt, LANGUAGE_FLAG_SVG, LANGUAGE_NATIVE_LABELS, languageNativeLabel, SUPPORTED_LANGUAGE_CODES } from './i18n.js';
 
@@ -1471,7 +1471,7 @@ function setupModalListeners() {
             showItemDetails,
             alwaysShowInSchedule,
             overrideDifficulty: overrideDifficultyPayload,
-            unlockMinutes: normalizeUnlockMinutes(document.getElementById('unlock-duration-select')?.value),
+            ...(existingBlocklistForSave?.unlockMinutes !== undefined ? { unlockMinutes: existingBlocklistForSave.unlockMinutes } : {}),
         };
         // Daily / Weekly spaces activate on save, so the same platform checks
         // that used to guard "Start schedule" apply here.
@@ -1481,6 +1481,12 @@ function setupModalListeners() {
             if (!await ensureIOSAllowlistStartable(blocklist)) return;
         }
 
+        // Recheck after asynchronous platform validation, immediately before committing.
+        const currentSavedSpace = state.appData.blocklists.find(bl => bl.id === state.editingBlocklistId);
+        blocklist.overrideDifficulty = resolveActiveOverrideDifficulty(
+            currentSavedSpace?.overrideDifficulty, blocklist.overrideDifficulty,
+            !!currentSavedSpace && isBlocklistEditFrictionRequired(currentSavedSpace.id),
+        );
         if (state.editingBlocklistId) {
             const idx = state.appData.blocklists.findIndex(bl => bl.id === state.editingBlocklistId);
             if (idx !== -1) {
@@ -1494,9 +1500,6 @@ function setupModalListeners() {
         applyEditorScheduleForBlocklist(blocklist.id);
 
         await saveData();
-        if (existingBlocklistForSave && normalizeUnlockMinutes(existingBlocklistForSave.unlockMinutes) !== blocklist.unlockMinutes) {
-            await restopForNewStrictness(blocklist.id);
-        }
 
         // If this blocklist is active (block or schedule), update blocking rules immediately
         const now = Date.now();
@@ -1733,15 +1736,23 @@ function setupOverrideModalListeners() {
         if (blocklistId) await turnFocusSpaceOn(blocklistId);
     });
 
+    document.getElementById('unlock-duration-select').addEventListener('change', updatePauseDialogDuration);
     document.getElementById('confirm-override-btn').addEventListener('click', async () => {
+        if (state.pauseSubmitting) return;
+        const currentSpace = state.appData.blocklists.find(bl => bl.id === state.pendingPauseSpaceId);
+        if (!currentSpace) return;
+        const difficulty = currentSpace.overrideDifficulty || { type: 'random-words', count: DEFAULT_OVERRIDE_WORDS };
+        const skipChallenge = !isBlocklistEditFrictionRequired(currentSpace.id);
+        if (JSON.stringify({ difficulty, skipChallenge }) !== state.pauseChallengeSnapshot) {
+            initializeOverrideModalChallenge(difficulty, currentSpace.color, { skipChallenge });
+            return;
+        }
         const result = getChallengeController('override').handleConfirm();
         // A correct but non-final word: the controller already advanced the UI.
         if (result.status !== 'ok') return;
 
-        // Stop a running Manual block or a Daily / Weekly schedule. What "stop"
-        // does is the space's temporary unlock duration: a timed pause it comes
-        // back from on its own, or with Never the block is removed / the
-        // schedule switched off open-ended (stopFocusSpaceTarget).
+        // Apply only the duration chosen in this confirmation. Never keeps the
+        // existing manual-removal / indefinite schedule-off semantics.
         const block = state.overrideBlockId
             ? state.appData.activeBlocks.find(b => b.id === state.overrideBlockId) || null
             : null;
@@ -1751,7 +1762,28 @@ function setupOverrideModalListeners() {
             : null;
         if (!block && !schedule) return;
 
-        await stopFocusSpaceTarget({ block, schedule });
+        // A stale dialog must never extend a pause that was already confirmed.
+        if ((block || schedule).isPaused || (block && block.endTime <= Date.now())) return;
+        const minutes = Number(document.getElementById('unlock-duration-select').value);
+        state.pauseSubmitting = true;
+        try {
+            const outcome = await stopFocusSpaceTarget({ block, schedule, minutes });
+            if (!outcome) {
+                initializeOverrideModalChallenge(difficulty, currentSpace.color, { skipChallenge });
+                return;
+            }
+            const previous = getLastBreakMinutes(state.appData.settings);
+            rememberBreakMinutes(state.appData.settings, minutes);
+            try { await saveData(); } catch (error) {
+                state.appData.settings.lastBreakMinutes = previous;
+                console.error('Could not remember pause duration:', error);
+            }
+        } catch (error) {
+            console.error('Could not apply pause:', error);
+            initializeOverrideModalChallenge(difficulty, currentSpace.color, { skipChallenge });
+            alert(tSettings('pauseFailed'));
+            return;
+        } finally { state.pauseSubmitting = false; }
         state.overrideBlocklistIdForHelper = null;
         delete window.overrideScheduleId;
 
@@ -2633,7 +2665,7 @@ export function applySettingsLanguage() {
     setText('override-modal-instruction', tSettings('overrideInstruction'));
     setText('override-modal-word-instruction', tSettings('challengeWordInstruction'));
     setText('cancel-override-btn', tSettings('cancel'));
-    setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
+    updatePauseDialogDuration();
     setText('confirm-override-header', tSettings('startBlockHoldHeader'));
     setText('start-confirm-blocking-label', tSettings('startConfirmBlockingLabel'));
     setText('start-confirm-show-all-blocking', tSettings('showAll'));
