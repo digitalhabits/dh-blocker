@@ -74,7 +74,11 @@ fn find_instance<T>(
                 let app: id = msg_send![apps, objectAtIndex: i];
                 let terminated: bool = msg_send![app, isTerminated];
                 let pid: i32 = msg_send![app, processIdentifier];
-                if terminated || pid <= 0 {
+                // Headless instances (Playwright, `--headless` screenshots)
+                // run as NSApplicationActivationPolicyProhibited: no Dock
+                // icon and no windows to browse in, so nothing to enforce.
+                let policy: isize = msg_send![app, activationPolicy];
+                if terminated || pid <= 0 || policy == 2 {
                     continue;
                 }
                 if let Some(found) = f(pid, app) {
