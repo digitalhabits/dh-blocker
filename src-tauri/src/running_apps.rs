@@ -50,6 +50,7 @@ pub fn first_pid(bundle_ids: &[&str]) -> Option<i32> {
 }
 
 /// Visits live instances in the order given until `f` returns `Some`.
+#[allow(deprecated)] // Cocoa FFI pending migration to objc2.
 fn find_instance<T>(
     bundle_ids: &[&str],
     mut f: impl FnMut(i32, cocoa::base::id) -> Option<T>,
@@ -90,6 +91,7 @@ fn find_instance<T>(
     })
 }
 
+#[allow(deprecated)] // Cocoa FFI pending migration to objc2.
 unsafe fn executable_path(app: cocoa::base::id) -> Option<PathBuf> {
     use objc::{msg_send, sel, sel_impl};
     let url: cocoa::base::id = msg_send![app, executableURL];

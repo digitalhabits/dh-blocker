@@ -1,8 +1,3 @@
-#![allow(deprecated)]
-
-// The macOS FFI in this crate still uses the `cocoa` crate. Keep its
-// deprecation migration separate from this lint gate.
-
 // Hard stop against shipping the e2e automation server. `e2e-webdriver`
 // compiles an HTTP WebDriver endpoint into the binary so the Tier 2 suite can
 // drive a real app on macOS; in a released blocker that endpoint would be a
@@ -38,6 +33,7 @@ use tauri::Manager;
 /// The enforcer keeps running regardless of the policy; this is purely
 /// a UI affordance.
 #[cfg(target_os = "macos")]
+#[allow(deprecated)] // Cocoa FFI pending migration to objc2.
 pub(crate) fn set_macos_activation_policy(regular: bool) {
     use cocoa::appkit::NSApplication;
     use cocoa::appkit::NSApplicationActivationPolicy::{
@@ -51,6 +47,19 @@ pub(crate) fn set_macos_activation_policy(regular: bool) {
     unsafe {
         let ns_app = cocoa::appkit::NSApp();
         let _ = ns_app.setActivationPolicy_(policy);
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(deprecated)] // Cocoa FFI pending migration to objc2.
+fn set_macos_window_background(window: &tauri::WebviewWindow) {
+    use cocoa::appkit::{NSColor, NSWindow};
+    use cocoa::base::{id, nil};
+
+    let ns_window = window.ns_window().unwrap() as id;
+    unsafe {
+        let white = NSColor::colorWithRed_green_blue_alpha_(nil, 1.0, 1.0, 1.0, 1.0);
+        ns_window.setBackgroundColor_(white);
     }
 }
 
@@ -97,9 +106,9 @@ pub mod product_identity;
 /// deactivation, and isn't a floating panel by default.
 //
 // `tauri::Manager` is required in scope by the macro expansion (it calls
-// `window.app_handle()` internally). The crate-level import is gated on
-// the `desktop` feature, so re-import it here for the macOS build.
-#[cfg(target_os = "macos")]
+// `window.app_handle()` internally). Import it here when the `desktop`
+// feature is disabled.
+#[cfg(all(target_os = "macos", not(feature = "desktop")))]
 use tauri::Manager as _;
 
 #[cfg(target_os = "macos")]
@@ -177,7 +186,8 @@ pub mod windows_process;
 /// hook it at the AppKit layer ourselves. In-app uninstall exits via
 /// `std::process::exit(0)` and so is not routed through here.
 #[cfg(target_os = "macos")]
-unsafe fn install_terminate_guard(ns_app: cocoa::base::id) {
+#[allow(deprecated)] // Cocoa FFI pending migration to objc2.
+unsafe fn install_terminate_guard() {
     use cocoa::base::id;
     use objc::runtime::{class_addMethod, class_getInstanceMethod, method_setImplementation, Sel};
     use objc::{msg_send, sel, sel_impl};
@@ -196,6 +206,7 @@ unsafe fn install_terminate_guard(ns_app: cocoa::base::id) {
         0
     }
 
+    let ns_app = cocoa::appkit::NSApp();
     let delegate: id = msg_send![ns_app, delegate];
     if delegate.is_null() {
         log::warn!("install_terminate_guard: NSApp has no delegate yet");
@@ -366,8 +377,7 @@ pub fn run() {
             unsafe {
                 let is_autostart = std::env::args().any(|a| a == "--autostart");
                 set_macos_activation_policy(!is_autostart);
-                let ns_app = cocoa::appkit::NSApp();
-                install_terminate_guard(ns_app);
+                install_terminate_guard();
             }
 
             // Create main window with transparent titlebar on macOS
@@ -405,21 +415,7 @@ pub fn run() {
                 // standard traffic lights hidden — assert on every create.
                 commands::ensure_macos_traffic_lights_visible(app.handle());
 
-                // Set background color to match app (white)
-                use cocoa::appkit::{NSColor, NSWindow};
-                use cocoa::base::{id, nil};
-
-                let ns_window = window.ns_window().unwrap() as id;
-                unsafe {
-                    // Pure white background
-                    let bg_color = NSColor::colorWithRed_green_blue_alpha_(
-                        nil, 1.0, // R
-                        1.0, // G
-                        1.0, // B
-                        1.0, // A
-                    );
-                    ns_window.setBackgroundColor_(bg_color);
-                }
+                set_macos_window_background(&window);
 
                 #[cfg(feature = "desktop")]
                 {
@@ -596,17 +592,7 @@ pub fn run() {
                                             }
                                             commands::ensure_macos_traffic_lights_visible(app);
 
-                                            use cocoa::appkit::{NSColor, NSWindow};
-                                            use cocoa::base::{id, nil};
-
-                                            let ns_window = new_window.ns_window().unwrap() as id;
-                                            unsafe {
-                                                let bg_color =
-                                                    NSColor::colorWithRed_green_blue_alpha_(
-                                                        nil, 1.0, 1.0, 1.0, 1.0,
-                                                    );
-                                                ns_window.setBackgroundColor_(bg_color);
-                                            }
+                                            set_macos_window_background(&new_window);
                                             set_macos_activation_policy(true);
                                             let _ = new_window.show();
                                             let _ = new_window.set_focus();
