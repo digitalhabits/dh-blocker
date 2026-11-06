@@ -11,8 +11,8 @@ import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { escapeHtml, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
 import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, healWwwWebsiteEntries, isAllowlistBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist } from './blocklist-utils.js';
-import { computeNextOneShotOccurrenceMs, computeNextRepeatingOccurrenceMs, isNonRepeatingSchedule, isSchedulePausedNow, syncSchedulesToHelper } from './schedule-engine.js';
-import { saveData, updateHostsFile } from './persistence.js';
+import { computeNextOneShotOccurrenceMs, computeNextRepeatingOccurrenceMs, isNonRepeatingSchedule, isSchedulePausedNow, syncIOSSchedules } from './schedule-engine.js';
+import { saveData, syncBlockingState } from './persistence.js';
 import { render, renderScheduleVisibilityChips } from './render.js';
 import { isFocusSpaceOn, getFocusSpaceOffUntil, turnFocusSpaceOn, setFocusSpaceEnabled } from './focus-space-switch.js';
 import { canEditScheduleBetweenBlocks, commitSegmentDelete, isScheduleSegmentActiveNow } from './schedule-editor.js';
@@ -795,7 +795,7 @@ export async function deleteBlocklist(id) {
     expandedBlocklistCardIds.delete(id);
     void saveData();
     // iOS: drop the space's monitors and start warnings now, not on the next tick.
-    if (state.isIOS) void syncSchedulesToHelper();
+    if (state.isIOS) void syncIOSSchedules();
 
     // If the deleted blocklist was the selected one, reset the scheduler UI
     if (state.selectedBlocklistId === id) {
@@ -828,7 +828,7 @@ export function commitDelete() {
     // Only once undo is gone: an undone delete keeps its stopped space's restart.
     pendingDelete.activeBlocks.forEach((block) => void cancelIOSRestart(block));
     if (pendingDelete.activeBlocks.length > 0) {
-        updateHostsFile();
+        syncBlockingState();
     }
 
     dismissUndoToast();

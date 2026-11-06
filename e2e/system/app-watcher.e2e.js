@@ -62,8 +62,7 @@ async function waitForWarningGone(timeout = 8_000) {
 }
 
 async function setBlockedApps(apps, newlyAdded = apps) {
-    const result = await callTauri('setBlockedAppsViaHelper', apps, newlyAdded);
-    if (!result?.success) throw new Error(`setBlockedAppsViaHelper failed: ${JSON.stringify(result)}`);
+    await callTauri('setBlockedApps', apps, newlyAdded);
 }
 
 async function clearBlockedApps() {

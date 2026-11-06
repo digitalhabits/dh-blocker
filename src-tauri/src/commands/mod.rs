@@ -19,7 +19,6 @@ pub mod enforcement_toggle;
 #[cfg(not(target_os = "ios"))]
 pub mod grace;
 #[cfg(not(target_os = "ios"))]
-mod helper_shim;
 #[cfg(not(target_os = "ios"))]
 pub mod migration;
 #[cfg(not(target_os = "ios"))]
@@ -62,7 +61,6 @@ pub use enforcement_toggle::*;
 #[cfg(not(target_os = "ios"))]
 pub use grace::*;
 #[cfg(not(target_os = "ios"))]
-pub use helper_shim::*;
 #[cfg(not(target_os = "ios"))]
 pub use migration::*;
 #[cfg(not(target_os = "ios"))]

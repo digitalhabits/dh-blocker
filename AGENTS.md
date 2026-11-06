@@ -163,11 +163,10 @@ The order-sensitive startup sequence is the `DOMContentLoaded` handler in
 are a contract with the in-app tests — renaming one breaks tests that will not
 tell you why.
 
-`src/tauri-api.js` is a compat layer. The frontend still calls legacy
-`*_via_helper` command names that route through
-`src-tauri/src/commands/helper_shim.rs` (mostly no-ops for website blocking; app
-blocking forwards to `app_watcher`). This is dead naming, not a live daemon —
-there is no `helper-daemon/` in the repo, so do not go looking for one.
+`src/tauri-api.js` wraps the Tauri command and plugin APIs. On desktop,
+website enforcement reads the saved app data and the frontend pushes app
+policy directly through `set_blocked_apps`. The legacy helper and hosts
+commands in `commands/migration.rs` are for v1 cleanup.
 
 ### Startup gate
 

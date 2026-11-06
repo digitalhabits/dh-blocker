@@ -13,8 +13,8 @@ import { saveFocusSpace } from './focus-space-save.js';
 import { installFocusSpaceTagBridges, setupFocusSpaceTagEditors } from './focus-space-tags.js';
 import { handlePopoverOutsideClick } from './time-inputs.js';
 import { applyFocusSpaceEditorLanguage, confirmDiscardEditorEdits, editorHasUnsavedEdits, setupFocusSpaceEditor } from './focus-space-editor.js';
-import { loadData, saveData, updateHostsFile } from './persistence.js';
-import { updateBlockedApps, acceptEula, checkHelperStatus, checkScreentimeAuth, detectPlatform, ensureInstalledAppsCache, initializeIOSBlockingState, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility } from './blocking-platform.js';
+import { loadData, saveData, syncBlockingState } from './persistence.js';
+import { updateBlockedApps, acceptEula, checkScreentimeAuth, detectPlatform, ensureInstalledAppsCache, initializeIOSBlockingState, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility } from './blocking-platform.js';
 import { applyEnforcementDescCopy, applyMacAutomationIntroCopy, ensureExtensionSetupOnboardingShown, hasAcceptedEula, resetDevOnlyEulaAcceptance, returnToWelcomeFromEula, runDesktopOnboarding, runInitialOnboardingSequence, setupMacAutomationIntroModal, syncMigrationPostBackButtonVisibility, syncSetupBannerHeadline, welcomeFirefoxInstalled } from './onboarding.js';
 import {
     ALL_BLOCKING_METHOD_KEYS,
@@ -64,11 +64,10 @@ import {
     updateBlocklistModalModeLabels,
 } from './list-mode.js';
 import { render, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderBlocklistSelector } from './render.js';
-import { syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
-import { dismissTopmostEscapeLayer, refreshOpenHelperUi } from './modal-manager.js';
+import { dismissTopmostEscapeLayer } from './modal-manager.js';
 import {
     refreshUninstallButtonState,
-    setupGraceSetting, setupMaxOverrideWordsSetting, syncMaxOverrideWordsSetting, setupHelpMenuLinks, setupHelperSettings, setupInAppUninstall,
+    setupGraceSetting, setupMaxOverrideWordsSetting, syncMaxOverrideWordsSetting, setupHelpMenuLinks, setupInAppUninstall,
     setupOverrideAll, setupSettingsHelpButtons, setupSettingsInfoTooltips, setupWindowsUninstallGuidance,
     syncUninstallConfirmModal,
     updateOverrideAllButtonVisibility,
@@ -128,7 +127,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupTheme();
     setupUiZoomShortcuts();
     setupHelpMenuLinks();
-    setupHelperSettings();
     setupUsagePingToggle();
     setupStartWarningsToggle();
     setupStartWarningsOnboarding();
@@ -165,7 +163,7 @@ export async function runPostAcceptanceStartup() {
     }
 
     startupInitializationPromise = (async () => {
-        await runExpiryOnce(); // Align in-memory state with Screen Time / helper (e.g. after app was closed)
+        await runExpiryOnce(); // Reconcile blocks and pauses that expired while the app was closed.
 
         // Paint desktop state before native reconciliation; iOS waits for Screen Time.
         const renderedBeforeNativeStartup = !state.isIOS;
@@ -190,16 +188,9 @@ export async function runPostAcceptanceStartup() {
             setupWebAutomationUiAlerts();
             await ensureInstalledAppsCache();
             await runDesktopOnboarding();
-            await checkHelperStatus();
-            console.log('[startup-sync] Desktop startup helperAvailable:', state.helperAvailable);
-            // Reconcile manual blocks first so paused one-offs are removed from helper state after reinstall.
-            await syncActiveBlocksToHelper();
-            // Then sync schedules to helper so both enforcement sources are aligned.
-            await syncSchedulesToHelper();
-            console.log('[startup-sync] Startup helper reconciliation complete');
             // Push active schedule / block app sets into the in-process watcher
             // immediately — don't wait for the 1s tick interval.
-            await updateHostsFile();
+            await syncBlockingState();
             await updateBlockedApps();
             if (!state.migrationOnboardingActive) {
                 try {
@@ -638,7 +629,6 @@ function setupOverrideModalListeners() {
             alert(tSettings('pauseFailed'));
             return;
         } finally { state.pauseSubmitting = false; }
-        state.overrideBlocklistIdForHelper = null;
         delete window.overrideScheduleId;
 
         const keepSelectedId = state.selectedBlocklistId;
@@ -647,7 +637,6 @@ function setupOverrideModalListeners() {
         // Keep the focus space selected so the scheduler panel stays open; only
         // its lock state is resynced, so in-flight edits survive the stop.
         refreshSelectedBlocklistUi(keepSelectedId);
-        await refreshOpenHelperUi();
 
         closeOverrideModal();
     });
@@ -1636,10 +1625,6 @@ export function applySettingsLanguage() {
     refreshUninstallButtonState();
     updateOverrideAllButtonVisibility();
     void updateAllEnforcementToggleLocks();
-    setText('settings-helper-service-label', tSettings('helperService'));
-    setText('settings-update-helper-label', tSettings('updateHelper'));
-    setText('settings-clean-hosts-label', tSettings('cleanHostsFile'));
-    setText('settings-helper-hint', tSettings('helperHint'));
     setText('close-settings-btn', tSettings('settingsDone'));
     setText('grace-period-label-text', tSettings('gracePeriodLabel'));
     setText('grace-period-hint-text', tSettings('gracePeriodHint'));
@@ -1651,30 +1636,6 @@ export function applySettingsLanguage() {
     setHtml('settings-feedback-footer-text', tSettings('settingsFeedbackFooterHtml'));
     updateGraceSettingLock();
     refreshSettingsVersionLabels();
-
-    const helperStatusText = document.getElementById('settings-helper-status-text');
-    if (helperStatusText) {
-        const raw = (helperStatusText.textContent || '').trim();
-        const statusMap = {
-            'Checking...': tSettings('helperStatusChecking'),
-            'Active': tSettings('helperStatusActive'),
-            'Idle': tSettings('helperStatusIdle'),
-            'Installed, not reachable': tSettings('helperStatusInstalledNotReachable'),
-            'Update available': tSettings('helperStatusUpdateAvailable'),
-            'Not installed': tSettings('helperStatusNotInstalled'),
-            'Unknown': tSettings('helperStatusUnknown'),
-            'Tjekker...': tSettings('helperStatusChecking'),
-            'Aktiv': tSettings('helperStatusActive'),
-            'Inaktiv': tSettings('helperStatusIdle'),
-            'Installeret, men ikke tilgaengelig': tSettings('helperStatusInstalledNotReachable'),
-            'Installeret, men ikke tilgængelig': tSettings('helperStatusInstalledNotReachable'),
-            'Opdatering tilgaengelig': tSettings('helperStatusUpdateAvailable'),
-            'Opdatering tilgængelig': tSettings('helperStatusUpdateAvailable'),
-            'Ikke installeret': tSettings('helperStatusNotInstalled'),
-            'Ukendt': tSettings('helperStatusUnknown'),
-        };
-        if (statusMap[raw]) helperStatusText.textContent = statusMap[raw];
-    }
 
     applyMigrationOverlayStaticCopy();
     applyEulaOnboardingLanguage();

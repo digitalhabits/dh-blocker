@@ -971,17 +971,6 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::set_blocking_method,
         commands::get_system_diagnostics,
         commands::onboarding_state,
-        commands::check_helper_status,
-        commands::install_helper,
-        commands::uninstall_helper,
-        commands::start_block_via_helper,
-        commands::clear_block_via_helper,
-        commands::set_blocked_apps_via_helper,
-        commands::set_blocks_via_helper,
-        commands::set_schedules_via_helper,
-        commands::block_websites,
-        commands::clean_hosts_file,
-        commands::get_helper_diagnostics,
         commands::check_safari_fda_access,
         commands::sync_safari_fda_access,
         commands::complete_safari_fda_onboarding,
@@ -1048,17 +1037,6 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::set_blocking_method,
         commands::get_system_diagnostics,
         commands::onboarding_state,
-        commands::check_helper_status,
-        commands::install_helper,
-        commands::uninstall_helper,
-        commands::start_block_via_helper,
-        commands::clear_block_via_helper,
-        commands::set_blocked_apps_via_helper,
-        commands::set_blocks_via_helper,
-        commands::set_schedules_via_helper,
-        commands::block_websites,
-        commands::clean_hosts_file,
-        commands::get_helper_diagnostics,
         commands::open_browser_extension_settings,
         commands::open_url_in_browser,
         commands::save_overlay_image_asset,
@@ -1088,6 +1066,28 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
 
 #[cfg(test)]
 mod command_registration_tests {
+    #[test]
+    fn desktop_registers_the_app_policy_command() {
+        // Both desktop WebViews share the frontend call to set_blocked_apps.
+        let source = include_str!("lib.rs");
+        for platform in [
+            "/// All commands for macOS.",
+            "/// All commands for Windows",
+        ] {
+            let handler = source
+                .split_once(platform)
+                .expect("desktop command handler")
+                .1
+                .split_once("\n}")
+                .expect("end of desktop command handler")
+                .0;
+            assert!(
+                handler.contains("commands::set_blocked_apps,"),
+                "{platform} is missing set_blocked_apps"
+            );
+        }
+    }
+
     #[test]
     fn windows_registers_blocking_method_settings_commands() {
         // Guard the platform-specific IPC wiring: testing the commands directly

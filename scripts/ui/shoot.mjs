@@ -112,9 +112,6 @@ function installTauriStub(context, appData) {
     return context.addInitScript((appData) => {
         const RESPONSES = {
             load_data: appData,
-            // Returning null here would crash refreshDesktopHelperStatus, which
-            // reads `.running` off the result unguarded.
-            check_helper_status: { installed: false, running: false },
             // The blocking-method rows are hidden per browser unless that
             // browser is installed, so without this the whole section is
             // invisible and any screenshot of it would be blank. Firefox
@@ -244,7 +241,6 @@ async function openScreen(browser, screen, eulaRevision) {
         const isMobile = bodyClasses.includes('ios');
         document.getElementById('window-controls')?.classList.toggle('hidden', !showsWindowChrome);
         document.querySelector('.title-bar')?.classList.toggle('hidden', isMobile);
-        document.getElementById('helper-settings-section')?.classList.toggle('hidden', isMobile);
     }, { appData, bodyClasses });
 
     if (screen.theme === 'dark') {

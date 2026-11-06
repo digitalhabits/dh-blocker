@@ -1202,7 +1202,7 @@
                 internals.saveData = realSave;
                 internals.render = realRender;
                 internals.saveData();        // persist restored data to disk
-                internals.updateHostsFile(); // re-sync helper daemon
+                internals.syncBlockingState();
                 internals.render();          // re-render UI with real data
             }
         }
@@ -1590,20 +1590,20 @@
     // space's `apps` is the list to keep open, so it must travel as
     // `allowedApps` and never as `apps`. The collectors are private to
     // blocking-platform.js, so drive updateBlockedApps and read what it hands
-    // setBlockedAppsViaHelper (called before its first await, so synchronous).
+    // setBlockedApps (called before its first await, so synchronous).
     function runDesktopAppPayloadTests() {
         console.log('\n🖥️ Desktop app-watcher payload');
         const internals = window.__REDDBLOCK_INTERNALS__;
         const api = internals.tauriAPI;
         const saved = internals.appData;
-        const realSet = api.setBlockedAppsViaHelper;
+        const realSet = api.setBlockedApps;
         const now = Date.now();
         const allDay = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
         const live = (id) => createMockBlock(id, now - 1000, now + 60000);
         let sent = null;
-        api.setBlockedAppsViaHelper = (apps, newlyAdded, opts) => {
+        api.setBlockedApps = (apps, newlyAdded, opts) => {
             sent = { apps, ...(opts || {}) };
-            return Promise.resolve({ success: true });
+            return Promise.resolve(null);
         };
         const sync = (blocklists, { activeBlocks = [], schedules = [] } = {}) => {
             internals.appData = createMockAppData({ blocklists, activeBlocks, schedules });
@@ -1669,7 +1669,7 @@
             // through the stub, so the next real tick sees no phantom transitions.
             internals.appData = saved;
             void internals.updateBlockedApps();
-            api.setBlockedAppsViaHelper = realSet;
+            api.setBlockedApps = realSet;
         }
     }
 
@@ -1769,11 +1769,11 @@
         const internals = window.__REDDBLOCK_INTERNALS__;
         const api = internals.tauriAPI;
         const saved = internals.appData;
-        const realSet = api.setBlockedAppsViaHelper;
+        const realSet = api.setBlockedApps;
         const now = Date.now();
         const allDay = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
         const live = (id) => createMockBlock(id, now - 1000, now + 60000);
-        api.setBlockedAppsViaHelper = () => Promise.resolve({ success: true });
+        api.setBlockedApps = () => Promise.resolve(null);
         // Sync the state before the start, then the state after it.
         const transition = (blocklists, before, after) => {
             internals.appData = createMockAppData({ blocklists, ...before });
@@ -1888,7 +1888,7 @@
             internals.renderAppBlockingWarningOverlay();
             internals.appData = saved;
             void internals.updateBlockedApps();
-            api.setBlockedAppsViaHelper = realSet;
+            api.setBlockedApps = realSet;
         }
     }
 
@@ -2366,7 +2366,7 @@
         const api = internals.tauriAPI;
         const methodNames = ['saveData', 'screentimeSetResumePayload', 'screentimeRegisterOneOffActivity', 'screentimeCancelResume',
             'screentimeStartBlock', 'screentimeClearBlock', 'screentimeClearManualBlock',
-            'setSchedulesPlugin', 'checkHelperStatus', 'setBlockedAppsViaHelper'];
+            'setSchedulesPlugin', 'setBlockedApps'];
         const savedMethods = Object.fromEntries(methodNames.map(name => [name, api[name]]));
         const savedAppData = internals.appData;
         const savedLastBlockedDomains = internals.lastBlockedDomains;
@@ -2405,7 +2405,7 @@
                 events.push('schedule-sync');
                 return scheduleSyncResults?.length ? scheduleSyncResults.shift() : { success: true };
             };
-            api.setBlockedAppsViaHelper = async () => { events.push('desktop-app-sync'); return { success: true }; };
+            api.setBlockedApps = async () => { events.push('desktop-app-sync'); return null; };
 
             const setBlock = (block) => {
                 currentTarget = block;
@@ -2533,9 +2533,8 @@
             const desktopBlock = makeBlock();
             setBlock(desktopBlock);
             events = [];
-            api.checkHelperStatus = async () => ({ running: false, version_ok: false });
             await internals.stopFocusSpaceTarget({ block: desktopBlock });
-            assert(!events.includes('register'), 'T72: non-iOS stop does not register an iOS activity');
+            assertEqual(events, ['save', 'desktop-app-sync'], 'T72: desktop stop saves before syncing the watcher and skips Screen Time');
 
             internals.isIOS = true;
             const neverBlocklist = { ...blocklist, id: 'bl-ios-never', unlockMinutes: 0 };

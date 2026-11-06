@@ -274,24 +274,22 @@ It uses mock `appData` and pure functions from `src/test-utils.js` including:
 Tier 2 validates real side effects through the same app pathways users hit:
 
 - frontend state updates,
-- Tauri command calls (`save_data`, legacy `*_via_helper` shims, `clean_hosts_file`, app-blocking commands),
+- Tauri command calls (`save_data`, `set_blocked_apps`, `strip_hosts_markers`),
 - pause/resume flag propagation,
 - diagnostics contract.
-
-It does **not** run a separate helper daemon. `check_helper_status()` always reports the app itself as ready via `helper_shim.rs`.
 
 ### Entry points and structure
 
 - Integration suite: `src/integration-tests.js`
 - Exposed runner: `window.runIntegrationTests(profile)`
 - Uses internals exported by app runtime:
-  - `window.__REDDBLOCK_INTERNALS__` from `src/app.js`
+  - `window.__REDDBLOCK_INTERNALS__` from `src/dev-internals.js`
 
 Core internal handles used:
 
 - `appData`
 - `saveData`
-- `updateHostsFile` (legacy name — does not write hosts in v3)
+- `syncBlockingState`
 - `tauriAPI`
 - `render`
 
@@ -315,10 +313,10 @@ Default behavior with invalid/missing profile falls back to `core`.
 - **A8**: Pause/resume schedule active path (**full only**)
 - **A9**: Pause natural-expiry schedule smoke (**full only**)
 - **A10**: Pause inactive schedule suppression path (**full only**)
-- **A11**: Data file owns enforcement — the legacy `set_blocks_via_helper` shim is ack-only and must not affect derived enforcement (**full only**)
+- **A11**: Native website enforcement picks up an in-memory edit once the frontend saves it (**full only**)
 
 Expected outcome for A2–A10, A11:
-- blocking and schedule state transitions succeed through save + shim command paths
+- blocking and schedule state transitions succeed through persistence and blocking synchronisation
 - pause/resume transitions update flags and sync without errors
 - short timer-smoke checks confirm automatic pause expiry clears pause flags
 
@@ -327,13 +325,13 @@ Expected outcome for A2–A10, A11:
 - **B2**: One-off + schedule same blocklist (**full only**)
 
 ### Testing Group C: Clear and override semantics
-- **C1**: Scoped clear by blocklist ID (shim ack + frontend clear path)
+- **C1**: Scoped clear by blocklist ID
 - **C2**: Clear-all manual blocks (**full only**)
 - **C3**: Max difficulty blocklist start/clear path (**full only**)
 
-### Testing Group E: Legacy-command and diagnostics invariants
-- **E1**: Clean hosts command path (v1 migration cleanup — succeeds and is idempotent; v3 never writes hosts)
-- **E2**: Diagnostics contract (v3 shim: always-ready helper status, `app_version` + `backend` label)
+### Testing Group E: Migration cleanup and diagnostics
+- **E1**: Clean hosts command path (v1 migration cleanup is idempotent)
+- **E2**: System diagnostics contract (app version, persisted data and enforcement snapshots)
 
 ### Testing Group F: App-block command-path checks (non-visual)
 - **F1**: Set blocked apps command path (**full only**)
@@ -377,15 +375,13 @@ that surface is manual checklist section 15.
 ### What differentiates Tier 2
 
 - Real Tauri command flow from UI-side code.
-- Catches persistence and shim regressions missed by Tier 1.
+- Catches persistence and native command regressions missed by Tier 1.
 
 ### Important limitations
 
 - All groups now assert the Rust-derived enforcement snapshot (`get_system_diagnostics` → `current_blocking`), not the removed v1 hosts payload. This proves derivation and command paths, **not** browser-visible redirects.
-- The legacy `*_via_helper` clear/set commands are acknowledgment-only shims on v3; the real clear path is the frontend mutating app data and saving. The rewritten C/B tests exercise both (shim ack + real path); A11 pins that shim payloads alone never affect enforcement.
 - Some checks are command-path assertions, not UI-visible assertions.
 - Not a substitute for manual Automation TCC flows, extension install, or enforcer grace UX.
-- **Tech debt:** renaming `updateHostsFile()` (legacy name; it drives v3 sync).
 
 ---
 

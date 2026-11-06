@@ -1,16 +1,9 @@
-// Modal/escape-layer management and the settings helper-status refresh loop.
-// Extracted verbatim from app.js.
-import { state } from './state.js';
-import { updateHelperStatusIndicator, updateCleanHostsBtnState } from './settings.js';
+// Modal and escape-layer management.
 import { closeAllLanguagePickers, isAnyLanguagePickerOpen } from './app.js';
 import { resetWebsitesImportMenuPosition } from './website-input.js';
 import { closeAllBlocklistMenus } from './blocklists.js';
 import { closeAllPopovers } from './time-inputs.js';
 import { closeOpenCustomSelect } from './custom-select.js';
-
-export const HELPER_UI_REFRESH_MS = 3000;
-let helperUiRefreshTimer = null;
-let helperUiRefreshInFlight = false;
 
 export function isModalVisible(id) {
     const modal = document.getElementById(id);
@@ -78,38 +71,4 @@ export function closeEscapeDialog() {
     if (cancel) cancel.click();
     else modal.classList.add('hidden');
     return true;
-}
-
-export function stopHelperUiRefreshLoop() {
-    if (helperUiRefreshTimer != null) {
-        clearInterval(helperUiRefreshTimer);
-        helperUiRefreshTimer = null;
-    }
-}
-
-export async function refreshOpenHelperUi() {
-    if (helperUiRefreshInFlight || state.isIOS) return;
-
-    const settingsVisible = isModalVisible('settings-modal');
-    if (!settingsVisible) {
-        stopHelperUiRefreshLoop();
-        return;
-    }
-
-    helperUiRefreshInFlight = true;
-    try {
-        if (settingsVisible) {
-            await updateHelperStatusIndicator();
-            updateCleanHostsBtnState();
-        }
-    } finally {
-        helperUiRefreshInFlight = false;
-    }
-}
-
-export function startHelperUiRefreshLoop() {
-    if (state.isIOS || helperUiRefreshTimer != null) return;
-    helperUiRefreshTimer = setInterval(() => {
-        void refreshOpenHelperUi();
-    }, HELPER_UI_REFRESH_MS);
 }

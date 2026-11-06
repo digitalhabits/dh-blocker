@@ -58,12 +58,11 @@ This section explains the **current** runtime:
 | Area | Files |
 |---|---|
 | Frontend orchestration | `src/app.js` (entry: init sequence + event wiring), `src/index.html`, `src/styles.css` |
-| Frontend shared state | `src/state.js` (mutable cross-module state object), `src/tauri-api.js` (Tauri command compat layer) |
-| Frontend hubs | `src/persistence.js` (load/save/hosts sync), `src/render.js` (render cycle + tick loop), `src/schedule-engine.js` (occurrence math + helper sync) |
+| Frontend shared state | `src/state.js` (mutable cross-module state object), `src/tauri-api.js` (Tauri command and plugin wrappers) |
+| Frontend hubs | `src/persistence.js` (load/save and platform blocking sync), `src/render.js` (render cycle + tick loop), `src/schedule-engine.js` (occurrence calculations and iOS schedule sync) |
 | Frontend features | `src/blocklists.js`, `src/confirm-modals.js`, `src/schedule-editor.js`, `src/schedule-overlay.js`, `src/enforcement.js`, `src/onboarding.js`, `src/blocking-platform.js`, `src/settings.js`, `src/update-banner.js`, `src/theme.js`, `src/override-challenge.js`, `src/challenge-controller.js`, `src/time-inputs.js`, `src/website-input.js`, `src/apps-picker.js`, `src/modal-manager.js`, `src/focus-space-editor.js`, `src/focus-space-switch.js`, `src/when-to-block.js`, `src/allowlist-ios.js` (iOS allow-mode start gate + effective-policy resolvers), `src/schedule-overlay-message-editor.js`, `src/custom-select.js`, `src/changelog.js` |
 | Frontend leaf utilities | `src/utils.js`, `src/i18n.js`, `src/blocklist-utils.js`, `src/list-mode.js`, `src/list-presentation.js`, `src/unlock-duration.js`, `src/calendar-layout.js`, `src/ios-gesture.js`, `src/dev-internals.js` (test surface: `window.__REDDBLOCK_INTERNALS__`) |
 | App data persistence | `src-tauri/src/commands/data.rs` |
-| Legacy command names (shim) | `src-tauri/src/commands/helper_shim.rs` |
 | macOS Automation blocking | `src-tauri/src/web_automation.rs`, `src-tauri/src/commands/web_automation.rs` |
 | macOS per-browser method (Automation default, opt-in extension) | `src-tauri/src/blocking_method.rs`, `src-tauri/src/commands/blocking_method_cmd.rs`, `src-tauri/src/app_group.rs` (Safari extension mode), `src-tauri/src/commands/safari_bridge.rs`, `src-tauri/src/safari_services.rs` |
 | Windows + macOS Firefox extension host | `src-tauri/src/native_host.rs`, `src-tauri/src/native_host_install.rs` |
@@ -87,10 +86,8 @@ startup sequence lives in the `DOMContentLoaded` handler in `src/app.js`.
 The `window.__REDDBLOCK_INTERNALS__` keys in `src/dev-internals.js` are a
 contract with the in-app test scripts — never rename them.
 
-There is **no** `helper-daemon/` in the repo and **no** live IPC to a
-privileged helper. Frontend calls like `start_block_via_helper` are kept for
-historical reasons and route through `helper_shim.rs` (mostly no-ops for
-website blocking; app blocking goes to `app_watcher`).
+The legacy helper and hosts-file commands are migration entry points.
+Desktop blocking uses the saved app data and the in-process app watcher.
 
 ---
 
@@ -525,8 +522,8 @@ Per blocked-app PID state machine:
 4. **SIGKILL** — 10 s after polite quit if PID still alive
 
 Protected apps (Digital Habits: Blocker itself, Finder, shell processes) are never targeted.
-Schedule and manual app lists merge in the frontend; `set_blocked_apps_via_helper`
-(shim) forwards to `app_blocking::set_blocked_apps` with the full mode-aware
+Schedule and manual app lists merge in the frontend, which sends
+`app_blocking::set_blocked_apps` the full mode-aware
 policy: `apps`, `newly_added`, `allowed_apps`, `allowlist_active`,
 `allowlist_newly_started`.
 
@@ -578,9 +575,8 @@ countdown can float over third-party fullscreen Spaces without stealing focus.
 ### 9.2 How enforcement picks up changes
 
 1. Frontend computes intent and calls `save_data`.
-2. Legacy shims acknowledge (`start_block_via_helper`, `set_schedules_via_helper`
-   — no separate daemon to sync to).
-3. Backends re-read canonical data:
+2. The frontend sends the effective app policy to the watcher.
+3. Desktop enforcement reads the canonical data:
    - Automation watcher: every tick
    - Native host: on connect, 2 s file-change poll, 30 s poll
    - App watcher: on `set_blocked_apps` and each poll
@@ -665,8 +661,6 @@ never active. Naming: “X” → “X copy” → “X copy 2” …
 4. macOS: start Automation watcher after EULA (`web_automation` auto-start)
 5. Reconcile launch-at-login (release builds only); Windows leaves legacy watchdog tasks untouched
 6. Frontend: EULA gate → browser setup (Automation rows + Firefox extension)
-
-`check_helper_status()` always reports ready — the app **is** the runtime.
 
 ### 11.2 App close vs quit
 
@@ -858,16 +852,13 @@ desktop `current_blocking` state and shows nothing on iOS).
 
 Desktop surfaces include:
 
-- app version and backend mode (`automation` on macOS, `extension` on Windows)
+- app version, build mode, operating system and architecture
 - Automation permission status per browser (macOS)
 - extension scan summary (Firefox on macOS; all browsers on Windows)
 - current enforcement snapshot (`current_blocking`): per-block breakdown with
   mode, plus allowlist state (`allowlist_active`, allowed website/app unions)
-- hosts file contents (should be clean post-migration)
+- legacy migration residue and completion status
 - relevant paths and logs
-
-`get_helper_diagnostics()` (shim) returns app version + backend label — not
-legacy helper daemon status.
 
 ---
 
@@ -987,7 +978,7 @@ flowchart TD
 - **Install:** required admin/UAC for helper registration
 
 Primary historical code lived in `helper-daemon/src/main.rs` and
-`src-tauri/src/commands/helper.rs` (since replaced by `helper_shim.rs`).
+`src-tauri/src/commands/helper.rs`.
 
 ## v1 helper internals
 

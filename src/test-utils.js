@@ -127,7 +127,7 @@ function createMockAppData(overrides = {}) {
 
 /**
  * Calculate which domains should be blocked at a given time
- * This mirrors the logic in updateHostsFile() but is pure and testable
+ * This mirrors the logic in syncBlockingState() but is pure and testable
  * 
  * @param {Object} appData - Mock app data
  * @param {number} now - Timestamp to check

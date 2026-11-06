@@ -248,10 +248,7 @@ fn compute_cleaned_hosts() -> Result<(String, bool), String> {
 
 // ---- Public commands -----------------------------------------------------
 
-/// Legacy single-step wrapper. Kept as a Tauri command and as a public
-/// fn so the `--uninstall` CLI path and the helper-shim still compile.
-/// Now just calls into the bundled migration with a synthesised
-/// AppHandle-less data dir.
+/// Clean up legacy hosts markers using the bundled migration.
 #[tauri::command]
 pub async fn strip_hosts_markers() -> Result<bool, String> {
     // No AppHandle here, so no app-data backup. Best-effort marker

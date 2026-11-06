@@ -1,5 +1,4 @@
-// Tauri API compatibility layer wrapping @tauri-apps/* plugin invokes.
-// Extracted verbatim from app.js — leaf module, imports only Tauri APIs.
+// Frontend wrappers for Tauri commands and plugin APIs.
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -27,42 +26,24 @@ export const tauriAPI = {
     // (Dock icon + global menu bar disappear when the window closes).
     closeWindow: () => invoke('hide_main_window').catch(() => getCurrentWindow().hide()),
 
-    // Helper daemon operations
-    checkHelperStatus: () => invoke('check_helper_status').catch(() => ({ installed: false, running: false })),
-    checkHelper: async () => {
-        const status = await invoke('check_helper_status').catch(() => ({ installed: false, running: false }));
-        return status.running === true;
-    },
-    installHelper: () => invoke('install_helper'),
-    uninstallHelper: () => invoke('uninstall_helper'),
-    startBlockViaHelper: (data) => invoke('start_block_via_helper', { ...data }),
-    // Tauri maps Rust snake_case params to camelCase in JS; use blocklistId not blocklist_id
-    clearBlockViaHelper: (blocklistId) => invoke('clear_block_via_helper', blocklistId != null ? { blocklistId } : {}),
-    cleanHostsFile: () => invoke('clean_hosts_file'),
-    getHelperDiagnostics: () => invoke('get_helper_diagnostics'),
+    // Migration and diagnostics
+    stripHostsMarkers: () => invoke('strip_hosts_markers'),
     getSystemDiagnostics: () => invoke('get_system_diagnostics'),
-    setBlocksViaHelper: (blocks) => invoke('set_blocks_via_helper', { blocks }),
 
     // App operations
     openAppPicker: () => invoke('open_app_picker'),
     listInstalledApps: () => invoke('list_installed_apps'),
-    blockWebsites: (domains) => invoke('block_websites', { domains }),
-
-    // App blocking via helper daemon (persistent, survives app close)
-    setBlockedAppsViaHelper: (
+    setBlockedApps: (
         apps,
         newlyAdded = [],
         { allowedApps = [], allowlistActive = false, allowlistNewlyStarted = false } = {},
-    ) => invoke('set_blocked_apps_via_helper', {
+    ) => invoke('set_blocked_apps', {
         apps,
         newlyAdded,
         allowedApps,
         allowlistActive,
         allowlistNewlyStarted,
     }),
-
-    // Schedule management via helper daemon (persistent, handles transitions autonomously)
-    setSchedulesViaHelper: (schedules) => invoke('set_schedules_via_helper', { schedules }),
 
     // Screen Time API (iOS only - provided by tauri-plugin-screentime)
     screentimeRequestAuth: () => invoke('plugin:screentime|request_authorization'),

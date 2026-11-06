@@ -9,8 +9,8 @@ import { tauriAPI, openUrl } from './tauri-api.js';
 import { escapeHtml } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
 import { applyIOSScreenTimeTokenRefreshResult, getBlocklistIOSScreenTimeSelection, hasUsableIOSScreenTimeSelection, isAllowlistBlocklist, isProtectedApp, normalizeBlockedAppKey, uniqueBlockedAppDisplayNames } from './blocklist-utils.js';
-import { isSchedulePausedNow, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncSchedulesToHelper } from './schedule-engine.js';
-import { saveData, updateHostsFile } from './persistence.js';
+import { isSchedulePausedNow, scheduleHasFutureSingleOccurrence, syncIOSSchedules } from './schedule-engine.js';
+import { saveData, syncBlockingState } from './persistence.js';
 
 import { renderBlocklists } from './blocklists.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
@@ -79,23 +79,15 @@ export async function updateBlockedApps() {
     // The watcher can raise the card before this sync lands; re-render so it names the new space.
     if (started.length > 0 && appBlockingWarningRows.size > 0) renderAppBlockingWarningOverlay();
 
-    // Desktop v3: `set_blocked_apps_via_helper` routes to the in-process
-    // app watcher — always push while the app is alive. The legacy
-    // helper-daemon gate left schedule app blocking as a no-op whenever
-    // `state.helperAvailable` was still false at the first tick.
     try {
-        const result = await tauriAPI.setBlockedAppsViaHelper(appsArray, newlyAddedApps, {
+        await tauriAPI.setBlockedApps(appsArray, newlyAddedApps, {
             allowedApps,
             allowlistActive: allowedApps.length > 0,
         });
-        if (result && result.success) {
-            console.log(
-                '[updateBlockedApps] Apps synced to watcher:',
-                appsArray.length, 'apps,', newlyAddedApps.length, 'newly added',
-            );
-        } else {
-            console.warn('[updateBlockedApps] Watcher sync failed:', result?.error);
-        }
+        console.log(
+            '[updateBlockedApps] Apps synced to watcher:',
+            appsArray.length, 'apps,', newlyAddedApps.length, 'newly added',
+        );
     } catch (e) {
         console.warn('[updateBlockedApps] Failed to sync blocked apps to watcher:', e);
     }
@@ -710,33 +702,6 @@ export function joinAppListWithLimit(names, max = 3, { bold = true, oxford = fal
     return `${shown} ${and} ${wrap(moreLabel)}`;
 }
 
-// Check if the helper daemon is available (desktop only)
-export async function checkHelperStatus() {
-    if (state.isIOS) return; // Mobile uses platform blockers, not helper daemon.
-    const status = await refreshDesktopHelperStatus();
-    console.log('Helper status:', status);
-
-    if (status.running && !status.version_ok) {
-        console.log('Helper is outdated (version:', status.version, ') - will prompt to update on first block');
-    } else if (!status.installed) {
-        console.log('Helper not installed - will prompt on first block');
-    }
-
-}
-
-/// True if a failed install-helper result looks like the user cancelled the UAC / admin prompt
-/// rather than an actual failure. Backend returns messages prefixed with "cancelled:" for this.
-export function isHelperInstallCancelled(errorMsg) {
-    if (!errorMsg || typeof errorMsg !== 'string') return false;
-    return errorMsg.startsWith('cancelled:') || errorMsg.toLowerCase().includes('cancelled');
-}
-
-/** True if the error indicates the helper daemon is not reachable (e.g. connection refused on Windows). */
-export function isHelperConnectionError(errorMsg) {
-    if (!errorMsg || typeof errorMsg !== 'string') return false;
-    return errorMsg.includes('Failed to connect to helper') || errorMsg.includes('refused') || errorMsg.includes('10061');
-}
-
 // Check Screen Time authorization (iOS only)
 export async function checkScreentimeAuth() {
     try {
@@ -784,7 +749,7 @@ export async function initializeIOSBlockingState() {
         });
     state.lastBlockedDomains = activeDomains;
     // Re-register DeviceActivity schedules so background activation survives app restarts.
-    await syncSchedulesToHelper();
+    await syncIOSSchedules();
 }
 
 /**
@@ -951,8 +916,7 @@ export function setupMobileExternalLinkOpens() {
 }
 
 // Load data from main process
-/// Run expiry once (e.g. on app load) so in-memory state matches Screen Time / helper.
-/// Clears expired blocks and pause state, then syncs to plugin/helper.
+/// Clear expired blocks and pauses, then apply the remaining enforcement state.
 export async function runExpiryOnce() {
     const now = Date.now();
     let changed = false;
@@ -1004,8 +968,8 @@ export async function runExpiryOnce() {
 
     if (!changed) return;
     await saveData();
-    await updateHostsFile();
-    await syncSchedulesToHelper();
+    await syncBlockingState();
+    await syncIOSSchedules();
     await updateBlockedApps();
 }
 
@@ -1310,8 +1274,6 @@ export function detectPlatform() {
         // Hide desktop-only UI on iOS
         document.getElementById('window-controls')?.classList.add('hidden');
         document.querySelector('.title-bar')?.classList.add('hidden');
-        // Hide helper-related settings section on iOS
-        document.getElementById('helper-settings-section')?.classList.add('hidden');
 
         // iOS app blocking uses Screen Time tokens (not app names).
         configureMobileBlocklistFields();

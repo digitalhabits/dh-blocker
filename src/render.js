@@ -5,14 +5,14 @@ import { getCalendarLanePresentation } from './calendar-layout.js';
 import { escapeHtml, getContrastTextColor } from './utils.js';
 import { tSettings, weekdayAbbrevMon0List } from './i18n.js';
 import { isBlockAlwaysOn } from './blocklist-utils.js';
-import { isNonRepeatingSchedule, isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
-import { saveData, updateHostsFile } from './persistence.js';
+import { isNonRepeatingSchedule, isSchedulePausedNow, resolveOneShotOccurrences, syncIOSSchedules } from './schedule-engine.js';
+import { saveData, syncBlockingState } from './persistence.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { autoSelectSoleBlocklist, isBlocklistEditFrictionRequired, isOneOffPauseActive, renderBlocklists } from './blocklists.js';
 import { updateBlockedApps, updateOnboardingVisibility, updateWindowHeight } from './blocking-platform.js';
 import { handleBlocklistSelect, openOverrideModal, syncSchedulerChromeVisibility, refreshCalendarPreviews, handleTimeChange } from './confirm-modals.js';
 import { confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, resyncEditorLockState, syncEditorFooter } from './focus-space-editor.js';
-import { updateCleanHostsBtnState, updateOverrideAllButtonVisibility } from './settings.js';
+import { updateOverrideAllButtonVisibility } from './settings.js';
 import { formatDuration, formatTime } from './app.js';
 import { usagePingTick } from './usage-ping.js';
 
@@ -53,7 +53,6 @@ export function render() {
 export function syncSelectedControlState() {
     syncEditorFooter();
     updateOverrideAllButtonVisibility();
-    updateCleanHostsBtnState();
 }
 
 // Render the generic weekly schedule: fixed Mon..Sun rows with a horizontal time axis.
@@ -785,8 +784,8 @@ export function startTickInterval() {
         if (newlyActiveBlocks.length > 0) {
             // Mark as activated
             newlyActiveBlocks.forEach(b => state.activatedBlockIds.add(b.id));
-            // Update hosts to apply the blocking rules
-            await updateHostsFile();
+            // Reconcile active blocking rules
+            await syncBlockingState();
             render();
             shouldSyncControls = true;
         }
@@ -804,8 +803,7 @@ export function startTickInterval() {
             });
 
             await saveData();
-            await syncActiveBlocksToHelper();
-            await updateHostsFile();
+            await syncBlockingState();
             await updateBlockedApps();
             render();
             shouldSyncControls = true;
@@ -824,23 +822,22 @@ export function startTickInterval() {
                 });
 
                 await saveData();
-                await syncSchedulesToHelper();
-                await updateHostsFile();
+                await syncIOSSchedules();
+                await syncBlockingState();
                 await updateBlockedApps();
                 render();
                 shouldSyncControls = true;
             }
         }
 
-        // Check for schedule segment transitions every 30s (schedules are minute-granular
-        // and the helper daemon handles transitions autonomously)
+        // Periodically reconcile the UI and active blocking state.
         if (state.appData.schedules && state.appData.schedules.length > 0) {
             if (!startTickInterval._scheduleTickCount) startTickInterval._scheduleTickCount = 0;
             startTickInterval._scheduleTickCount++;
 
             if (startTickInterval._scheduleTickCount >= 30) {
                 startTickInterval._scheduleTickCount = 0;
-                await updateHostsFile();
+                await syncBlockingState();
                 await updateBlockedApps();
                 shouldSyncControls = true;
             }
@@ -906,8 +903,8 @@ export function startTickInterval() {
                     console.log('Auto-stopped expired schedule(s):', expiredScheduleIds);
                     state.activeScheduleSegmentCount = 0;
                     await saveData();
-                    // Sync updated schedules to helper daemon
-                    await syncSchedulesToHelper();
+                    // Refresh the Screen Time schedules.
+                    await syncIOSSchedules();
                     // Update blocked apps after schedule expiration
                     await updateBlockedApps();
                     render();
@@ -933,9 +930,7 @@ export function startTickInterval() {
             render();
 
             // Sync blocking rules now that blocks have been removed.
-            // On iOS this clears Screen Time settings; on desktop the helper
-            // daemon handles expiry autonomously, but the call is harmless.
-            await updateHostsFile();
+            await syncBlockingState();
             await updateBlockedApps();
             shouldSyncControls = true;
         }
@@ -947,9 +942,9 @@ export function startTickInterval() {
             // rules immediately so iOS Screen Time enforcement fires within ~1s
             // instead of waiting up to 30s for the schedule tick counter.
             if (state.isIOS) {
-                await syncSchedulesToHelper();
+                await syncIOSSchedules();
             }
-            await updateHostsFile();
+            await syncBlockingState();
             await updateBlockedApps();
             render();
             shouldSyncControls = true;

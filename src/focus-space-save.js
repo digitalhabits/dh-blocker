@@ -9,9 +9,9 @@ import { confirmModalWebsiteInputValue, confirmPendingAppOnSave } from './focus-
 import { tSettings } from './i18n.js';
 import { getSelectedBlocklistModalMode } from './list-mode.js';
 import { normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType, resolveActiveOverrideDifficulty } from './override-challenge.js';
-import { saveData, updateHostsFile } from './persistence.js';
+import { saveData, syncBlockingState } from './persistence.js';
 import { renderBlocklistSelector, renderScheduleAlwaysOnRow, renderWeekBlocks } from './render.js';
-import { syncSchedulesToHelper } from './schedule-engine.js';
+import { syncIOSSchedules } from './schedule-engine.js';
 import { state } from './state.js';
 
 function readFocusSpace(tags) {
@@ -154,12 +154,12 @@ export async function saveFocusSpace(tags) {
 
     if (hasActiveBlock || hasActiveSchedule) {
         // Wait for edited rules to reach enforcement before completing the save.
-        await updateHostsFile();
-        await syncSchedulesToHelper();
+        await syncBlockingState();
+        await syncIOSSchedules();
         await updateBlockedApps();
     } else if (state.isIOS) {
         // Switched to Manual: its old schedule's monitors and start warnings go now.
-        await syncSchedulesToHelper();
+        await syncIOSSchedules();
     }
 
     refreshAfterFocusSpaceSave(blocklist);

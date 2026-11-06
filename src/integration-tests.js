@@ -1,7 +1,7 @@
 /**
  * ReddBlock Tier 2 Integration Tests
  *
- * These tests run through the app -> Tauri -> helper pipeline
+ * These tests run through the frontend and native Tauri backend
  * and can modify real system state.
  *
  * Profiles:
@@ -21,7 +21,7 @@
     const getInternals = () => window.__REDDBLOCK_INTERNALS__;
     const getAppData = () => getInternals()?.appData;
     const callSaveData = () => getInternals()?.saveData?.();
-    const callUpdateHostsFile = (silent) => getInternals()?.updateHostsFile?.(silent);
+    const callSyncBlockingState = () => getInternals()?.syncBlockingState?.();
     const getTauriAPI = () => getInternals()?.tauriAPI;
     const callRender = () => getInternals()?.render?.();
 
@@ -145,21 +145,6 @@
         assertOrThrow(!cb.domains.includes(domain), `${testName}: ${domain} still in current_blocking.domains`);
     }
 
-    async function ensureHelperRunningOrSkip(testName) {
-        const tauriAPI = getTauriAPI();
-        if (!tauriAPI) {
-            return { skipped: true, reason: `${testName}: tauriAPI unavailable` };
-        }
-        const status = await tauriAPI.checkHelperStatus();
-        if (!status.running) {
-            return { skipped: true, reason: `${testName}: helper not running` };
-        }
-        if (!status.version_ok) {
-            return { skipped: true, reason: `${testName}: helper version mismatch` };
-        }
-        return null;
-    }
-
     function addTestBlocklist({ websites = [], apps = [], name = 'Integration Test', mode = 'manual' } = {}) {
         const appData = getAppData();
         const blocklist = {
@@ -233,8 +218,6 @@
     async function teardownSuite() {
         console.log('🧹 Cleaning up Tier 2 integration suite...');
         try {
-            const tauriAPI = getTauriAPI();
-
             // Restore structural state from snapshot
             if (originalAppDataBackup) {
                 const appData = getAppData();
@@ -248,13 +231,8 @@
 
             await callSaveData();
 
-            // Sync the precisely restored state to the daemon (handles both hosts and apps)
-            if (tauriAPI) {
-                const status = await tauriAPI.checkHelperStatus();
-                if (status.running && status.version_ok) {
-                    await callUpdateHostsFile(false);
-                }
-            }
+            await callSyncBlockingState();
+            await getInternals().updateBlockedApps();
 
             callRender();
             console.log('   ✅ Cleanup complete');
@@ -269,14 +247,8 @@
         removeTestDataFromAppState();
         await callSaveData();
 
-        const tauriAPI = getTauriAPI();
-        if (!tauriAPI) return;
-
-        const status = await tauriAPI.checkHelperStatus();
-        if (status.running && status.version_ok) {
-            const result = await callUpdateHostsFile(false);
-            assertOrThrow(result && result.success, `${testName}: reset sync failed`);
-        }
+        const result = await callSyncBlockingState();
+        assertOrThrow(result && result.success, `${testName}: reset sync failed`);
     }
 
     async function runIsolatedIntegrationTest(testName, fn) {
@@ -319,7 +291,7 @@
         block.isPaused = true;
         block.pauseEndTime = nowMs() + pauseMs;
         await callSaveData();
-        const result = await callUpdateHostsFile();
+        const result = await callSyncBlockingState();
         assertOrThrow(result && result.success, 'pause helper: one-off pause sync failed');
         return block;
     }
@@ -331,7 +303,7 @@
         delete block.isPaused;
         delete block.pauseEndTime;
         await callSaveData();
-        const result = await callUpdateHostsFile();
+        const result = await callSyncBlockingState();
         assertOrThrow(result && result.success, 'resume helper: one-off resume sync failed');
         return block;
     }
@@ -343,7 +315,7 @@
         schedule.isPaused = true;
         schedule.pauseEndTime = nowMs() + pauseMs;
         await callSaveData();
-        const result = await callUpdateHostsFile();
+        const result = await callSyncBlockingState();
         assertOrThrow(result && result.success, 'pause helper: schedule pause sync failed');
         return schedule;
     }
@@ -355,7 +327,7 @@
         delete schedule.isPaused;
         delete schedule.pauseEndTime;
         await callSaveData();
-        const result = await callUpdateHostsFile();
+        const result = await callSyncBlockingState();
         assertOrThrow(result && result.success, 'resume helper: schedule resume sync failed');
         return schedule;
     }
@@ -365,46 +337,36 @@
     // ========================================
 
     async function testA1_enforcementDerivationPath() {
-        const skip = await ensureHelperRunningOrSkip('A1');
-        if (skip) return skip;
-
         const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'A1' });
         addActiveBlock(bl.id, { durationMs: 120000 });
         await callSaveData();
-        const result = await callUpdateHostsFile();
-        assertOrThrow(result && result.success, 'A1: updateHostsFile failed');
+        const result = await callSyncBlockingState();
+        assertOrThrow(result && result.success, 'A1: syncBlockingState failed');
         await assertEnforcedDomain('A1', TEST_DOMAINS.a);
 
         removeTestDataFromAppState();
         await callSaveData();
-        const cleanupResult = await callUpdateHostsFile(true);
-        assertOrThrow(cleanupResult && cleanupResult.success, 'A1: cleanup updateHostsFile failed');
-        assertOrThrow(!cleanupResult.deferred, 'A1: cleanup was deferred instead of syncing helper state');
+        const cleanupResult = await callSyncBlockingState();
+        assertOrThrow(cleanupResult && cleanupResult.success, 'A1: cleanup syncBlockingState failed');
         await assertNotEnforcedDomain('A1', TEST_DOMAINS.a);
         return { passed: true };
     }
 
     async function testA2_blockStartEndTiming() {
-        const skip = await ensureHelperRunningOrSkip('A2');
-        if (skip) return skip;
-
         const bl = addTestBlocklist({ websites: [TEST_DOMAINS.b], name: 'A2' });
         const block = addActiveBlock(bl.id, { durationMs: 5000 });
         await callSaveData();
-        await callUpdateHostsFile();
+        await callSyncBlockingState();
 
         await new Promise(resolve => setTimeout(resolve, 6200));
         const appData = getAppData();
         const stillActive = appData.activeBlocks.some(b => b.id === block.id && b.endTime > nowMs());
         assertOrThrow(!stillActive, 'A2: one-off block did not expire naturally');
-        await callUpdateHostsFile(true);
+        await callSyncBlockingState();
         return { passed: true };
     }
 
     async function testA3_scheduleActiveNow() {
-        const skip = await ensureHelperRunningOrSkip('A3');
-        if (skip) return skip;
-
         const bl = addTestBlocklist({ websites: [TEST_DOMAINS.shared], name: 'A3' });
         const hour = new Date().getHours();
         addSchedule(bl.id, [{
@@ -416,16 +378,13 @@
         }]);
 
         await callSaveData();
-        const result = await callUpdateHostsFile();
+        const result = await callSyncBlockingState();
         assertOrThrow(result && result.success, 'A3: schedule activation path failed');
         await assertEnforcedDomain('A3', TEST_DOMAINS.shared);
         return { passed: true };
     }
 
     async function testA4_futureScheduleDoesNotThrow() {
-        const skip = await ensureHelperRunningOrSkip('A4');
-        if (skip) return skip;
-
         return runIsolatedIntegrationTest('A4', async () => {
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.future], name: 'A4' });
             const hour = new Date().getHours();
@@ -438,7 +397,7 @@
             }]);
 
             await callSaveData();
-            const result = await callUpdateHostsFile();
+            const result = await callSyncBlockingState();
             assertOrThrow(result && result.success, 'A4: future schedule update failed');
             await assertNotEnforcedDomain('A4', TEST_DOMAINS.future);
             return { passed: true };
@@ -446,26 +405,23 @@
     }
 
     async function testA5_pauseResumeOneOffStatePath() {
-        const skip = await ensureHelperRunningOrSkip('A5');
-        if (skip) return skip;
-
         return runIsolatedIntegrationTest('A5', async () => {
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'A5' });
             const block = addActiveBlock(bl.id, { durationMs: 120000 });
             await callSaveData();
-            await callUpdateHostsFile();
+            await callSyncBlockingState();
 
             block.isPaused = true;
             block.pauseEndTime = nowMs() + 60000;
             await callSaveData();
-            const pausedResult = await callUpdateHostsFile();
+            const pausedResult = await callSyncBlockingState();
             assertOrThrow(pausedResult && pausedResult.success, 'A5: paused state update failed');
             await assertNotEnforcedDomain('A5', TEST_DOMAINS.a);
 
             delete block.isPaused;
             delete block.pauseEndTime;
             await callSaveData();
-            const resumedResult = await callUpdateHostsFile();
+            const resumedResult = await callSyncBlockingState();
             assertOrThrow(resumedResult && resumedResult.success, 'A5: resume state update failed');
             await assertEnforcedDomain('A5', TEST_DOMAINS.a);
             return { passed: true };
@@ -473,13 +429,10 @@
     }
 
     async function testA6_pauseResumeOneOffEnforcementPath() {
-        const skip = await ensureHelperRunningOrSkip('A6');
-        if (skip) return skip;
-
         const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], apps: ['Calculator'], name: 'A6' });
         const block = addActiveBlock(bl.id, { durationMs: 120000 });
         await callSaveData();
-        await callUpdateHostsFile();
+        await callSyncBlockingState();
         await assertEnforcedDomain('A6', TEST_DOMAINS.a);
 
         await setOneOffPaused(block.id, 45000);
@@ -495,14 +448,11 @@
     }
 
     async function testA7_pauseNaturalExpiryOneOffSmoke() {
-        const skip = await ensureHelperRunningOrSkip('A7');
-        if (skip) return skip;
-
         return runIsolatedIntegrationTest('A7', async () => {
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.b], name: 'A7' });
             const block = addActiveBlock(bl.id, { durationMs: 120000 });
             await callSaveData();
-            await callUpdateHostsFile();
+            await callSyncBlockingState();
 
             await setOneOffPaused(block.id, 1200);
             await shortWait(2500);
@@ -511,7 +461,7 @@
             assertOrThrow(refreshed, 'A7: block missing after pause expiry wait');
             assertOrThrow(!refreshed.isPaused, 'A7: one-off pause should naturally expire');
             assertOrThrow(!refreshed.pauseEndTime, 'A7: one-off pauseEndTime should be cleared after natural expiry');
-            const result = await callUpdateHostsFile();
+            const result = await callSyncBlockingState();
             assertOrThrow(result && result.success, 'A7: post-expiry update failed');
             await assertEnforcedDomain('A7', TEST_DOMAINS.b);
             return { passed: true };
@@ -519,9 +469,6 @@
     }
 
     async function testA8_pauseResumeScheduleActivePath() {
-        const skip = await ensureHelperRunningOrSkip('A8');
-        if (skip) return skip;
-
         return runIsolatedIntegrationTest('A8', async () => {
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.shared], apps: ['Calculator'], name: 'A8' });
             const hour = new Date().getHours();
@@ -533,7 +480,7 @@
                 days: [currentDayMon0()]
             }]);
             await callSaveData();
-            await callUpdateHostsFile();
+            await callSyncBlockingState();
             await assertEnforcedDomain('A8', TEST_DOMAINS.shared);
 
             const pausedSchedule = await setSchedulePaused(bl.id, 45000);
@@ -550,9 +497,6 @@
     }
 
     async function testA9_pauseNaturalExpiryScheduleSmoke() {
-        const skip = await ensureHelperRunningOrSkip('A9');
-        if (skip) return skip;
-
         return runIsolatedIntegrationTest('A9', async () => {
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.future], name: 'A9' });
             const hour = new Date().getHours();
@@ -564,7 +508,7 @@
                 days: [currentDayMon0()]
             }]);
             await callSaveData();
-            await callUpdateHostsFile();
+            await callSyncBlockingState();
 
             await setSchedulePaused(bl.id, 1200);
             await shortWait(2500);
@@ -573,7 +517,7 @@
             assertOrThrow(refreshed, 'A9: schedule missing after pause expiry wait');
             assertOrThrow(!refreshed.isPaused, 'A9: schedule pause should naturally expire');
             assertOrThrow(!refreshed.pauseEndTime, 'A9: schedule pauseEndTime should be cleared after natural expiry');
-            const result = await callUpdateHostsFile();
+            const result = await callSyncBlockingState();
             assertOrThrow(result && result.success, 'A9: post-expiry update failed');
             await assertEnforcedDomain('A9', TEST_DOMAINS.future);
             return { passed: true };
@@ -581,9 +525,6 @@
     }
 
     async function testA10_pauseInactiveScheduleSuppressionPath() {
-        const skip = await ensureHelperRunningOrSkip('A10');
-        if (skip) return skip;
-
         return runIsolatedIntegrationTest('A10', async () => {
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.future], name: 'A10' });
             const now = new Date();
@@ -600,7 +541,7 @@
                 days: [currentDayMon0()]
             }]);
             await callSaveData();
-            await callUpdateHostsFile();
+            await callSyncBlockingState();
             await assertNotEnforcedDomain('A10', TEST_DOMAINS.a);
             await assertNotEnforcedDomain('A10', TEST_DOMAINS.future);
 
@@ -619,31 +560,16 @@
         });
     }
 
-    // A11: On v3 there is no helper daemon — the saved data file is the single
-    // source of truth for enforcement, and the legacy `set_blocks_via_helper`
-    // shim is a pure acknowledgment. Pins that ownership: a block pushed only
-    // through the shim (never written to appData/save_data) must have zero
-    // effect on derived enforcement, while the same block through the real
-    // save path enforces immediately.
+    // A11: In-memory website edits only reach native enforcement after saving.
     async function testA11_dataFileOwnsEnforcement() {
-        const skip = await ensureHelperRunningOrSkip('A11');
-        if (skip) return skip;
-
         return runIsolatedIntegrationTest('A11', async () => {
-            const tauriAPI = getTauriAPI();
-
-            const setResult = await tauriAPI.setBlocksViaHelper([{
-                domains: [TEST_DOMAINS.a],
-                endTime: nowMs() + 120000,
-                blocklistId: makeId('bl-a11')
-            }]);
-            assertOrThrow(setResult && setResult.success, 'A11: setBlocks shim ack failed');
-            await assertNotEnforcedDomain('A11', TEST_DOMAINS.a);
-
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'A11' });
             addActiveBlock(bl.id, { durationMs: 120000 });
+            await callSyncBlockingState();
+            await assertNotEnforcedDomain('A11', TEST_DOMAINS.a);
+
             await callSaveData();
-            await callUpdateHostsFile();
+            await callSyncBlockingState();
             await assertEnforcedDomain('A11', TEST_DOMAINS.a);
             return { passed: true };
         });
@@ -654,16 +580,13 @@
     // ========================================
 
     async function testB1_sharedDomainOverlap() {
-        const skip = await ensureHelperRunningOrSkip('B1');
-        if (skip) return skip;
-
         const bl1 = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.shared], name: 'B1-A' });
         const bl2 = addTestBlocklist({ websites: [TEST_DOMAINS.b, TEST_DOMAINS.shared], name: 'B1-B' });
         addActiveBlock(bl1.id, { durationMs: 120000 });
         addActiveBlock(bl2.id, { durationMs: 120000 });
         await callSaveData();
 
-        const result = await callUpdateHostsFile();
+        const result = await callSyncBlockingState();
         assertOrThrow(result && result.success, 'B1: overlap update failed');
         await assertEnforcedDomain('B1', TEST_DOMAINS.a);
         await assertEnforcedDomain('B1', TEST_DOMAINS.b);
@@ -672,9 +595,6 @@
     }
 
     async function testB2_oneOffPlusScheduleSameBlocklist() {
-        const skip = await ensureHelperRunningOrSkip('B2');
-        if (skip) return skip;
-
         const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.shared], name: 'B2' });
         addActiveBlock(bl.id, { durationMs: 120000 });
         const hour = new Date().getHours();
@@ -686,20 +606,15 @@
             days: [currentDayMon0()]
         }]);
         await callSaveData();
-        const result = await callUpdateHostsFile();
+        const result = await callSyncBlockingState();
         assertOrThrow(result && result.success, 'B2: one-off + schedule merge failed');
         await assertEnforcedDomain('B2', TEST_DOMAINS.a);
         await assertEnforcedDomain('B2', TEST_DOMAINS.shared);
 
-        // v3 clear path: the shim command is an ack; the real clear is the
-        // frontend removing the block and saving (backends re-derive).
-        const tauriAPI = getTauriAPI();
-        const clearResult = await tauriAPI.clearBlockViaHelper(bl.id);
-        assertOrThrow(clearResult && clearResult.success, 'B2: clear shim ack failed');
         const appData = getAppData();
         appData.activeBlocks = appData.activeBlocks.filter(b => b.blocklistId !== bl.id);
         await callSaveData();
-        const syncResult = await callUpdateHostsFile();
+        const syncResult = await callSyncBlockingState();
         assertOrThrow(syncResult && syncResult.success, 'B2: sync after one-off clear failed');
         // Schedule segment still active → both domains stay enforced.
         await assertEnforcedDomain('B2', TEST_DOMAINS.a);
@@ -712,29 +627,21 @@
     // ========================================
 
     async function testC1_scopedClearByBlocklistId() {
-        const skip = await ensureHelperRunningOrSkip('C1');
-        if (skip) return skip;
-
         await resetIntegrationTestState('C1');
-        const tauriAPI = getTauriAPI();
         const bl1 = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.shared], name: 'C1-A' });
         const bl2 = addTestBlocklist({ websites: [TEST_DOMAINS.b, TEST_DOMAINS.shared], name: 'C1-B' });
         addActiveBlock(bl1.id, { durationMs: 120000 });
         addActiveBlock(bl2.id, { durationMs: 120000 });
         await callSaveData();
-        await callUpdateHostsFile();
+        await callSyncBlockingState();
         await assertEnforcedDomain('C1', TEST_DOMAINS.a);
         await assertEnforcedDomain('C1', TEST_DOMAINS.b);
         await assertEnforcedDomain('C1', TEST_DOMAINS.shared);
 
-        // v3 scoped clear: shim command is an ack; the frontend removes the
-        // blocklist's blocks and saves, and backends re-derive from the file.
-        const scopedResult = await tauriAPI.clearBlockViaHelper(bl1.id);
-        assertOrThrow(scopedResult && scopedResult.success, 'C1: clear shim ack failed');
         const appData = getAppData();
         appData.activeBlocks = appData.activeBlocks.filter(b => b.blocklistId !== bl1.id);
         await callSaveData();
-        await callUpdateHostsFile();
+        await callSyncBlockingState();
         await assertNotEnforcedDomain('C1', TEST_DOMAINS.a);
         await assertEnforcedDomain('C1', TEST_DOMAINS.b);
         await assertEnforcedDomain('C1', TEST_DOMAINS.shared);
@@ -742,34 +649,23 @@
     }
 
     async function testC2_clearAllManualBlocks() {
-        const skip = await ensureHelperRunningOrSkip('C2');
-        if (skip) return skip;
-
         await resetIntegrationTestState('C2');
-        const tauriAPI = getTauriAPI();
         const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'C2' });
         addActiveBlock(bl.id, { durationMs: 120000 });
         await callSaveData();
-        await callUpdateHostsFile();
+        await callSyncBlockingState();
         await assertEnforcedDomain('C2', TEST_DOMAINS.a);
 
-        // v3 clear-all: shim ack + frontend removes every manual block and saves.
-        const clearAll = await tauriAPI.clearBlockViaHelper();
-        assertOrThrow(clearAll && clearAll.success, 'C2: clear-all shim ack failed');
         const appData = getAppData();
         appData.activeBlocks = [];
         await callSaveData();
-        await callUpdateHostsFile();
+        await callSyncBlockingState();
         await assertNotEnforcedDomain('C2', TEST_DOMAINS.a);
         return { passed: true };
     }
 
     async function testC3_maxWordsBlocklistStartClear() {
-        const skip = await ensureHelperRunningOrSkip('C3');
-        if (skip) return skip;
-
         await resetIntegrationTestState('C3');
-        const tauriAPI = getTauriAPI();
         const bl = addTestBlocklist({
             websites: [TEST_DOMAINS.b],
             name: 'C3'
@@ -777,16 +673,14 @@
         bl.overrideDifficulty = { type: 'random-words', count: 300 };
         addActiveBlock(bl.id, { durationMs: 120000 });
         await callSaveData();
-        const startResult = await callUpdateHostsFile();
+        const startResult = await callSyncBlockingState();
         assertOrThrow(startResult && startResult.success, 'C3: start block with max words failed');
         await assertEnforcedDomain('C3', TEST_DOMAINS.b);
 
-        const clearResult = await tauriAPI.clearBlockViaHelper(bl.id);
-        assertOrThrow(clearResult && clearResult.success, 'C3: clear shim ack failed');
         const appData = getAppData();
         appData.activeBlocks = appData.activeBlocks.filter(b => b.blocklistId !== bl.id);
         await callSaveData();
-        await callUpdateHostsFile();
+        await callSyncBlockingState();
         await assertNotEnforcedDomain('C3', TEST_DOMAINS.b);
         return { passed: true };
     }
@@ -796,9 +690,6 @@
     // ========================================
 
     async function testG1_duplicateThenRun() {
-        const skip = await ensureHelperRunningOrSkip('G1');
-        if (skip) return skip;
-
         const internals = getInternals();
         const duplicateBlocklist = internals?.duplicateBlocklist;
         assertOrThrow(typeof duplicateBlocklist === 'function', 'G1: duplicateBlocklist not available');
@@ -814,15 +705,16 @@
 
         addActiveBlock(duplicated.id, { durationMs: 120000 });
         await callSaveData();
-        const result = await callUpdateHostsFile();
+        const result = await callSyncBlockingState();
         assertOrThrow(result && result.success, 'G1: start duplicate block failed');
 
-        const tauriAPI = getTauriAPI();
-        const clearResult = await tauriAPI.clearBlockViaHelper(duplicated.id);
-        assertOrThrow(clearResult && clearResult.success, 'G1: scoped clear duplicate failed');
+        await assertEnforcedDomain('G1', TEST_DOMAINS.a);
 
+        appData.activeBlocks = appData.activeBlocks.filter(block => block.blocklistId !== duplicated.id);
         appData.blocklists = appData.blocklists.filter(b => b.id !== duplicated.id);
-        await callUpdateHostsFile(true);
+        await callSaveData();
+        await callSyncBlockingState();
+        await assertNotEnforcedDomain('G1', TEST_DOMAINS.a);
         return { passed: true };
     }
 
@@ -834,41 +726,23 @@
     // Testing Group E: Legacy-command and diagnostics invariants
     // ========================================
 
-    // E1: `clean_hosts_file` is v1 migration cleanup (strips legacy markers if
-    // present). v3 never writes hosts, so the contract is: command succeeds and
-    // is idempotent — not that it changes enforcement.
+    // E1: Legacy migration cleanup resolves false when there are no markers.
     async function testE1_cleanHostsCommandPath() {
-        const skip = await ensureHelperRunningOrSkip('E1');
-        if (skip) return skip;
-
         const tauriAPI = getTauriAPI();
-        const first = await tauriAPI.cleanHostsFile();
-        assertOrThrow(first && first.success, 'E1: clean-hosts command failed');
-        const second = await tauriAPI.cleanHostsFile();
-        assertOrThrow(second && second.success, 'E1: clean-hosts command not idempotent');
+        const first = await tauriAPI.stripHostsMarkers();
+        assertOrThrow(typeof first === 'boolean', 'E1: hosts cleanup returned an invalid result');
+        const second = await tauriAPI.stripHostsMarkers();
+        assertOrThrow(second === false, 'E1: repeated hosts cleanup should be a no-op');
         return { passed: true };
     }
 
-    // E2: v3 diagnostics contract. `check_helper_status` reports the app itself
-    // as the always-ready "helper"; `get_helper_diagnostics` returns the app
-    // version + backend label (not the dead v1 daemon fields).
-    async function testE2_helperDiagnosticsContract() {
-        const skip = await ensureHelperRunningOrSkip('E2');
-        if (skip) return skip;
-
+    async function testE2_systemDiagnosticsContract() {
         const tauriAPI = getTauriAPI();
-        assertOrThrow(tauriAPI && typeof tauriAPI.getHelperDiagnostics === 'function', 'E2: getHelperDiagnostics unavailable');
-
-        const status = await tauriAPI.checkHelperStatus();
-        assertOrThrow(status.installed === true, 'E2: shim should always report installed');
-        assertOrThrow(status.running === true, 'E2: shim should always report running');
-        assertOrThrow(status.version_ok === true, 'E2: shim should always report version_ok');
-        assertOrThrow(typeof status.version === 'string' && status.version.length > 0, 'E2: shim version missing');
-
-        const diag = await tauriAPI.getHelperDiagnostics();
-        assertOrThrow(diag, 'E2: diagnostics command returned nothing');
-        assertOrThrow(diag.app_version === status.version, `E2: app_version mismatch (${diag.app_version} !== ${status.version})`);
-        assertOrThrow(['automation', 'extension', 'unsupported'].includes(diag.backend), `E2: unexpected backend label (${diag.backend})`);
+        const version = await tauriAPI.getAppVersion();
+        const diag = await tauriAPI.getSystemDiagnostics();
+        assertOrThrow(typeof version === 'string' && version.length > 0, 'E2: app version missing');
+        assertOrThrow(diag?.app?.version === version, 'E2: diagnostics app version mismatch');
+        assertOrThrow(diag?.current_blocking && diag?.app_data, 'E2: enforcement or persisted data snapshot missing');
         return { passed: true };
     }
 
@@ -877,27 +751,20 @@
     // ========================================
 
     async function testF1_setBlockedAppsCommandPath() {
-        const skip = await ensureHelperRunningOrSkip('F1');
-        if (skip) return skip;
-
         const tauriAPI = getTauriAPI();
-        const result = await tauriAPI.setBlockedAppsViaHelper(['Calculator', 'Notes']);
-        assertOrThrow(result && result.success, 'F1: set blocked apps failed');
+        const result = await tauriAPI.setBlockedApps(['Calculator', 'Notes']);
+        assertOrThrow(result === null, 'F1: set blocked apps should resolve with no payload');
 
-        const clear = await tauriAPI.setBlockedAppsViaHelper([]);
-        assertOrThrow(clear && clear.success, 'F1: clear blocked apps failed');
+        const clear = await tauriAPI.setBlockedApps([]);
+        assertOrThrow(clear === null, 'F1: clear blocked apps should resolve with no payload');
         return { passed: true };
     }
 
     async function testF2_protectedAppPayloadPath() {
-        const skip = await ensureHelperRunningOrSkip('F2');
-        if (skip) return skip;
-
         const tauriAPI = getTauriAPI();
-        // Helper should filter protected app names safely and still succeed.
-        const result = await tauriAPI.setBlockedAppsViaHelper(['redd-block-helper', 'Calculator']);
-        assertOrThrow(result && result.success, 'F2: protected app payload command failed');
-        await tauriAPI.setBlockedAppsViaHelper([]);
+        const result = await tauriAPI.setBlockedApps(['redd-block-helper', 'Calculator']);
+        assertOrThrow(result === null, 'F2: protected app payload command should resolve with no payload');
+        await tauriAPI.setBlockedApps([]);
         return { passed: true };
     }
 
@@ -917,14 +784,11 @@
     // checklist territory (section 15).
 
     async function testH1_singleAllowlistEnforcementState() {
-        const skip = await ensureHelperRunningOrSkip('H1');
-        if (skip) return skip;
-
         return runIsolatedIntegrationTest('H1', async () => {
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'H1 Allow', mode: 'allowlist' });
             addActiveBlock(bl.id, { durationMs: 120000 });
             await callSaveData();
-            await callUpdateHostsFile();
+            await callSyncBlockingState();
             callRender();
 
             const cb = await getCurrentBlockingOrThrow('H1');
@@ -935,7 +799,7 @@
 
             removeTestDataFromAppState();
             await callSaveData();
-            await callUpdateHostsFile(true);
+            await callSyncBlockingState();
             callRender();
             const after = await getCurrentBlockingOrThrow('H1');
             assertOrThrow(!after.allowed_domains.includes(TEST_DOMAINS.a), 'H1: allowed_domains not cleared after stop');
@@ -944,16 +808,13 @@
     }
 
     async function testH2_concurrentAllowlistsUnion() {
-        const skip = await ensureHelperRunningOrSkip('H2');
-        if (skip) return skip;
-
         return runIsolatedIntegrationTest('H2', async () => {
             const blA = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'H2 Allow A', mode: 'allowlist' });
             const blB = addTestBlocklist({ websites: [TEST_DOMAINS.b], name: 'H2 Allow B', mode: 'allowlist' });
             addActiveBlock(blA.id, { durationMs: 120000 });
             addActiveBlock(blB.id, { durationMs: 120000 });
             await callSaveData();
-            await callUpdateHostsFile();
+            await callSyncBlockingState();
             callRender();
 
             const cb = await getCurrentBlockingOrThrow('H2');
@@ -966,16 +827,13 @@
     }
 
     async function testH3_allowlistBlocklistOverlap() {
-        const skip = await ensureHelperRunningOrSkip('H3');
-        if (skip) return skip;
-
         return runIsolatedIntegrationTest('H3', async () => {
             const allowBl = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.b], name: 'H3 Allow', mode: 'allowlist' });
             const blockBl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'H3 Block' });
             addActiveBlock(allowBl.id, { durationMs: 120000 });
             addActiveBlock(blockBl.id, { durationMs: 120000 });
             await callSaveData();
-            await callUpdateHostsFile();
+            await callSyncBlockingState();
             callRender();
 
             const cb = await getCurrentBlockingOrThrow('H3');
@@ -992,14 +850,11 @@
     }
 
     async function testH4_pauseResumeAllowlistEnforcementPath() {
-        const skip = await ensureHelperRunningOrSkip('H4');
-        if (skip) return skip;
-
         return runIsolatedIntegrationTest('H4', async () => {
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'H4 Allow', mode: 'allowlist' });
             const block = addActiveBlock(bl.id, { durationMs: 120000 });
             await callSaveData();
-            await callUpdateHostsFile();
+            await callSyncBlockingState();
             callRender();
             let cb = await getCurrentBlockingOrThrow('H4');
             assertOrThrow(cb.allowed_domains.includes(TEST_DOMAINS.a), 'H4: allowlist not enforced before pause');
@@ -1300,7 +1155,7 @@
             { group: 'B', name: 'B1: Shared-domain overlap', fn: testB1_sharedDomainOverlap },
             { group: 'C', name: 'C1: Scoped clear by blocklist ID', fn: testC1_scopedClearByBlocklistId },
             { group: 'E', name: 'E1: Clean hosts command path', fn: testE1_cleanHostsCommandPath },
-            { group: 'E', name: 'E2: Helper diagnostics contract', fn: testE2_helperDiagnosticsContract },
+            { group: 'E', name: 'E2: System diagnostics contract', fn: testE2_systemDiagnosticsContract },
             { group: 'H', name: 'H1: Single allowlist enforcement state', fn: testH1_singleAllowlistEnforcementState },
             { group: 'I', name: 'I1: Stop-all cancel restores Settings', fn: testI1_stopAllCancelRestoresSettings },
             { group: 'I', name: 'I2: Stop-all success restores Settings', fn: testI2_stopAllSuccessRestoresSettings },
