@@ -93,100 +93,31 @@ Built artifacts are copied to `for-distribution/` for upload or direct distribut
 
 ### Testing
 
-Testing is organized into automated tiers, a screenshot harness, and a manual checklist (see [testing.md](testing.md)):
+See [testing.md](testing.md) for test commands, coverage limits and visual checks,
+and the [manual checklist](scripts/manual-test-checklist.md) for real browser enforcement.
 
-**0. Unit Tests (vitest, instant)**
+## Version management
 
-Pure helpers from `src/`, in isolation. No browser, no app.
+Use `./scripts/bump-version.sh <version>` to keep the app, system-test build,
+Cargo lockfile and generated iOS version stamps in sync. The script owns the
+list of files; do not maintain a second list here.
 
-```bash
-pnpm test:tier0
-```
+Published update metadata lives in [docs/latest-versions.json](docs/latest-versions.json).
+For store submission, see [Microsoft Store CI](docs/microsoft-store-ci.md) and
+[App Store CI](docs/app-store-ci.md).
 
-**1. Unit Tests (in-app, instant)**
+## Data, migration and uninstall
 
-Tests blocking logic — time-based scenarios, overlaps, overrides, override-all state transitions, and challenge difficulty selection. No system modification.
+See the architecture guide for [desktop data locations and migration](architecture.md#32-desktop-app-data-paths),
+[uninstall behaviour](architecture.md#113-uninstall), and
+[v1 migration](architecture.md#114-v1x-migration). The current architecture is
+Part I; the later historical sections describe retired implementations.
 
-```bash
-pnpm dev                   # Start the app
-# Press Cmd+Shift+T (Mac) or Ctrl+Shift+T (Windows)
-# Or type in the dev console: runBlockingTests()
-```
-
-**2. Integration Tests (in-app, profile-based)**
-
-Creates real blocks using safe `.invalid` domains and exercises app → Tauri command paths (save, pause/resume, scoped clear, app-blocking commands, migration hosts cleanup). Does **not** fully prove website blocking on v3 — use the manual checklist for Automation redirects and extension enforcement.
-
-```bash
-# In the dev console:
-runIntegrationTests('core')   # default, faster critical checks
-runIntegrationTests('full')   # core + expanded non-UI coverage
-```
-
-**3. UI Screenshots (headless browser, seconds)**
-
-Renders app screens from fixture data and writes PNGs to `artifacts/ui/`. No Rust toolchain and no Tauri build — just Vite and a Chromium, so it runs on a laptop or in CI on Linux. Nothing else in the stack renders: jsdom has no layout engine, so a `styles.css` change can be wrong in every visible way and still be green.
-
-```bash
-pnpm ui:shoot                                    # every screen
-pnpm ui:shoot --screen=week-crowded --measure    # one screen, with measured geometry
-```
-
-**4. Manual Checklist**
-
-See `scripts/manual-test-checklist.md` for the full pre-release checklist. Key items: macOS Automation setup + enforcer (Safari/Chrome/Brave/Edge), Firefox/Windows extension install, hide-on-close + launch-at-login, v1.x migration cleanup, Screen Time (iOS).
-
-## Project Structure
-
-```
-redd-block/
-├── src/                          # Frontend (HTML/JS/CSS)
-│   ├── index.html                # Main app layout
-│   ├── app.js                    # App logic & UI
-│   └── styles.css                # Styling
-├── src-tauri/                    # Tauri backend (Rust)
-│   ├── src/
-│   │   ├── lib.rs                # App setup, tray, hide-on-close, autostart
-│   │   ├── app_watcher.rs        # In-process app watcher (sysinfo poll + quit)
-│   │   ├── enforcer.rs           # Compliance enforcer (Automation TCC on macOS Safari/Chromium; extension elsewhere)
-│   │   ├── web_automation.rs     # macOS Automation tab blocking (Safari, Chrome, Brave, Edge)
-│   │   ├── native_host.rs        # Headless native-messaging host (Windows / Firefox blocklist feed)
-│   │   ├── native_host_install.rs # Registers native-messaging manifests (Windows; skipped on macOS)
-│   │   ├── profile_scan.rs       # Reads browser profile files
-│   │   └── commands/             # IPC commands (data, apps, migration, …)
-│   ├── blocked/                  # Block page bundled for macOS Automation redirects
-│   ├── entitlements.macos.plist  # macOS Automation (Apple Events) entitlement
-│   ├── gen/apple/                # Generated Xcode project
-│   ├── gen/android/              # Generated Android project (committed)
-│   ├── tauri.conf.json           # Shared Tauri config
-│   ├── tauri.android.conf.json   # Android-specific config
-│   ├── tauri.ios.conf.json       # iOS-specific config
-│   ├── tauri.macos.conf.json     # macOS-specific config
-│   └── tauri.windows.conf.json   # Windows-specific config
-├── tauri-plugin-screentime/      # iOS Screen Time plugin
-│   ├── ios/Sources/              # Swift plugin (FamilyActivityPicker, ManagedSettings)
-│   ├── src/                      # Rust bindings
-│   └── permissions/              # Plugin permissions
-├── tauri-plugin-android-blocker/ # Android AccessibilityService blocking plugin
-│   ├── android/                  # Kotlin plugin + BlockerService + schedules
-│   ├── src/                      # Rust bindings
-│   └── permissions/              # Plugin permissions
-├── browser-ext-migration/
-│   ├── MIGRATION_PLAN.md         # Rollout plan + remaining-work checklist
-│   ├── FUTURE_OPTIONS.md         # Parked localhost fallback + signed .pkg notes
-├── scripts/                      # Build/signing (build-mac.sh, build-mac-pkg.sh, …)
-├── docs/                         # GitHub Pages (version info, App Store privacy policy)
-└── vite.config.js                # Vite dev server config
-```
-
-## Version Management
-
-| Component | Version Location |
-|-----------|------------------|
-| **App** | `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/tauri.android.conf.json`, `src-tauri/Cargo.toml` |
-| **Published versions** | `docs/latest-versions.json` (macOS, Windows, iOS, Android, plus `sha256.macosPkg` and `sizeBytes.macosPkg` for in-app macOS updates) |
-
-Use `./scripts/bump-version.sh <version>` to update the app version in all files at once.
+Desktop data is per user. Old machine-wide files remain import sources for
+other accounts, so do not delete them as obsolete installation debris. On macOS,
+in-app uninstall removes autostart entries and native-messaging manifests;
+user data is retained unless the user chooses deletion (`delete_user_data` in
+`src-tauri/src/commands/uninstall.rs`).
 
 ## Building from Android Studio
 
