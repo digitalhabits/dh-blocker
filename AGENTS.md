@@ -66,46 +66,37 @@ release.
 URL will not parse, a browser will not answer, a query fails — the code must
 pick between blocking something it should not and allowing something it should
 have blocked. Neither is automatically right, but the choice must be explicit,
-and it must be written down where the next reader will see it. This codebase's
-worst bugs are the ones that quietly chose "allow" (see the Samsung Internet
-case below).
+and it must be written down where the next reader will see it. See the
+[Samsung Internet regression](testing.md#choosing-regression-coverage)
+for a failure that silently allowed blocked sites.
 
 ## Where the real documentation is
 
 | Read this | Before you |
 | --- | --- |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Set up a local build or package a release. |
 | [architecture.md](architecture.md) | Touch any enforcement code. **Part I = v3 (current, start here).** Parts II/III are historical v2/v1 kept for migration context — do not reason about current behavior from them, they describe a daemon and a hosts file that no longer exist. |
+| [docs/ios-testing.md](docs/ios-testing.md) | Run iOS Simulator or connected-device checks; distinguish automated cases from remaining physical-device coverage. |
 | [testing.md](testing.md) | Add or debug a test. Has the full "What runs in CI" table with triggers and path filters. |
 
 ## Commands
 
 `package.json` is the reference for what exists; only the traps are listed here.
 
-- **Version bumps span several files** — always use
-  `./scripts/bump-version.sh <version>`. It updates `package.json`,
-  `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and — via
-  `scripts/sync-ios-version.mjs` — `tauri.ios.conf.json` plus the generated
-  Xcode project and its `Info.plist`s. The iOS side is the one a hand edit
-  always misses.
+- **Version bumps span app, system-test and generated iOS files** — use
+  `./scripts/bump-version.sh <version>`; its implementation owns the file list.
+  Hand-editing only the main config leaves inconsistent versions.
 - **Use `cargo test --lib`**, not bare `cargo test` — the latter still tries to
   build a stale `test_watcher` example.
-- Run `pnpm lint` and `cargo fmt --all --check` in `src-tauri`; the latter also covers the Screen Time plugin.
+- Run `pnpm lint` from the repository root and `cargo fmt --all --check` in
+  `src-tauri`; the latter also covers the Screen Time plugin.
 
 ### pnpm is the only supported package manager
 
-`npm install` fails by design — a `preinstall` guard (`only-allow pnpm`) stops
-it, and `package-lock.json` is gitignored. This is not a style preference:
-
-- **Worktrees are the reason.** Agent tasks run one git worktree each, and every
-  worktree gets its own `node_modules` (~250 MB with npm). pnpm's
-  content-addressed store hardlinks instead, so worktree *n+1* costs
-  approximately nothing. With five worktrees checked out the measured
-  difference was 1051 MB naive vs 856 MB actual, and the only directory
-  contributing nothing to that saving was the npm-installed one.
-- **Two lockfiles is the failure mode this replaced.** The repo carried both
-  `package-lock.json` and `pnpm-lock.yaml` for a while. Nothing in CI validated
-  the pnpm one, so it was one dependency change away from silently describing a
-  different tree than the one anyone built against.
+Use pnpm so worktrees share a content-addressed dependency store instead of
+copying dependencies. Keep only `pnpm-lock.yaml`: parallel lockfiles can silently
+describe different dependency trees. The local `scripts/only-pnpm.js` guard
+enforces the package-manager choice without fetching a guard from the registry.
 
 The trap when converting a command: **pnpm does not strip `--`**. `npm run
 tauri -- build` passes `build`; `pnpm run tauri -- build` passes `--` *and*
@@ -128,12 +119,9 @@ effective website rules: blocklist domains always block; when any allowlist
 source is active, policy is `allowed-union − blocked-union` (blocklist wins on
 overlap). iOS uses its own App Group store, not this file.
 
-### Enforcement per platform
-- **macOS websites:** Automation (Apple Events) in `src-tauri/src/web_automation.rs` — 1 s tick, redirects blocked tabs in Safari/Chrome/Brave/Edge to a bundled block page (`src-tauri/blocked/`). Firefox is the exception: it uses the extension + native-messaging host.
-- **Windows websites:** Digital Habits: Focus extension + native-messaging host (`native_host.rs`); the same binary runs as the host via `redd-block --native-host`. UI Automation on the foreground window (`src-tauri/src/uia_web_automation.rs`) is opt-in, except Chrome/Edge/Brave default to it when native-messaging policy is confirmed to block communication. Explicit saved choices win. Otherwise missing/invalid selections retain Extension, including upgrades. UI and backend must resolve this exception identically; policy read failures retain Extension.
-- **Desktop apps (both OSes):** in-process poll-and-quit watcher, `src-tauri/src/app_watcher.rs` (1 s tick, PID state machine: warn → 30 s grace → polite quit → SIGKILL). Allow-mode inverts the target set.
-- **Compliance enforcer** (`src-tauri/src/enforcer.rs`, 5 s tick): force-quits non-compliant *running* browsers during active website blocks — opt-in only.
-- **iOS:** Apple Screen Time via `tauri-plugin-screentime/` (Swift). No file, no extension, no process watching. Allow-mode uses `.all(except:)` with a 50-item cap.
+### Windows browser selection contract
+
+Digital Habits: Focus extension + native-messaging host (`native_host.rs`); the same binary runs as the host via `redd-block --native-host`. UI Automation on the foreground window (`src-tauri/src/uia_web_automation.rs`) is opt-in, except Chrome/Edge/Brave default to it when native-messaging policy is confirmed to block communication. Explicit saved choices win. Otherwise missing/invalid selections retain Extension, including upgrades. UI and backend must resolve this exception identically; policy read failures retain Extension.
 
 ### Allow-mode / allowlists
 "Focus spaces" (allow only these, block everything else) exist on all platforms.
@@ -143,7 +131,8 @@ sync**: JS (`deriveIOSEffectiveWebsitePolicy` / `deriveIOSEffectiveAppPolicy` in
 `src/allowlist-ios.js`) for pre-validation, Swift (`IOSPolicyResolver` in the shared
 `ScheduleData.swift`) for enforcement. Changing one without the other produces a
 UI that promises something enforcement will not do. See architecture.md §9.4
-and §12.3.
+and §12.3. Preserve the iOS 50-item allow-mode limit in validation as well as
+enforcement.
 
 ### Frontend module conventions (important, non-obvious)
 `src/` is plain ES modules, no framework — and it relies on two conventions
@@ -179,34 +168,21 @@ tell you why.
 blocking forwards to `app_watcher`). This is dead naming, not a live daemon —
 there is no `helper-daemon/` in the repo, so do not go looking for one.
 
-### App lifecycle
-Closing the window **hides to tray** and keeps all watchers running; enforcement
-continues across window close. See "The product principle" above for why there
-is no quit path. An EULA gate (revision-based, `CURRENT_EULA_REVISION` in
-`src/onboarding.js`) blocks post-acceptance startup hooks. v1.x cleanup (hosts strip,
-legacy daemon removal, may prompt for admin once) runs once via
-`src-tauri/src/commands/migration.rs`.
+### Startup gate
+
+Enforcement startup hooks must wait for acceptance of the current EULA revision.
+Preserve this ordering when changing startup or onboarding.
 
 ## Testing
 
-Tier 1 and Tier 2 have CLI runners, and both also run **inside the app** in dev
-mode via the dev console. Full details, including the "What runs in CI" table:
-[testing.md](testing.md).
+Use [testing.md](testing.md) for commands, suite selection and CI coverage.
+The limits and cross-platform contracts matter more than the suite names:
 
-- **Tier 0** (unit, pure `src/` helpers, no app shell): `pnpm test:tier0`
-  (vitest). Cases in `test/tier0/`, config in `vitest.config.mjs`. The home for
-  a leaf function's edge cases; composed behavior belongs in Tier 1.
-- **Tier 1** (logic, instant, no system changes): `pnpm test:tier1`
-  headlessly, or `Cmd+Shift+T` / `Ctrl+Shift+T` / `runBlockingTests()` in dev.
-  Cases in `src/blocking-tests.js`.
-- **Tier 2** (integration, real command paths, safe `.invalid` domains):
-  `pnpm build:e2e-app` then `pnpm test:tier2` over WebDriver, or
-  `runIntegrationTests('core' | 'full')` in the dev console. Cases in
-  `src/integration-tests.js`. **Tier 2 asserts the Rust-derived
-  `current_blocking` snapshot — it does not prove a browser actually redirects.**
-- **Rust backend**: `#[cfg(test)]` unit tests in the module under test.
-- **Website-enforcement correctness** (Automation redirects, extension blocking)
-  is validated manually — `scripts/manual-test-checklist.md`.
+- Tier 2 asserts the Rust-derived `current_blocking` snapshot; it does not prove
+  that a browser redirects. Use the [manual checklist](scripts/manual-test-checklist.md)
+  for actual website enforcement.
+- Logic tests do not render layout. Visually inspect UI changes using the
+  screenshot harness described in [testing.md](testing.md).
 
 ### Match verification to risk
 
@@ -228,35 +204,16 @@ still need regression coverage.
 See [testing.md](testing.md#choosing-regression-coverage) for test placement,
 visual verification, and the failures behind this guidance.
 
-### What CI does and does not cover
+### Interpreting green checks
 
-Every automated suite runs on PRs to `main` and again on the resulting `main`
-commits. Lint + Tier 0 + Tier 1 (`ci.yml`) run on every PR; the Rust tests
-(`rust-ci.yml`) and Tier 2 (`e2e-ci.yml`) are path-filtered, so a PR that misses their filters shows
-green without ever having run them. Releases additionally gate every build job
-on lint + Tier 1 and run `cargo test --lib` before macOS signing.
+Check the workflow paths and feature flags for the change being made; a green
+PR can omit the relevant platform suite. Default-feature checks do not exercise
+all feature-gated code. In particular, system-test data isolation needs
+`cargo test --lib --features system-test --locked`, which Rust CI runs separately.
+Clippy's platform jobs still use default features.
 
-Things to know before you trust a green run:
-
-- **Clippy runs on macOS and Windows, with default features.** Both are needed because
-  each host sees genuinely different `cfg` branches. All of them are
-  `-D warnings`, so run `cargo clippy --lib --bins --tests -- -D warnings`
-  locally before pushing Rust. What none of them cover is a feature build:
-  `--features system-test` is *not* clippy-clean (its stubs strand a pile of
-  otherwise-live helpers as dead code), and nothing gates that. There is no
-  Linux job at all — the lib does not compile there.
-- **The desktop lib is clippy-clean; keep it that way.** Two standing allows
-  carry a reason worth reading before you add a third. `[lints.rust]` in
-  `src-tauri/Cargo.toml` silences an `unexpected_cfgs` warning the `objc`
-  crate's `msg_send!` macro emits at every call site — a dependency we do not
-  control, 64 warnings that would drown the gate. And the `cocoa` crate is
-  deprecated wholesale in favour of `objc2` — a real, separate migration — so
-  the macOS FFI carries `allow(deprecated)`. Note that one is *not* scoped:
-  `src-tauri/src/lib.rs` has a crate-root `#![allow(deprecated)]`, which turns
-  the lint off everywhere and makes the allows in `app_update`,
-  `workspace_events` and `app_watcher` redundant. Narrowing it is worthwhile,
-  but until then do not read a green clippy run as evidence that a new
-  deprecation was noticed.
-- **eslint is `js/recommended` only, and `no-unused-vars` is a warning, not an
-  error.** There is a standing backlog of dead bindings the gate deliberately
-  does not fail on. Clear unrelated dead bindings as their own change rather than mixing them into feature work.
+Run `cargo clippy --lib --bins --tests -- -D warnings` locally before pushing
+Rust. A green lint run is not proof of no dead code or deprecations: ESLint's
+`no-unused-vars` is a warning, and the Rust crate currently allows deprecations.
+Consult the lint configuration and workflows for the current exceptions rather
+than extending them to silence a new problem.
