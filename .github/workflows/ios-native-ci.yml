@@ -1,0 +1,69 @@
+# Compiles the real Tauri iOS app and both Screen Time extensions without signing.
+# Physical Screen Time and distribution signatures are separate local/release gates.
+name: iOS native compile
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/ios-native-ci.yml'
+      - '.github/workflows/release.yml'
+      - 'scripts/**'
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'tauri-plugin-screentime/**'
+      - 'assets/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'vite.config.js'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ios-native-ci.yml'
+      - '.github/workflows/release.yml'
+      - 'scripts/**'
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'tauri-plugin-screentime/**'
+      - 'assets/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'vite.config.js'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-native-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  compile:
+    name: Tauri app and Screen Time extensions (unsigned)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select release Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: aarch64-apple-ios
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+      - run: pnpm install --frozen-lockfile
+      - run: node --test scripts/ios-test/*.test.mjs
+      - name: Build the unsigned device archive
+        run: |
+          node scripts/ios-test/run.mjs build --mode unsigned-device || {
+            find artifacts/ios-test -name native-build.log -exec tail -200 {} \;
+            exit 1
+          }
