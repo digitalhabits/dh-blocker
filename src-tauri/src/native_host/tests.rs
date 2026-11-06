@@ -582,7 +582,7 @@ fn pause_without_end_time_does_not_suppress_enforcement() {
 /// This is the one shape where schedules and one-off blocks deliberately
 /// differ. The card switch turns a Daily / Weekly space off by writing
 /// exactly this (through the override challenge), and the frontend engine,
-/// Android (`BlockerPlugin.kt`) and iOS (`ScheduleData.swift`) all read it
+/// iOS (`ScheduleData.swift`) all read it
 /// as "paused until turned on again". Desktop must agree, or a space the
 /// user switched off would keep blocking on macOS/Windows only.
 #[test]
@@ -907,4 +907,34 @@ fn unpaused_allowlist_schedule_puts_allow_mode_in_force() {
         crate::web_automation::url_is_blocked("https://unrelated.invalid/", &blocks),
         "allow mode from a schedule should block a host outside the allowlist"
     );
+}
+
+#[test]
+fn read_payload_refuses_oversized_messages_before_reading() {
+    let mut reader = std::io::Cursor::new(vec![7u8; 4]);
+    let err = read_payload(&mut reader, MAX_INBOUND_BYTES + 1).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::Other);
+    assert_eq!(read_payload(&mut reader, 4).unwrap(), vec![7u8; 4]);
+}
+
+#[test]
+fn open_settings_request_only_reaches_the_clicked_browser() {
+    assert!(opens_settings_for("chrome", "chrome.exe 154.0.8037.99"));
+    assert!(opens_settings_for("edge\n", "msedge.exe 156.0.4314.50"));
+    assert!(!opens_settings_for("chrome", "msedge.exe 156.0.4314.50"));
+    assert!(!opens_settings_for("edge", "unknown"));
+    assert!(!opens_settings_for("", "chrome.exe"));
+}
+
+#[test]
+fn open_settings_flag_rides_on_a_full_payload() {
+    // Older extensions replace their rules with each frame, so the flag must
+    // never arrive without the blocklist beside it.
+    let domains = vec!["x.com".to_string()];
+    let with: Value = serde_json::from_slice(&payload_json(&domains, &[], true).unwrap()).unwrap();
+    assert_eq!(with["openExtensionSettings"], true);
+    assert_eq!(with["blocklist"], json!(["x.com"]));
+    let without: Value =
+        serde_json::from_slice(&payload_json(&domains, &[], false).unwrap()).unwrap();
+    assert!(without.get("openExtensionSettings").is_none());
 }

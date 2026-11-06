@@ -2,6 +2,9 @@
 // behaviour banner, enforcer action banners, web-automation watcher.
 // Extracted verbatim from app.js.
 import { state, appState } from './state.js';
+import { MAC_BLOCKING_METHOD_KEYS, WINDOWS_BLOCKING_METHOD_KEYS, ALL_BLOCKING_METHOD_KEYS, windowsBrowserMethod } from './browser-blocking-method.js';
+// Preserve the existing imports used by app, onboarding, and in-app tests.
+export { MAC_BLOCKING_METHOD_KEYS, WINDOWS_BLOCKING_METHOD_KEYS, ALL_BLOCKING_METHOD_KEYS, windowsBrowserMethod };
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask } from '@tauri-apps/plugin-dialog';
@@ -59,14 +62,11 @@ export function setSettingsEnforcementSectionExpanded(expanded) {
 }
 
 export function resetSettingsEnforcementSection() {
-    if (__ANDROID_BUILD__) return;
     setSettingsEnforcementSectionExpanded(true);
     setSettingsBlockingMethodExpanded(false);
 }
 
 export function setupSettingsEnforcementSection() {
-    if (__ANDROID_BUILD__) return;
-
     const sectionToggle = document.getElementById('settings-enforcement-section-toggle');
     if (sectionToggle && sectionToggle.dataset.bound !== '1') {
         sectionToggle.dataset.bound = '1';
@@ -134,7 +134,6 @@ export function getEnforcementToggleInputs() {
 }
 
 export async function updateAllEnforcementToggleLocks() {
-    if (__ANDROID_BUILD__) return;
     for (const toggle of getEnforcementToggleInputs()) {
         await updateEnforcementToggleLock(toggle);
     }
@@ -164,7 +163,6 @@ export async function onEnforcementToggleChange(changedToggle) {
 }
 
 export async function wireEnforcementToggle() {
-    if (__ANDROID_BUILD__) return;
     if (state.isIOS) return;
     const toggles = getEnforcementToggleInputs();
     if (!toggles.length) return;
@@ -191,10 +189,10 @@ let blockingMethodSettingsWired = false;
 let lastSettingsBlockingMethodBrowsers = null;
 
 export function syncBlockingMethodRowVisibility(browsers = {}) {
-    if (!state.isMacOSDesktop) return;
+    if (!state.isMacOSDesktop && !state.isWindowsDesktop) return;
     lastSettingsBlockingMethodBrowsers = browsers;
-    const installed = new Set(installedMacBlockingMethodKeys(browsers));
-    for (const key of MAC_BLOCKING_METHOD_KEYS) {
+    const installed = new Set(blockingMethodKeys().filter(key => browsers[key]?.installed));
+    for (const key of ALL_BLOCKING_METHOD_KEYS) {
         const select = document.getElementById(`blocking-method-${key}`);
         const row = select?.closest('.settings-row');
         if (row) row.classList.toggle('hidden', !installed.has(key));
@@ -204,26 +202,26 @@ export function syncBlockingMethodRowVisibility(browsers = {}) {
 }
 
 export function syncBlockingMethodLabelIcons() {
-    if (__ANDROID_BUILD__) return;
-    for (const key of MAC_BLOCKING_METHOD_KEYS) {
+    for (const key of ALL_BLOCKING_METHOD_KEYS) {
         const icon = document.getElementById(`settings-blocking-method-${key}-icon`);
         if (icon) icon.src = browserIconUrl(key);
     }
 }
 
 export function syncBlockingMethodSelects(methods = getBlockingMethodsMap()) {
-    for (const key of MAC_BLOCKING_METHOD_KEYS) {
+    for (const key of ALL_BLOCKING_METHOD_KEYS) {
         const select = document.getElementById(`blocking-method-${key}`);
         if (!select) continue;
-        const value = methods[key] || 'automation';
+        const value = state.isWindowsDesktop
+            ? windowsBrowserMethod(key, methods, lastSettingsBlockingMethodBrowsers?.[key])
+            : (methods[key] || methodDefaultForKey(key));
         select.value = value;
         select.disabled = false;
     }
 }
 
 export async function wireBlockingMethodSettings() {
-    if (__ANDROID_BUILD__) return;
-    if (!state.isMacOSDesktop) return;
+    if (!state.isMacOSDesktop && !state.isWindowsDesktop) return;
 
     let browsers = lastOnboardingState?.browsers || state.lastMigrationBrowserState?.browsers || {};
     try {
@@ -236,7 +234,7 @@ export async function wireBlockingMethodSettings() {
 
     let methods = getBlockingMethodsMap();
     try {
-        methods = await tauriAPI.getBlockingMethods();
+        methods = await tauriAPI.getBlockingMethods() || {};
         if (!state.appData.settings) state.appData.settings = {};
         state.appData.settings.blockingMethods = methods;
     } catch (e) {
@@ -247,11 +245,18 @@ export async function wireBlockingMethodSettings() {
 
     if (!blockingMethodSettingsWired) {
         blockingMethodSettingsWired = true;
-        for (const key of MAC_BLOCKING_METHOD_KEYS) {
+        for (const key of ALL_BLOCKING_METHOD_KEYS) {
             const select = document.getElementById(`blocking-method-${key}`);
             if (!select) continue;
             select.addEventListener('change', () => {
                 void onBlockingMethodChange(key, select);
+            });
+        }
+        const firefoxAxBtn = document.getElementById('settings-firefox-ax-grant-btn');
+        if (firefoxAxBtn && !firefoxAxBtn._firefoxAxWired) {
+            firefoxAxBtn._firefoxAxWired = true;
+            firefoxAxBtn.addEventListener('click', () => {
+                void requestAccessibilityGrant();
             });
         }
         const safariFdaBtn = document.getElementById('settings-safari-fda-grant-btn');
@@ -270,6 +275,7 @@ export async function wireBlockingMethodSettings() {
         }
     }
     syncSafariFdaSettingsRow();
+    void syncFirefoxAxSettingsRow();
 }
 
 export function safariUsesExtensionMode() {
@@ -279,7 +285,6 @@ export function safariUsesExtensionMode() {
 let activeSafariFdaOnboardingSession = null;
 
 export function hideSafariFdaOnboardingUi() {
-    if (__ANDROID_BUILD__) return;
     const session = activeSafariFdaOnboardingSession;
     if (!session) return;
     session.overlay?.classList.add('hidden');
@@ -291,7 +296,6 @@ export function hideSafariFdaOnboardingUi() {
 
 /** Safari FDA onboarding — same layout/copy pattern as the EULA screen. */
 export function applySafariFdaOnboardingLanguage() {
-    if (__ANDROID_BUILD__) return;
     const shield = document.getElementById('fda-onboarding-shield-logo');
     if (shield) {
         shield.src = logoReddShieldUrl;
@@ -313,7 +317,6 @@ export function applySafariFdaOnboardingLanguage() {
 }
 
 export async function syncSafariFdaOnboardingGrantButton() {
-    if (__ANDROID_BUILD__) return;
     const grantBtn = document.getElementById('fda-onboarding-grant-btn');
     const whyEl = document.getElementById('fda-onboarding-why');
     if (!grantBtn) return false;
@@ -336,7 +339,6 @@ export async function syncSafariFdaOnboardingGrantButton() {
 }
 
 export async function finalizeSafariFdaOnboardingGrant(statusEl) {
-    if (__ANDROID_BUILD__) return;
     if (statusEl) {
         statusEl.classList.remove('hidden');
         statusEl.textContent = tSettings('safariFdaOnboardingGrantedStatus');
@@ -355,7 +357,6 @@ export async function finalizeSafariFdaOnboardingGrant(statusEl) {
 }
 
 export function showSafariFdaOnboardingOverlay() {
-    if (__ANDROID_BUILD__) return;
     if (!safariUsesExtensionMode()) {
         return Promise.resolve();
     }
@@ -442,7 +443,6 @@ export function showSafariFdaOnboardingOverlay() {
 }
 
 export async function presentSafariFdaOnboardingUi() {
-    if (__ANDROID_BUILD__) return;
     const session = activeSafariFdaOnboardingSession;
     if (!session) return;
     document.getElementById('settings-modal')?.classList.add('hidden');
@@ -483,7 +483,6 @@ export async function pollSafariFdaUntilGranted({ refreshSettings = false } = {}
 }
 
 export async function ensureSafariExtensionFdaBeforeSetup() {
-    if (__ANDROID_BUILD__) return;
     if (!safariUsesExtensionMode()) return;
     let granted = false;
     try {
@@ -500,7 +499,6 @@ export async function ensureSafariExtensionFdaBeforeSetup() {
 }
 
 export async function syncSafariFdaSettingsRow() {
-    if (__ANDROID_BUILD__) return;
     const row = document.getElementById('settings-safari-fda-row');
     const statusEl = document.getElementById('settings-safari-fda-status');
     const grantBtn = document.getElementById('settings-safari-fda-grant-btn');
@@ -525,9 +523,84 @@ export async function syncSafariFdaSettingsRow() {
     if (grantBtn) grantBtn.classList.toggle('hidden', granted);
 }
 
+/// The Accessibility grant row, shown only while Firefox is actually on that
+/// method. Mirrors `syncSafariFdaSettingsRow` — same markup, same shape.
+///
+/// Three states rather than two: a granted-but-not-yet-awake engine is not
+/// the same as a missing grant, and saying so stops the row claiming Firefox
+/// is unprotected for the second or two after the browser launches.
+export async function syncFirefoxAxSettingsRow() {
+    const row = document.getElementById('settings-firefox-ax-row');
+    const statusEl = document.getElementById('settings-firefox-ax-status');
+    const grantBtn = document.getElementById('settings-firefox-ax-grant-btn');
+    if (!row || !statusEl) return;
+    if (!browserUsesAccessibility('firefox')) {
+        row.classList.add('hidden');
+        return;
+    }
+    row.classList.remove('hidden');
+    if (grantBtn) grantBtn.textContent = tSettings('firefoxAxSettingsGrantBtn');
+
+    let trusted = false;
+    try {
+        trusted = !!(await invoke('accessibility_trusted'));
+        lastAccessibilityTrusted = trusted;
+    } catch (e) {
+        console.warn('[firefox-ax] trusted check failed:', e);
+    }
+    let waiting = false;
+    if (trusted) {
+        try {
+            waiting = (await invoke('firefox_ax_status')) === 'waitingForEngine';
+        } catch (_) { /* status is advisory */ }
+    }
+    statusEl.textContent = !trusted
+        ? tSettings('firefoxAxSettingsNotGranted')
+        : waiting
+            ? tSettings('firefoxAxSettingsWaiting')
+            : tSettings('firefoxAxSettingsGranted');
+    if (grantBtn) grantBtn.classList.toggle('hidden', trusted);
+}
+
+/// Nothing in-process can grant Accessibility: the system prompt only
+/// deep-links to System Settings, where the user flips a switch by hand. So
+/// the grant is detected by polling rather than returned by a call.
+const FIREFOX_AX_POLL_TRIES = 60;
+const FIREFOX_AX_POLL_MS = 1000;
+
+export async function pollAccessibilityUntilGranted() {
+    for (let i = 0; i < FIREFOX_AX_POLL_TRIES; i++) {
+        let trusted = false;
+        try {
+            trusted = !!(await invoke('accessibility_trusted'));
+        } catch (_) { /* keep waiting */ }
+        if (trusted) break;
+        await new Promise((resolve) => setTimeout(resolve, FIREFOX_AX_POLL_MS));
+    }
+    await syncFirefoxAxSettingsRow();
+}
+
+/// Show the prompt and open the pane, then wait for the switch.
+export async function requestAccessibilityGrant() {
+    try {
+        const already = await invoke('accessibility_request');
+        if (already) {
+            await syncFirefoxAxSettingsRow();
+            return;
+        }
+    } catch (e) {
+        console.warn('[firefox-ax] permission request failed:', e);
+    }
+    await pollAccessibilityUntilGranted();
+}
+
 export async function onBlockingMethodChange(key, select) {
     const previous = browserBlockingMethod(key);
-    const desired = select.value === 'extension' ? 'extension' : 'automation';
+    // Only methods this browser can actually enforce with: Firefox has no
+    // Automation, the others have no Accessibility.
+    const desired = methodIsValidForKey(key, select.value)
+        ? select.value
+        : methodDefaultForKey(key);
     select.disabled = true;
     try {
         const methods = await tauriAPI.setBlockingMethod(key, desired);
@@ -571,8 +644,22 @@ export async function onBlockingMethodChange(key, select) {
                 await updateBehaviourChangeBanner(fresh);
             }
             if (key === 'safari') syncSafariFdaSettingsRow();
+            if (key === 'firefox') await syncFirefoxAxSettingsRow();
         } else if (key === 'safari') {
             syncSafariFdaSettingsRow();
+        }
+        if (desired === 'accessibility') {
+            // Choosing the method is not the same as being able to enforce
+            // with it, and the user cannot be expected to find a System
+            // Settings pane on their own. Ask straight away; the watcher
+            // reports NotTrusted (and the enforcer treats Firefox as
+            // non-compliant) until the switch is flipped.
+            await syncFirefoxAxSettingsRow();
+            let trusted = false;
+            try {
+                trusted = !!(await invoke('accessibility_trusted'));
+            } catch (_) { /* treat as not granted */ }
+            if (!trusted) await requestAccessibilityGrant();
         }
     } catch (e) {
         console.warn('[blocking-method] set failed:', e);
@@ -644,9 +731,11 @@ export const BROWSER_STORE_LINKS = {
 // (Apple Events) watcher rather than the browser extension — so for
 // these the onboarding "compliance" is about the per-browser Automation
 // grant, not whether ReDD Focus is installed/enabled. Firefox stays on
-// the extension path. Non-macOS keeps the extension model everywhere.
+// the extension path. Windows Automation is opt-in or a native-policy fallback.
 export const AUTOMATION_BROWSER_KEYS = ['chrome', 'brave', 'edge', 'safari'];
-export const MAC_BLOCKING_METHOD_KEYS = ['safari', 'chrome', 'edge', 'brave'];
+export function blockingMethodKeys() {
+    return state.isWindowsDesktop ? WINDOWS_BLOCKING_METHOD_KEYS : state.isMacOSDesktop ? MAC_BLOCKING_METHOD_KEYS : [];
+}
 /** @deprecated use MAC_BLOCKING_METHOD_KEYS */
 export const MAC_CHROMIUM_BLOCKING_KEYS = MAC_BLOCKING_METHOD_KEYS;
 
@@ -658,21 +747,57 @@ export function getBlockingMethodsMap() {
     return state.appData?.settings?.blockingMethods || {};
 }
 
-export function browserBlockingMethod(key) {
-    if (!state.isMacOSDesktop || !MAC_BLOCKING_METHOD_KEYS.includes(key)) {
-        if (state.isMacOSDesktop && key === 'firefox') return 'extension';
-        return 'extension';
-    }
-    return getBlockingMethodsMap()[key] || 'automation';
+// Mirrors `blocking_method` in Rust — `method_for_key_at_path`,
+// `windows_method` and `method_is_valid_for_key`. Enforcement is decided
+// there; this copy exists so the UI can show what will happen without a
+// round-trip. The two must stay in step — a divergence here promises
+// something enforcement will not do (see architecture.md on the iOS resolver
+// pair for the same hazard).
+//
+// The platform-free half lives in ./browser-blocking-method.js; these
+// wrappers are the part that reads `state`.
+export function methodDefaultForKey(key) {
+    // Firefox keeps defaulting to the extension on macOS, so installs that
+    // predate the accessibility method are untouched. Windows defaults are
+    // policy-aware and live in `windowsBrowserMethod`.
+    return state.isMacOSDesktop && key === 'firefox' ? 'extension' : 'automation';
 }
 
-export function browserUsesAutomation(key) {
-    if (!state.isMacOSDesktop) return false;
-    if (key === 'firefox') return false;
-    if (MAC_BLOCKING_METHOD_KEYS.includes(key)) {
-        return browserBlockingMethod(key) === 'automation';
+export function methodIsValidForKey(key, method) {
+    if (!['automation', 'extension', 'accessibility'].includes(method)) return false;
+    if (state.isWindowsDesktop) return method !== 'accessibility';
+    if (key === 'firefox') return method !== 'automation';
+    return method !== 'accessibility';
+}
+
+/** Methods a browser can actually offer, in the order the UI should show. */
+export function methodOptionsForKey(key) {
+    return state.isMacOSDesktop && key === 'firefox' ? ['extension', 'accessibility'] : ['automation', 'extension'];
+}
+
+export function browserBlockingMethod(key, browser) {
+    if (!blockingMethodKeys().includes(key)) return 'extension';
+    if (state.isWindowsDesktop) {
+        return windowsBrowserMethod(key, getBlockingMethodsMap(), browser
+            || lastOnboardingState?.browsers?.[key] || state.lastMigrationBrowserState?.browsers?.[key]);
     }
-    return false;
+    const stored = getBlockingMethodsMap()[key];
+    // A method the browser cannot use falls back to its default rather than
+    // reporting something enforcement would ignore.
+    if (stored && methodIsValidForKey(key, stored)) return stored;
+    return methodDefaultForKey(key);
+}
+
+export function browserUsesAutomation(key, browser) {
+    // Firefox can never resolve to automation: Windows rejects it for Firefox
+    // above, and on macOS `methodIsValidForKey` does.
+    return browserBlockingMethod(key, browser) === 'automation';
+}
+
+/** True only for Firefox on macOS, and only when explicitly selected. */
+export function browserUsesAccessibility(key) {
+    if (!state.isMacOSDesktop) return false;
+    return browserBlockingMethod(key) === 'accessibility';
 }
 
 // key -> 'granted' | 'denied' | 'unknown', refreshed from
@@ -686,6 +811,24 @@ let lastAutomationPermissionFetchAt = 0;
 // doesn't flash "Allow Automation…" during startup.
 let automationPermissionStatusReady = false;
 export const AUTOMATION_PERMISSION_FETCH_MIN_MS = 2000;
+
+// macOS Accessibility grant, which Firefox needs on the Accessibility method.
+// null until first read. The setup screen treats unknown as compliant rather
+// than flashing a prompt at startup; this is display only — the enforcer
+// (enforcer.rs) reads the grant itself and is what force-quits Firefox.
+let lastAccessibilityTrusted = null;
+
+/// Re-read the grant for the setup screen's synchronous status checks. A
+/// failed read keeps the last known value instead of guessing either way.
+export async function refreshAccessibilityTrustedStatus() {
+    if (!browserUsesAccessibility('firefox')) return lastAccessibilityTrusted === true;
+    try {
+        lastAccessibilityTrusted = !!(await invoke('accessibility_trusted'));
+    } catch (e) {
+        console.warn('[firefox-ax] trusted check failed:', e);
+    }
+    return lastAccessibilityTrusted === true;
+}
 
 // Pull the live per-browser Automation decision (no consent prompt) and
 // cache it by browser key. Safe to call on any platform — no-ops off
@@ -703,12 +846,14 @@ export async function refreshAutomationPermissionStatus({
     launchProbeBrowser = null,
     launchProbeBrowsers = null,
 } = {}) {
-    if (__ANDROID_BUILD__) return lastAutomationPermissionByKey;
     if (!state.isMacOSDesktop) return lastAutomationPermissionByKey;
     const now = Date.now();
     if (!force && now - lastAutomationPermissionFetchAt < AUTOMATION_PERMISSION_FETCH_MIN_MS) {
         return lastAutomationPermissionByKey;
     }
+    // Every setup-screen and banner poll comes through here, so the
+    // Accessibility grant rides along with the Automation one.
+    await refreshAccessibilityTrustedStatus();
     try {
         const probeList = launchProbeBrowsers ?? normalizeLaunchProbeBrowsers(launchProbeBrowser);
         const list = await tauriAPI.webAutomationPermissionStatus({
@@ -749,6 +894,7 @@ export function automationBrowserIsRunning(key, browserScan) {
 }
 
 export function effectiveBrowserComplianceStatus(key, browsers) {
+    if (state.isWindowsDesktop && browserUsesAutomation(key, browsers?.[key])) return 'compliant';
     if (browserUsesAutomation(key)) {
         const browserScan = (browsers || {})[key];
         if (!automationPermissionStatusReady) {
@@ -761,6 +907,11 @@ export function effectiveBrowserComplianceStatus(key, browsers) {
         const mode = automationBrowserRowMode(key, browserScan);
         if (mode === 'granted' || mode === 'awaiting-open') return 'compliant';
         return 'needs-automation';
+    }
+    // Firefox on Accessibility is judged by the grant alone, as the enforcer
+    // does — the extension's state is irrelevant on this method.
+    if (browserUsesAccessibility(key)) {
+        return lastAccessibilityTrusted === false ? 'needs-accessibility' : 'compliant';
     }
     return browserComplianceStatus(key, (browsers || {})[key]) || 'needs-install';
 }
@@ -775,6 +926,11 @@ export function effectiveBrowserComplianceStatus(key, browsers) {
 // Returns null if the browser itself isn't installed on the machine.
 export function browserComplianceStatus(key, b) {
     if (!b || !b.installed) return null;
+    if (addressBarBlockingCovers(key, b)) return 'compliant';
+    // An organisation policy stops the browser reaching Blocker, so nothing else on the row helps.
+    // Windows Automation was handled above. Explicit extension mode must
+    // still report a policy that prevents native messaging.
+    if (b.nativeHostBlockedByPolicy) return 'policy-blocked';
     const profiles = b.profiles || [];
     const def = profiles.find(p => p.isDefault) || profiles[0];
     if (key === 'safari') {
@@ -799,6 +955,11 @@ export function browserComplianceStatus(key, b) {
     return 'compliant';
 }
 
+// Windows setup mirrors the saved per-browser Automation selection.
+export function addressBarBlockingCovers(key, b) {
+    return Boolean(state.isWindowsDesktop && b?.installed && browserUsesAutomation(key, b));
+}
+
 export function statusLabel(key, status) {
     switch (status) {
         case 'compliant': return tSettings('migrationComplianceOk');
@@ -808,6 +969,8 @@ export function statusLabel(key, status) {
         case 'needs-private': return tSettings('migrationStatusAllowPrivate');
         case 'needs-enable': return tSettings('migrationStatusEnableExtension');
         case 'needs-native-host': return tSettings('migrationStatusNativeHost');
+        case 'policy-blocked': return tSettings('migrationBadgePolicyBlocked');
+        case 'needs-accessibility': return tSettings('migrationBadgeAutomationOff');
         case 'needs-install': return tSettings('migrationStatusInstall');
         default: return tSettings('migrationStatusInstall');
     }
@@ -950,7 +1113,6 @@ export function browserStatusHint(key, entry, b, status) {
 }
 
 export function renderSafariDuplicateExtensionPanel(row, key) {
-    if (__ANDROID_BUILD__) return;
     const panel = document.createElement('div');
     panel.className = 'safari-duplicate-panel';
 
@@ -1047,36 +1209,37 @@ export function migrationBrowserKeys(state) {
 // HTML for the extension-setup header (bold title + lighter subtitle).
 // On macOS the path is Automation for Safari/Chromium plus — only when
 // Firefox is installed — the ReDD Focus extension in Firefox, so the
-// subtitle is built from live state. Other platforms keep the
-// extension-everywhere copy.
+// subtitle is built from live state. Firefox on the Accessibility method
+// needs no extension, so its copy names Accessibility instead. Other
+// platforms keep the extension-everywhere copy.
 export function migrationExtHeaderCopy(state) {
     if (!appState.isMacOSDesktop) return null;
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
     const browsers = state?.browsers || appState.lastMigrationBrowserState?.browsers || {};
     const firefoxInstalled = !!(browsers.firefox && browsers.firefox.installed);
+    const subKey = !firefoxInstalled
+        ? 'migrationExtSubMac'
+        : (browserUsesAccessibility('firefox') ? 'migrationExtSubMacFirefoxAx' : 'migrationExtSubMacFirefox');
     return {
         titleHtml: tSettings('migrationExtTitleMac'),
-        subtitleHtml: (firefoxInstalled
-            ? tSettings('migrationExtSubMacFirefox')
-            : tSettings('migrationExtSubMac')).replace('{FOCUS}', focusLogoHtml),
+        subtitleHtml: tSettings(subKey).replace('{FOCUS}', focusLogoHtml),
     };
 }
 
 export function migrationMacCopyKey(state) {
     const browsers = state?.browsers || appState.lastMigrationBrowserState?.browsers || {};
     const firefoxInstalled = !!(browsers.firefox && browsers.firefox.installed);
-    return `${getSettingsLanguage()}:${firefoxInstalled ? 1 : 0}`;
+    const firefoxAx = browserUsesAccessibility('firefox');
+    return `${getSettingsLanguage()}:${firefoxInstalled ? 1 : 0}:${firefoxAx ? 'ax' : 'ext'}`;
 }
 
 export function invalidateMigrationMacCopyCache() {
-    if (__ANDROID_BUILD__) return;
     state.lastMigrationHeaderCopyKey = '';
     state.lastMigrationHowtoCopyKey = '';
 }
 
 export function syncMigrationMacHowto(state) {
-    if (__ANDROID_BUILD__) return;
     if (!appState.isMacOSDesktop) return;
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
@@ -1093,7 +1256,8 @@ export function syncMigrationMacHowto(state) {
         }
         appState.lastMigrationHowtoCopyKey = copyKey;
     }
-    if (li2) li2.classList.toggle('hidden', !firefoxInstalled);
+    // Step 2 is the Firefox extension install, which Accessibility skips.
+    if (li2) li2.classList.toggle('hidden', !firefoxInstalled || browserUsesAccessibility('firefox'));
     if (li3) li3.classList.add('hidden');
 }
 
@@ -1113,7 +1277,6 @@ export function isMacFreshMigrationPost() {
 }
 
 export function syncMigrationPostHeader(state) {
-    if (__ANDROID_BUILD__) return;
     const header = document.getElementById('migration-post-header');
     const checklist = document.getElementById('migration-checklist');
     const readyBanner = document.getElementById('migration-setup-ready-banner');
@@ -1158,6 +1321,9 @@ export function syncMigrationPostHeader(state) {
 }
 
 export function migrationExtLinesHtml(state) {
+    if (appState.isWindowsDesktop && migrationBrowserKeys(state).every(key => browserUsesAutomation(key, state?.browsers?.[key]))) {
+        return tSettings('settingsBlockingMethodHintWindows');
+    }
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
     if (appState.isMacOSDesktop) {
@@ -1199,6 +1365,67 @@ export function scheduleAutomationVerificationPoll(browserKeyOrLabels = null) {
     };
     setTimeout(verify, 1200);
     setTimeout(verify, 3500);
+}
+
+// Onboarding row for Firefox on the macOS Accessibility method: one
+// system-wide grant, so just "Allowed" or a button that asks for it. The
+// extension rows' install/enable steps do not apply.
+export function buildAccessibilityBrowserRow(key, entry, browsers) {
+    const granted = effectiveBrowserComplianceStatus(key, browsers) === 'compliant';
+    const status = granted ? 'compliant' : 'needs-enable';
+
+    const row = document.createElement('div');
+    row.className = `migration-browser-row ${status}`;
+
+    const header = document.createElement('div');
+    header.className = 'migration-browser-header';
+    const name = document.createElement('span');
+    name.className = 'migration-browser-name';
+    const icon = document.createElement('img');
+    icon.className = 'migration-browser-icon';
+    icon.src = browserIconUrl(key);
+    icon.alt = '';
+    icon.setAttribute('aria-hidden', 'true');
+    name.appendChild(icon);
+    name.appendChild(document.createTextNode(entry.label));
+    header.appendChild(name);
+
+    const badge = document.createElement('span');
+    badge.className = `migration-browser-badge ${status}`;
+    badge.textContent = granted
+        ? tSettings('migrationBadgeAutomationOn')
+        : tSettings('migrationBadgeAutomationOff');
+    header.appendChild(badge);
+    row.appendChild(header);
+
+    if (granted) return row;
+
+    const hint = document.createElement('div');
+    hint.className = 'migration-browser-hint';
+    hint.textContent = tSettings('firefoxAxSettingsNotGranted');
+    row.appendChild(hint);
+
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'migration-actions-row';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'migration-primary-btn';
+    btn.textContent = tSettings('firefoxAxSettingsGrantBtn');
+    btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        // Resolves once the switch is flipped (or the wait gives up).
+        await requestAccessibilityGrant();
+        btn.disabled = false;
+        await pollMigrationCompliance();
+    });
+    actionsRow.appendChild(btn);
+    row.appendChild(actionsRow);
+
+    const delayNote = document.createElement('div');
+    delayNote.className = 'migration-browser-hint migration-delay-note';
+    delayNote.textContent = tSettings('migrationDelayDetectionNote');
+    row.appendChild(delayNote);
+    return row;
 }
 
 // Build an onboarding row for a macOS Automation-blocked browser
@@ -1386,6 +1613,9 @@ export function migrationBrowserRenderSignature(state) {
             const present = browsers[k]?.present ? 1 : 0;
             return `${k}:auto:${lastAutomationPermissionByKey[k] || 'unknown'}:${present}`;
         }
+        if (browserUsesAccessibility(k)) {
+            return `${k}:ax:${lastAccessibilityTrusted}`;
+        }
         const b = browsers[k];
         const status = browserComplianceStatus(k, b) || 'needs-install';
         if (k === 'firefox') {
@@ -1402,7 +1632,6 @@ export function migrationBrowserRenderSignature(state) {
 }
 
 export function updateMigrationBrowserChecklist(state) {
-    if (__ANDROID_BUILD__) return;
     const checklistItem = document.getElementById('migration-checklist-ext');
     const browsers = state?.browsers || {};
     const keys = migrationBrowserKeys(state);
@@ -1413,7 +1642,7 @@ export function updateMigrationBrowserChecklist(state) {
     // On the setup overlay, keep the howto visible until Automation status is
     // ready — otherwise closed browsers look compliant and the box flashes in late.
     const showHowto = appState.migrationOnboardingActive
-        ? !(automationPermissionStatusReady && allCompliant)
+        ? !((appState.isWindowsDesktop || automationPermissionStatusReady) && allCompliant)
         : keys.some(k => effectiveBrowserComplianceStatus(k, browsers) !== 'compliant');
     if (howto) howto.classList.toggle('hidden', !showHowto);
 
@@ -1432,7 +1661,6 @@ export function updateMigrationBrowserChecklist(state) {
 }
 
 export function renderBrowserInstallButtons(state, { force = false } = {}) {
-    if (__ANDROID_BUILD__) return;
     appState.lastMigrationBrowserState = state;
     void applyEnforcementDescCopy(state);
     // Keep the header subtitle in sync with the live scan (the macOS
@@ -1467,12 +1695,17 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
 
         // macOS: Safari + Chromium block via Automation, not the
         // extension — render a permission-grant row instead.
-        if (browserUsesAutomation(key)) {
+        if (appState.isMacOSDesktop && browserUsesAutomation(key)) {
             container.appendChild(buildAutomationBrowserRow(key, entry, browsers[key]));
+            continue;
+        }
+        if (appState.isMacOSDesktop && browserUsesAccessibility(key)) {
+            container.appendChild(buildAccessibilityBrowserRow(key, entry, browsers));
             continue;
         }
 
         const status = browserComplianceStatus(key, browsers[key]) || 'needs-install';
+        const viaAddressBar = addressBarBlockingCovers(key, browsers[key]);
 
         const row = document.createElement('div');
         row.className = `migration-browser-row ${status}`;
@@ -1500,7 +1733,9 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
         const badge = document.createElement('span');
         badge.className = `migration-browser-badge ${status}`;
         switch (status) {
-            case 'compliant': badge.textContent = statusLabel(key, status); break;
+            case 'compliant':
+                badge.textContent = viaAddressBar ? tSettings('migrationBadgeAddressBar') : statusLabel(key, status);
+                break;
             case 'needs-deduplicate': badge.textContent = tSettings('migrationBadgeDuplicateSafari'); break;
             case 'needs-install': badge.textContent = tSettings('migrationBadgeNotInstalled'); break;
             case 'needs-enable': badge.textContent = tSettings('migrationBadgeDisabled'); break;
@@ -1508,13 +1743,28 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
             case 'needs-native-host': badge.textContent = tSettings('migrationBadgeNativeHost'); break;
             case 'needs-fda': badge.textContent = tSettings('migrationStatusGrantFda'); break;
             case 'needs-website-access': badge.textContent = tSettings('migrationBadgeNoWebsiteAccess'); break;
+            case 'policy-blocked': badge.textContent = tSettings('migrationBadgePolicyBlocked'); break;
             default: badge.textContent = tSettings('migrationBadgeNotInstalled');
         }
         header.appendChild(badge);
 
         row.appendChild(header);
 
-        if (status === 'needs-fda') {
+        if (!viaAddressBar && status === 'policy-blocked') {
+            const hint = document.createElement('div');
+            hint.className = 'migration-browser-hint migration-browser-after-hint';
+            hint.textContent = tSettingsFmt('migrationPolicyBlockedHint', { browser: entry.label });
+            row.appendChild(hint);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'migration-browser-copy';
+            btn.textContent = tSettings('migrationPolicyBlockedLearnMore');
+            btn.addEventListener('click', () => void openUrl(tSettings('managedComputerHelpUrl')).catch(e => console.warn('[policy] open help failed:', e)));
+            const actionsRow = document.createElement('div');
+            actionsRow.className = 'migration-actions-row';
+            actionsRow.appendChild(btn);
+            row.appendChild(actionsRow);
+        } else if (status === 'needs-fda') {
             const hint = document.createElement('div');
             hint.className = 'migration-browser-hint migration-browser-after-hint';
             hint.innerHTML = tSettings('safariFdaSetupHintHtml');
@@ -1714,6 +1964,10 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
             primaryBtn.textContent = tSettings('migrationOpenExtensionSettings');
             primaryBtn.addEventListener('click', () => {
                 openExtensionSettings(key).catch(e => console.warn('[migration] open ext settings:', e));
+                // On Windows the extension opens the page, so a closed browser or an off/old extension does nothing.
+                if (isSafari) return;
+                primaryBtn.textContent = tSettings('migrationOpenSettingsPending');
+                setTimeout(() => { primaryBtn.textContent = tSettings('migrationOpenExtensionSettings'); }, 6000);
             });
             actionsRow.appendChild(primaryBtn);
 
@@ -1804,13 +2058,11 @@ export async function pollMigrationCompliance({ launchProbe = false } = {}) {
 }
 
 export function startMigrationPolling() {
-    if (__ANDROID_BUILD__) return;
     if (state.migrationPollIntervalId) return;
     state.migrationPollIntervalId = setInterval(pollMigrationCompliance, MIGRATION_POLL_MS);
 }
 
 export function stopMigrationPolling() {
-    if (__ANDROID_BUILD__) return;
     if (state.migrationPollIntervalId) {
         clearInterval(state.migrationPollIntervalId);
         state.migrationPollIntervalId = null;
@@ -1831,8 +2083,7 @@ export function onAppForeground() {
 }
 
 export function setupAppForegroundRefresh() {
-    if (__ANDROID_BUILD__) return;
-    if (state.isIOS || state.isAndroid) return;
+    if (state.isIOS) return;
     window.addEventListener('focus', onAppForeground);
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') onAppForeground();
@@ -1845,7 +2096,12 @@ export function setupAppForegroundRefresh() {
     // Keep the setup banner in sync when extension state changes
     // without a window focus (e.g. user toggles an extension while
     // ReDD Blocker stays visible). Matches enforcer tick (~5 s).
+    // Skip while hidden: the app lives in the tray for as long as the
+    // machine is on, and on macOS each refresh spawns osascript per running
+    // browser and rescans profiles — a constant idle CPU cost for a banner
+    // nobody can see. The visibilitychange listener above refreshes on show.
     setInterval(() => {
+        if (document.visibilityState !== 'visible') return;
         if (!state.startupInitializationComplete || state.migrationOnboardingActive) return;
         if (!hasAcceptedEula()) return;
         void refreshBehaviourBannerIfStale();
@@ -1885,7 +2141,6 @@ let behaviourBannerDismissedThisSession = false;
 export let lastOnboardingState = null;
 
 export async function updateBehaviourChangeBanner(state) {
-    if (__ANDROID_BUILD__) return;
     const banner = document.getElementById('behaviour-change-banner');
     if (!banner) return;
 
@@ -2008,7 +2263,7 @@ export function buildBannerActionSummary(browsers, detectedKeys) {
         groups.get(status).push(label);
     }
 
-    const order = ['needs-install', 'needs-automation', 'needs-fda', 'needs-native-host', 'needs-enable', 'needs-private', 'needs-website-access'];
+    const order = ['policy-blocked', 'needs-install','needs-automation', 'needs-accessibility', 'needs-fda', 'needs-native-host', 'needs-enable', 'needs-private', 'needs-website-access'];
     const phrases = [];
     for (const status of order) {
         const list = groups.get(status);
@@ -2024,6 +2279,10 @@ export function bannerActionPhrase(status) {
             return tSettings('bannerActionInstallIn');
         case 'needs-automation':
             return tSettings('bannerActionAutomationIn');
+        case 'needs-accessibility':
+            return tSettings('bannerActionAccessibilityIn');
+        case 'policy-blocked':
+            return tSettings('bannerActionPolicyBlockedIn');
         case 'needs-fda':
             return tSettings('bannerActionGrantFdaIn');
         case 'needs-enable':
@@ -2060,7 +2319,6 @@ export function joinBrowserNames(list) {
 // new Settings → Advanced Options entry. Centralised so both call
 // sites stay in sync if the overlay's API changes.
 export async function openExtensionSetupOverlay() {
-    if (__ANDROID_BUILD__) return;
     try {
         const fresh = await invoke('onboarding_state');
         state.migrationOnboardingDismissed = false;
@@ -2084,8 +2342,7 @@ export function finishOnboardingReplayToMainUi() {
 }
 
 export async function restartOnboardingFromSettings() {
-    if (__ANDROID_BUILD__) return;
-    if (state.isIOS || state.isAndroid) return;
+    if (state.isIOS) return;
     document.getElementById('settings-modal')?.classList.add('hidden');
     setLanguagePickerOpen(false);
     await presentWelcomeOnboarding(finishOnboardingReplayToMainUi);
@@ -2101,8 +2358,7 @@ export async function restartOnboardingFromSettings() {
 let lastBannerRefreshAt = 0;
 export const BANNER_REFRESH_THROTTLE_MS = 5_000;
 export async function refreshBehaviourBannerIfStale({ force = false } = {}) {
-    if (__ANDROID_BUILD__) return;
-    if (state.isIOS || state.isAndroid) return;
+    if (state.isIOS) return;
     if (state.migrationOnboardingActive) return; // overlay is the source of truth
     if (!state.startupInitializationComplete) return;
     const now = Date.now();
@@ -2138,7 +2394,6 @@ export function stopEnforcerClosedBannerPoll() {
 }
 
 export function ensureEnforcerClosedBannerPoll() {
-    if (__ANDROID_BUILD__) return;
     if (enforcerClosedBannerStates.size === 0) {
         stopEnforcerClosedBannerPoll();
         return;
@@ -2146,12 +2401,13 @@ export function ensureEnforcerClosedBannerPoll() {
     void syncEnforcerClosedBannersWithCompliance();
     if (enforcerClosedBannerPollInterval) return;
     enforcerClosedBannerPollInterval = setInterval(() => {
+        // Same tray cost as the banner refresh; onAppForeground resyncs on show.
+        if (document.visibilityState !== 'visible') return;
         void syncEnforcerClosedBannersWithCompliance();
     }, ENFORCER_CLOSED_BANNER_POLL_MS);
 }
 
 export async function syncEnforcerClosedBannersWithCompliance(state) {
-    if (__ANDROID_BUILD__) return;
     if (enforcerClosedBannerStates.size === 0) {
         stopEnforcerClosedBannerPoll();
         return;
@@ -2181,8 +2437,7 @@ export async function syncEnforcerClosedBannersWithCompliance(state) {
 }
 
 export function setupEnforcerUiAlerts() {
-    if (__ANDROID_BUILD__) return;
-    if (state.isIOS || state.isAndroid || enforcerUiAlertsAttached) return;
+    if (state.isIOS || enforcerUiAlertsAttached) return;
     enforcerUiAlertsAttached = true;
     tauriAPI.onEnforcerGraceUpdate((event) => {
         const payload = event?.payload || {};
@@ -2240,7 +2495,6 @@ let webAutomationUiAlertsAttached = false;
 // matters — the watcher stops probing it, so the resolved event that
 // would normally retire the banner can never arrive.
 export function clearPendingAutomationWarning(key) {
-    if (__ANDROID_BUILD__) return;
     if (!key) return;
     let removed = false;
     for (const label of [...webAutomationPendingBrowsers.keys()]) {
@@ -2253,7 +2507,6 @@ export function clearPendingAutomationWarning(key) {
 }
 
 export async function startWebAutomationWatcher() {
-    if (__ANDROID_BUILD__) return;
     if (!state.isMacOSDesktop) return;
     try {
         await tauriAPI.webAutomationStart();
@@ -2263,7 +2516,6 @@ export async function startWebAutomationWatcher() {
 }
 
 export function setupWebAutomationUiAlerts() {
-    if (__ANDROID_BUILD__) return;
     if (!state.isMacOSDesktop || webAutomationUiAlertsAttached) return;
     webAutomationUiAlertsAttached = true;
     tauriAPI.onWebAutomationPermissionNeeded(async (event) => {
@@ -2319,7 +2571,6 @@ export function setupWebAutomationUiAlerts() {
 // parked just above `#behaviour-change-banner` in the top banner stack,
 // mirroring how the enforcer banners insert themselves.
 export function ensureWebAutomationBanner() {
-    if (__ANDROID_BUILD__) return;
     let banner = document.getElementById(WEB_AUTOMATION_BANNER_ID);
     if (banner) return banner;
 
@@ -2370,7 +2621,6 @@ export function ensureWebAutomationBanner() {
 }
 
 export function renderWebAutomationPermissionBanner() {
-    if (__ANDROID_BUILD__) return;
     const labels = [...webAutomationPendingBrowsers.keys()];
     if (labels.length === 0) {
         document.getElementById(WEB_AUTOMATION_BANNER_ID)?.classList.add('hidden');
@@ -2568,7 +2818,6 @@ export function enforcerCopy(payload) {
 }
 
 export function renderEnforcerCountdownInstruction(el, baseText) {
-    if (__ANDROID_BUILD__) return;
     if (!el) return;
     el.replaceChildren();
     let base = (baseText || '').trim();
@@ -2584,7 +2833,6 @@ export function renderEnforcerCountdownInstruction(el, baseText) {
 }
 
 export function renderEnforcerActionCopy(banner, payload, copy) {
-    if (__ANDROID_BUILD__) return;
     const key = enforcerBannerKey(payload);
     const isClosed = banner.classList.contains('extension-enforcer-action-banner-closed');
     const isActiveCountdown = !!copy.countdown && !isClosed;
@@ -2727,7 +2975,6 @@ export function formatBrowserList(labels) {
 }
 
 export function ensureActiveEnforcerActionBanner() {
-    if (__ANDROID_BUILD__) return;
     let banner = document.getElementById(ENFORCER_ACTIVE_BANNER_ID);
     if (banner) return banner;
 
@@ -2781,7 +3028,6 @@ export function ensureActiveEnforcerActionBanner() {
 }
 
 export function ensureClosedEnforcerActionBanner() {
-    if (__ANDROID_BUILD__) return;
     let banner = document.getElementById(ENFORCER_CLOSED_BANNER_ID);
     if (banner) return banner;
 
@@ -2828,7 +3074,6 @@ export function ensureClosedEnforcerActionBanner() {
 }
 
 export function ensureEnforcerActionBanner(payload) {
-    if (__ANDROID_BUILD__) return;
     const key = enforcerBannerKey(payload);
     let banner = document.getElementById(enforcerBannerId(key));
     if (banner) return { banner, key };
@@ -3084,7 +3329,6 @@ export async function copyEnforcerUrlChip(button) {
 }
 
 export function scheduleEnforcerScreenshotSync(wrap) {
-    if (__ANDROID_BUILD__) return;
     if (!wrap) return;
     requestAnimationFrame(() => {
         syncEnforcerScreenshotHeights(wrap);
@@ -3097,14 +3341,12 @@ export function scheduleEnforcerScreenshotSync(wrap) {
 }
 
 export function syncAllEnforcerScreenshotHeights() {
-    if (__ANDROID_BUILD__) return;
     document.querySelectorAll('.extension-enforcer-screenshots-wrap:not(.hidden)')
         .forEach(scheduleEnforcerScreenshotSync);
 }
 
 /** Size enforcer how-to screenshots to fill remaining viewport height. */
 export function syncEnforcerScreenshotHeights(wrap) {
-    if (__ANDROID_BUILD__) return;
     if (!wrap || wrap.classList.contains('hidden')) {
         if (wrap) {
             wrap.style.maxHeight = '';
@@ -3186,7 +3428,6 @@ export function applyScreenshotContainerLayout(container, steps, { browserKey } 
 }
 
 export function renderEnforcerScreenshots(container, steps, browserKey) {
-    if (__ANDROID_BUILD__) return;
     if (!container || !steps?.length) return;
     const stepsKey = `${browserKey}:${steps.map(s => s.src).join(',')}`;
     if (container.dataset.stepsKey === stepsKey) return;
@@ -3266,7 +3507,6 @@ export function partitionEnforcerStates(states) {
 }
 
 export function renderEnforcerAutomationActionRow(automationStates, mode) {
-    if (__ANDROID_BUILD__) return;
     const row = document.createElement('div');
     row.className = 'extension-enforcer-browser-action-row extension-enforcer-automation-row';
 
@@ -3320,7 +3560,6 @@ export function renderEnforcerAutomationActionRow(automationStates, mode) {
 }
 
 export function renderEnforcerActionRows(states, mode) {
-    if (__ANDROID_BUILD__) return;
     const { automation, focus } = partitionEnforcerStates(states);
     const frag = document.createDocumentFragment();
     if (automation.length) frag.appendChild(renderEnforcerAutomationActionRow(automation, mode));
@@ -3329,7 +3568,6 @@ export function renderEnforcerActionRows(states, mode) {
 }
 
 export function renderEnforcerBrowserActionRow(state, mode) {
-    if (__ANDROID_BUILD__) return;
     const row = document.createElement('div');
     row.className = 'extension-enforcer-browser-action-row';
 
@@ -3424,7 +3662,6 @@ export function resetEnforcerClosedBannerCycle() {
 }
 
 export function renderCombinedEnforcerActionBanner() {
-    if (__ANDROID_BUILD__) return;
     const banner = ensureActiveEnforcerActionBanner();
     const states = [...enforcerActionBannerStates.entries()].map(([key, state]) => ({ key, ...state }));
     if (states.length === 0) {
@@ -3513,7 +3750,6 @@ export function renderCombinedEnforcerActionBanner() {
 }
 
 export function updateEnforcerActionBannerCountdown() {
-    if (__ANDROID_BUILD__) return;
     if (enforcerActionBannerStates.size === 0) return;
     for (const [key, state] of enforcerActionBannerStates) {
         const remainingSecs = Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000));
@@ -3538,7 +3774,6 @@ export function updateEnforcerActionBannerCountdown() {
 }
 
 export function renderEnforcerActionBanner(payload) {
-    if (__ANDROID_BUILD__) return;
     if (!payload || !payload.browser) return;
     const key = enforcerBannerKey(payload);
     if (enforcerActionBannerStates.size === 0) {
@@ -3565,7 +3800,6 @@ export function renderEnforcerActionBanner(payload) {
 }
 
 export function renderCombinedEnforcerClosedBanner() {
-    if (__ANDROID_BUILD__) return;
     const banner = ensureClosedEnforcerActionBanner();
     if (hasActiveEnforcerCountdown()) {
         banner.classList.add('hidden');
@@ -3652,7 +3886,6 @@ export function renderCombinedEnforcerClosedBanner() {
 }
 
 export function renderEnforcerClosedBanner(payload) {
-    if (__ANDROID_BUILD__) return;
     if (!payload || (!payload.browser && !payload.label)) return;
     const key = enforcerBannerKey(payload);
     enforcerActionBannerStates.delete(key);

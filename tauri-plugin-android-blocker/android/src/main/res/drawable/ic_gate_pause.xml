@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="18dp" android:height="18dp"
-    android:viewportWidth="24" android:viewportHeight="24"
-    android:tint="@color/gate_primary_btn_text">
-    <path android:fillColor="#FF000000" android:pathData="M6,4h4v16H6z" />
-    <path android:fillColor="#FF000000" android:pathData="M14,4h4v16h-4z" />
-</vector>

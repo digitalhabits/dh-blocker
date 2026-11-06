@@ -1,4 +1,4 @@
-//! Tauri commands for per-browser blocking method (macOS).
+//! Tauri commands for per-browser blocking method (desktop).
 
 use std::collections::HashMap;
 
@@ -18,8 +18,12 @@ pub fn set_blocking_method(
     browser: String,
     method: String,
 ) -> Result<HashMap<String, String>, String> {
-    blocking_method::validate_mac_blocking_method_key(&browser)?;
+    blocking_method::validate_blocking_method_key(&browser)?;
     let parsed = blocking_method::validate_method(&method)?;
+    // Not every browser can enforce with every method: Firefox has no tab
+    // scripting, and the others have Apple Events and so never need the
+    // Accessibility grant.
+    blocking_method::validate_method_for_key(&browser, parsed)?;
 
     let path = super::canonical_data_path(&app).ok_or_else(|| "no app data path".to_string())?;
     let mut data = read_data(&path).unwrap_or_else(|| Value::Object(serde_json::Map::new()));
@@ -40,23 +44,42 @@ pub fn set_blocking_method(
         .insert(browser.clone(), Value::String(parsed.as_str().to_string()));
 
     write_data(&path, &data).map_err(|e| format!("write data: {e}"))?;
+    // Before the side effects, so a failed native-host step cannot leave a
+    // watcher asleep while the saved method says it should be running.
+    #[cfg(target_os = "macos")]
+    {
+        super::web_automation::refresh_automation_wanted(&app);
+        super::firefox_ax::refresh_accessibility_wanted(&app);
+    }
     apply_side_effects(&app, &browser, parsed)?;
+    #[cfg(target_os = "windows")]
+    crate::uia_web_automation::refresh_automation_wanted();
     log::info!("blocking_method: {browser} -> {}", parsed.as_str());
     Ok(blocking_method::read_map_from_path(&path))
 }
 
 #[cfg_attr(target_os = "windows", allow(unreachable_code))] // the cfg arm above returns
-fn apply_side_effects(app: &AppHandle, browser: &str, method: Method) -> Result<(), String> {
-    #[cfg(not(target_os = "macos"))]
+fn apply_side_effects(_app: &AppHandle, browser: &str, method: Method) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
     {
-        let _ = (app, browser, method);
+        if method == Method::Extension {
+            if let Some(target) = blocking_method::native_host_target(browser) {
+                crate::native_host_install::install_native_host_for(target)
+                    .map_err(|e| format!("native-host install for {browser}: {e}"))?;
+            }
+        }
+        return Ok(());
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = (_app, browser, method);
         return Ok(());
     }
     #[cfg(target_os = "macos")]
     match (browser, method) {
         ("safari", Method::Extension) => {
             let path =
-                super::canonical_data_path(app).ok_or_else(|| "no app data path".to_string())?;
+                super::canonical_data_path(_app).ok_or_else(|| "no app data path".to_string())?;
             crate::app_group::sync_blocklist_from(&path)
                 .map_err(|e| format!("App Group sync for Safari: {e}"))?;
         }
@@ -78,6 +101,23 @@ fn apply_side_effects(app: &AppHandle, browser: &str, method: Method) -> Result<
             if let Some(target) = blocking_method::native_host_target(browser) {
                 crate::native_host_install::uninstall_native_host_for(target)
                     .map_err(|e| format!("native-host uninstall for {browser}: {e}"))?;
+            }
+        }
+        // Firefox only, enforced by `validate_method_for_key` above.
+        //
+        // The native-messaging host is deliberately *left installed*. The
+        // add-on may still be in the user's profile, and a host that is gone
+        // turns every message it sends into an error dialog; keeping it costs
+        // a manifest on disk and makes switching back instant. The
+        // Accessibility grant is not requested here either — the UI walks the
+        // user through System Settings, because nothing in-process can flip
+        // that switch.
+        (_, Method::Accessibility) => {
+            if !crate::accessibility::is_trusted() {
+                log::info!(
+                    "blocking_method: {browser} set to accessibility without the grant; \
+                     enforcement waits until the user allows it in System Settings"
+                );
             }
         }
     }

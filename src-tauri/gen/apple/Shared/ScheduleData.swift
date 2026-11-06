@@ -1,5 +1,7 @@
 import Foundation
+#if os(iOS) && canImport(ManagedSettings)
 import ManagedSettings
+#endif
 
 /// App Group identifier shared between the main app and the DeviceActivityMonitor extension.
 let appGroupID = "group.com.reddblock"
@@ -20,6 +22,27 @@ let manualAllowlistStateKey = "redd.manualAllowlistState"
 let resumePayloadKeyPrefix = "redd.resumePayload."
 /// Key prefix for block-end state: "redd.blockEndState.{blockId}"
 let blockEndStateKeyPrefix = "redd.blockEndState."
+
+enum CheckedUserDefaultsWrite {
+    static func write(_ data: Data, key: String, defaults: UserDefaults?) -> Bool {
+        guard let defaults else { return false }
+        defaults.set(data, forKey: key)
+        return defaults.data(forKey: key) == data
+    }
+}
+
+enum ManualResumePayloadCommit {
+    static func commit(
+        save: () -> Bool,
+        reapply: () -> Void,
+        remove: () -> Void
+    ) -> Bool {
+        guard save() else { return false }
+        reapply()
+        remove()
+        return true
+    }
+}
 
 /// Data model describing what to block during a scheduled time window.
 /// Stored in the App Group's UserDefaults so the extension can read it.
@@ -53,6 +76,9 @@ struct ScheduleBlockData: Codable {
     /// "allowlist" when this entry's domains/tokens are ALLOWED items;
     /// nil/"blocklist" = blocked items (legacy semantics).
     let mode: String?
+    /// Focus space this entry belongs to, so start warnings can tell one space
+    /// carrying on from another starting. Optional: older payloads lack it.
+    let blocklistId: String?
 
     /// True when this entry carries allowlist (allowed-items) semantics.
     var isAllowlist: Bool { mode == "allowlist" }
@@ -73,7 +99,8 @@ struct ScheduleBlockData: Codable {
         blocklistEmoji: String? = nil,
         blocklistName: String? = nil,
         blocklistColorHex: String? = nil,
-        mode: String? = nil
+        mode: String? = nil,
+        blocklistId: String? = nil
     ) {
         self.domains = domains
         self.appTokenData = appTokenData
@@ -91,6 +118,7 @@ struct ScheduleBlockData: Codable {
         self.blocklistName = blocklistName
         self.blocklistColorHex = blocklistColorHex
         self.mode = mode
+        self.blocklistId = blocklistId
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -110,6 +138,7 @@ struct ScheduleBlockData: Codable {
         case blocklistName
         case blocklistColorHex
         case mode
+        case blocklistId
     }
 
     init(from decoder: Decoder) throws {
@@ -130,6 +159,7 @@ struct ScheduleBlockData: Codable {
         self.blocklistName = try container.decodeIfPresent(String.self, forKey: .blocklistName)
         self.blocklistColorHex = try container.decodeIfPresent(String.self, forKey: .blocklistColorHex)
         self.mode = try container.decodeIfPresent(String.self, forKey: .mode)
+        self.blocklistId = try container.decodeIfPresent(String.self, forKey: .blocklistId)
     }
 }
 
@@ -143,10 +173,11 @@ struct SharedScheduleStore {
     // MARK: - Multi-schedule API
     
     /// Save schedule data for a specific schedule ID.
-    static func save(id: String, data: ScheduleBlockData) {
+    @discardableResult
+    static func save(id: String, data: ScheduleBlockData) -> Bool {
         var all = loadAll()
         all[id] = data
-        saveAll(all)
+        return saveAll(all)
     }
     
     /// Load schedule data for a specific schedule ID.
@@ -168,10 +199,11 @@ struct SharedScheduleStore {
     }
     
     /// Remove a specific schedule by ID.
-    static func remove(id: String) {
+    @discardableResult
+    static func remove(id: String) -> Bool {
         var all = loadAll()
         all.removeValue(forKey: id)
-        saveAll(all)
+        return saveAll(all)
     }
     
     /// Remove all schedule data.
@@ -183,8 +215,9 @@ struct SharedScheduleStore {
     // MARK: - Legacy single-schedule API (backward compatibility)
     
     /// Save schedule block data using the legacy single-schedule key.
-    static func save(_ data: ScheduleBlockData) {
-        save(id: "default", data: data)
+    @discardableResult
+    static func save(_ data: ScheduleBlockData) -> Bool {
+        return save(id: "default", data: data)
     }
     
     /// Load schedule block data from the legacy single-schedule key.
@@ -198,11 +231,10 @@ struct SharedScheduleStore {
     
     // MARK: - Private
     
-    private static func saveAll(_ schedules: [String: ScheduleBlockData]) {
-        guard let defaults = sharedDefaults else { return }
-        if let encoded = try? JSONEncoder().encode(schedules) {
-            defaults.set(encoded, forKey: multiScheduleDataKey)
-        }
+    @discardableResult
+    private static func saveAll(_ schedules: [String: ScheduleBlockData]) -> Bool {
+        guard let encoded = try? JSONEncoder().encode(schedules) else { return false }
+        return CheckedUserDefaultsWrite.write(encoded, key: multiScheduleDataKey, defaults: sharedDefaults)
     }
     
     private static func loadLegacy() -> ScheduleBlockData? {
@@ -223,10 +255,10 @@ struct SharedManualBlockStore {
         return UserDefaults(suiteName: appGroupID)
     }
     
-    static func saveManualBlockState(_ data: ManualBlockStatePayload) {
-        guard let defaults = sharedDefaults,
-              let encoded = try? JSONEncoder().encode(data) else { return }
-        defaults.set(encoded, forKey: manualBlockStateKey)
+    @discardableResult
+    static func saveManualBlockState(_ data: ManualBlockStatePayload) -> Bool {
+        guard let encoded = try? JSONEncoder().encode(data) else { return false }
+        return CheckedUserDefaultsWrite.write(encoded, key: manualBlockStateKey, defaults: sharedDefaults)
     }
     
     static func loadManualBlockState() -> ManualBlockStatePayload? {
@@ -235,10 +267,10 @@ struct SharedManualBlockStore {
         return try? JSONDecoder().decode(ManualBlockStatePayload.self, from: data)
     }
     
-    static func saveResumePayload(blockId: String, _ data: ManualBlockStatePayload) {
-        guard let defaults = sharedDefaults,
-              let encoded = try? JSONEncoder().encode(data) else { return }
-        defaults.set(encoded, forKey: resumePayloadKeyPrefix + blockId)
+    @discardableResult
+    static func saveResumePayload(blockId: String, _ data: ManualBlockStatePayload) -> Bool {
+        guard let encoded = try? JSONEncoder().encode(data) else { return false }
+        return CheckedUserDefaultsWrite.write(encoded, key: resumePayloadKeyPrefix + blockId, defaults: sharedDefaults)
     }
     
     static func loadResumePayload(blockId: String) -> ManualBlockStatePayload? {
@@ -269,10 +301,10 @@ struct SharedManualBlockStore {
 
     // MARK: - Manual allowlist record (allow-mode focus spaces)
 
-    static func saveManualAllowlistState(_ data: ManualBlockStatePayload) {
-        guard let defaults = sharedDefaults,
-              let encoded = try? JSONEncoder().encode(data) else { return }
-        defaults.set(encoded, forKey: manualAllowlistStateKey)
+    @discardableResult
+    static func saveManualAllowlistState(_ data: ManualBlockStatePayload) -> Bool {
+        guard let encoded = try? JSONEncoder().encode(data) else { return false }
+        return CheckedUserDefaultsWrite.write(encoded, key: manualAllowlistStateKey, defaults: sharedDefaults)
     }
 
     static func loadManualAllowlistState() -> ManualBlockStatePayload? {
@@ -336,6 +368,9 @@ extension ScheduleBlockData {
             return currentMins >= startMins && currentMins < endMins
         }
 
+        // Equal start and end is all day on its days, as the app reads it.
+        if endMins == startMins { return !hasDayFilter || includesToday }
+
         // Cross-midnight segment
         let yesterday = today == 0 ? 6 : today - 1
         let includesYesterday = days?.contains(yesterday) ?? true
@@ -348,7 +383,26 @@ extension ScheduleBlockData {
 
         return currentMins >= startMins || currentMins < endMins
     }
+
+    /// iOS can deliver a start a moment before its minute, when the window still
+    /// reads as unopened; a start due within the tolerance is evaluated at the start.
+    func startCallbackEvaluationTime(now: Date, calendar: Calendar = .current) -> Date {
+        guard let startHour, let startMinute,
+              let start = calendar.nextDate(
+                  after: now,
+                  matching: DateComponents(hour: startHour, minute: startMinute, second: 0),
+                  matchingPolicy: .nextTime
+              ),
+              start.timeIntervalSince(now) <= startCallbackToleranceSeconds else { return now }
+        return start
+    }
 }
+
+/// Kept short: a recompute at the real time inside it undoes the shift, and other
+/// entries are judged at the shifted time too.
+let startCallbackToleranceSeconds: TimeInterval = 10
+
+#if os(iOS) && canImport(ManagedSettings)
 
 // MARK: - Effective web policy (allowlist-aware, cross-channel)
 
@@ -632,3 +686,5 @@ enum IOSAppPolicyApplier {
         }
     }
 }
+
+#endif

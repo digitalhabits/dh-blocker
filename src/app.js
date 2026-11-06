@@ -29,6 +29,7 @@ import {
     parseLegacyScreenTimeSummary,
     normalizeIOSScreenTimeSelection,
     cloneIOSScreenTimeSelection,
+    isIOSSelectionNarrowing,
     hasUsableIOSScreenTimeSelection,
     formatIOSScreenTimeSelectionLabel,
     getBlocklistIOSScreenTimeSelection,
@@ -44,22 +45,15 @@ import {
 import { openInstalledAppsPicker } from './apps-picker.js';
 import { handlePopoverOutsideClick } from './time-inputs.js';
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
-import { applyEditorScheduleForBlocklist, applyFocusSpaceEditorLanguage, confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, isEditorInCreateModal, populateFocusSpaceEditor, setupFocusSpaceEditor } from './focus-space-editor.js';
+import { applyEditorScheduleForBlocklist, applyFocusSpaceEditorLanguage, confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, isEditorInCreateModal, notifyEditorChanged, populateFocusSpaceEditor, setOpenEditorSection, setupFocusSpaceEditor } from './focus-space-editor.js';
 import { loadData, saveData, updateHostsFile } from './persistence.js';
 import { cleanDomainInput, isValidDomain, processWebsiteInput, setupWebsitesImportMenu, resetWebsitesImportMenuPosition } from './website-input.js';
-import { updateBlockedApps, acceptEula, appBlockingWarningSnoozedUntilMs, checkAndroidPermissions, checkHelperStatus, checkScreentimeAuth, collectManualBlockedApps, collectScheduleBlockedApps, detectPlatform, ensureInstalledAppsCache, initializeAndroidBlockingState, initializeIOSBlockingState, listenForAndroidFrictionGate, onAndroidResumed, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAndroidBackButtonHandling, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility, openExternal, updateWindowHeight, isHelperInstallCancelled, isHelperConnectionError, joinAppListWithLimit, formatAppBlockingSnoozeStartsIn, APP_BLOCKING_SNOOZE_ICON_IMG_12 } from './blocking-platform.js';
+import { updateBlockedApps, acceptEula, appBlockingWarningSnoozedUntilMs, checkHelperStatus, checkScreentimeAuth, collectManualBlockedApps, collectScheduleBlockedApps, detectPlatform, ensureInstalledAppsCache, initializeIOSBlockingState, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility, openExternal, updateWindowHeight, isHelperInstallCancelled, isHelperConnectionError, joinAppListWithLimit, formatAppBlockingSnoozeStartsIn, APP_BLOCKING_SNOOZE_ICON_IMG_12 } from './blocking-platform.js';
 import { CURRENT_EULA_REVISION, applyEnforcementDescCopy, applyMacAutomationIntroCopy, ensureExtensionSetupOnboardingShown, getAcceptedEulaRevision, hasAcceptedEula, isFirstRunOnboardingInProgress, resetDevOnlyEulaAcceptance, returnToWelcomeFromEula, runDesktopOnboarding, runInitialOnboardingSequence, setupMacAutomationIntroModal, syncMigrationPostBackButtonVisibility, syncSetupBannerHeadline, welcomeFirefoxInstalled } from './onboarding.js';
-// app.js calls these enforcement.js exports but historically never imported
-// them — they resolved only through Rollup's scope hoisting, which held while
-// the desktop bundle retained every enforcement helper. The Android build now
-// strips desktop-only UI (__ANDROID_BUILD__ guards, CSS purge, DOM removal),
-// so Rollup tree-shakes any export without a real import edge and these bare
-// references become runtime ReferenceErrors (e.g. syncBlockingMethodLabelIcons
-// in applySettingsLanguage). Importing them keeps the edges on every target;
-// the guarded functions remain as no-ops on Android.
 import {
-    MAC_BLOCKING_METHOD_KEYS,
+    ALL_BLOCKING_METHOD_KEYS,
     browserBlockingMethod,
+    methodOptionsForKey,
     invalidateMigrationMacCopyCache,
     migrationExtLinesHtml,
     applySafariFdaOnboardingLanguage,
@@ -95,9 +89,9 @@ import {
     syncScheduleOverlayCustomiseEditorState, syncScheduleOverlayCustomiseTitle,
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
-import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, openBlocklistModal, openOverrideModal, refreshSelectedBlocklistUi, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncColorSwatchInk, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
+import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, isEnterSchedulerModalOpen, openBlocklistModal, openOverrideModal, refreshSelectedBlocklistUi, restopForNewStrictness, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncColorSwatchInk, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
 import { enhanceNativeSelects } from './custom-select.js';
-import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, deleteBlocklist, isBlocklistEditFrictionRequired, pendingDelete, saveBlocklistOrderFromDOM, setUndoToastMessage } from './blocklists.js';
+import { expandBlocklistCard, renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, deleteBlocklist, isBlocklistEditFrictionRequired, pendingDelete, saveBlocklistOrderFromDOM, setUndoToastMessage } from './blocklists.js';
 import {
     getSelectedBlocklistModalMode,
     syncBlocklistCreateUi,
@@ -108,12 +102,12 @@ import {
 } from './list-mode.js';
 import { countIOSScreenTimeSelectionItems } from './list-presentation.js';
 import { render, kickClockNow, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderScheduleAlwaysOnRow, renderScheduleVisibilityChips, renderWeekBlocks, renderBlocklistSelector, getCalendarSegmentLayout, layoutOverlappingBlocks } from './render.js';
-import { hasAnyEnforcedBlocks, isAndroidAllowlistUnsupported, isNonRepeatingSchedule, isOneOffBlockEnforced, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
+import { hasAnyEnforcedBlocks, isNonRepeatingSchedule, isOneOffBlockEnforced, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
 import {
     refreshUninstallButtonState,
     setupGraceSetting, setupMaxOverrideWordsSetting, syncMaxOverrideWordsSetting, setupHelpMenuLinks, setupHelperSettings, setupInAppUninstall,
-    setupOverrideAll, setupSettingsHelpButtons, setupWindowsUninstallGuidance,
+    setupOverrideAll, setupSettingsHelpButtons, setupSettingsInfoTooltips, setupWindowsUninstallGuidance,
     syncUninstallConfirmModal, updateCleanHostsBtnState, updateHelperStatusIndicator,
     updateManageSectionVisibility, updateOverrideAllButtonVisibility,
 } from './settings.js';
@@ -122,6 +116,9 @@ import { turnFocusSpaceOn } from './focus-space-switch.js';
 import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, getEffectiveViewportWidth, bindUiZoomLayoutObserver } from './theme.js';
 import { checkForAppUpdate, getLatestVersionPlatformKey, isVersionHigher, resolveMicrosoftStorePackage, updateBannerWhatsNewButtonHtml } from './update-banner.js';
 import { updateDownloadInProgress } from './update-banner.js';
+import { setupUsagePingToggle, startUsagePing } from './usage-ping.js';
+import { applyStoreReviewPromptCopy, startStoreReviewPrompt } from './store-review-prompt.js';
+import { applyStartWarningsLanguage, setupStartWarningsOnboarding, setupStartWarningsToggle, syncIOSStartWarnings } from './ios-start-warnings.js';
 import { getChallengeController } from './challenge-controller.js';
 import { getMaxOverrideCountForType, getOverrideEstimatedMinutes, getTypingCharsPerMinuteForType, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
 import { escapeHtml, cleanUrlForDisplay, parseRgbFromColorString, rgbToHex, rgbToHsl, hslToRgb, getRelativeLuminance, getEnteringChipColor, getContrastTextColor } from './utils.js';
@@ -133,8 +130,6 @@ import { SETTINGS_TRANSLATIONS, getSettingsLanguage, weekdayAbbrevMon0List, week
 let lastPressTarget = null;
 /** Windows Settings → Apps → Installed apps (Apps & features). */
 export const WINDOWS_APPS_SETTINGS_URI = 'ms-settings:appsfeatures';
-
-
 
 /** Blocklist modal undo: session-scoped stack and "last" values for recording previous state. */
 
@@ -153,7 +148,6 @@ export const BLOCKLIST_NAME_MAX_LENGTH = 60;
 /** Collapse stop-button emoji+name this many px before measured overflow (iOS flex overlap). */
 export const IOS_STOP_BTN_META_COLLAPSE_SLACK_PX = 24;
 
-
 // Schedule mode state
 state.scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
 
@@ -166,42 +160,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
     await resetDevOnlyEulaAcceptance();
 
-    // Returning Android users already have complete persisted focus-space
-    // state. Paint it before *any* native IPC or listener wiring, then check
-    // Accessibility immediately afterwards. A revoked permission swaps this
-    // optimistic frame for the onboarding gate as soon as the IPC completes.
-    // Fresh installs and upgrades still wait for migration below because they
-    // do not yet have a safe, complete state to render.
-    const renderedAndroidFirstFrame = state.isAndroid
-        && hasAcceptedEula()
-        && state.appData.settings?.androidMigrationDone === true;
-    if (renderedAndroidFirstFrame) {
-        setupTheme();
-        render();
-        await new Promise((resolve) => {
-            requestAnimationFrame(() => {
-                setTimeout(() => {
-                    state.androidFirstFrameCommitted = true;
-                    resolve();
-                }, 0);
-            });
-        });
-    }
-
     setupHandsetModalScreens();
     setupMobileExternalLinkOpens();
-    if (state.isAndroid) {
-        listenForAndroidFrictionGate();
-        setupAndroidBackButtonHandling();
-    }
+
     setupEventListeners();
     setupAppBlockingWarningOverlay();
     initWelcomeDemoControls();
-    if (!renderedAndroidFirstFrame) setupTheme();
+    setupTheme();
     setupUiZoomShortcuts();
     setupHelpMenuLinks();
     setupHelperSettings();
+    setupUsagePingToggle();
+    setupStartWarningsToggle();
+    setupStartWarningsOnboarding();
     setupSettingsHelpButtons();
+    setupSettingsInfoTooltips();
     setupBlocklistsImportExportButtons();
     setupAppForegroundRefresh();
     setupOverrideAll();
@@ -211,18 +184,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupGraceSetting();
     setupMaxOverrideWordsSetting();
     setupSettingsEnforcementSection();
-    if (!state.isIOS && !state.isAndroid) {
+    if (!state.isIOS) {
         void wireEnforcementToggle();
     }
     await runInitialOnboardingSequence();
     if (state.isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
-    } else if (state.isAndroid && hasAcceptedEula()) {
-        // Deliberately after the optimistic persisted first frame above. The
-        // result is still required before Android reconciliation begins.
-        if (state.androidPermissionsGranted == null) {
-            await checkAndroidPermissions();
-        }
     }
 
     if (hasAcceptedEula()) {
@@ -241,16 +208,8 @@ export async function runPostAcceptanceStartup() {
     startupInitializationPromise = (async () => {
         await runExpiryOnce(); // Align in-memory state with Screen Time / helper (e.g. after app was closed)
 
-        // Desktop reconciliation and returning-user Android initialization
-        // perform several native scans and IPC round-trips. None is needed to
-        // draw already-migrated persisted focus spaces, so paint those first
-        // and let the browser commit the frame before continuing startup.
-        // Android's one-time legacy migration deliberately remains ahead of
-        // the first render: it owns initial default/imported-space creation.
-        const androidDataReadyForEarlyRender = state.isAndroid
-            && state.appData.settings?.androidMigrationDone === true;
-        const renderedBeforeNativeStartup = state.androidFirstFrameCommitted || (!state.isIOS
-            && (!state.isAndroid || androidDataReadyForEarlyRender));
+        // Paint desktop state before native reconciliation; iOS waits for Screen Time.
+        const renderedBeforeNativeStartup = !state.isIOS;
         if (renderedBeforeNativeStartup) {
             render();
             startTickInterval();
@@ -264,21 +223,6 @@ export async function runPostAcceptanceStartup() {
             if (state.screentimeAuthorized) {
                 await initializeIOSBlockingState();
             }
-        } else if (state.isAndroid) {
-            // The normal startup and EULA-acceptance paths check this before
-            // entering post-acceptance startup. Avoid a duplicate native IPC;
-            // retain the fallback for direct/test callers.
-            if (state.androidPermissionsGranted == null) {
-                await checkAndroidPermissions();
-            }
-            // Not gated on the accessibility grant: migration must run
-            // before ANY set_schedules call, because Kotlin stores the
-            // synced schedules under the same legacy prefs key
-            // ("routines") that the migration reads — a pre-migration
-            // sync would overwrite the legacy data and then re-import
-            // our own schedules as duplicates. Neither command needs
-            // accessibility; enforcement simply stays off until granted.
-            await initializeAndroidBlockingState();
         } else {
             // Run first-launch migration off the legacy helper + check
             // Automation TCC (macOS) + extension compliance. Idempotent;
@@ -318,11 +262,16 @@ export async function runPostAcceptanceStartup() {
             startTickInterval();
         }
 
-        // Check for app updates (non-blocking, desktop only)
-        if (!state.isIOS && !state.isAndroid) {
+        // Check for app updates (non-blocking, desktop only), and re-check
+        // every 6 h: the app can stay open for days past a release.
+        if (!state.isIOS) {
             checkForAppUpdate();
+            setInterval(checkForAppUpdate, 6 * 60 * 60 * 1000);
         }
+        // Anonymous daily usage ping (Mac, Windows, iOS; off in Settings).
+        startUsagePing();
         state.startupInitializationComplete = true;
+        startStoreReviewPrompt();
     })();
 
     try {
@@ -333,9 +282,6 @@ export async function runPostAcceptanceStartup() {
         }
     }
 }
-
-
-
 
 // Setup event listeners
 function setupEventListeners() {
@@ -409,29 +355,12 @@ function setupEventListeners() {
             return;
         }
         eulaContinueBtn.textContent = tSettings('eulaContinueBtn');
+        startStoreReviewPrompt();
     });
 
     document.getElementById('eula-back-btn')?.addEventListener('click', () => {
         returnToWelcomeFromEula();
     });
-
-    // EULA onboarding: delegated listeners so localized HTML can rebuild links/text without losing handlers.
-    const eulaRoot = document.getElementById('eula-onboarding');
-    if (eulaRoot) {
-        eulaRoot.addEventListener(
-            'click',
-            (event) => {
-                const toggleHost = event.target.closest('[data-toggle-target]');
-                if (toggleHost && eulaRoot.contains(toggleHost) && !event.target.closest('a')) {
-                    const target = document.getElementById(toggleHost.dataset.toggleTarget);
-                    if (!target) return;
-                    target.checked = !target.checked;
-                    target.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-            },
-            true
-        );
-    }
 
     document.getElementById('ios-screentime-grant-btn')?.addEventListener('click', async () => {
         const btn = document.getElementById('ios-screentime-grant-btn');
@@ -444,6 +373,8 @@ function setupEventListeners() {
         const result = await requestScreentimeAuth();
 
         if (result.granted) {
+            // Every grant asks about start warnings next, so a fresh dev install always shows it.
+            state.iosNotificationOnboardingPending = true;
             updateOnboardingVisibility();
             try {
                 await initializeIOSBlockingState();
@@ -464,47 +395,14 @@ function setupEventListeners() {
         btn.textContent = tSettings('iosScreentimeGrantBtn');
     });
 
-    document.getElementById('android-accessibility-grant-btn')?.addEventListener('click', async () => {
-        const btn = document.getElementById('android-accessibility-grant-btn');
-        const status = document.getElementById('android-accessibility-status');
-        if (!btn) return;
-
-        btn.disabled = true;
-        btn.textContent = tSettings('androidAccessibilityOpeningBtn');
-        if (status) {
-            status.textContent = tSettings('androidAccessibilityWaitingStatus');
-            status.classList.remove('hidden');
-        }
-
-        try {
-            await tauriAPI.androidOpenAccessibilitySettings();
-        } catch (err) {
-            console.error('Failed to open Android accessibility settings:', err);
-            if (status) {
-                status.textContent = tSettings('androidAccessibilityOpenFailedStatusFmt')
-                    .replace('{error}', String(err));
-            }
-        } finally {
-            btn.disabled = false;
-            btn.textContent = tSettings('androidAccessibilityGrantBtn');
-        }
-    });
-
-    if (state.isAndroid) {
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                void onAndroidResumed();
-            }
-        });
-    }
-
     if (state.isIOS) {
         // Screen Time access is granted and revoked in Settings, and there is no
-        // callback for "the user came back" — the same reason Android re-checks
-        // its Accessibility permission here. Without this the app keeps showing
+        // callback for "the user came back". Without this check the app keeps showing
         // focus spaces as on after access is revoked, until the next launch.
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') void checkScreentimeAuth();
+            // Also rebuilds start warnings: notification permission and the time zone
+            // can both change in iOS Settings while the app is away.
+            if (document.visibilityState === 'visible') void checkScreentimeAuth().then(syncIOSStartWarnings);
         });
     }
 
@@ -520,7 +418,7 @@ function setupEventListeners() {
     const KEEP_SELECTION_WITHIN = [
         '.blocklist-card', '.scheduler-section', '.time-picker-container', '.schedule-block-panel',
         '.repeat-dropdown-wrapper', '.repeat-dropdown-menu', '.modal-overlay', '.section-header',
-        '.footer', '.title-bar', '.week-calendar-section', '.time-popover', '.time-part',
+        '.footer', '.title-bar', '.week-calendar-section', '.time-popover', '.segment-time-field',
         '.undo-toast', '.zoom-toast',
     ].join(',');
     document.addEventListener('click', (e) => {
@@ -663,9 +561,6 @@ function setupEventListeners() {
     });
 }
 
-
-
-
 /** Set inside setupModalListeners, which owns the form's closure state. */
 let saveFocusSpaceEditorImpl = null;
 export async function saveFocusSpaceEditor() {
@@ -689,9 +584,8 @@ function setupModalListeners() {
 
     const getModalLockedAppDisplayItems = () => {
         const screenTimeLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
-        return (window.lockedApps || []).map((app) => (
-            app === screenTimeLabel ? app : displayNameForBlockedApp(app)
-        ));
+        return [...(window.lockedApps || []), ...modalApps.filter(isAppLocked), ...(isAppLocked(screenTimeLabel) ? [screenTimeLabel] : [])]
+            .map((app) => (app === screenTimeLabel ? app : displayNameForBlockedApp(app)));
     };
 
     const modalWebsiteInput = document.getElementById('modal-website-input');
@@ -704,8 +598,11 @@ function setupModalListeners() {
     const selectedWebsites = new Set();
     const selectedApps = new Set();
 
-    const isWebsiteLocked = (w) => Array.isArray(window.lockedWebsites) && window.lockedWebsites.includes(w);
-    const isAppLocked = (a) => Array.isArray(window.lockedApps) && window.lockedApps.includes(a);
+    // Running allow mode (lockLastItems): only the last website/app and the iOS "N apps" tag are locked.
+    const isWebsiteLocked = (w) => (Array.isArray(window.lockedWebsites) && window.lockedWebsites.includes(w))
+        || (!!window.lockLastItems && modalWebsites.length === 1);
+    const isAppLocked = (a) => (Array.isArray(window.lockedApps) && window.lockedApps.includes(a))
+        || (!!window.lockLastItems && !!a && (a === formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection) || modalApps.length === 1));
 
     const clearWebsiteSelection = () => {
         if (selectedWebsites.size === 0) return false;
@@ -744,6 +641,7 @@ function setupModalListeners() {
     const deleteSelectedWebsites = () => {
         if (selectedWebsites.size === 0) return false;
         const toDelete = modalWebsites.filter(w => selectedWebsites.has(w) && !isWebsiteLocked(w));
+        if (window.lockLastItems && toDelete.length === modalWebsites.length) toDelete.pop();
         if (toDelete.length === 0) {
             selectedWebsites.clear();
             window.renderModalTags();
@@ -849,6 +747,7 @@ function setupModalListeners() {
         const toDeleteApps = modalApps.filter(
             a => selectedApps.has(displayNameForBlockedApp(a)) && !isAppLocked(a),
         );
+        if (window.lockLastItems && toDeleteApps.length === modalApps.length) toDeleteApps.pop();
         const shouldDeleteIos = iosLabel && selectedApps.has(iosLabel) && !isAppLocked(iosLabel);
         if (toDeleteApps.length === 0 && !shouldDeleteIos) {
             selectedApps.clear();
@@ -973,6 +872,18 @@ function setupModalListeners() {
         }, true);
     }
 
+    // Touch: the tap that focuses the name puts the cursor at the end (iOS can land it at the start).
+    const nameInput = document.getElementById('blocklist-name');
+    let nameJustFocused = false;
+    nameInput.addEventListener('focus', () => { nameJustFocused = true; });
+    nameInput.addEventListener('click', () => {
+        if (!nameJustFocused) return;
+        nameJustFocused = false;
+        if (document.body.classList.contains('ios')) {
+            nameInput.setSelectionRange(nameInput.value.length, nameInput.value.length);
+        }
+    });
+    nameInput.addEventListener('blur', () => { nameJustFocused = false; });
     document.getElementById('blocklist-name').addEventListener('input', () => {
         const nameInput = document.getElementById('blocklist-name');
         nameInput.classList.remove('input-error');
@@ -1019,7 +930,7 @@ function setupModalListeners() {
         if (e.key === 'Backspace' && !modalWebsiteInput.value.length && modalWebsites.length > 0) {
             const lastIdx = modalWebsites.length - 1;
             const last = modalWebsites[lastIdx];
-            if (!window.lockedWebsites || !window.lockedWebsites.includes(last)) {
+            if (!isWebsiteLocked(last)) {
                 pushModalUndo('website', () => {
                     modalWebsites.splice(lastIdx, 0, last);
                     window.renderModalTags();
@@ -1093,7 +1004,7 @@ function setupModalListeners() {
         if (e.key === 'Backspace' && !modalAppInput.value.length && modalApps.length > 0) {
             const lastIdx = modalApps.length - 1;
             const last = modalApps[lastIdx];
-            if (!window.lockedApps || !window.lockedApps.includes(last)) {
+            if (!isAppLocked(last)) {
                 pushModalUndo('app', () => {
                     modalApps.splice(lastIdx, 0, last);
                     window.renderModalTags();
@@ -1170,6 +1081,24 @@ function setupModalListeners() {
                     initialCategoryTokenData: modalIOSScreenTimeSelection?.categoryTokens || [],
                     mode: getSelectedBlocklistModalMode()
                 });
+                // Running allow mode: only a narrowing (no new apps, never none).
+                if (window.lockLastItems && !result.cancelled) {
+                    const picked = normalizeIOSScreenTimeSelection({
+                        applicationTokens: result.applicationTokens || [],
+                        categoryTokens: result.categoryTokens || [],
+                    });
+                    if (!isIOSSelectionNarrowing(modalIOSScreenTimeSelection, picked)) {
+                        alert(tSettings(picked?.applicationTokens.length || picked?.categoryTokens.length ? 'allowlistPickerNoAdditions' : 'allowlistPickerKeepOne'));
+                        return;
+                    }
+                    pushModalUndo('ios-screentime-selection', ((previous) => () => {
+                        modalIOSScreenTimeSelection = previous;
+                        window.renderModalTags();
+                    })(cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection)));
+                    modalIOSScreenTimeSelection = picked;
+                    window.renderModalTags();
+                    return;
+                }
                 // Non-null while enforcing: the picker becomes add-only, so a
                 // deselection inside it is ignored rather than saved.
                 const floor = getEnforcedIOSSelectionFloor();
@@ -1395,7 +1324,7 @@ function setupModalListeners() {
 
             // The picker carries a sizeable emoji database. Load it only
             // when somebody opens the custom picker instead of parsing it on
-            // every app launch (especially costly in Android WebView).
+            // every app launch.
             if (!customElements.get('emoji-picker')) {
                 await import('emoji-picker-element');
             }
@@ -1547,10 +1476,7 @@ function setupModalListeners() {
         // Daily / Weekly spaces activate on save, so the same platform checks
         // that used to guard "Start schedule" apply here.
         if (getWhenToBlockKind() !== 'manual') {
-            if (isAndroidAllowlistUnsupported(blocklist)) {
-                alert(tSettings('androidAllowlistUnsupported'));
-                return;
-            }
+
             if (!ensureIOSBlocklistSelectionReady(blocklist, 'saving this schedule')) return;
             if (!await ensureIOSAllowlistStartable(blocklist)) return;
         }
@@ -1568,6 +1494,9 @@ function setupModalListeners() {
         applyEditorScheduleForBlocklist(blocklist.id);
 
         await saveData();
+        if (existingBlocklistForSave && normalizeUnlockMinutes(existingBlocklistForSave.unlockMinutes) !== blocklist.unlockMinutes) {
+            await restopForNewStrictness(blocklist.id);
+        }
 
         // If this blocklist is active (block or schedule), update blocking rules immediately
         const now = Date.now();
@@ -1579,13 +1508,13 @@ function setupModalListeners() {
         );
 
         if (hasActiveBlock || hasActiveSchedule) {
-            // Awaited, not fired and forgotten. On Android syncSchedulesToHelper
-            // is the only path that pushes edited apps/websites to Kotlin
-            // (updateBlockedApps is a no-op there), so racing it leaves a
-            // just-removed app still enforced until the next sync.
+            // Wait for edited rules to reach enforcement before completing the save.
             await updateHostsFile();
             await syncSchedulesToHelper();
             await updateBlockedApps();
+        } else if (state.isIOS) {
+            // Switched to Manual: its old schedule's monitors and start warnings go now.
+            await syncSchedulesToHelper();
         }
 
         // Keep live preview while editing, but don't revert after a confirmed save.
@@ -1594,7 +1523,12 @@ function setupModalListeners() {
         if (isEditorInCreateModal()) {
             closeBlocklistModal();
         } else {
+            // Saving is not a reset: keep the section the user is working in.
+            // Populating closes every section, which on a narrow window also
+            // changes the sheet's height and can bounce it shut.
+            const openSection = state.openEditorSection;
             populateFocusSpaceEditor(blocklist);
+            setOpenEditorSection(openSection);
         }
 
         // Only update blocklist display without resetting schedule segments
@@ -1614,12 +1548,19 @@ function setupModalListeners() {
                 card.classList.add('blocklist-card-just-created');
                 card.addEventListener('animationend', () => card.classList.remove('blocklist-card-just-created'), { once: true });
             });
+        } else if (isEnterSchedulerModalOpen()) {
+            deselectBlocklist();
+            expandBlocklistCard(blocklist.id);
         } else if (state.selectedBlocklistId) {
             // Edit existing: refresh controls only, never auto-open enter.
             const dropdown = document.getElementById('blocklist-select');
             if (dropdown) {
                 dropdown.value = state.selectedBlocklistId;
-                handleBlocklistSelect({ target: dropdown });
+                // handleBlocklistSelect defaults openEnterUi to false, and the
+                // sheet sync reads "not opening" as "close it" — which on a
+                // narrow window shut the editor and landed the user back on the
+                // list every time they saved. Keep whatever state it is in.
+                handleBlocklistSelect({ target: dropdown }, { openEnterUi: isEnterSchedulerModalOpen() });
             }
         }
     };
@@ -1641,9 +1582,14 @@ function setupModalListeners() {
     };
 
     const renderModalTags = () => {
+        // Websites and apps are added from surfaces outside #focus-space-editor —
+        // the app picker is its own overlay — so the editor's own input/change
+        // listener never fires and the footer stayed clean until something else
+        // was touched. Every add and remove path comes through here.
+        notifyEditorChanged();
         renderTags(modalWebsitesTags, modalWebsites, (idx) => {
             const value = modalWebsites[idx];
-            if (window.lockedWebsites && window.lockedWebsites.includes(value)) {
+            if (isWebsiteLocked(value)) {
                 return; // Do not remove locked items; do not push undo.
             }
             pushModalUndo('website', () => {
@@ -1652,7 +1598,7 @@ function setupModalListeners() {
             });
             modalWebsites.splice(idx, 1);
             window.renderModalTags();
-        }, window.lockedWebsites, {
+        }, modalWebsites.filter(isWebsiteLocked), {
             selectedItems: selectedWebsites,
             onTagClick: (idx) => {
                 const value = modalWebsites[idx];
@@ -1876,9 +1822,6 @@ function renderTags(container, items, onRemove, lockedItems = [], options = {}) 
 
 // Show schedule confirmation modal
 
-
-
-
 // Utility functions
 export function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
@@ -1951,8 +1894,6 @@ export function formatBlockTimeRemainingShort(totalMins) {
     if (hrs > 0) return `${hrs}h left`;
     return `${mins}m left`;
 }
-
-
 
 // Clean up URL for display (remove protocol, www, trailing slash)
 
@@ -2066,7 +2007,8 @@ function switchLanguageSetting(next) {
     state.appData.settings.language = next;
     applySettingsLanguage();
     saveData();
-    if (!state.isIOS && !state.isAndroid) void refreshBehaviourBannerIfStale({ force: true });
+    if (!state.isIOS) void refreshBehaviourBannerIfStale({ force: true });
+    if (state.isIOS) void syncIOSStartWarnings(); // the booked wording is in the old language
     closeAllLanguagePickers();
 }
 
@@ -2204,17 +2146,21 @@ export function applyEulaOnboardingLanguage() {
     const agreeInner = document.getElementById('eula-agree-line-inner');
     if (agreeInner) agreeInner.innerHTML = tSettings('eulaAgreeLineHtml');
 
-    const note = document.getElementById('eula-note');
-    if (note) note.innerHTML = tSettings('eulaNoteHtml');
+    const privacyTitle = document.getElementById('eula-privacy-title');
+    if (privacyTitle) privacyTitle.textContent = tSettings('eulaPrivacyTitle');
+    const privacyLead = document.getElementById('eula-privacy-lead');
+    if (privacyLead) privacyLead.textContent = tSettings('eulaPrivacyLead');
+    const howWeCountSummary = document.getElementById('eula-how-we-count-summary');
+    if (howWeCountSummary) howWeCountSummary.textContent = tSettings('eulaHowWeCount');
+    const howWeCountBody = document.getElementById('eula-how-we-count-body');
+    if (howWeCountBody) howWeCountBody.innerHTML = tSettings('eulaHowWeCountHtml');
+    document.getElementById('eula-how-we-count')?.classList.remove('hidden');
 
     const blurb = document.getElementById('eula-project-blurb');
     if (blurb) blurb.innerHTML = tSettings('eulaProjectBlurb');
 
     const footer1 = document.getElementById('eula-onboarding-footer-1');
     if (footer1) footer1.innerHTML = tSettings('welcomeFooter1Html');
-
-    const footer2 = document.getElementById('eula-onboarding-footer-2');
-    if (footer2) footer2.innerHTML = tSettings('welcomeFooter2Html');
 
     const cb = document.getElementById('eula-agree-checkbox');
     if (cb) cb.setAttribute('aria-label', tSettings('eulaAgreeAria'));
@@ -2246,33 +2192,6 @@ export function applyIosScreentimeOnboardingLanguage() {
     }
 
     const note = document.getElementById('ios-screentime-onboarding-note');
-    if (note) note.innerHTML = tSettings('eulaProjectBlurb');
-}
-
-/** Android Accessibility permission onboarding — localized from current UI language. */
-export function applyAndroidPermissionsOnboardingLanguage() {
-    const icon = document.getElementById('android-permissions-onboarding-app-icon');
-    if (icon) icon.setAttribute('alt', tSettings('eulaWelcomeIconAlt'));
-
-    const title = document.getElementById('android-permissions-onboarding-title');
-    if (title) title.innerHTML = tSettings('welcomeOnboardingTitle');
-
-    const body = document.getElementById('android-permissions-onboarding-body');
-    if (body) body.textContent = tSettings('androidPermissionsOnboardingBody');
-
-    const grantBtn = document.getElementById('android-accessibility-grant-btn');
-    if (grantBtn && !grantBtn.disabled) {
-        grantBtn.textContent = tSettings('androidAccessibilityGrantBtn');
-    }
-
-    const status = document.getElementById('android-accessibility-status');
-    if (status) {
-        status.textContent = status.classList.contains('hidden')
-            ? tSettings('androidAccessibilityReturnStatus')
-            : tSettings('androidAccessibilityWaitingStatus');
-    }
-
-    const note = document.getElementById('android-permissions-onboarding-note');
     if (note) note.innerHTML = tSettings('eulaProjectBlurb');
 }
 
@@ -2355,10 +2274,7 @@ export function applyWelcomeOnboardingLanguage() {
 
         let step2TitleKey = 'welcomeStep2TitleHtml';
         let step2BodyKey = 'welcomeStep2BodyHtml';
-        if (state.isAndroid) {
-            step2TitleKey = 'welcomeStep2TitleAndroidHtml';
-            step2BodyKey = 'welcomeStep2BodyAndroidHtml';
-        } else if (state.isIOS) {
+        if (state.isIOS) {
             step2TitleKey = 'welcomeStep2TitleIosHtml';
             step2BodyKey = 'welcomeStep2BodyIosHtml';
         }
@@ -2394,12 +2310,8 @@ export function applyWelcomeOnboardingLanguage() {
 
     syncWelcomeDemoFullscreenLabel();
 
-    // The demo video is desktop/iOS only — it can't play in the Android
-    // WebView (see initWelcomeDemoControls). Guarding the mp4 import behind
-    // the compile-time __ANDROID_BUILD__ flag lets Rollup drop this branch
-    // and tree-shake the ~1.7 MB asset out of the Android bundle entirely.
     const demoVideo = document.getElementById('welcome-demo-video');
-    if (!__ANDROID_BUILD__ && demoVideo && !demoVideo.src) {
+    if (demoVideo && !demoVideo.src) {
         import('./reddblock-video.mp4').then(({ default: welcomeDemoVideoUrl }) => {
             if (!demoVideo.src) demoVideo.src = welcomeDemoVideoUrl;
         });
@@ -2411,8 +2323,6 @@ export function applyWelcomeOnboardingLanguage() {
     const footer1 = document.getElementById('welcome-onboarding-footer-1');
     if (footer1) footer1.innerHTML = tSettings('welcomeFooter1Html');
 
-    const footer2 = document.getElementById('welcome-onboarding-footer-2');
-    if (footer2) footer2.innerHTML = tSettings('welcomeFooter2Html');
 }
 
 function isWelcomeDemoVideoExpanded() {
@@ -2484,18 +2394,6 @@ export function resetWelcomeDemoPanel() {
 }
 
 function initWelcomeDemoControls() {
-    // Skip on Android: the welcome demo video is a large mp4 served
-    // through Tauri's custom-protocol asset handler, which doesn't
-    // support the HTTP Range requests Android WebView's <video> element
-    // needs — it 404/fails to load there even though it works fine in
-    // WKWebView on iOS. Hide the whole toggle/panel rather than show a
-    // permanently-broken video player.
-    if (state.isAndroid) {
-        document.getElementById('welcome-demo-toggle')?.classList.add('hidden');
-        document.getElementById('welcome-demo-panel')?.classList.add('hidden');
-        return;
-    }
-
     const toggle = document.getElementById('welcome-demo-toggle');
     const panel = document.getElementById('welcome-demo-panel');
     const videoWrap = document.getElementById('welcome-demo-video-wrap');
@@ -2730,14 +2628,13 @@ export function applySettingsLanguage() {
     setText('save-blocklist-btn', tSettings('save'));
 
     // Modal copy
-    setText('override-modal-title', tSettings('stopFocusSpaceTitle'));
     setText('override-confirm-blocking-label', tSettings('startConfirmBlockingLabel'));
     setText('override-confirm-show-all-blocking', tSettings('showAll'));
     setText('override-modal-instruction', tSettings('overrideInstruction'));
+    setText('override-modal-word-instruction', tSettings('challengeWordInstruction'));
     setText('cancel-override-btn', tSettings('cancel'));
     setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
     setText('confirm-override-header', tSettings('startBlockHoldHeader'));
-    setText('start-block-confirm-title', tSettings('startThisBlock'));
     setText('start-confirm-blocking-label', tSettings('startConfirmBlockingLabel'));
     setText('start-confirm-show-all-blocking', tSettings('showAll'));
     setText('start-confirm-unlock-label', tSettings('startConfirmUnlockLabel'));
@@ -2812,9 +2709,9 @@ export function applySettingsLanguage() {
     setText('override-all-warning-strong', tSettings('overrideAllWarningStrong'));
     setText('override-all-warning-body', tSettings('overrideAllWarningBody'));
     setText('override-all-instruction', tSettings('overrideAllInstruction'));
+    setText('override-all-word-instruction', tSettings('challengeWordInstruction'));
     setText('cancel-override-all-btn', tSettings('cancel'));
     setText('confirm-override-all-btn', tSettings('overrideAll'));
-    setText('next-day-indicator', `+1 ${tSettings('nextDay')}`);
 
     setText('settings-modal-title', tSettings('settingsTitle'));
     setText('settings-general-heading', tSettings('settingsGeneralHeading'));
@@ -2838,21 +2735,27 @@ export function applySettingsLanguage() {
     setText('settings-help-label', tSettings('settingsDiagnosticsLabel'));
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
     setText('settings-blocking-method-toggle-label', tSettings('settingsBlockingMethodHeading'));
-    setText('settings-blocking-method-hint', tSettings('settingsBlockingMethodHint'));
+    setText('settings-blocking-method-hint', tSettings(state.isWindowsDesktop ? 'settingsBlockingMethodHintWindows' : 'settingsBlockingMethodHint'));
     setText('settings-blocking-method-chrome-label', tSettings('settingsBlockingMethodChrome'));
     setText('settings-blocking-method-brave-label', tSettings('settingsBlockingMethodBrave'));
     setText('settings-blocking-method-edge-label', tSettings('settingsBlockingMethodEdge'));
     setText('settings-blocking-method-safari-label', tSettings('settingsBlockingMethodSafari'));
+    setText('settings-blocking-method-firefox-label', tSettings('settingsBlockingMethodFirefox'));
     syncBlockingMethodLabelIcons();
-    for (const key of MAC_BLOCKING_METHOD_KEYS) {
+    for (const key of ALL_BLOCKING_METHOD_KEYS) {
         const select = document.getElementById(`blocking-method-${key}`);
         if (!select) continue;
         const current = select.value || browserBlockingMethod(key);
         select.innerHTML = '';
-        for (const [value, labelKey] of [
-            ['automation', 'settingsBlockingMethodAutomation'],
-            ['extension', 'settingsBlockingMethodExtension'],
-        ]) {
+        // Per browser, not one list for all: Firefox offers extension or
+        // accessibility, the others automation or extension.
+        const labelKeys = {
+            automation: 'settingsBlockingMethodAutomation',
+            extension: 'settingsBlockingMethodExtension',
+            accessibility: 'settingsBlockingMethodAccessibility',
+        };
+        for (const value of methodOptionsForKey(key)) {
+            const labelKey = labelKeys[value];
             const opt = document.createElement('option');
             opt.value = value;
             opt.textContent = tSettings(labelKey);
@@ -2871,6 +2774,9 @@ export function applySettingsLanguage() {
     setText('settings-onboarding-btn-label', tSettings('settingsOnboardingBtn'));
     setText('settings-blocklists-io-label', tSettings('settingsBlocklistsIoLabel'));
     setText('settings-blocklists-io-hint', tSettings('settingsBlocklistsIoHint'));
+    setText('settings-usage-ping-label', tSettings('settingsUsagePingLabel'));
+    setText('settings-usage-ping-hint', tSettings('settingsUsagePingHint'));
+    applyStoreReviewPromptCopy();
     setText('settings-export-blocklists-btn-label', tSettings('settingsExportBlocklistsBtn'));
     setText('settings-import-blocklists-btn-label', tSettings('settingsImportBlocklistsBtn'));
     setText('uninstall-confirm-title', tSettings('uninstallConfirmTitle'));
@@ -2931,7 +2837,7 @@ export function applySettingsLanguage() {
     applyRebrandOnboardingLanguage();
     applySafariFdaOnboardingLanguage();
     applyIosScreentimeOnboardingLanguage();
-    applyAndroidPermissionsOnboardingLanguage();
+    applyStartWarningsLanguage();
 
     if (state.migrationOnboardingActive && state.lastMigrationBrowserState) {
         renderBrowserInstallButtons(state.lastMigrationBrowserState, { force: true });

@@ -12,6 +12,8 @@
 import { state } from './state.js';
 import { tSettings, tSettingsFmt, weekdayAbbrevMon0List } from './i18n.js';
 import { formatEditorItemCounts } from './list-presentation.js';
+import { formatSpaceTitleLabel } from './blocklist-utils.js';
+import { setSpaceTitle } from './utils.js';
 import {
     WHEN_TO_BLOCK_KINDS,
     deriveWhenToBlockKind,
@@ -22,7 +24,6 @@ import {
     formatDateForDisplay,
     formatDateForInput,
     getDefaultScheduleSegments,
-    getInitialExpandedScheduleSegmentIndex,
     getSelectedSchedule,
     isAllowEditsBetweenBlocksOn,
     rebuildScheduleSegments,
@@ -38,6 +39,7 @@ import { deleteBlocklist, duplicateBlocklist, isBlocklistEditFrictionRequired } 
 import { getOverrideEstimatedMinutes, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
 import { UNLOCK_MINUTE_OPTIONS, normalizeUnlockMinutes } from './unlock-duration.js';
 import { getSelectedBlocklistModalMode, setBlocklistModalMode } from './list-mode.js';
+import { isFocusSpaceOn } from './focus-space-switch.js';
 import { handleTimeChange, populateBlocklistFormFields, resetBlocklistFormState, syncBlocklistEditFrictionUi } from './confirm-modals.js';
 import { syncSelectedControlState } from './render.js';
 import { updateWindowHeight } from './blocking-platform.js';
@@ -114,7 +116,6 @@ export function setWhenToBlockKind(kind, { fromUser = false } = {}) {
 
     if (next !== 'manual') {
         state.scheduleSegments = segmentsForKind(next, state.scheduleSegments, getDefaultScheduleSegments);
-        if (next === 'daily') state.expandedScheduleSegmentIndex = 0;
         rebuildScheduleSegments();
     }
 
@@ -217,6 +218,10 @@ function editorSchedule() {
  */
 export function applyEditorScheduleForBlocklist(blocklistId) {
     const when = readEditorWhenToBlock();
+    // Saving edits the settings; it must not flip the switch. A space counts as
+    // on merely by having an unpaused schedule, so creating one here would start
+    // a space the user had off — even with every segment in the past or future.
+    const wasOn = isFocusSpaceOn(blocklistId);
     if (!Array.isArray(state.appData.schedules)) state.appData.schedules = [];
     const existingIndex = state.appData.schedules.findIndex((s) => s.blocklistId === blocklistId);
     const existing = existingIndex >= 0 ? state.appData.schedules[existingIndex] : null;
@@ -239,6 +244,8 @@ export function applyEditorScheduleForBlocklist(blocklistId) {
     state.appData.schedules.push({
         id: crypto.randomUUID(),
         blocklistId,
+        // Paused with no end time is the off state, so an off space stays off.
+        ...(wasOn ? {} : { isPaused: true }),
         segments: when.segments,
         repeatType: when.repeatType,
         repeatDate: when.repeatDate,
@@ -324,7 +331,6 @@ export function populateFocusSpaceEditor(blocklist, { mode = null } = {}) {
         state.scheduleRepeatDate = null;
         state.draftAllowEditsBetweenBlocks = false;
     }
-    state.expandedScheduleSegmentIndex = getInitialExpandedScheduleSegmentIndex();
 
     setWhenToBlockKind(deriveWhenToBlockKind(schedule));
     setUntilMode(state.scheduleRepeatType);
@@ -363,7 +369,13 @@ export function discardFocusSpaceEditor() {
     const blocklist = state.editingBlocklistId
         ? state.appData.blocklists.find((bl) => bl.id === state.editingBlocklistId) || null
         : null;
+    // Discard undoes the fields; it is not a reset of the screen. Populating
+    // collapses every section (it is written for opening an editor), so put the
+    // open one back — otherwise discarding one typo shuts the section you were
+    // working in and reads as though everything was thrown away.
+    const openSection = state.openEditorSection;
     populateFocusSpaceEditor(blocklist, { mode: getSelectedBlocklistModalMode() });
+    setOpenEditorSection(openSection);
 }
 
 function updateEditorTitles(isCreate, mode) {
@@ -371,11 +383,16 @@ function updateEditorTitles(isCreate, mode) {
     if (modalTitle) {
         modalTitle.textContent = tSettings(mode === 'allowlist' ? 'newFocusSpaceAllow' : 'newFocusSpaceBlock');
     }
+    const blocklist = state.appData.blocklists.find(bl => bl.id === state.editingBlocklistId);
+    const editTitle = blocklist
+        ? tSettingsFmt('editSpaceTitleFmt', { space: formatSpaceTitleLabel(blocklist) })
+        : tSettings('editFocusSpace');
     const panelTitle = document.getElementById('editor-panel-title');
-    if (panelTitle) panelTitle.textContent = tSettings('editFocusSpace');
+    if (panelTitle) setSpaceTitle(panelTitle, editTitle, blocklist?.name);
     const sheetTitle = document.getElementById('enter-scheduler-modal-title');
-    if (sheetTitle && !isCreate) sheetTitle.textContent = tSettings('editFocusSpace');
+    if (sheetTitle && !isCreate) setSpaceTitle(sheetTitle, editTitle, blocklist?.name);
 }
+
 
 // ── Summaries + footer ────────────────────────────────────────────────────
 
@@ -412,6 +429,7 @@ export function formatScheduleWhenSummary(kind, schedule, options) {
         dayNames: weekdayAbbrevMon0List(),
         everyDay: tSettings('segmentDaysEveryDay'),
         noDays: tSettings('segmentDaysNone'),
+        allDay: tSettings('segmentAllDay'),
     }, options);
 }
 
@@ -436,7 +454,7 @@ let editorDiscardResolver = null;
 /**
  * The app's own "Discard changes?" dialog (not the OS one), so it looks like
  * the rest of the app. Resolves true for Discard, false for Keep editing,
- * Escape, a click outside, or Android back.
+ * Escape or a click outside.
  */
 export function showEditorDiscardConfirmModal() {
     const modal = document.getElementById('editor-discard-modal');

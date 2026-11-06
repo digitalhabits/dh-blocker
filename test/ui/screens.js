@@ -7,7 +7,7 @@
 // branch and falls through to `body.windows`, so an unstamped screenshot taken
 // in a container or CI silently claims to be a Windows one. It also decides
 // whether a screen exists at all: `handset-device` hides whole sections, so
-// asking for a week calendar on `android` or `iphone` is asking for a screen the
+// asking for a week calendar on `iphone` is asking for a screen the
 // app never renders. The driver fails such a screen rather than emitting a blank
 // PNG.
 //
@@ -22,7 +22,7 @@ import { fixtures } from './fixtures.js';
  * @typedef {object} Screen
  * @property {string}   name      output filename stem
  * @property {object}   fixture   appData to boot with
- * @property {string}   platform  'windows' | 'mac' | 'ipad' | 'iphone' | 'android'
+ * @property {string}   platform  'windows' | 'mac' | 'ipad' | 'iphone'
  * @property {string}  [theme]    'light' | 'dark'
  * @property {object}  [viewport] { width, height } — device size, not a crop
  * @property {string}  [clip]     selector to screenshot instead of the whole page
@@ -33,12 +33,47 @@ import { fixtures } from './fixtures.js';
 // screenshot — the handset layout rules are width-dependent as well as
 // class-dependent.
 const IPHONE = { width: 390, height: 844 };
-const ANDROID_PHONE = { width: 412, height: 915 };
+
 const IPAD = { width: 1024, height: 768 };
 const DESKTOP = { width: 1100, height: 900 };
 
 /** @type {Screen[]} */
 export const screens = [
+    {
+        name: 'settings-windows-blocking-methods',
+        fixture: fixtures.crowdedWeek,
+        platform: 'windows',
+        viewport: DESKTOP,
+        clip: '#settings-blocking-method-section',
+        prepare: async (page) => {
+            await page.click('#settings-btn');
+            await page.waitForSelector('#settings-modal:not(.hidden)');
+            await page.evaluate(async () => {
+                const { state } = await import('/state.js');
+                const ui = await import('/enforcement.js');
+                state.isWindowsDesktop = true;
+                state.isMacOSDesktop = false;
+                state.appData.settings.blockingMethods = {};
+                ui.syncBlockingMethodRowVisibility(Object.fromEntries(['chrome', 'edge', 'brave', 'firefox'].map(key => [key, { installed: true }])));
+                ui.syncBlockingMethodSelects();
+                ui.syncBlockingMethodLabelIcons();
+            });
+            if (await page.getAttribute('#settings-enforcement-section-toggle', 'aria-expanded') !== 'true') {
+                await page.click('#settings-enforcement-section-toggle');
+            }
+            await page.click('#settings-blocking-method-toggle');
+            await page.locator('#settings-blocking-method-section').scrollIntoViewIfNeeded();
+            const dimensions = await page.locator('#settings-blocking-method-section').evaluate(el => {
+                const rect = el.getBoundingClientRect();
+                return { width: rect.width, height: rect.height };
+            });
+            if (dimensions.width < 300 || dimensions.height < 150) throw new Error('Blocking method settings are not visible');
+            for (const key of ['chrome', 'edge', 'brave', 'firefox']) {
+                if (!await page.locator(`#blocking-method-${key}`).isVisible()) throw new Error(`Missing ${key} selector`);
+            }
+            if (await page.locator('#blocking-method-safari').isVisible()) throw new Error('Safari must be hidden on Windows');
+        },
+    },
     // ---- Whole app, per platform -------------------------------------------
     // The mobile ones are the home screen as a phone actually gets it: no week
     // calendar (hidden by `handset-device`), no title bar, no window controls.
@@ -66,12 +101,7 @@ export const screens = [
         platform: 'iphone',
         viewport: IPHONE,
     },
-    {
-        name: 'home-android',
-        fixture: fixtures.crowdedWeek,
-        platform: 'android',
-        viewport: ANDROID_PHONE,
-    },
+
     {
         name: 'home-windows-dark',
         fixture: fixtures.crowdedWeek,
@@ -183,6 +213,24 @@ export const screens = [
         viewport: IPHONE,
     },
 
+    // ---- First run: the EULA screen, with "How we count" open --------------
+    ...[
+        { name: 'eula-mac', platform: 'mac', viewport: DESKTOP },
+        { name: 'eula-mac-dark', platform: 'mac', viewport: DESKTOP, theme: 'dark' },
+        { name: 'eula-iphone', platform: 'iphone', viewport: IPHONE },
+    ].map((screen) => ({
+        ...screen,
+        fixture: fixtures.crowdedWeek,
+        prepare: async (page) => {
+            await page.evaluate(() => {
+                document.getElementById('main-content')?.classList.add('hidden');
+                document.getElementById('eula-onboarding')?.classList.remove('hidden');
+                const details = document.getElementById('eula-how-we-count');
+                if (details) details.open = true;
+            });
+        },
+    })),
+
     // ---- Turning a space on: what will be blocked, the way out, the unlock ----
     {
         name: 'start-confirm-modal',
@@ -267,6 +315,19 @@ export const screens = [
         },
     },
     {
+        // Phones type one word at a time: "N words remaining" heading, no passage.
+        name: 'stop-modal-iphone',
+        fixture: fixtures.manualRunning,
+        platform: 'iphone',
+        viewport: IPHONE,
+        clip: '#override-modal .modal-content',
+        prepare: async (page) => {
+            await page.evaluate(() => { window.__REDDBLOCK_INTERNALS__.isIOS = true; });
+            await page.click('.blocklist-card[data-id="bl-manual"] .blocklist-switch');
+            await page.waitForSelector('#override-modal .challenge-word-mode');
+        },
+    },
+    {
         name: 'stop-modal-flexible',
         fixture: fixtures.flexibleBetweenBlocks,
         platform: 'mac',
@@ -305,6 +366,68 @@ export const screens = [
         },
     },
     {
+        // Two ranges: each a compact card (HH:MM – HH:MM, ×, day circles),
+        // then the "Add times" link — the Mail account-hours layout.
+        name: 'editor-weekly-two-ranges',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#editor-section-when',
+        prepare: async (page) => {
+            await page.click('#editor-section-when-header');
+            await page.click('#add-segment-btn');
+        },
+    },
+    {
+        // Narrowest common phone: times, All day and × on one line, days on one line.
+        name: 'editor-weekly-two-ranges-iphone',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'iphone',
+        viewport: IPHONE,
+        prepare: async (page) => {
+            await page.click('.blocklist-card');
+            await page.click('#editor-section-when-header');
+            await page.click('#add-segment-btn');
+        },
+    },
+    {
+        // Clicking a time opens the hour and minute lists side by side.
+        name: 'editor-time-list-open',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'mac',
+        viewport: DESKTOP,
+        prepare: async (page) => {
+            await page.click('#editor-section-when-header');
+            await page.click('.segment-time-field[data-edge="start"]');
+            await page.waitForSelector('.schedule-time-popover');
+        },
+    },
+    {
+        // "All day" on the first range: times greyed out, switch on.
+        name: 'editor-weekly-all-day',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#editor-section-when',
+        prepare: async (page) => {
+            await page.click('#editor-section-when-header');
+            await page.click('#add-segment-btn');
+            await page.click('.schedule-segment .segment-all-day');
+        },
+    },
+    {
+        // Daily: one range, no day circles, no ×, no Add times.
+        name: 'editor-daily-range',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#editor-section-when',
+        prepare: async (page) => {
+            await page.click('#editor-section-when-header');
+            await page.click('#when-kind-daily');
+        },
+    },
+    {
         name: 'editor-weekly-days-iphone',
         fixture: fixtures.weeklyOffPeak,
         platform: 'iphone',
@@ -312,6 +435,26 @@ export const screens = [
         prepare: async (page) => {
             await page.click('.blocklist-card');
             await page.click('#editor-section-when-header');
+        },
+    },
+    {
+        // A ≤718px desktop window opens the editor as a full-window sheet:
+        // Duplicate / Delete belong in its title bar, not a row of their own.
+        name: 'editor-edit-sheet-narrow',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'mac',
+        viewport: { width: 520, height: 760 },
+        prepare: async (page) => {
+            await page.click('.blocklist-card');
+        },
+    },
+    {
+        name: 'editor-edit-sheet-iphone',
+        fixture: fixtures.weeklyOffPeak,
+        platform: 'iphone',
+        viewport: IPHONE,
+        prepare: async (page) => {
+            await page.click('.blocklist-card');
         },
     },
     {
@@ -426,6 +569,46 @@ export const screens = [
                 await page.click('#settings-enforcement-section-toggle');
             }
             await page.locator('#settings-max-words-row').scrollIntoViewIfNeeded();
+        },
+    },
+    {
+        // Settings → Blocking mechanism, with Firefox on the Accessibility
+        // method. Firefox's options differ from every other browser's
+        // (extension / accessibility, never automation), and the grant row
+        // below it only exists in this state.
+        name: 'settings-blocking-method-firefox-accessibility',
+        fixture: fixtures.firefoxAccessibility,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#settings-blocking-method-section',
+        prepare: async (page) => {
+            await page.click('#settings-btn');
+            await page.waitForSelector('#settings-modal:not(.hidden)');
+            if (await page.getAttribute('#settings-enforcement-section-toggle', 'aria-expanded') !== 'true') {
+                await page.click('#settings-enforcement-section-toggle');
+            }
+            if (await page.getAttribute('#settings-blocking-method-toggle', 'aria-expanded') !== 'true') {
+                await page.click('#settings-blocking-method-toggle');
+            }
+            await page.waitForSelector('#settings-firefox-ax-row:not(.hidden)');
+            await page.locator('#settings-blocking-method-section').scrollIntoViewIfNeeded();
+        },
+    },
+    {
+        // Browser setup with Firefox on Accessibility and the grant missing:
+        // the Firefox row asks for Accessibility, never for the extension.
+        name: 'setup-firefox-accessibility',
+        fixture: fixtures.firefoxAccessibility,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#migration-onboarding',
+        prepare: async (page) => {
+            // Settings → Help → Setup: the banner's own entry point only
+            // shows once a background compliance poll has run.
+            await page.click('#settings-btn');
+            await page.waitForSelector('#settings-modal:not(.hidden)');
+            await page.locator('#settings-setup-btn').click();
+            await page.waitForSelector('#migration-onboarding:not(.hidden) #migration-browser-buttons .migration-browser-row');
         },
     },
     {

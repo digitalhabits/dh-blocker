@@ -1,4 +1,4 @@
-// Installed-apps picker modal (desktop + Android app lists).
+// Installed-apps picker modal for desktop.
 // Extracted verbatim from app.js.
 import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
@@ -35,20 +35,12 @@ export async function openInstalledAppsPicker() {
 
     if (!modal || !listEl) return;
 
-    // No OS-level "browse for an app bundle" concept on Android —
-    // installed apps are only reachable via PackageManager (already
-    // covered by the list above).
-    browseBtn?.classList.toggle('hidden', state.isAndroid);
-
     // Show modal with loading state
     modal.classList.remove('hidden');
     searchInput.value = '';
     listEl.innerHTML = '<div class="app-picker-loading">Scanning installed apps...</div>';
 
-    // Opening this picker is the explicit freshness boundary for Android.
-    // Refresh PackageManager here (rather than at app start) and persist the
-    // resulting labels for the next launch.
-    await ensureInstalledAppsCache({ refresh: state.isAndroid });
+    await ensureInstalledAppsCache();
     if (!state.installedAppsCache) {
         listEl.innerHTML = '<div class="app-picker-empty">Could not scan installed apps. Use "Browse manually..." below.</div>';
     }
@@ -67,7 +59,8 @@ export async function openInstalledAppsPicker() {
     // Android the list comes from the OS and a typed name would match nothing.
     const canTypeNames = !state.isAndroid && !state.isIOS;
     const isWindows = document.body.classList.contains('windows');
-    const typedApps = [];
+    // Apps chosen through browsing or typing that the scan did not list.
+    const browsedApps = [];
 
     function normaliseTypedName(value) {
         const name = String(value || '').trim();
@@ -82,7 +75,7 @@ export async function openInstalledAppsPicker() {
     function renderAppList(filter = '') {
         const typed = normaliseTypedName(filter);
         const lowerFilter = (isWindows ? typed : filter).toLowerCase();
-        const source = typedApps.length > 0 ? [...typedApps, ...apps] : apps;
+        const source = browsedApps.length > 0 ? [...browsedApps, ...apps] : apps;
         const filtered = lowerFilter
             ? source.filter(a =>
                 a.display_name.toLowerCase().includes(lowerFilter) ||
@@ -153,10 +146,10 @@ export async function openInstalledAppsPicker() {
         const field = state.isMacOSDesktop ? 'display_name' : 'process_name';
         const matches = apps.filter(a => sameAppPickerName(a[field], name));
         const known = matches.length === 1 ? matches[0]
-            : typedApps.find(a => sameAppPickerName(a.process_name, name));
+            : browsedApps.find(a => sameAppPickerName(a.process_name, name));
         const processName = known?.process_name ?? name;
         if (isProtectedApp(processName)) return;
-        if (!known) typedApps.push({ display_name: name, process_name: name });
+        if (!known) browsedApps.push({ display_name: name, process_name: name });
         selectedProcessNames.add(processName);
     }
 
@@ -234,7 +227,7 @@ export async function openInstalledAppsPicker() {
     };
 
     // Browse manually — fall back to the OS file picker (desktop only)
-    if (browseBtn && !state.isAndroid) {
+    if (browseBtn) {
         browseBtn.classList.remove('hidden');
         browseBtn.onclick = async () => {
             // Stay in the picker: closing it first threw away everything the user
@@ -248,8 +241,6 @@ export async function openInstalledAppsPicker() {
                 updateAddButton();
             }
         };
-    } else if (browseBtn) {
-        browseBtn.classList.add('hidden');
     }
 
     // Focus search input

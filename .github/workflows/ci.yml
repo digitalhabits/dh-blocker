@@ -1,6 +1,5 @@
 # PR checks: lint, build the frontend bundle, and run the Tier 1 logic suite
-# headlessly. The Android debug build lives in android-ci.yml and the Rust unit
-# tests in rust-ci.yml, so frontend-only PRs do not pay for those toolchains.
+# headlessly. Rust tests run separately in rust-ci.yml.
 #
 # Also runs on every push to main. PR checks run against the merge preview, not
 # the commit that ends up on main, so a green PR can still land a broken main
@@ -32,9 +31,9 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -43,26 +42,20 @@ jobs:
       # eslint.config.mjs), so this fails on correctness findings —
       # no-undef, no-dupe-keys and friends — not on the dead-import backlog.
       - run: pnpm lint
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: rustfmt
-      # `--all` from src-tauri also covers tauri-plugin-screentime (a path
-      # dependency); tauri-plugin-android-blocker is a separate crate graph and
-      # needs its own invocation. Neither compiles anything.
       - name: cargo fmt --check (src-tauri, tauri-plugin-screentime)
         working-directory: src-tauri
-        run: cargo fmt --all --check
-      - name: cargo fmt --check (tauri-plugin-android-blocker)
-        working-directory: tauri-plugin-android-blocker
         run: cargo fmt --all --check
 
   frontend:
     name: Frontend bundle
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -70,18 +63,14 @@ jobs:
       # Compiles the whole src/ ES-module graph and the index.html entry.
       # Fails on syntax errors, duplicate declarations, unresolved imports.
       - run: pnpm vite:build
-      # Exercises the Android-only Vite transforms without requiring the
-      # native Android/Gradle toolchain.
-      - run: pnpm vite:build:android
-      - run: pnpm verify:android-bundle
 
   tier0:
     name: Tier 0 unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -95,9 +84,9 @@ jobs:
     name: Tier 1 logic tests (headless)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
@@ -107,3 +96,16 @@ jobs:
       # Boots the Vite dev server, runs runBlockingTests() in headless
       # Chromium, fails on any failed assertion or a mid-suite crash.
       - run: pnpm test:tier1
+
+  ios-activity-timing:
+    name: iOS one-off activity timing
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Foundation-only Swift tests do not require Xcode or Screen Time
+      # entitlements, so this stays a small macOS regression job. The job name
+      # is unchanged in case branch protection requires this check by name.
+      - run: bash scripts/ci/test-ios-activity-timing.sh
+      - run: bash scripts/ci/test-ios-schedule-registration.sh
+      - run: bash scripts/ci/test-ios-schedule-data.sh
+      - run: bash scripts/ci/test-ios-start-warnings.sh

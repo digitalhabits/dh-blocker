@@ -34,10 +34,9 @@ function scrollChallengeContentToY(container, contentY) {
     container.scrollTop = next;
 }
 
-/** Scroll so character `index` in a plain-text challenge box stays in view. */
-function scrollChallengeToCharIndex(container, index) {
+/** Scroll so character `index` of `textNode` (inside the challenge box) stays in view. */
+function scrollChallengeToCharIndex(container, textNode, index) {
     if (!container) return;
-    const textNode = container.firstChild;
     if (!textNode || textNode.nodeType !== Node.TEXT_NODE || textNode.length === 0) return;
 
     const safeIndex = Math.min(Math.max(0, index), textNode.length);
@@ -74,8 +73,8 @@ function scheduleChallengeScroll(scrollFn) {
 /**
  * Render challenge reference text and auto-scroll so the current typing
  * position (or first error) stays in view with upcoming words visible.
- * While typing correctly we keep plain text (no span) so kerning/spacing
- * isn't disturbed; errors still use .error-char.
+ * The correctly typed prefix sits in .challenge-typed (colour only, so the
+ * monospace layout never shifts); errors still use .error-char.
  * @param {HTMLElement|null} el
  * @param {string} text
  * @param {{ cursorIndex?: number, errorIndex?: number }} [opts]
@@ -84,9 +83,8 @@ export function renderChallengeReferenceText(el, text, { cursorIndex = 0, errorI
     if (!el) return;
     const target = typeof text === 'string' ? text : '';
     const hasError = errorIndex >= 0 && errorIndex < target.length;
-    const markIndex = hasError
-        ? errorIndex
-        : Math.min(Math.max(0, Number(cursorIndex) || 0), target.length);
+    const cursor = Math.min(Math.max(0, Number(cursorIndex) || 0), target.length);
+    const markIndex = hasError ? errorIndex : cursor;
 
     if (target.length === 0) {
         el.textContent = '';
@@ -95,7 +93,10 @@ export function renderChallengeReferenceText(el, text, { cursorIndex = 0, errorI
     }
 
     if (hasError) {
-        const before = escapeHtml(target.slice(0, markIndex));
+        // Word mode passes no cursor, so its prefix stays plain.
+        const typedLen = Math.min(cursor, markIndex);
+        const typed = typedLen ? `<span class="challenge-typed">${escapeHtml(target.slice(0, typedLen))}</span>` : '';
+        const before = typed + escapeHtml(target.slice(typedLen, markIndex));
         const rawMark = target[markIndex];
         const isSpace = /\s/.test(rawMark);
         const markChar = isSpace ? ' ' : escapeHtml(rawMark);
@@ -110,7 +111,19 @@ export function renderChallengeReferenceText(el, text, { cursorIndex = 0, errorI
 
     // Avoid rewriting the text node on every keystroke — that + scroll was
     // painting a smeared line in WKWebView until the next input forced a repaint.
-    if (el.getAttribute('data-challenge-render') !== 'plain' || el.textContent !== target) {
+    // With progress, build span + text node once and then only update their text.
+    if (markIndex > 0) {
+        let typed = el.firstChild;
+        if (el.getAttribute('data-challenge-render') !== 'progress' || el.childNodes.length !== 2) {
+            typed = document.createElement('span');
+            typed.className = 'challenge-typed';
+            el.replaceChildren(typed, document.createTextNode(''));
+            el.setAttribute('data-challenge-render', 'progress');
+        }
+        const typedText = target.slice(0, markIndex), rest = target.slice(markIndex);
+        if (typed.textContent !== typedText) typed.textContent = typedText;
+        if (typed.nextSibling.data !== rest) typed.nextSibling.data = rest;
+    } else if (el.getAttribute('data-challenge-render') !== 'plain' || el.textContent !== target) {
         el.textContent = target;
         el.setAttribute('data-challenge-render', 'plain');
     }
@@ -119,7 +132,8 @@ export function renderChallengeReferenceText(el, text, { cursorIndex = 0, errorI
         el.scrollTop = el.scrollHeight;
         return;
     }
-    scheduleChallengeScroll(() => scrollChallengeToCharIndex(el, markIndex));
+    // The untyped rest is always the last text node.
+    scheduleChallengeScroll(() => scrollChallengeToCharIndex(el, el.lastChild, 0));
 }
 
 /**
@@ -203,7 +217,7 @@ export const LEGACY_MAX_OVERRIDE_WORDS = 300;
 export const MIN_MAX_OVERRIDE_WORDS_SETTING = 50;
 export const DEFAULT_MAX_OVERRIDE_WORDS_SETTING = LEGACY_MAX_OVERRIDE_WORDS;
 export const MAX_OVERRIDE_WORDS_SETTING_STEP = 50;
-/** Phones: Android's native gate clamps at its 111-word list anyway. */
+/** iOS keeps the shorter mobile challenge ceiling. */
 export const MAX_OVERRIDE_WORDS_MOBILE = 100;
 export const MAX_CUSTOM_OVERRIDE_CHARS = 7500;
 /** Letters per generated word (the pool is five-letter words). */
@@ -226,7 +240,7 @@ export function buildWordChallengeState(text) {
 }
 
 export function isMobileOverrideChallengePlatform() {
-    return state.isIOS || state.isAndroid;
+    return state.isIOS;
 }
 
 /** Phones type the challenge one word at a time; desktop types the whole text. */
@@ -270,8 +284,7 @@ export function normalizeMaxOverrideWordsSetting(value) {
  * only, so lowering the setting cannot make an existing space easier to stop.
  * A space already above the setting gets a slider long enough to hold its
  * count, or opening the editor and saving would quietly cut the challenge.
- * Phones ignore the setting — Android's native gate serves at most its own
- * word list.
+ * iOS uses the fixed mobile ceiling instead of this desktop setting.
  */
 export function getOverrideWordsSliderMax({
     maxSetting = state.appData?.settings?.maxOverrideWords,

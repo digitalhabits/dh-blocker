@@ -280,8 +280,7 @@ body.ios {
     text-size-adjust: 100%;
 }
 
-body.ios,
-body.android {
+body.ios {
     padding-top: env(safe-area-inset-top, 20px);
     --app-footer-pad-top: 10px;
     --app-footer-pad-bottom: 10px;
@@ -294,8 +293,7 @@ body.android {
     );
 }
 
-body.ios .main-content,
-body.android .main-content {
+body.ios .main-content {
     margin-top: 0;
     overflow-y: auto;
     overflow-x: hidden;
@@ -307,9 +305,8 @@ body.android .main-content {
     padding-bottom: var(--app-footer-height);
 }
 
-/* iPhone / Android phone */
-body.ios .app-container,
-body.android .app-container {
+/* iPhone */
+body.ios .app-container {
     /* 100vw can exceed the visible width (scrollbars / WebKit); % tracks the body box. */
     width: 100%;
     max-width: 100%;
@@ -317,10 +314,6 @@ body.android .app-container {
     padding-bottom: var(--app-footer-height);
     overflow: hidden;
     box-sizing: border-box;
-}
-
-body.android {
-    padding-top: 0;
 }
 
 /* WKWebView treats long-pressing ordinary app chrome as text selection. The
@@ -340,11 +333,6 @@ body.ios :is(input, textarea, [contenteditable]:not([contenteditable="false"]), 
     user-select: text;
 }
 
-body.android .app-container {
-    height: 100vh;
-    padding-bottom: 30px;
-}
-
 /* iPad: WKWebView "desktop" content mode ignores CSS zoom and pageZoom for text/emoji sizing.
    Scale the app shell so typography and icons grow/shrink like iPhone CSS zoom. */
 body.ios:not(.ios-phone) .app-container{
@@ -356,7 +344,7 @@ body.ios:not(.ios-phone) .app-container{
     padding-bottom: calc(var(--app-footer-height) / var(--ui-zoom, 1));
 }
 
-/* Phone/Android: pin the document so the webview cannot leave a stuck scroll
+/* Phone: pin the document so the webview cannot leave a stuck scroll
    offset after keyboard / modal dismiss. Internal panes still scroll. */
 html.handset-webview-lock{
     position: fixed;
@@ -370,8 +358,7 @@ html.handset-webview-lock body{
     overflow: hidden;
     box-sizing: border-box;
 }
-html.handset-webview-lock body.ios-phone .app-container,
-html.handset-webview-lock body.android .app-container{
+html.handset-webview-lock body.ios-phone .app-container{
     height: 100%;
 }
 
@@ -382,9 +369,7 @@ body.ios .grid-top-row {
 }
 
 body.ios .scheduler-section,
-body.ios .blocklists-section,
-body.android .scheduler-section,
-body.android .blocklists-section {
+body.ios .blocklists-section {
     min-width: 0;
     max-width: 100%;
 }
@@ -419,9 +404,6 @@ body.handset-device #settings-modal .language-picker-trigger .language-picker-co
    block duration row). Wrapping these is a broader safety net beyond
    any single component fix — new unwrapped rows are easy to add by
    accident in a codebase this size. */
-body.android .time-pickers-row{
-    flex-wrap: wrap;
-}
 
 /* App Container */
 .app-container{
@@ -1982,28 +1964,23 @@ body.dark-mode .app-blocking-closedown-banner{
     }
 }
 
-/* Portrait iPad: same vertical stack as iPhone — blocklists, then scheduler, then
-   week calendar (calendar stays in .main-content below .grid-top-row). */
+/* Portrait iPad: two columns like landscape, with portrait spacing and type. */
   @media (min-width: 719px) and (max-width: 1024px) and (orientation: portrait) {
-    body.ios:not(.ios-phone) .grid-top-row{
-        grid-template-columns: 1fr;
+    body.ios:not(.ios-phone) .grid-top-row,
+    body.ios:not(.ios-phone) .grid-top-row.grid-top-row--blocklist-selected{
+        grid-template-columns: minmax(0, min(400px, 50%)) minmax(0, 1fr);
         gap: 18px;
     }
-    
 
     body.ios:not(.ios-phone) .grid-top-row--blocklist-selected .blocklist-card{
         max-width: none;
     }
-    
 
     body.ios:not(.ios-phone) .scheduler-section > .section-header.scheduler-header-compact{
         margin-bottom: 2px;
     }
-    
 
     /* Portrait stack: show Now/Schedule text unless JS detects overlap (ui-zoom-sched-tabs-icons). */
-    
-    
 
     /* -------------------------------------------------------------------------
        Portrait iPad: scale main-content UI (blocklists, scheduler, week calendar).
@@ -2020,8 +1997,6 @@ body.dark-mode .app-blocking-closedown-banner{
         --app-settings-top: calc((var(--app-header-row-height) - var(--app-settings-size)) / 2);
         --app-settings-right: 28px;
     }
-
-    
 
     body.ios:not(.ios-phone) .main-content .section-header{
         gap: 14px;
@@ -2072,47 +2047,12 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
         height: 24px;
     }
 
-
     body.ios:not(.ios-phone) .main-content .time-picker-container{
         gap: 18px;
         margin-bottom: 12px;
         border-radius: 14px;
         padding: 16px 20px 20px;
     }
-
-    
-
-    body.ios:not(.ios-phone) .main-content .time-label{
-        font-size: 14px;
-    }
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    body.ios:not(.ios-phone) .main-content .time-pickers-row{
-        gap: 18px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .time-picker-group{
-        gap: 6px;
-    }
-
-    
-
-    
-
-    
 
     body.ios:not(.ios-phone) .main-content .now-btn{
         padding: 10px 18px;
@@ -2127,28 +2067,6 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
         min-width: 58px;
     }
 
-    body.ios:not(.ios-phone) .main-content .time-part{
-        padding: 6px 6px;
-        font-size: 19px;
-        min-width: 42px;
-        border-radius: 8px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .when-times .schedule-start-display input.time-part,
-body.ios:not(.ios-phone) .main-content .when-times .schedule-end-display input.time-part{
-        min-width: 42px;
-        max-width: 54px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .when-times .time-picker-row{
-        min-height: 42px;
-    }
-
-
-    body.ios:not(.ios-phone) .main-content .time-colon{
-        font-size: 22px;
-    }
-
     body.ios:not(.ios-phone) .main-content .next-day-badge{
         padding: 5px 10px;
         font-size: 12px;
@@ -2160,68 +2078,28 @@ body.ios:not(.ios-phone) .main-content .when-times .schedule-end-display input.t
         min-width: 52px;
     }
 
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
     body.ios:not(.ios-phone) .main-content .schedule-segments{
-        gap: 12px;
-        --schedule-segments-gap: 12px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .schedule-segment-expanded{
-        padding: var(--schedule-segment-pad-y, 6px) var(--schedule-segment-pad-x, 14px);
-        border-radius: 12px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .segment-summary-btn{
-        padding: 14px 16px;
-        font-size: 16px;
+        --schedule-segments-gap: 10px;
     }
 
     body.ios:not(.ios-phone) .main-content .schedule-segment{
-        --schedule-segment-label-size: 13px;
-        --schedule-segment-remove-size: 30px;
+        --segment-field-h: 42px;
     }
 
-    body.ios:not(.ios-phone) .main-content .segment-row{
-        gap: 14px 18px;
+    body.ios:not(.ios-phone) .main-content .segment-time-field{
+        font-size: 17px;
     }
-
 
     body.ios:not(.ios-phone) .main-content .segment-days{
         gap: 6px;
     }
 
-    body.ios:not(.ios-phone) .main-content .segment-days-group{
-        gap: 4px;
-    }
-
     body.ios:not(.ios-phone) .main-content .when-times .segment-days{
-        min-height: 42px;
+        min-height: 36px;
     }
 
     body.ios:not(.ios-phone) .main-content .add-segment-btn{
-        gap: 8px;
-        padding: 14px 18px;
         font-size: 16px;
-        border-radius: 14px;
-        width: auto;
-    }
-
-    body.ios:not(.ios-phone) .main-content .add-segment-btn svg{
-        width: 16px;
-        height: 16px;
     }
 
     body.ios:not(.ios-phone) .main-content .schedule-repeat-section{
@@ -2328,10 +2206,6 @@ body.ios:not(.ios-phone) .main-content .schedule-pending-save{
         --blocklist-actions-slot: 60px;
         --blocklist-menu-anchor-offset: var(--blocklist-action-btn-size);
     }
-
-    
-
-    
 
     body.ios:not(.ios-phone) .main-content .week-calendar-section{
         margin-top: 16px;
@@ -2451,7 +2325,6 @@ body.ios:not(.ios-phone) .main-content .always-on-chip svg{
         max-width: calc(500px * var(--ipad-s));
     }
 
-
     body.ios:not(.ios-phone) #override-modal .modal-content,
 body.ios:not(.ios-phone) #start-block-confirm-modal .modal-content,
 body.ios:not(.ios-phone) #override-all-modal .modal-content{
@@ -2505,6 +2378,12 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         margin-bottom: calc(16px * var(--ipad-s));
     }
 
+    /* The editor spaces its groups with flex gaps (.editor-section-body, .focus-space-editor);
+       this margin stacked on top and left a blank band under Add App in the create dialog. */
+    body.ios:not(.ios-phone) .modal-overlay :is(.editor-section-body, .focus-space-editor) > .form-group{
+        margin-bottom: 0;
+    }
+
     body.ios:not(.ios-phone) .modal-overlay .form-group > label{
         font-size: calc(13px * var(--ipad-s));
         margin-bottom: calc(6px * var(--ipad-s));
@@ -2523,8 +2402,6 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
     body.ios:not(.ios-phone) .modal-overlay .form-input.small{
         width: calc(80px * var(--ipad-s));
     }
-
-    
 
     body.ios:not(.ios-phone) .modal-overlay .input-with-suffix{
         gap: calc(8px * var(--ipad-s));
@@ -2651,11 +2528,6 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         min-width: calc(140px * var(--ipad-s));
     }
 
-
-    
-
-    
-
     body.ios:not(.ios-phone) .modal-overlay .exit-difficulty-time-estimate{
         font-size: calc(13px * var(--ipad-s));
     }
@@ -2750,8 +2622,6 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         padding-top: calc(12px * var(--ipad-s));
     }
 
-    
-
     body.ios:not(.ios-phone) .modal-overlay .schedule-summary-header{
         font-size: calc(15px * var(--ipad-s));
         margin-bottom: calc(8px * var(--ipad-s));
@@ -2787,7 +2657,6 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
     body.ios:not(.ios-phone) .modal-overlay .override-info-box p{
         font-size: calc(15px * var(--ipad-s));
     }
-
 
     body.ios:not(.ios-phone) .modal-overlay .next-day-badge{
         padding: calc(4px * var(--ipad-s)) calc(8px * var(--ipad-s));
@@ -3065,13 +2934,6 @@ body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-feedback-foote
         max-width: 100%;
     }
 
-    
-
-    
-
-    
-
-    
 }
 
 /* UI zoom: phones use CSS `html { zoom }`; iPad uses `.app-container { transform: scale() }`.
@@ -3093,7 +2955,6 @@ body.ios.ui-zoom-tier-cramped .blocklist-card{
 }
 
 /* Wider iOS viewports: size tabs to label content instead of equal-flex in 250px bar. */
-
 
 body.ios.ui-zoom-tier-stack .grid-top-row{
     grid-template-columns: 1fr;
@@ -3423,7 +3284,6 @@ body:not(.ios) #settings-toolbar-scheduler{
     display: flex !important;
 }
 
-
 .blocklists-section > .section-header.blocklists-section-header .settings-top-btn{
     width: 30px;
     height: 30px;
@@ -3451,54 +3311,6 @@ body:not(.ios) #settings-toolbar-scheduler{
     flex-shrink: 0;
     /* Match .blocklists-container horizontal inset so edges align with cards. */
     padding: 0 4px 8px;
-}
-
-/* Android has no allow-mode enforcement: the schedule payload carries no `mode`
-   field, so Kotlin treats every list as a denylist and an allow-mode space would
-   block exactly the apps it is meant to permit. Hide the two entry points that
-   can create one until Schedule.kt/Schedules.kt learn about mode; existing
-   Existing allow-mode spaces remain editable so users can switch them back to
-   block mode, but starting one is rejected with an explanation. */
-body.android #allow-only-blocklist-btn{
-    display: none;
-}
-
-/* Android: the create action floats bottom-right as a FAB.
- *
- * Only one button survives the rule above on Android, which is what makes this
- * possible — a two-button row cannot be a floating action button. The button
- * keeps its own styling (dark fill, boxed "+", "Block" label); only the shape
- * and elevation change, so this is an extended FAB rather than the icon-only
- * kind. Dropping the label would cost the one thing that says what the button
- * creates, and this is the primary action on the screen. */
-body.android .blocklists-create-actions{
-    grid-template-columns: 1fr;
-    position: fixed;
-    right: 16px;
-    left: auto;
-    /* Gesture-navigation bar overlaps the viewport bottom on modern Android. */
-    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-    width: auto;
-    max-width: calc(100vw - 32px);
-    padding: 0;
-    /* Above page content (≤110), below .modal-overlay (200). A FAB floating over
-       a modal is a live tap target for a screen the user is not looking at. */
-    z-index: 150;
-}
-
-body.android .blocklists-create-btn--primary{
-    /* Pill rather than the 12px card radius the inline row uses. */
-    border-radius: 26px;
-    padding: 8px 20px 8px 8px;
-    /* Detached from the page, so it needs more elevation than a card. */
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
-}
-
-/* Leave room to scroll the last focus space clear of the button. Without this
-   the FAB permanently covers part of the final card, which is the one a user
-   just created and is most likely to want. */
-body.android #blocklists-container{
-    padding-bottom: 76px;
 }
 
 .blocklists-create-btn{
@@ -3539,6 +3351,17 @@ body.android #blocklists-container{
 
 .blocklists-create-btn-icon svg{
     display: block;
+}
+
+body.ios:not(.ios-phone) .blocklists-create-btn{
+    min-height: 56px;
+    padding: 10px 16px;
+    gap: 12px;
+    font-size: 18px;
+}
+body.ios:not(.ios-phone) .blocklists-create-btn-icon{
+    width: 34px;
+    height: 34px;
 }
 
 .blocklists-create-btn--primary{
@@ -4341,12 +4164,6 @@ body.dark-mode .no-active-blocks.clickable:hover{
 /* Timed controls wrapper (for smooth show/hide) */
 
 /* Time Pickers Row */
-.time-pickers-row{
-    display: flex;
-    align-items: flex-end;
-    gap: 16px;
-    justify-content: flex-start;
-}
 
 /* Long duration / schedule prompts read better in sentence case than all-caps. */
 #quick-select-label{
@@ -4354,34 +4171,7 @@ body.dark-mode .no-active-blocks.clickable:hover{
     letter-spacing: normal;
 }
 
-.time-picker-group{
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
 /* Keep Duration and End labels aligned in one-off timed controls */
-
-.time-label{
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--header-text);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.time-label-row{
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.time-picker-row{
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    position: relative;
-}
 
 .now-btn{
     padding: 8px 16px;
@@ -4438,12 +4228,6 @@ body.dark-mode .no-active-blocks.clickable:hover{
     box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
 }
 
-.time-colon{
-    font-size: 17px;
-    font-weight: 600;
-    color: hsl(215, 20%, 50%);
-}
-
 .time-input{
     padding: 8px 10px;
     font-size: 15px;
@@ -4493,87 +4277,8 @@ body.dark-mode .next-day-badge{
 }
 
 /* Custom time display */
-.time-display{
-    display: flex;
-    align-items: center;
-    gap: 2px;
-}
-
-.time-part{
-    padding: 4px 4px;
-    font-size: 17px;
-    font-weight: 600;
-    background: var(--input-bg);
-    border: 1px solid var(--input-border);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    min-width: 36px;
-    text-align: center;
-    color: var(--text-secondary);
-}
-
-.time-part:hover{
-    border-color: #bdb7af;
-    background: var(--redd-warm-grey);
-}
-
-body.dark-mode .time-part:hover{
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.3);
-    color: var(--text-primary);
-}
-
-.time-part:focus{
-    outline: none;
-    border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
-}
-
-.time-part.active{
-    border-color: var(--accent-color);
-    background: hsl(220, 70%, 98%);
-}
-
-body.dark-mode .time-part.active{
-    background: rgba(129, 140, 248, 0.15);
-    color: var(--accent-color);
-}
-
-.time-colon{
-    font-size: 20px;
-    font-weight: 600;
-    color: hsl(215, 20%, 50%);
-    padding: 0 2px;
-}
-
-.time-part-wrapper{
-    position: relative;
-    display: flex;
-    flex: 0 0 auto;
-}
 
 /* Compact instant end HH:MM — same footprint as legacy buttons; editable + opens list on click. */
-
-/* Schedule segments: match instant end-time compact editable pills */
-.when-times .schedule-start-display,
-.when-times .schedule-end-display{
-    flex: 0 1 auto;
-    min-width: 0;
-}
-
-.when-times .schedule-start-display input.time-part,
-.when-times .schedule-end-display input.time-part{
-    box-sizing: border-box;
-    flex: 0 0 auto;
-    width: 2.55em;
-    min-width: 36px;
-    max-width: 48px;
-    cursor: text;
-    -webkit-appearance: none;
-    appearance: none;
-    margin: 0;
-}
 
 /* Time popover */
 .time-popover{
@@ -4716,7 +4421,6 @@ matching the canonical brand
 
 /* Keep the action icon at a stable size when label + blocklist name wrap. */
 
-
 /* Schedule Block Panel */
 .when-times{
     --schedule-segment-pad-x: 14px;
@@ -4733,394 +4437,251 @@ body.ios:not(.ios-phone) .main-content .when-times{
     display: none;
 }
 
-/* Schedule Segments */
+/* Schedule Segments: one card per time range — start – end with × on the
+   right, the day circles underneath in Weekly. Laid out like Mail's account
+   hours: no field labels, the two HH:MM fields and the dash read as a range. */
 .schedule-segments{
     display: flex;
     flex-direction: column;
-    gap: var(--schedule-segments-gap, 10px);
+    gap: var(--schedule-segments-gap, 8px);
 }
 
-/* Four or more segments: scroll inside a viewport cap; rows keep natural height. */
-.schedule-segments:has(.schedule-segment:nth-child(4)){
+/* Five or more ranges: scroll inside a viewport cap; cards keep natural height. */
+.schedule-segments:has(.schedule-segment:nth-child(5)){
     max-height: min(52vh, 420px);
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: 0;
 }
 
 .schedule-segment{
     position: relative;
-    display: block;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    --segment-field-h: 36px;
     width: 100%;
+    min-width: 0;
     box-sizing: border-box;
     flex-shrink: 0;
-    padding: 0;
-    border-radius: 0;
-    background: transparent;
-    --schedule-segment-pad-y: 0;
-    --schedule-segment-label-size: 12px;
-    --schedule-segment-label-line-height: 1.25;
-    --schedule-segment-remove-size: 30px;
-}
-
-.schedule-segment-expanded{
-    /* Tighter above and below than at the sides: the section header already
-       gives the row air, the side inset is what Add times lines up with. */
-    --schedule-segment-pad-y: 6px;
-    padding: var(--schedule-segment-pad-y, 6px) var(--schedule-segment-pad-x, 14px);
-    border: none;
+    padding: 10px var(--schedule-segment-pad-x, 12px);
     border-radius: 12px;
-    background: var(--app-bg);
+    /* A tint of the text colour rather than a surface token: the section
+       behind is --app-bg already, and this reads as a card in both themes. */
+    background: color-mix(in srgb, var(--text-primary) 4%, transparent);
 }
 
-.schedule-segment-collapsed{
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    background: var(--panel-bg);
-    overflow: hidden;
-}
-
-.schedule-segment-collapsed.segment-locked{
-    opacity: 0.72;
-}
-
-.segment-summary-btn{
+/* Full-size controls that wrap rather than shrink: All day drops onto its own
+   line, left-aligned, when it does not fit beside the times. */
+.segment-times{
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
-    width: 100%;
-    padding: 12px 14px;
-    border: none;
-    background: transparent;
-    color: var(--text-primary);
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-    box-sizing: border-box;
-}
-
-.segment-summary-btn:hover:not(:disabled){
-    background: var(--element-hover-bg);
-}
-
-.segment-summary-clock{
-    flex-shrink: 0;
-    color: var(--text-muted);
-}
-
-.segment-summary-time{
-    flex: 0 0 auto;
+    gap: 10px 8px;
     min-width: 0;
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--text-primary);
-    white-space: nowrap;
 }
 
-.segment-summary-days{
-    flex: 1 1 auto;
-    min-width: 0;
-    margin-left: 10px;
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--accent-color);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+/* On the times line, the space after the end field pushes All day to the
+   right (as in Mail); wrapped onto its own line it starts at the left. */
+.segment-time-dash + .segment-time-anchor{
+    margin-right: auto;
 }
 
-.segment-summary-chevron{
-    flex-shrink: 0;
-    margin-left: 8px;
-    color: var(--text-muted);
+/* × sits outside the flow, pinned top-right and centred on the time fields,
+   its icon as far from the right edge as the fields are from the left. */
+.segment-times.has-remove{
+    padding-right: 30px;
 }
 
-.segment-editor-footer{
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-top: 14px;
-    padding-top: 0;
+.segment-times .remove-segment-btn{
+    position: absolute;
+    top: 10px;
+    right: calc(var(--schedule-segment-pad-x, 12px) - 7px);
+    height: var(--segment-field-h);
+    margin-left: 0;
 }
 
-.segment-delete-btn{
+.segment-all-day{
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    margin: -6px -10px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: hsl(0, 65%, 48%);
+    gap: 8px;
+    flex-shrink: 0;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.segment-all-day:has(input:disabled){
+    cursor: default;
+}
+
+.segment-all-day-on .segment-time-field{
+    color: var(--text-muted);
+}
+
+.segment-time-anchor{
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.segment-time-field{
+    box-sizing: border-box;
+    /* Exactly "00:00" (tabular digits) plus the padding and border: no dead space after the time. */
+    width: calc(5ch + 22px);
+    max-width: 100%;
+    height: var(--segment-field-h);
+    margin: 0;
+    padding: 0 10px;
+    font: inherit;
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    cursor: text;
+    -webkit-appearance: none;
+    appearance: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.segment-time-field:hover:not(:disabled){
+    border-color: #bdb7af;
+}
+
+body.dark-mode .segment-time-field:hover:not(:disabled){
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.segment-time-field:focus{
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
+}
+
+.segment-time-field:disabled{
+    cursor: default;
+}
+
+.segment-time-dash{
+    flex-shrink: 0;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+/* Hour and minute lists side by side under the field. */
+.schedule-time-popover{
+    left: 0;
+}
+
+.popover-columns{
+    display: flex;
+}
+
+.schedule-time-popover .popover-scroll{
+    max-height: 216px;
+    /* Just enough room on the right for macOS's thin scrollbar to sit beside the
+       highlighted hour or minute, never on it; the lists never scroll sideways. */
+    padding-right: 8px;
+    overflow-x: hidden;
+}
+
+.schedule-time-popover .popover-scroll + .popover-scroll{
+    border-left: 1px solid var(--popover-border);
+}
+
+/* Remove Segment Button */
+.remove-segment-btn{
+    width: 30px;
+    height: 30px;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
     cursor: pointer;
     transition: background 0.15s ease, color 0.15s ease;
 }
 
-body:not(.ios) .segment-delete-btn:hover:not(:disabled){
-    background: rgba(239, 68, 68, 0.1);
-    color: #dc2626;
+.remove-segment-btn:hover:not(:disabled){
+    background: hsl(0, 80%, 95%);
+    color: hsl(0, 70%, 50%);
 }
 
-body:not(.ios) .segment-delete-btn:focus-visible{
-    outline: 2px solid color-mix(in srgb, #ef4444 35%, transparent);
-    outline-offset: 2px;
+body.dark-mode .remove-segment-btn:hover:not(:disabled){
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
 }
 
-.segment-done-btn{
-    padding: 8px 18px;
+/* "Until": smaller and denser than the rest of the form, like the Android
+   app's field labels. */
+.when-times .editor-inline-label{
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    color: var(--text-muted);
+}
+
+body.ios .when-times .editor-inline-label{
+    font-size: 13px;
+}
+
+/* Add Segment Button: a quiet text link under the cards, like Mail's
+   "+ Add more hours". */
+.add-segment-btn{
+    display: inline-flex;
+    align-self: flex-start;
+    align-items: center;
+    gap: 6px;
+    /* Pull the text, not the hover pad, into line with the fields above. */
+    margin: -4px 0 0 calc(var(--schedule-segment-pad-x, 12px) - 6px);
+    padding: 4px 6px;
     border: none;
-    border-radius: 999px;
-    background: var(--accent-color);
-    color: #fff;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--redd-teal-hover);
+    font: inherit;
     font-size: 15px;
     font-weight: 700;
     cursor: pointer;
     transition: background 0.15s ease;
 }
 
-.segment-done-btn:hover:not(:disabled){
-    filter: brightness(0.95);
-}
-
-body:not(.ios) .schedule-segment{
-    container-type: inline-size;
-}
-
-.schedule-segment:has(.remove-segment-btn){
-    padding-right: 44px;
-}
-
-.schedule-segment .time-pickers-row{
-    gap: 28px;
-}
-
-/* Center the start→end arrow on the time input row (labels sit above). */
-.when-times .time-picker-row{
-    min-height: 36px;
-}
-
-
-/* iOS: schedule-segment delete clearance + vertically centered start→end arrow.
-   Portrait iPad rules in the @media block below scale these same values up further. */
-body.ios .main-content .schedule-segment .time-pickers-row {
-    align-items: center;
-    gap: 8px;
-}
-
-body.ios .when-times .time-picker-row {
-    min-height: 42px;
-}
-
-
-body.ios .schedule-segment {
-    --schedule-segment-label-size: 13px;
-    --schedule-segment-remove-size: 30px;
-}
-
-body.ios .schedule-segment .remove-segment-btn {
-    right: 6px;
-}
-
-/* iPad landscape / two-column: match iPad spacing (portrait iPad rules
-   live in the portrait-only @media above; do not override those here). */
-
-/* Remove Segment Button */
-.remove-segment-btn{
-    width: 30px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    opacity: 0.55;
-    transition: all 0.15s ease;
-    flex-shrink: 0;
-}
-
-/* Start time / End time / Days / Until: smaller and denser than the rest of
-   the form, like the Android app's field labels. */
-.when-times .time-label,
-.when-times .editor-inline-label{
-    font-size: var(--schedule-segment-label-size, 12px);
-    font-weight: 600;
-    line-height: var(--schedule-segment-label-line-height, 1.25);
-    letter-spacing: 0.02em;
-    text-transform: none;
-    color: var(--text-muted);
-}
-
-.schedule-segment .remove-segment-btn{
-    position: absolute;
-    top: calc(
-        var(--schedule-segment-pad-y) +
-        (var(--schedule-segment-label-size) * var(--schedule-segment-label-line-height) - var(--schedule-segment-remove-size)) / 2
-    );
-    right: 10px;
-    z-index: 1;
-    margin-left: 0;
-}
-
-.schedule-segment:hover .remove-segment-btn,
-.schedule-segment .remove-segment-btn:hover{
-    opacity: 1;
-}
-
-.remove-segment-btn svg{
-    width: 18px;
-    height: 18px;
-}
-
-.remove-segment-btn:hover{
-    background: hsl(0, 80%, 95%);
-    color: hsl(0, 70%, 50%);
-}
-
-/* Add Segment Button */
-.add-segment-btn{
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    /* 12px vertical matches .segment-summary-btn so collapsed cards and this button are equal height */
-    padding: 12px 18px;
-    border: 1px dashed color-mix(in srgb, var(--border-color) 88%, transparent);
-    border-radius: 14px;
-    background: color-mix(in srgb, var(--redd-teal-soft) 38%, var(--panel-bg));
-    color: var(--redd-teal-hover);
-    font-size: 15px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-    width: auto;
-    margin: 0 var(--schedule-segment-pad-x, 14px) 8px;
-    box-sizing: border-box;
-}
-
-.add-segment-btn svg{
-    flex-shrink: 0;
-    opacity: 0.92;
-}
-
 .add-segment-btn:hover{
-    border-color: color-mix(in srgb, var(--accent-color) 22%, var(--border-color));
-    color: var(--redd-teal-hover);
-    background: color-mix(in srgb, var(--redd-teal-soft) 52%, var(--panel-bg));
+    background: color-mix(in srgb, var(--redd-teal-soft) 45%, transparent);
 }
 
 body.dark-mode .add-segment-btn{
-    border-color: rgba(255, 255, 255, 0.14);
-    background: color-mix(in srgb, var(--redd-teal-soft) 18%, var(--panel-bg));
     color: color-mix(in srgb, var(--accent-color) 78%, white);
 }
 
-body.dark-mode .add-segment-btn:hover{
-    border-color: rgba(255, 255, 255, 0.22);
-    background: color-mix(in srgb, var(--redd-teal-soft) 28%, var(--panel-bg));
-}
-
-/* Segment Row - times on top, days full-width below (schedule enter panel). */
-.when-times .segment-row{
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-}
-
-.when-times .segment-row > .time-pickers-row,
-.when-times .segment-row > .segment-days-group{
-    width: 100%;
-}
-
-.segment-row{
-    display: flex;
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 12px 16px;
-}
-
-body:not(.ios) .segment-row > .time-pickers-row{
-    min-width: 0;
-}
-
-@container (max-width: 260px) {
-    body:not(.ios) .schedule-segment .time-pickers-row {
-        flex-wrap: wrap;
-        row-gap: 6px;
-    }
-
-
-    body:not(.ios) .schedule-segment .time-picker-group:last-child {
-        flex-basis: 100%;
-    }
-}
-
-  @media (max-width: 718px) {
-    .segment-row{
-        gap: 8px;
-    }
+.add-segment-btn.hidden{
+    display: none;
 }
 
 @media (orientation: landscape) {
-    body.handset-device .scheduler-content,
-body.handset-device .time-picker-container,
-body.handset-device .when-times,
-body.handset-device .schedule-segments,
-body.handset-device .schedule-segment,
-body.handset-device .segment-row,
-body.handset-device .time-pickers-row,
-body.handset-device .segment-days-group{
+    body.handset-device .when-times,
+    body.handset-device .schedule-segments,
+    body.handset-device .segment-times{
         min-width: 0;
     }
 
-    body.handset-device .schedule-segment{
-        display: block;
-        width: 100%;
-    }
-
-    body.handset-device .segment-row{
-        display: flex;
-        flex-wrap: wrap;
-        column-gap: 0;
-        row-gap: 8px;
-        align-items: flex-start;
-    }
-
-    body.handset-device .segment-row>.time-pickers-row{
-        min-width: 0;
-        width: 100%;
-    }
-
-    body.handset-device .segment-days-group{
-        width: max-content;
-        max-width: 100%;
-    }
-
-    body.handset-device .segment-days{
-        flex-wrap: nowrap;
-    }
-}
-
-/* Segment Days Group - contains label and day toggles */
-.segment-days-group{
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
 }
 
 .when-times .segment-days{
-    min-height: 36px;
+    min-height: 32px;
     align-items: center;
 }
 
-/* Segment Days - inline day toggles for each segment. Also wraps so the seven pills can
-   break onto a second line when the days-group itself runs out of horizontal room. */
+/* Full-size day circles; they wrap only once the card is narrower than all seven. */
 .segment-days{
     display: flex;
     flex-wrap: wrap;
@@ -5131,8 +4692,8 @@ body.handset-device .segment-days-group{
    size rule for every platform; phones get a slightly larger touch target. */
 .segment-day-toggle{
     flex: 0 0 auto;
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     min-width: 0;
     padding: 0;
     display: flex;
@@ -5151,12 +4712,10 @@ body.handset-device .segment-days-group{
     transition: all 0.15s ease;
 }
 
-
-body.ios .segment-day-toggle,
-body.android .segment-day-toggle{
-    width: 40px;
-    height: 40px;
-    font-size: 15px;
+body.ios .segment-day-toggle{
+    width: 36px;
+    height: 36px;
+    font-size: 14px;
 }
 
 .segment-day-toggle:disabled,
@@ -5589,8 +5148,7 @@ body.dark-mode .schedule-panel-overlay-group .repeat-label.repeat-label-disabled
     transition: all 0.15s ease;
 }
 
-body.ios .day-toggle,
-body.android .day-toggle {
+body.ios .day-toggle {
     width: 44px;
     height: 44px;
     padding: 0;
@@ -5808,7 +5366,6 @@ body.android .day-toggle {
     display: none;
 }
 
-
 .schedule-pending-label{
     color: var(--text-color);
     font-weight: 500;
@@ -5957,14 +5514,14 @@ body.dark-mode .schedule-pending-discard:hover{
    panel's row height (grid defaults to align-items:start), keep create
    buttons fixed, and let the card list fill + scroll the rest. */
   @media (min-width: 719px) {
-    body:not(.ios):not(.handset-device) .grid-top-row--blocklist-selected .blocklists-list-stack{
+    body:not(.ios-phone):not(.handset-device):not(.ui-zoom-tier-stack) .grid-top-row--blocklist-selected .blocklists-list-stack{
         align-self: stretch;
         min-height: var(--blocklists-scroll-max-height);
         /* Same bottom gap as .time-picker-container. */
         margin-bottom: 8px;
     }
 
-    body:not(.ios):not(.handset-device) .grid-top-row--blocklist-selected .blocklists-container{
+    body:not(.ios-phone):not(.handset-device):not(.ui-zoom-tier-stack) .grid-top-row--blocklist-selected .blocklists-container{
         flex: 1 1 auto;
         min-height: 0;
         /* Classic flex scroll child: height:0 + flex:1 fills leftover stack space. */
@@ -5974,8 +5531,7 @@ body.dark-mode .schedule-pending-discard:hover{
 }
 
 /* iOS/touch: reliable swipe scroll and momentum */
-body.ios .blocklists-container,
-body.android .blocklists-container {
+body.ios .blocklists-container {
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
 }
@@ -6064,7 +5620,6 @@ body.android .blocklists-container {
 
 /* Selected blocklist card (when preparing to start a block) */
 /* Box-shadow is applied inline via JS using the blocklist's color */
-
 
 .grid-top-row:not(.grid-top-row--blocklist-selected) .scheduler-content{
     min-height: 0;
@@ -6169,8 +5724,7 @@ body.android .blocklists-container {
     font-weight: 500;
 }
 
-body.ios .blocklist-status-line,
-body.android .blocklist-status-line{
+body.ios .blocklist-status-line{
     font-size: 14px;
 }
 
@@ -6282,7 +5836,8 @@ body.android .blocklist-status-line{
 
 .blocklist-meta-items,
 .blocklist-meta-items-btn{
-    flex: 0 0 auto;
+    flex: 0 1 auto;
+    min-width: 0;
     width: auto;
     max-width: 100%;
     overflow: hidden;
@@ -6413,22 +5968,20 @@ body.mobile-phone-home .blocklist-actions{
     flex-shrink: 0;
 }
 
-body.ios .blocklist-card,
-body.android .blocklist-card{
+body.ios .blocklist-card{
     --blocklist-action-btn-size: 38px;
     --blocklist-actions-gap: 0px;
     --blocklist-actions-slot: 56px;
     --blocklist-menu-anchor-offset: var(--blocklist-action-btn-size);
 }
 
-body.ios .blocklist-actions,
-body.android .blocklist-actions {
+body.ios .blocklist-actions {
     gap: var(--blocklist-actions-gap);
 }
 
 /* Enter-sheet cards carry only the overflow button, so reserve one slot and
    right-align the menu under it. `body` prefix keeps this above the
-   ios/android two-slot defaults above. */
+   iOS two-slot defaults above. */
 
 /* Phones only: the card body is not a tap target there, so no hover lift.
    The single-column desktop sheet keeps the default .blocklist-card:hover —
@@ -7494,7 +7047,7 @@ body.ios .eula-onboarding-actions .eula-continue-btn {
     width: auto;
     margin: 0;
     padding: 12px 20px;
-    border: none;
+    border: 1px solid transparent;
     font-size: 15px;
     font-weight: 600;
     line-height: 1.2;
@@ -7523,11 +7076,8 @@ body.dark-mode .eula-back-btn:hover{
 }
 
 /* Footer credit link — no underline (EULA / privacy links in the card keep theirs). */
-#welcome-onboarding-footer-1 .legal-onboarding-link,
-#eula-onboarding-footer-1 .legal-onboarding-link,
 #eula-project-blurb .legal-onboarding-link,
-#ios-screentime-onboarding-note .legal-onboarding-link,
-#android-permissions-onboarding-note .legal-onboarding-link {
+#ios-screentime-onboarding-note .legal-onboarding-link {
     text-decoration: none;
 }
 
@@ -7770,7 +7320,7 @@ body.dark-mode #migration-onboarding .migration-setup-ready-banner{
 /* No outer headline in fresh-install post phase; tighten space above checklist “title”. */
 #migration-phase-post:has(#migration-post-title-row.hidden) .migration-card{
     margin-top: 10px;
-    padding-top: 18px;
+    padding-top: 6px; /* plus the card's 12px top band */
 }
 
 #migration-phase-post:has(#migration-post-title-row.hidden)
@@ -8255,6 +7805,17 @@ body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:d
 .migration-browser-row.needs-fda{
     background: rgba(245, 158, 11, 0.08);
     border-color: rgba(245, 158, 11, 0.20);
+}
+
+/* Organisation policy blocks the browser reaching Blocker: louder than any fixable step */
+.migration-browser-row.policy-blocked{
+    background: rgba(220, 38, 38, 0.07);
+    border-color: rgba(220, 38, 38, 0.32);
+}
+
+.migration-browser-badge.policy-blocked{
+    color: #b91c1c;
+    font-weight: 600;
 }
 
 .migration-browser-badge.needs-enable,
@@ -8949,8 +8510,9 @@ body.dark-mode #settings-modal .enforcement-switch-tooltip{
     transition: transform 0.25s ease;
 }
 
+/* On is To-Do's teal. */
 .enforcement-switch input:checked + .enforcement-slider{
-    background: #10b981;
+    background: var(--redd-teal);
 }
 
 .enforcement-switch input:checked + .enforcement-slider::before{
@@ -8976,20 +8538,101 @@ body.dark-mode .enforcement-slider::before{
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 
+/* To-Do's dark teal: Blocker's dark --redd-teal (#399e90) is a shade darker. */
 body.dark-mode .enforcement-switch input:checked + .enforcement-slider{
-    background: #34d399;
+    background: #4ec0b0;
 }
 
 body.dark-mode .enforcement-switch input:checked + .enforcement-slider::before{
     background: #0f172a;
 }
 
-.migration-post-actions{
+/* Like the start/stop dialog: the setup card never runs past the window, its body
+   scrolls, and the actions sit side by side in a full-width footer stuck to its bottom. */
+#migration-onboarding.onboarding-screen:has(#migration-phase-post:not(.hidden)){
+    padding-block: 2.5vh;
+}
+
+#migration-phase-post:not(.hidden){
     display: flex;
     flex-direction: column;
+    max-height: calc(100vh - var(--title-bar-height) - 5vh); /* the start dialog's 95%, with a 2.5% gap each side */
+}
+
+#migration-phase-post .migration-card{
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: none; /* no elastic bounce past the title or the footer */
+    /* A fixed band above the scrolling body, like the start dialog's, so rows slide under it rather than the card edge */
+    border-top: 12px solid rgba(255, 255, 255, 0.92);
+    background-clip: padding-box;
+    padding-top: 12px;
+}
+
+body.dark-mode #migration-phase-post .migration-card{
+    border-top-color: var(--redd-card);
+}
+
+/* The scrolling card clips anything wider than it, so the how-to panel fits the card and stacks its steps */
+#migration-phase-post .migration-screenshots-wrap{
+    width: auto;
+    margin-left: 0;
+    transform: none;
+}
+
+#migration-phase-post .migration-screenshots-wrap .screenshots-row{
+    flex-direction: column;
+    align-items: stretch;
+}
+
+#migration-phase-post .migration-screenshots-wrap .extension-enforcer-step{
+    flex: none;
+}
+
+#migration-phase-post .migration-screenshots-wrap .extension-enforcer-screenshot-arrow{
+    align-self: center;
+    transform: rotate(90deg);
+}
+
+.migration-post-actions{
+    display: flex;
     align-items: stretch;
     gap: 10px;
-    margin-top: 16px;
+    position: sticky;
+    bottom: -22px; /* sticky offsets count from inside the card's padding; this cancels it so the footer docks flush */
+    z-index: 1;
+    margin: 16px -28px -22px;
+    padding: 16px 28px;
+    background: #ffffff;
+    border-top: 1px solid var(--border-color-medium);
+}
+
+body.dark-mode .migration-post-actions{
+    background: var(--redd-card);
+}
+
+/* Equal halves while there is room; when narrow, Skip gives way so "I'm all set up" stays on one line */
+.migration-post-actions .migration-post-action-row{
+    flex: 1 1 0;
+    min-width: max-content;
+}
+
+.migration-post-actions .migration-done-btn{
+    white-space: nowrap;
+}
+
+/* Skip sits left of the primary action, outlined like a dialog's Cancel */
+#migration-onboarding .migration-post-actions .migration-skip-btn{
+    order: -1;
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto;
+    border-color: var(--border-color);
+    font-size: 15px;
+}
+
+body.dark-mode #migration-onboarding .migration-post-actions .migration-skip-btn{
+    border-color: var(--border-color);
 }
 
 .migration-post-action-row{
@@ -9143,6 +8786,15 @@ body.dark-mode #migration-onboarding .migration-browser-badge.needs-install{
     color: var(--text-muted);
 }
 
+body.dark-mode #migration-onboarding .migration-browser-row.policy-blocked{
+    background: rgba(239, 68, 68, 0.14);
+    border-color: rgba(248, 113, 113, 0.4);
+}
+
+body.dark-mode #migration-onboarding .migration-browser-badge.policy-blocked{
+    color: #fca5a5;
+}
+
 body.dark-mode #migration-onboarding .migration-browser-badge.needs-enable,
 body.dark-mode #migration-onboarding .migration-browser-badge.needs-private,
 body.dark-mode #migration-onboarding .migration-browser-badge.needs-website-access,
@@ -9287,6 +8939,7 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     font-size: 14px;
     line-height: 1.5;
     color: var(--text-secondary);
+    cursor: pointer;
 }
 
 .legal-onboarding-checkbox-row input[type="checkbox"]{
@@ -9314,8 +8967,68 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     font-style: italic;
 }
 
-#eula-onboarding .legal-onboarding-note{
-    font-style: normal;
+/* "Private by design": heading, one line, details on demand, then the
+   agreement below a divider. */
+.eula-privacy-title{
+    margin: 0 0 6px;
+    font-family: var(--font-heading);
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--redd-navy);
+}
+
+.eula-privacy-lead{
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.eula-how-we-count{
+    margin-top: 6px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.eula-how-we-count summary{
+    display: inline-block;
+    cursor: pointer;
+    list-style: none;
+    color: var(--accent-color);
+}
+
+.eula-how-we-count summary::-webkit-details-marker{
+    display: none;
+}
+
+.eula-how-we-count summary::after{
+    content: '\203A';
+    display: inline-block;
+    margin-left: 4px;
+    transition: transform 0.15s ease;
+}
+
+.eula-how-we-count[open] summary::after{
+    transform: rotate(90deg);
+}
+
+.eula-how-we-count summary:focus-visible{
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+    border-radius: 3px;
+}
+
+.eula-how-we-count p{
+    margin: 6px 0 0;
+}
+
+.eula-privacy-divider{
+    height: 0;
+    margin: 16px 0;
+    border: none;
+    border-top: 1px solid var(--redd-border);
 }
 
 .legal-onboarding-link{
@@ -9350,6 +9063,11 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     justify-content: center;
     font-size: 16px;
     font-weight: 600;
+}
+
+#ios-notifications-not-now-btn{
+    margin-top: 10px;
+    font-size: 15px;
 }
 
 @media (max-width: 640px) {
@@ -9759,7 +9477,8 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     white-space: nowrap;
 }
 
-body:not(.ios) #focus-space-editor .tags-input-stacked .browse-btn{
+body:not(.ios) #focus-space-editor .tags-input-stacked .browse-btn,
+body.ios:not(.ios-phone) #focus-space-editor .tags-input-stacked .browse-btn{
     gap: 8px;
 }
 
@@ -9924,15 +9643,13 @@ body.ios #focus-space-editor .tags-input-container {
     align-items: stretch;
 }
 
-body.ios #focus-space-editor .tags-input-container > .tags-container,
-body.android #focus-space-editor .tags-input-container > .tags-container {
+body.ios #focus-space-editor .tags-input-container > .tags-container {
     flex: 1 1 100%;
     width: 100%;
 }
 
 /* Empty chip wells still participate in flex gap — removes the extra space above the apps/websites row until tags exist. */
-body.ios #focus-space-editor .tags-input-container > .tags-container:empty,
-body.android #focus-space-editor .tags-input-container > .tags-container:empty {
+body.ios #focus-space-editor .tags-input-container > .tags-container:empty {
     display: none;
 }
 
@@ -9984,7 +9701,7 @@ body.handset-device #focus-space-editor .tags-input-stacked .browse-btn{
     gap: 6px;
 }
 
-/* iPhone and Android: app input is hidden — picker button spans the full row. */
+/* iPhone: app input is hidden — picker button spans the full row. */
 body.ios #focus-space-editor .tags-input-stacked .apps-picker-only .browse-btn{
     width: 100%;
 }
@@ -10129,6 +9846,12 @@ body.ios #focus-space-editor .tags-input-container .browse-btn-caption {
     padding: 20px;
 }
 
+/* Phones and tablets have no title bar, so the scrim covers the whole screen;
+   the 30px offset above left the top strip of the app undimmed on iPad. */
+body.ios .modal-overlay{
+    top: 0;
+}
+
 /* Phones have no title bar: a dialog scrim covers the whole screen, status
    bar and safe areas included. */
 body.handset-device .modal-overlay{
@@ -10266,6 +9989,14 @@ body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal{
     overflow: hidden;
 }
 
+/* iPad has no title bar. */
+body.ios.desktop-compact-layout :is(#enter-scheduler-modal, #blocklist-modal, #settings-modal, #override-modal, #start-block-confirm-modal, #override-all-modal).mobile-fullscreen-modal{
+    top: 0;
+}
+body.ios.desktop-compact-layout :is(#enter-scheduler-modal, #blocklist-modal, #settings-modal, #override-modal, #start-block-confirm-modal, #override-all-modal).mobile-fullscreen-modal .mobile-modal-header{
+    padding-top: calc(6px + env(safe-area-inset-top, 0px));
+}
+
 body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .modal-content,
 body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .modal-content,
 body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .modal-content,
@@ -10356,7 +10087,7 @@ body.desktop-compact-layout .mobile-fullscreen-modal .mobile-modal-title-source{
 /* The desktop edit sheet has no header bar: the back chevron and title sit in
    the card's own title row, as in the two-column panel. Out-specifies the
    ≤718px :is(...) header rule below, which sets display: grid. */
-body.enter-scheduler-modal-open:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header{
+body.enter-scheduler-modal-open:not(.handset-device):not(.ios) #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header{
     display: none;
 }
 
@@ -10419,7 +10150,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
    JS body class). Covers create/edit focus space, settings, and the override
    when the window is ≤718px. */
 @media (max-width: 718px) {
-    body:not(.handset-device):not(.ios):not(.android) :is(
+    body:not(.handset-device):not(.ios) :is(
         #enter-scheduler-modal,
         #blocklist-modal,
         #settings-modal,
@@ -10441,7 +10172,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         overflow: hidden;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) :is(
+    body:not(.handset-device):not(.ios) :is(
         #enter-scheduler-modal,
         #blocklist-modal,
         #settings-modal,
@@ -10463,7 +10194,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         overflow: hidden;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) :is(
+    body:not(.handset-device):not(.ios) :is(
         #enter-scheduler-modal,
         #blocklist-modal,
         #settings-modal,
@@ -10489,7 +10220,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
 
     /* Start/Stop move their title and space chip into the sheet header, so it
        needs the same treatment the phone sheet gives it (13444). */
-    body:not(.handset-device):not(.ios):not(.android) :is(
+    body:not(.handset-device):not(.ios) :is(
         #start-block-confirm-modal,
         #override-modal
     ) .start-confirm-header-room{
@@ -10500,7 +10231,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         gap: 8px 10px;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) :is(
+    body:not(.handset-device):not(.ios) :is(
         #start-block-confirm-modal,
         #override-modal
     ) .start-confirm-header-room h3{
@@ -10513,7 +10244,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         color: var(--text-primary);
     }
 
-    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal .mobile-modal-back-btn{
+    body:not(.handset-device):not(.ios) .mobile-fullscreen-modal .mobile-modal-back-btn{
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -10527,16 +10258,16 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         cursor: pointer;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal .mobile-modal-back-btn:hover{
+    body:not(.handset-device):not(.ios) .mobile-fullscreen-modal .mobile-modal-back-btn:hover{
         background: var(--element-bg);
     }
 
-    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal .mobile-modal-back-btn svg{
+    body:not(.handset-device):not(.ios) .mobile-fullscreen-modal .mobile-modal-back-btn svg{
         width: 20px;
         height: 20px;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal .mobile-modal-header-title{
+    body:not(.handset-device):not(.ios) .mobile-fullscreen-modal .mobile-modal-header-title{
         font-family: var(--font-heading);
         font-size: 1.25rem;
         font-weight: 700;
@@ -10548,11 +10279,11 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         white-space: nowrap;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal .mobile-modal-title-source{
+    body:not(.handset-device):not(.ios) .mobile-fullscreen-modal .mobile-modal-title-source{
         display: none;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) :is(
+    body:not(.handset-device):not(.ios) :is(
         #enter-scheduler-modal,
         #blocklist-modal,
         #settings-modal,
@@ -10571,12 +10302,12 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         padding: 18px 20px 20px !important;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) :is(
+    body:not(.handset-device):not(.ios) :is(
         #blocklist-modal,
         #settings-modal,
         #schedule-overlay-customise-modal,
         #enter-scheduler-modal
-    ).mobile-fullscreen-modal :is(.modal-buttons, .schedule-overlay-customise-footer, .editor-panel-footer){
+    ).mobile-fullscreen-modal :is(.modal-buttons, .schedule-overlay-customise-footer){
         flex-shrink: 0;
         display: flex;
         gap: 10px;
@@ -10587,7 +10318,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
     }
 
     /* Cancel reads as a button against the cream footer, not a hole in it. */
-    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal
+    body:not(.handset-device):not(.ios) .mobile-fullscreen-modal
         :is(.modal-buttons, .schedule-overlay-customise-footer) .modal-btn.cancel-btn{
         background: var(--popover-bg);
     }
@@ -10595,13 +10326,13 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
     /* The alert editor's footer stacks at narrow widths (12271), which put Delete
        on its own row and left the sticky footer top-heavy. In the sheet it stays
        one row: Delete left, Cancel and Save right, all vertically centred. */
-    body:not(.handset-device):not(.ios):not(.android) #schedule-overlay-customise-modal.mobile-fullscreen-modal .schedule-overlay-customise-footer{
+    body:not(.handset-device):not(.ios) #schedule-overlay-customise-modal.mobile-fullscreen-modal .schedule-overlay-customise-footer{
         flex-direction: row;
         align-items: center;
         justify-content: space-between;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) #schedule-overlay-customise-modal.mobile-fullscreen-modal .schedule-overlay-customise-footer-left{
+    body:not(.handset-device):not(.ios) #schedule-overlay-customise-modal.mobile-fullscreen-modal .schedule-overlay-customise-footer-left{
         width: auto;
     }
 
@@ -10609,11 +10340,11 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
        footer drifted up and down as sections expanded. Make the editor fill the
        sheet and push the footer down, so it sits on the bottom edge either way. */
 
-    body:not(.handset-device):not(.ios):not(.android) #settings-modal .settings-modal-header{
+    body:not(.handset-device):not(.ios) #settings-modal .settings-modal-header{
         display: none;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .modal-buttons{
+    body:not(.handset-device):not(.ios) #enter-scheduler-modal.mobile-fullscreen-modal .modal-buttons{
         display: none;
     }
 
@@ -10622,20 +10353,20 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
        Mirrors the handset sheet (header 10720, title 10781, panel row 16722 /
        16727, card reset 10687). The header rule repeats the display:none
        selector at 10360 verbatim so source order wins it back. */
-    body.enter-scheduler-modal-open:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header{
+    body.enter-scheduler-modal-open:not(.handset-device):not(.ios) #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header{
         display: grid;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal .editor-panel-header{
+    body:not(.handset-device):not(.ios) #enter-scheduler-modal .editor-panel-header{
         justify-content: flex-end;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal .editor-panel-title,
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal .editor-panel-back-btn{
+    body:not(.handset-device):not(.ios) #enter-scheduler-modal .editor-panel-title,
+body:not(.handset-device):not(.ios) #enter-scheduler-modal .editor-panel-back-btn{
         display: none;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .time-picker-container{
+    body:not(.handset-device):not(.ios) #enter-scheduler-modal.mobile-fullscreen-modal .time-picker-container{
         background: transparent;
         box-shadow: none;
         border-radius: 0;
@@ -10643,41 +10374,13 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         margin-bottom: 0;
     }
 
-    /* The editor's Save / Unsaved-changes bar is already sticky, but it wears the
-       two-column panel's chrome: negative margins and a rounded panel-coloured
-       layer that only made sense inside the white card the sheet no longer has.
-       Give it the same footer treatment as Create focus space (10573). */
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal #editor-panel-footer::before{
-        display: none;
-    }
-
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal #editor-panel-footer{
-        position: static;
-        margin: 0;
-    }
-
-    /* The unsaved-changes bar carries its own padding, margin and border (5794),
-       which grew the sticky footer the moment anything changed and shifted Save
-       down. In the sheet the footer owns the spacing: the label and Discard just
-       appear beside Save, and the row keeps its height. */
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .schedule-pending-bar{
-        /* The bar keeps its own box (5794) and the footer grows with it; only the
-           4px margin-top goes, so the bar sits centred in the footer with the
-           same space above and below rather than pushed down. */
-        margin-top: 0;
-    }
-
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .schedule-pending-label{
-        transform: translateY(-1px);
-    }
-
     /* The alert editor's title is a sentence, not a name — let it wrap rather
        than truncate, and keep it centred against the back chevron. */
-    body:not(.handset-device):not(.ios):not(.android) #schedule-overlay-customise-modal.mobile-fullscreen-modal .mobile-modal-header{
+    body:not(.handset-device):not(.ios) #schedule-overlay-customise-modal.mobile-fullscreen-modal .mobile-modal-header{
         align-items: center;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) #schedule-overlay-customise-modal.mobile-fullscreen-modal .mobile-modal-header-title{
+    body:not(.handset-device):not(.ios) #schedule-overlay-customise-modal.mobile-fullscreen-modal .mobile-modal-header-title{
         white-space: normal;
         overflow: visible;
         text-overflow: clip;
@@ -10810,26 +10513,16 @@ body.mobile-phone-home #enter-scheduler-modal.mobile-fullscreen-modal .time-pick
 }
 
 /* Enter sheet schedule segments: two rows (time, then days); touch-sized natural-width day pills. */
-body.mobile-phone-home #enter-scheduler-modal .when-times .segment-row > .time-pickers-row,
-body.mobile-phone-home #enter-scheduler-modal .when-times .segment-row > .segment-days-group{
-    width: 100%;
-}
-
 
 body.mobile-phone-home #enter-scheduler-modal .segment-days{
     gap: 4px;
     align-items: center;
     width: auto;
     max-width: 100%;
-    flex-wrap: nowrap;
 }
 
 /* Mobile phones: weekday pills use natural width everywhere (like desktop), never stretch to fill. */
-body.mobile-phone-home .segment-days,
-
-
-body.mobile-phone-home .segment-row > .segment-days-group,
-body.mobile-phone-home .when-times .segment-row > .segment-days-group{
+body.mobile-phone-home .segment-days{
     width: 100%;
     max-width: 100%;
 }
@@ -10929,7 +10622,7 @@ body:not(.handset-device):not(.desktop-compact-layout) #blocklist-modal .modal-c
 }
 
 @media (max-width: 718px) {
-    body:not(.handset-device):not(.ios):not(.android) #blocklist-modal.mobile-fullscreen-modal .modal-content{
+    body:not(.handset-device):not(.ios) #blocklist-modal.mobile-fullscreen-modal .modal-content{
         max-width: 100%;
     }
 }
@@ -11273,21 +10966,10 @@ body:not(.handset-device) .start-confirm-modal{
     color: var(--redd-navy);
 }
 
-.start-confirm-subtitle{
-    grid-column: 2;
-    grid-row: 2;
-    margin: 0;
-    font-size: 14px;
-    line-height: 1.45;
-    color: var(--text-muted);
-}
-
-.start-confirm-subtitle strong{
-    color: var(--text-secondary);
-    font-weight: 600;
-}
-
 .start-confirm-summary-card{
+    /* Rows are subgrids, so the label column fits the longest label. */
+    display: grid;
+    grid-template-columns: fit-content(50%) minmax(0, 1fr);
     margin-bottom: 16px;
     border: 1px solid var(--border-color);
     border-radius: 14px;
@@ -11295,7 +10977,7 @@ body:not(.handset-device) .start-confirm-modal{
     overflow: hidden;
     --start-confirm-content-size: 14px;
     --start-confirm-content-line-height: 1.45;
-    --start-confirm-label-size: 13px;
+    --start-confirm-label-size: 14px;
     --start-confirm-row-pad-y: 14px;
     --start-confirm-row-pad-x: 16px;
     --start-confirm-content-gap: 6px;
@@ -11307,13 +10989,22 @@ body:not(.handset-device) .start-confirm-modal{
 
 .start-confirm-summary-row{
     display: grid;
-    grid-template-columns: 92px minmax(0, 1fr);
+    grid-column: 1 / -1;
+    grid-template-columns: fit-content(50%) minmax(0, 1fr);
+    grid-template-columns: subgrid;
     gap: 12px;
     padding: var(--start-confirm-row-pad-y) var(--start-confirm-row-pad-x);
     align-items: start;
 }
 
+/* The If turned off value sits level with its two-line label, not on its first line. */
+#start-confirm-unlock-row,
+#override-confirm-unlock-row{
+    align-items: center;
+}
+
 .start-confirm-summary-divider{
+    grid-column: 1 / -1;
     height: 0;
     margin: 0 16px;
     border-top: 1px dotted var(--border-color);
@@ -11323,16 +11014,16 @@ body:not(.handset-device) .start-confirm-modal{
     display: none;
 }
 
+/* Icon centred on the label, so it sits between the lines of a wrapped "If turned off". */
 .start-confirm-row-label{
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 6px;
     padding-top: 0;
     font-size: var(--start-confirm-label-size);
     font-weight: 500;
     line-height: var(--start-confirm-content-line-height);
     color: var(--text-muted);
-    white-space: nowrap;
 }
 
 .start-confirm-row-label > span{
@@ -11344,7 +11035,6 @@ body:not(.handset-device) .start-confirm-modal{
     width: 16px;
     height: 16px;
     opacity: 0.75;
-    margin-top: var(--start-confirm-icon-offset);
 }
 
 .start-confirm-row-value{
@@ -11532,73 +11222,6 @@ body:not(.handset-device) .start-confirm-modal{
     font-weight: 700;
     line-height: 1.25;
     color: var(--redd-navy);
-}
-
-.start-confirm-room-chip{
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    flex: 0 1 auto;
-    max-width: 100%;
-    padding: 5px 12px 5px 10px;
-    border-radius: 999px;
-    font-size: 14px;
-    font-weight: 600;
-    line-height: 1.3;
-    background: var(--redd-teal-soft);
-    border: 1px solid var(--redd-teal-soft-border);
-    color: var(--redd-teal-on-soft);
-}
-
-.start-confirm-room-chip-emoji{
-    font-size: 15px;
-    line-height: 1;
-    flex-shrink: 0;
-}
-
-.start-confirm-room-chip-name{
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.start-confirm-status-row{
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 18px;
-}
-
-.start-confirm-status-icon{
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: var(--redd-teal-soft);
-    color: var(--redd-teal-hover);
-}
-
-.start-confirm-status-icon svg{
-    display: block;
-}
-
-.start-confirm-status-row .start-confirm-subtitle{
-    margin: 0;
-    flex: 1;
-    min-width: 0;
-    font-size: 14px;
-    line-height: 1.45;
-    color: var(--text-muted);
-}
-
-.start-confirm-status-row .start-confirm-subtitle strong{
-    color: var(--text-secondary);
-    font-weight: 600;
 }
 
 .start-confirm-warning .override-info-header{
@@ -12397,6 +12020,11 @@ body.dark-mode .modal-btn.black-btn:hover{
     background: var(--primary-btn-bg-hover);
 }
 
+.challenge-word-mode #confirm-override-btn:disabled{
+    opacity: 0.4;
+    transition: none; /* instant on each new word, not .modal-btn's 0.2s fade */
+}
+
 /* Wiggle animation for error */
 @keyframes wiggle {
 
@@ -12435,7 +12063,8 @@ body.dark-mode .modal-btn.black-btn:hover{
 }
 
 /* Error character highlighting — avoid bold (can shift monospace glyph width). */
-.challenge-text .error-char{
+.challenge-text .error-char,
+.challenge-current-word .error-char{
     color: #ef4444;
     background: rgba(239, 68, 68, 0.18);
     border-radius: 2px;
@@ -12445,6 +12074,12 @@ body.dark-mode .modal-btn.black-btn:hover{
 /* Spaces have no ink — give the error highlight a visible box. */
 .challenge-text .error-char-space{
     padding: 0 0.3em;
+}
+
+/* Desktop typing progress: the correctly typed part of the reference text.
+   Colour only, so monospace glyph widths never shift. */
+.challenge-text .challenge-typed{
+    color: var(--redd-teal);
 }
 
 /* Override Challenge */
@@ -12466,7 +12101,6 @@ body.dark-mode .modal-btn.black-btn:hover{
     line-height: 1.45;
     color: var(--text-secondary);
 }
-
 
 /* #override-all-modal's content lacks .start-confirm-modal, so without the
    second selector it alone fell through to the 16px in the shared block below —
@@ -12552,6 +12186,50 @@ body.dark-mode .modal-btn.black-btn:hover{
 .override-challenge .challenge-word-input{
     min-height: 0;
     height: 48px;
+}
+
+/* iPhone keyboard up on a stop challenge: the whole sheet scrolls, with room for
+   the keyboard below (fitStopChallengeAboveKeyboard in theme.js). */
+body.ios-phone :is(#override-modal, #override-all-modal).mobile-fullscreen-modal .modal-content.keyboard-up{
+    overflow-y: auto;
+    /* No rubber-band: pulling past the top would drag the header down over blank space. */
+    overscroll-behavior: none;
+}
+body.ios-phone :is(#override-modal, #override-all-modal).mobile-fullscreen-modal .keyboard-up .mobile-modal-scroll-body{
+    flex: none;
+    overflow: visible;
+    padding-bottom: calc(var(--keyboard-height, 0px) + 12px);
+}
+
+/* iOS draws its system-blue focus ring otherwise; match .form-input:focus. */
+body.ios .override-challenge .challenge-input:focus{
+    outline: none;
+    border-color: var(--redd-teal);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--redd-teal) 20%, transparent);
+}
+
+/* Word mode (phones): the passage is hidden, and the instruction becomes a
+   centred "N words remaining" heading over "Type one word at a time". */
+.override-challenge .challenge-word-instruction,
+.override-challenge.challenge-word-mode .challenge-char-instruction{
+    display: none;
+}
+.override-challenge.challenge-word-mode .challenge-word-instruction{
+    display: block;
+    text-align: center;
+    margin: 28px 0 16px;
+    /* 14px muted body text, as on the start and stop sheets. */
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+.challenge-words-remaining{
+    display: block;
+    margin-bottom: 4px;
+    font-size: 24px;
+    line-height: 1.25;
+    color: var(--text-primary);
 }
 
 .override-challenge .challenge-progress{
@@ -12641,11 +12319,8 @@ body.dark-mode .settings-top-btn{
 /* Hide desktop-only settings sections on iOS (#settings-modal .settings-section
    sets display:flex and would otherwise win over .desktop-only). */
 body.ios #settings-enforcement-panel,
-body.android #settings-enforcement-panel,
 body.ios #settings-modal .settings-section.desktop-only,
-body.android #settings-modal .settings-section.desktop-only,
-body.ios #settings-modal .settings-help-section,
-body.android #settings-modal .settings-help-section {
+body.ios #settings-modal .settings-help-section {
     display: none;
 }
 
@@ -12736,6 +12411,140 @@ body.windows .settings-panel-rows > #settings-override-all-row:not(.hidden) ~ #w
 .settings-row-control{
     justify-self: end;
     min-width: 0;
+}
+
+/* A setting's name with a small picture in front and an info icon after,
+   as in To-Do. */
+.settings-row-label-line{
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+/* A small picture of the feature, in front of its name. */
+.settings-row-icon{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 20px;
+    color: var(--text-secondary);
+}
+
+.settings-row-label-line .settings-row-label{
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.info-toggle-btn{
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease, color 0.2s ease;
+    flex-shrink: 0;
+}
+
+.info-toggle-btn:hover{
+    color: var(--text-primary);
+    background: var(--element-hover-bg);
+}
+
+.info-toggle-btn:focus{
+    outline: none;
+}
+
+.settings-info-btn{
+    margin: 0;
+}
+
+/* The info icon sits as close to its name as the feature icon does on the
+   other side: the button's 4px padding made that gap 2px wider. */
+.settings-row-label-line .settings-info-hover-wrap{
+    margin-left: -2px;
+}
+
+/*
+  The info tooltip of a setting, as in To-Do.
+
+  Only the icon opens it: a pointer beside or above the icon is on the row,
+  and must not read the info of another setting. The tooltip takes no
+  pointer, so it never widens that area. A click on the icon keeps it open
+  (.is-open, from usage-ping.js).
+
+  It hangs from the row, not the icon, 8px over the name. It starts where
+  the row's content starts, and may run to the row's right edge but never
+  past it, at any window width. It is only as wide as its words, up to 20rem.
+*/
+#settings-modal .settings-row:has(.settings-info-hover-wrap){
+    position: relative;
+}
+
+.settings-info-hover-wrap{
+    display: inline-flex;
+    flex-shrink: 0;
+}
+
+.settings-info-hover-wrap .settings-info-tooltip{
+    position: absolute;
+    left: 14px;
+    /* The row's top padding is 12px: 8px over the name is 4px into the row. */
+    bottom: calc(100% - 4px);
+    width: max-content;
+    max-width: min(20rem, calc(100% - 14px));
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color-medium);
+    border-radius: 8px;
+    background: var(--modal-bg);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.45;
+    text-align: left;
+    box-shadow: 0 8px 24px rgba(30, 45, 62, 0.12);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+    z-index: 100;
+}
+
+body.dark-mode .settings-info-hover-wrap .settings-info-tooltip{
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.settings-info-hover-wrap.is-open .settings-info-tooltip{
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Lift the open tooltip's section over the sections below it. */
+#settings-modal .settings-section:has(.settings-info-hover-wrap.is-open){
+    position: relative;
+    z-index: 10;
+}
+
+/* Hover only where there is a pointer: a touch screen keeps :hover after a tap,
+   so there the tap alone opens and closes it (setupSettingsInfoTooltips). */
+@media (hover: hover) {
+    .settings-info-hover-wrap:has(svg:hover) .settings-info-tooltip,
+    .settings-info-hover-wrap:has(.settings-info-btn:focus-visible) .settings-info-tooltip{
+        opacity: 1;
+        visibility: visible;
+    }
+
+    #settings-modal .settings-section:has(.settings-info-hover-wrap svg:hover),
+    #settings-modal .settings-section:has(.settings-info-btn:focus-visible){
+        position: relative;
+        z-index: 10;
+    }
 }
 
 #settings-modal .settings-row-control:has(.language-picker),
@@ -13386,10 +13195,7 @@ body.dark-mode #settings-modal .settings-feedback-footer{
     white-space: nowrap;
 }
 
-body.ios #current-app-version,
-body.android #current-app-version,
-body.ios #settings-latest-version-wrap,
-body.android #settings-latest-version-wrap {
+body.ios #settings-latest-version-wrap {
     display: none;
 }
 
@@ -13520,14 +13326,8 @@ body.dark-mode.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-bu
     font-weight: 600;
 }
 
-/* Auto-start after stop: what "stop" does to this space (Android's
-   "auto re-enable"). Label + hint stack on the left, the menu sits right. */
-#focus-space-editor .unlock-duration-row{
-    align-items: start;
-}
-
-#focus-space-editor .unlock-duration-row .settings-row-hint{
-    max-width: 34ch;
+#focus-space-editor .exit-difficulty-row{
+    grid-template-columns: minmax(min-content, 1fr) auto;
 }
 
 #focus-space-editor .exit-difficulty-row-control .unlock-duration-select{
@@ -13611,6 +13411,11 @@ body.handset-device #override-modal .start-confirm-header-room h3{
     background: var(--container-bg);
 }
 
+/* iPad scales .app-container, so sticky stops above its footer padding. */
+body.ios:not(.ios-phone) #editor-panel-footer{
+    bottom: calc(-1 * var(--app-footer-height) / var(--ui-zoom, 1));
+}
+
 #editor-panel-footer::before{
     content: '';
     position: absolute;
@@ -13618,6 +13423,45 @@ body.handset-device #override-modal .start-confirm-header-room h3{
     z-index: -1;
     background: var(--panel-bg);
     border-radius: 0 0 12px 12px;
+}
+
+/* Once placeEditorFooter (blocking-platform.js) hoists the footer to the bottom of
+   the full-screen sheet it becomes the sheet's footer, like Create focus space:
+   no panel margins or rounded layer, safe-area padding for the home indicator.
+   Keyed on being hoisted rather than on platform, so the phone and narrow-desktop
+   sheets share one rule set instead of drifting apart. */
+#enter-scheduler-modal.mobile-fullscreen-modal .modal-content > #editor-panel-footer{
+    position: static;
+    flex-shrink: 0;
+    margin: 0;
+    padding:
+        12px
+        max(18px, env(safe-area-inset-right, 0px))
+        calc(12px + env(safe-area-inset-bottom, 0px))
+        max(18px, env(safe-area-inset-left, 0px));
+    border-top: 1px solid rgba(225, 220, 214, 0.88);
+    background: var(--app-bg);
+}
+
+#enter-scheduler-modal.mobile-fullscreen-modal .modal-content > #editor-panel-footer::before{
+    display: none;
+}
+
+/* The bar keeps its own box (5794) and the footer grows with it; only its 4px
+   margin-top goes, so it sits centred in the footer. */
+#enter-scheduler-modal.mobile-fullscreen-modal .modal-content > #editor-panel-footer .schedule-pending-bar{
+    margin-top: 0;
+}
+
+#enter-scheduler-modal.mobile-fullscreen-modal .modal-content > #editor-panel-footer .schedule-pending-label{
+    transform: translateY(-1px);
+}
+
+/* The create dialog has its own Cancel / Save. The editor's footer travels in with
+   the form but has nothing to show, and its -16px margin laid an empty strip over
+   the last section. */
+#blocklist-modal #editor-panel-footer{
+    display: none;
 }
 
 /* Clean: no bar, just the Save button — so drop the padding and margin that
@@ -14598,12 +14442,12 @@ body.dark-mode #editor-discard-modal .modal-btn.cancel-btn:hover{
 }
 
 .blocklists-container::-webkit-scrollbar-thumb,
-.schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-thumb{
+.schedule-segments:has(.schedule-segment:nth-child(5))::-webkit-scrollbar-thumb{
     background: var(--scrollbar-thumb);
 }
 
 .blocklists-container::-webkit-scrollbar-thumb:hover,
-.schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-thumb:hover{
+.schedule-segments:has(.schedule-segment:nth-child(5))::-webkit-scrollbar-thumb:hover{
     background: var(--scrollbar-thumb-hover);
 }
 
@@ -14620,66 +14464,57 @@ body.handset-device *::-webkit-scrollbar{
 
 /* Phone exceptions: thin scrollbars on long blocklist / schedule-segment lists */
 body.handset-device .blocklists-container,
-body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4)){
+body.handset-device .schedule-segments:has(.schedule-segment:nth-child(5)){
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 body.handset-device .blocklists-container::-webkit-scrollbar,
-body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar{
+body.handset-device .schedule-segments:has(.schedule-segment:nth-child(5))::-webkit-scrollbar{
     display: block;
     width: 6px;
     height: 6px;
 }
 
 body.handset-device .blocklists-container::-webkit-scrollbar-track,
-body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-track{
+body.handset-device .schedule-segments:has(.schedule-segment:nth-child(5))::-webkit-scrollbar-track{
     background: transparent;
 }
 
 body.handset-device .blocklists-container::-webkit-scrollbar-thumb,
-body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-thumb{
+body.handset-device .schedule-segments:has(.schedule-segment:nth-child(5))::-webkit-scrollbar-thumb{
     background: var(--scrollbar-thumb);
     border-radius: 3px;
 }
 
 body.handset-device .blocklists-container::-webkit-scrollbar-thumb:hover,
-body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-thumb:hover{
+body.handset-device .schedule-segments:has(.schedule-segment:nth-child(5))::-webkit-scrollbar-thumb:hover{
     background: var(--scrollbar-thumb-hover);
 }
 
 /* Non-mobile-phone handsets: larger schedule/time controls; compact day pills fill row when stacked below time. */
-body.handset-device:not(.ios-phone):not(.mobile-phone-home) .main-content .segment-row > .segment-days-group{
-    flex: 1 1 100%;
-    width: 100%;
-    min-width: 100%;
-}
-
 
 body.handset-device .main-content .segment-days{
     gap: 4px;
     align-items: center;
 }
 
-
 body.handset-device .main-content .when-times .segment-days{
     min-height: 34px;
 }
 
+/* Touch-sized, but still a text link rather than a button-shaped card. */
 body.handset-device .main-content .add-segment-btn{
-    gap: 8px;
-    padding: 14px 18px;
+    min-height: 44px;
     font-size: 16px;
-    min-height: 48px;
-    border-radius: 14px;
-    width: auto;
-    box-sizing: border-box;
 }
 
-body.handset-device .main-content .add-segment-btn svg{
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
+body.handset-device .main-content .schedule-segment{
+    --segment-field-h: 44px;
+}
+
+body.handset-device .main-content .segment-time-field{
+    font-size: 17px;
 }
 
 body.handset-device .main-content .schedule-repeat-section,
@@ -14717,36 +14552,12 @@ body.handset-device .main-content .repeat-date-overlay{
     font-size: 16px;
 }
 
-body.handset-device .main-content .time-part{
-    padding: 8px 6px;
-    font-size: 18px;
-    min-width: 44px;
-    min-height: 44px;
-    border-radius: 8px;
-    box-sizing: border-box;
-}
-
-body.handset-device .main-content .when-times .schedule-start-display input.time-part,
-body.handset-device .main-content .when-times .schedule-end-display input.time-part{
-    min-width: 44px;
-    max-width: 56px;
-}
-
 body.handset-device .main-content .now-btn{
     padding: 10px 18px;
     font-size: 16px;
     min-height: 44px;
     border-radius: 10px;
     box-sizing: border-box;
-}
-
-body.handset-device .main-content .when-times .time-picker-row{
-    min-height: 44px;
-}
-
-
-body.handset-device .main-content .time-colon{
-    font-size: 18px;
 }
 
 body.handset-device .main-content .popover-option{
@@ -14780,7 +14591,6 @@ body.handset-device .main-content .repeat-option{
     font-size: 16px;
     min-height: 44px;
 }
-
 
 body.handset-device .modal-overlay .websites-import-menu{
     min-width: 220px;
@@ -15060,6 +14870,81 @@ body.ios-phone #blocklist-modal .custom-swatch .custom-icon{
     font-size: 17px;
 }
 
+.store-review-prompt{
+    position: fixed;
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1995;
+    width: min(420px, calc(100vw - 32px));
+    animation: slideUp 0.3s ease;
+}
+.store-review-prompt.hidden{ display: none; }
+.store-review-prompt-content{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 16px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-card);
+    background: var(--panel-bg);
+    box-shadow: var(--redd-shadow-card-hover);
+    text-align: left;
+}
+.store-review-prompt-top,
+.store-review-prompt-stars,
+.store-review-prompt-actions{ display: flex; align-items: center; }
+.store-review-prompt-top{ justify-content: space-between; gap: 8px; }
+.store-review-prompt-stars{ gap: 2px; color: #e0a100; }
+.store-review-prompt-stars svg{ display: block; fill: currentColor; }
+.store-review-prompt-actions{ flex-wrap: wrap; gap: 12px; margin-top: 2px; }
+.store-review-prompt-dismiss,
+#store-review-no-thanks{
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font: inherit;
+}
+.store-review-prompt-dismiss{
+    display: inline-flex;
+    margin: -4px -6px 0 0;
+    padding: 4px;
+    border-radius: 6px;
+}
+.store-review-prompt-dismiss:hover{
+    background: var(--element-hover-bg);
+    color: var(--text-secondary);
+}
+#store-review-prompt-body{
+    margin: 0;
+    font-family: var(--font-body);
+    font-size: 0.95rem;
+    font-weight: 500;
+    line-height: 1.4;
+    color: var(--text-primary);
+}
+.store-review-leave-link{
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 14px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.25rem;
+    border-radius: 8px;
+    border: 1px solid #005d53;
+    background: #005d53;
+    color: #fff;
+    text-decoration: none;
+}
+.store-review-leave-link:hover{
+    background: #004d45;
+    border-color: #004d45;
+    color: #fff;
+}
+#store-review-no-thanks{ padding: 4px 0; font-size: 0.875rem; font-weight: 500; }
+#store-review-no-thanks:hover{ color: var(--text-secondary); }
+
 /* Undo Toast */
 .undo-toast{
     position: fixed;
@@ -15083,8 +14968,7 @@ body.ios-phone #blocklist-modal .custom-swatch .custom-icon{
     animation: slideUp 0.3s ease;
 }
 
-body.ios .undo-toast,
-body.android .undo-toast {
+body.ios .undo-toast {
     bottom: calc(20px + env(safe-area-inset-bottom, 20px));
 }
 
@@ -15187,8 +15071,7 @@ body.dark-mode .undo-btn:hover{
     animation: zoomToastIn 0.18s ease;
 }
 
-body.ios .zoom-toast,
-body.android .zoom-toast {
+body.ios .zoom-toast {
     top: calc(20px + env(safe-area-inset-top, 20px));
 }
 
@@ -16387,13 +16270,54 @@ body.dark-mode .app-blocking-warning-card{
    ═══════════════════════════════════════════════════════════════════════ */
 .editor-panel-header{
     display: flex;
-    align-items: center;
+    /* A wrapping title grows downward; the buttons stay put. */
+    align-items: flex-start;
     justify-content: space-between;
     gap: 8px;
     min-width: 0;
-    /* A little air between the header and the "Focus space name" eyebrow:
-       the container's 16px gap, pulled up 2px. */
-    margin-bottom: -2px;
+    /* The row is as tall as the 34px action buttons, so the container's 16px
+       gap alone leaves the title ~21px above the "Focus space name" eyebrow.
+       Pull up 11px: ~12px from title text to eyebrow. */
+    margin-bottom: -11px;
+}
+
+/* Turn back on after: label and dropdown on one line, the hint full width below. */
+#unlock-duration-row{
+    display: grid;
+    grid-template-columns: minmax(min-content, 1fr) auto;
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 4px;
+}
+#unlock-duration-row > .settings-row-copy{
+    display: contents;
+}
+#unlock-duration-hint{
+    grid-column: 1 / -1;
+    grid-row: 2;
+}
+#unlock-duration-row > .settings-row-control{
+    grid-column: 2;
+    grid-row: 1;
+}
+
+.title-name-unbroken{
+    word-break: break-all;
+}
+
+/* First title line centred on the 34px action buttons. */
+.editor-panel-title,
+#enter-scheduler-modal .mobile-modal-header--with-actions .mobile-modal-title-source{
+    padding-top: max(0px, calc((34px - 1lh) / 2));
+}
+#enter-scheduler-modal .mobile-modal-header--with-actions{
+    align-items: start;
+}
+.editor-panel-title,
+.mobile-modal-title-source,
+.modal-content h2,
+.modal-content h3{
+    overflow-wrap: anywhere;
 }
 
 .editor-panel-title{
@@ -16573,7 +16497,12 @@ body.dark-mode .app-blocking-warning-card{
 .editor-segmented--compact .editor-segmented-btn{
     flex: 0 0 auto;
     padding: 6px 12px;
-    font-size: 13px;
+    font-size: 15px;
+}
+
+body.ios:not(.ios-phone) .editor-segmented--compact .editor-segmented-btn{
+    padding: 8px 14px;
+    font-size: 16px;
 }
 
 /* The compact toggle is a detail inside a section ("Until"), not the section's
@@ -16603,8 +16532,8 @@ body.dark-mode .app-blocking-warning-card{
     display: none;
 }
 
-/* "Until" is a heading over its buttons, like Start time / End time, with a
-   clear break from the times above it. */
+/* "Until" is a heading over its buttons, with a clear break from the times
+   above it. */
 .when-until{
     display: flex;
     align-items: center;
@@ -16612,7 +16541,7 @@ body.dark-mode .app-blocking-warning-card{
     flex-wrap: wrap;
     padding-top: 12px;
     /* Same inset as the segment's own content, so "Until" lines up with
-       "Start time" rather than sitting proud of it. */
+       the time fields rather than sitting proud of them. */
     padding-left: var(--schedule-segment-pad-x, 14px);
     padding-right: var(--schedule-segment-pad-x, 14px);
 }
@@ -16854,6 +16783,38 @@ body.dark-mode .editor-panel-action-btn--delete:hover{
 
 #enter-scheduler-modal .editor-panel-title{
     display: none;
+}
+
+/* Once openEnterSchedulerModal has moved Duplicate / Delete into the sheet's
+   title bar, the in-form header row is empty: drop it, and drop the handset
+   header's spacer so the actions take the third grid column instead. */
+#enter-scheduler-modal .editor-panel-header:not(:has(.editor-panel-actions)){
+    display: none;
+}
+
+#enter-scheduler-modal .mobile-modal-header--with-actions::after{
+    content: none;
+}
+
+body:not(.handset-device) #enter-scheduler-modal .mobile-modal-header--with-actions .editor-panel-actions{
+    margin-right: -6px;
+}
+
+/* With the actions gone from the form, the "Name" eyebrow is the first thing
+   under the title bar; the sheets' shared 18px top padding (plus the label's
+   own 4px) reads as a gap there. !important to beat the desktop sheet padding
+   shorthand, which carries one to defeat the popup scrollbar hack, and to
+   out-specify its :is(...) form inside the ≤718px query. */
+#enter-scheduler-modal .mobile-modal-header--with-actions + .mobile-modal-scroll-body,
+body:not(.handset-device):not(.ios) #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header--with-actions + .mobile-modal-scroll-body{
+    padding-top: 14px !important;
+}
+
+/* The handset header bleeds 18px past each side to cover a padded parent this
+   sheet does not have; harmless on the left, but it would push the actions
+   flush against the screen edge. */
+body.handset-device #enter-scheduler-modal .mobile-modal-header--with-actions{
+    margin-right: 0;
 }
 
 .editor-panel-title-group{

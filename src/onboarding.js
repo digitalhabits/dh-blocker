@@ -31,7 +31,7 @@ export function isLocalDevRun() {
 export async function resetDevOnlyEulaAcceptance() {
     // Mobile debug builds run through Vite too, but they should behave like
     // installed apps here: once the EULA is accepted, keep respecting it.
-    state.forceShowEulaThisSession = !state.isIOS && !state.isAndroid && isLocalDevRun();
+    state.forceShowEulaThisSession = !state.isIOS && isLocalDevRun();
 }
 
 export function getAcceptedEulaRevision() {
@@ -124,7 +124,7 @@ export async function runInitialOnboardingSequence() {
         updateOnboardingVisibility();
         return;
     }
-    if (!state.isIOS && !state.isAndroid) {
+    if (!state.isIOS) {
         if (shouldShowRebrandNotice()) {
             await presentRebrandNotice();
         } else if (!hasSeenRebrandNotice()) {
@@ -154,7 +154,7 @@ export function hasSeenRebrandNotice() {
 }
 
 export function shouldShowRebrandNotice() {
-    if (state.isIOS || state.isAndroid) return false;
+    if (state.isIOS) return false;
     return hasSeenAnyOnboarding() && !hasSeenRebrandNotice();
 }
 
@@ -413,7 +413,7 @@ function wireMigrationFinishDelegation() {
 
 export async function runDesktopOnboarding() {
     if (__SYSTEM_TEST_BUILD__) return;
-    if (state.isIOS || state.isAndroid) return;
+    if (state.isIOS) return;
     try {
         const pendingAtLaunch = await invoke('migration_pending');
         const wasUpgrade = await invoke('migration_was_pending_at_launch');
@@ -610,18 +610,36 @@ export function setupMacAutomationIntroModal() {
     });
 }
 
+export function windowsBrowserSetupIsAutomatic(browsers) {
+    const keys = browsers
+        ? ['chrome', 'edge', 'brave', 'firefox'].filter(key => browsers[key]?.installed)
+        : ['chrome', 'edge', 'brave', 'firefox'];
+    return state.isWindowsDesktop
+        && keys.length > 0 && keys.every(key => browserUsesAutomation(key, browsers?.[key]));
+}
+
 export async function ensureExtensionSetupOnboardingShown() {
-    if (state.isIOS || state.isAndroid || state.migrationOnboardingActive) return;
+    if (state.isIOS || state.migrationOnboardingActive) return;
     if (safariUsesExtensionMode()) {
         await ensureSafariExtensionFdaBeforeSetup();
     }
     const dismissed = localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
     if (!state.firstRunExtensionSetupPending && (dismissed || state.migrationOnboardingDismissed)) return;
+    // Explicit Windows Automation choices require no browser setup action.
+    // Complete the same startup/persistence work without showing a checklist.
+    if (windowsBrowserSetupIsAutomatic()) {
+        await finishExtensionSetup();
+        return;
+    }
     try {
         if (state.firstRunExtensionSetupPending) {
             state.migrationOnboardingDismissed = false;
         }
         const onboardingState = await invoke('onboarding_state');
+        if (windowsBrowserSetupIsAutomatic(onboardingState?.browsers)) {
+            await finishExtensionSetup();
+            return;
+        }
         await showMigrationOnboarding('post', onboardingState, { mode: 'fresh' });
     } catch (e) {
         console.warn('[onboarding] extension setup overlay failed:', e);
@@ -684,6 +702,10 @@ export async function showMigrationOnboarding(phase, onboardingState, opts = {})
     } catch (e) {
         console.error('[migration] overlay wiring failed:', e);
     }
+    // Open at the top, not wherever the last visit (or the rows rendering in) left the scroll.
+    const toTop = () => [screen, ...screen.querySelectorAll('.migration-card')].forEach(el => { el.scrollTop = 0; });
+    toTop();
+    requestAnimationFrame(toTop);
 
     // Bring our window back to the front. The osascript admin
     // prompt steals focus, and on macOS we run as a menu-bar
@@ -700,7 +722,6 @@ export async function showMigrationOnboarding(phase, onboardingState, opts = {})
     await focusBack();
     setTimeout(focusBack, 250);
 }
-
 
 export function pauseMigrationOnboardingForBackNavigation() {
     document.getElementById('migration-onboarding')?.classList.add('hidden');

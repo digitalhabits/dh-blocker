@@ -6,21 +6,22 @@
  * sections (headings + bullets) filtered by platform tags. Strips markdown
  * and tags. Legacy ### BY PLATFORM nesting still works.
  *
- *   node scripts/changelog-to-store-whats-new.js <version> --platform windows|macos|ios|android [--empty-ok] [--out file]
+ *   node scripts/changelog-to-store-whats-new.js <version> --platform windows|macos|ios [--empty-ok] [--out file]
  */
 
 const fs = require('fs');
 const path = require('path');
 
-const GITHUB_REPO_URL = 'https://github.com/ulyngs/digital-habits-blocker';
+const GITHUB_REPO_URL = 'https://github.com/digitalhabits/dh-blocker';
 const DEFAULT_INTRO = 'This update comes with some helpful improvements.';
+// Keep historical Android tags recognizable, but do not offer an Android export.
 const PLATFORM_TAG_RE = /^\[(desktop|macos|windows|ios|android)\]\s*/i;
 
-const MAX_CHARS = { windows: 10000, macos: 10000, mac: 10000, ios: 4000, android: 4000 };
+const MAX_CHARS = { windows: 10000, macos: 10000, mac: 10000, ios: 4000 };
 
 function usage() {
   console.error(
-    'usage: node scripts/changelog-to-store-whats-new.js <version> [changelog.md] --platform windows|macos|ios|android [--empty-ok] [--out file]',
+    'usage: node scripts/changelog-to-store-whats-new.js <version> [changelog.md] --platform windows|macos|ios [--empty-ok] [--out file]',
   );
   process.exit(1);
 }
@@ -29,7 +30,7 @@ function normalizePlatform(raw) {
   const p = (raw || '').toLowerCase();
   if (p === 'mac' || p === 'macos' || p === 'osx') return 'macos';
   if (p === 'win' || p === 'windows') return 'windows';
-  if (p === 'ios' || p === 'android') return p;
+  if (p === 'ios') return p;
   return null;
 }
 
@@ -121,7 +122,6 @@ function legacyScopeMatchesPlatform(scope, platform) {
   if (scope === 'shared') return true;
   if (scope === 'internal' || scope === 'by-platform') return false;
   if (platform === 'ios') return scope === 'ios';
-  if (platform === 'android') return scope === 'android';
   if (platform === 'windows') return scope === 'desktop' || scope === 'windows';
   if (platform === 'macos') return scope === 'desktop' || scope === 'macos';
   return false;

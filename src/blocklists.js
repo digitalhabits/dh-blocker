@@ -10,8 +10,8 @@ import { ask, message, open as openDialog, save as saveDialog } from '@tauri-app
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { escapeHtml, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
-import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, isAllowlistBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist } from './blocklist-utils.js';
-import { computeNextOneShotOccurrenceMs, computeNextRepeatingOccurrenceMs, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow } from './schedule-engine.js';
+import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, healWwwWebsiteEntries, isAllowlistBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist } from './blocklist-utils.js';
+import { computeNextOneShotOccurrenceMs, computeNextRepeatingOccurrenceMs, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render, renderScheduleVisibilityChips } from './render.js';
 import { isFocusSpaceOn, setFocusSpaceEnabled } from './focus-space-switch.js';
@@ -21,7 +21,7 @@ import {
     generateId,
 } from './app.js';
 import { buildBlocklistCardMetaHtml, buildBlocklistCardDetailsHtml, blocklistCardHasExpandableSummary } from './list-presentation.js';
-import { cloneOverrideDifficulty, deselectBlocklist, handleBlocklistSelect, isBlocklistCardVisuallySelected, isEnterSchedulerModalOpen, openBlocklistModal } from './confirm-modals.js';
+import { cancelIOSRestart, cloneOverrideDifficulty, deselectBlocklist, handleBlocklistSelect, isBlocklistCardVisuallySelected, isEnterSchedulerModalOpen, openBlocklistModal } from './confirm-modals.js';
 import { appBlockingWarningSnoozedUntilMs, formatAppBlockingSnoozeStartsIn, getActiveAppBlockingSnoozeBlocklistIds } from './blocking-platform.js';
 
 function getVisibleBlocklists() {
@@ -50,6 +50,14 @@ function setBlocklistCardExpanded(card, id, expanded) {
 
 function toggleBlocklistCardExpanded(card, id) {
     setBlocklistCardExpanded(card, id, !expandedBlocklistCardIds.has(id));
+}
+
+/** Expand a card's sites/apps summary, if it has one. */
+export function expandBlocklistCard(id) {
+    const card = document.querySelector(`.blocklist-card[data-id="${id}"]`);
+    if (!card?.querySelector('.blocklist-card-details')) return;
+    setBlocklistCardExpanded(card, id, true);
+    card.scrollIntoView({ block: 'nearest' });
 }
 
 async function openBlocklistEnterFromCard(blocklistId) {
@@ -97,11 +105,12 @@ function buildBlocklistCardStatusLine(bl, now = Date.now()) {
     const manualAutoStarts = kind === 'manual' && !!block && getBlocklistUnlockMinutes(bl) > 0;
     const timing = manualAutoStarts ? tSettings('whenManualShort') : formatScheduleWhenSummary(kind, schedule);
     const fullTiming = manualAutoStarts ? timing : formatScheduleWhenSummary(kind, schedule, { full: true });
-    // 24-hour HH:MM, matching the schedule times on the same line.
+    // 24-hour HH:MM, matching the schedule times on the same line. Strictness caps a pause at 24 h, so it ends today or tomorrow.
     const pausedUntil = (pauseEndTime) => {
         const d = new Date(pauseEndTime);
         const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-        return tSettingsFmt('cardStatusPausedUntilFmt', { time: hhmm });
+        const key = d.toDateString() === new Date(now).toDateString() ? 'cardStatusPausedUntilFmt' : 'cardStatusPausedUntilTomorrowFmt';
+        return tSettingsFmt(key, { time: hhmm });
     };
 
     let status = null;
@@ -519,6 +528,7 @@ export function normalizeImportedBlocklist(raw) {
 }
 
 export function parseBlocklistsImportPayload(text) {
+    if (text.length > 5_000_000) throw new Error('blocklist file too large');
     const parsed = JSON.parse(text);
     // Files written before overrideCountUnit existed came from a desktop that
     // stored character targets (phones already stored words). Only a count
@@ -548,7 +558,7 @@ export function uniqueImportedBlocklistName(desiredName) {
 }
 
 export function blocklistFromImportedEntry(entry) {
-    return {
+    const blocklist = {
         id: generateId(),
         name: uniqueImportedBlocklistName(entry.name),
         mode: entry.mode || 'blocklist',
@@ -562,6 +572,9 @@ export function blocklistFromImportedEntry(entry) {
         overrideDifficulty: cloneOverrideDifficulty(entry.overrideDifficulty),
         unlockMinutes: normalizeUnlockMinutes(entry.unlockMinutes),
     };
+    // Same www. clean-up as typed sites: iOS hands stored entries to Screen Time as-is.
+    healWwwWebsiteEntries([blocklist]);
+    return blocklist;
 }
 
 export async function exportBlocklistsToFile() {
@@ -742,8 +755,9 @@ export async function deleteBlocklist(id) {
 
     // Check if this blocklist has an active block or schedule running
     const now = Date.now();
+    // A Manual space stopped until a set time reads off, so it can go like any off space.
     const hasActiveBlock = state.appData.activeBlocks.some(
-        block => block.blocklistId === id && block.startTime <= now && block.endTime > now
+        block => block.blocklistId === id && block.startTime <= now && block.endTime > now && !isOneOffPauseActive(block, now)
     );
     // Deliberately NOT isBlocklistEditFrictionRequired: deleting is refused for
     // any schedule that is switched on, with no allowEditsBetweenBlocks
@@ -780,6 +794,8 @@ export async function deleteBlocklist(id) {
     state.appData.schedules = (state.appData.schedules || []).filter(s => s.blocklistId !== id);
     expandedBlocklistCardIds.delete(id);
     void saveData();
+    // iOS: drop the space's monitors and start warnings now, not on the next tick.
+    if (state.isIOS) void syncSchedulesToHelper();
 
     // If the deleted blocklist was the selected one, reset the scheduler UI
     if (state.selectedBlocklistId === id) {
@@ -809,6 +825,8 @@ export async function deleteBlocklist(id) {
 export function commitDelete() {
     if (!pendingDelete) return;
 
+    // Only once undo is gone: an undone delete keeps its stopped space's restart.
+    pendingDelete.activeBlocks.forEach((block) => void cancelIOSRestart(block));
     if (pendingDelete.activeBlocks.length > 0) {
         updateHostsFile();
     }

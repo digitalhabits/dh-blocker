@@ -160,7 +160,8 @@ pub fn is_msix_packaged_exe_path(_path: &std::path::Path) -> bool {
 }
 
 /// Path the native-messaging manifest should reference right now.
-/// Does not copy files — safe to call from hot paths like profile scan.
+/// Repairs a missing or outdated staged executable; otherwise only reads
+/// metadata, so current installations are cheap to check during profile scans.
 #[cfg(target_os = "windows")]
 fn host_binary_path_for_manifest() -> std::io::Result<String> {
     let source = std::env::current_exe().map_err(|e| std::io::Error::other(e.to_string()))?;
@@ -169,7 +170,13 @@ fn host_binary_path_for_manifest() -> std::io::Result<String> {
             .ok_or_else(|| std::io::Error::other("cannot resolve LOCALAPPDATA"))?;
         let dest_exe = dest_dir.join(STAGED_NATIVE_HOST_EXE);
         if dest_exe.exists() {
-            if staged_copy_stale(&source, &dest_exe) {
+            // The whole top level, not just the exe: the host also needs
+            // the DLLs beside it, and status polls are now the only cheap
+            // path that would notice one going missing.
+            if source
+                .parent()
+                .map_or(true, |install_dir| stage_is_stale(install_dir, &dest_dir))
+            {
                 ensure_staged_native_host(&source)?;
             }
             return dest_exe
@@ -216,6 +223,36 @@ fn staged_copy_stale(source_exe: &std::path::Path, dest_exe: &std::path::Path) -
         }
         _ => true,
     }
+}
+
+/// Metadata-only check of the MSIX staging dir against the install dir: a
+/// top-level file missing, resized or older than its source, or a top-level
+/// directory missing. Directory contents are not walked; a restage recopies
+/// them wholesale anyway. An unreadable install dir counts as stale, so the
+/// caller falls back to restaging rather than vouching for a copy it could
+/// not compare.
+#[cfg(target_os = "windows")]
+fn stage_is_stale(install_dir: &std::path::Path, stage_dir: &std::path::Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(install_dir) else {
+        return true;
+    };
+    for entry in entries {
+        let Ok(entry) = entry else {
+            return true;
+        };
+        let Ok(ft) = entry.file_type() else {
+            return true;
+        };
+        let staged = stage_dir.join(entry.file_name());
+        if ft.is_dir() {
+            if !staged.is_dir() {
+                return true;
+            }
+        } else if ft.is_file() && staged_copy_stale(&entry.path(), &staged) {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(target_os = "windows")]
@@ -349,16 +386,26 @@ pub fn native_host_is_current(browser: BrowserTarget) -> bool {
     if !windows_registry_points_at_manifest(browser, &manifest_path) {
         return false;
     }
-    let Ok(manifest_binary) = manifest_binary_path() else {
-        return false;
-    };
-    let Ok(raw) = std::fs::read_to_string(&manifest_path) else {
+    manifest_is_current_at(browser, &expected, &manifest_path)
+}
+
+#[cfg(target_os = "windows")]
+fn manifest_is_current_at(
+    browser: BrowserTarget,
+    expected: &str,
+    manifest_path: &std::path::Path,
+) -> bool {
+    // The caller already resolved (and, if stale, repaired) the host. Do
+    // not call manifest_binary_path here: on MSIX that is an installation
+    // operation which deletes and recopies resource directories on every
+    // status poll, even when the native host is already current.
+    let Ok(raw) = std::fs::read_to_string(manifest_path) else {
         return false;
     };
     let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) else {
         return false;
     };
-    val == manifest_body(browser, &manifest_binary)
+    val == manifest_body(browser, expected)
 }
 
 #[cfg(target_os = "windows")]
@@ -402,6 +449,15 @@ pub fn native_host_is_current(_browser: BrowserTarget) -> bool {
 /// hits a Reinstall hints button in the UI), use [`install_force`].
 // macOS Firefox setup is manual; native-host manifests are synced separately
 // for the Chromium browsers that explicitly use extension mode.
+//
+// A Windows dev build must not register its own exe. Chrome keeps that
+// process running, which locks the file the next build replaces and
+// takes the store app's host registration. MSIX still stages a copy
+// outside WindowsApps and registers that.
+fn dev_build_leaves_native_host_alone() -> bool {
+    cfg!(all(target_os = "windows", debug_assertions))
+}
+
 #[cfg(target_os = "macos")]
 pub fn install() -> std::io::Result<()> {
     log::info!("native_host_install::install() skipped on macOS — Firefox setup is manual");
@@ -410,6 +466,10 @@ pub fn install() -> std::io::Result<()> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn install() -> std::io::Result<()> {
+    if dev_build_leaves_native_host_alone() {
+        log::info!("native-host install skipped: dev build");
+        return Ok(());
+    }
     let binary =
         current_binary_path().ok_or_else(|| std::io::Error::other("cannot resolve current exe"))?;
 
@@ -454,6 +514,10 @@ pub fn install() -> std::io::Result<()> {
 /// Install the native-messaging manifest for one browser. Used when the
 /// user opts into extension mode on macOS Chromium.
 pub fn install_native_host_for(browser: BrowserTarget) -> std::io::Result<()> {
+    if dev_build_leaves_native_host_alone() {
+        log::info!("native-host install for {browser:?} skipped: dev build");
+        return Ok(());
+    }
     let binary = manifest_binary_path()?;
     install_one(browser, &binary)
 }
@@ -577,6 +641,10 @@ pub fn install_force() -> std::io::Result<()> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn install_force() -> std::io::Result<()> {
+    if dev_build_leaves_native_host_alone() {
+        log::info!("native-host install skipped: dev build");
+        return Ok(());
+    }
     let binary =
         current_binary_path().ok_or_else(|| std::io::Error::other("cannot resolve current exe"))?;
     log::info!("tcc-probe: native_host_install::install_force() entered, binary={binary}");
@@ -906,7 +974,7 @@ fn delete_hkcu_key(path: &str) -> std::io::Result<()> {
 }
 
 #[cfg(target_os = "windows")]
-fn to_wide(s: &str) -> Vec<u16> {
+pub(crate) fn to_wide(s: &str) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
     std::ffi::OsStr::new(s)
         .encode_wide()
@@ -946,4 +1014,96 @@ pub fn ensure_firefox_native_host() -> Result<(), String> {
 #[tauri::command]
 pub fn uninstall_native_host() -> Result<(), String> {
     uninstall().map_err(|e| e.to_string())
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stage_missing_a_dll_is_stale() {
+        let root = std::env::temp_dir().join(format!(
+            "native-host-stage-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let install = root.join("install");
+        let stage = root.join("stage");
+        std::fs::create_dir_all(install.join("resources")).unwrap();
+        std::fs::write(install.join(STAGED_NATIVE_HOST_EXE), b"exe").unwrap();
+        std::fs::write(install.join("WebView2Loader.dll"), b"dll").unwrap();
+        std::fs::write(install.join("resources").join("a.txt"), b"a").unwrap();
+        sync_install_dir_to_stage(&install, &stage).unwrap();
+        assert!(!stage_is_stale(&install, &stage));
+
+        std::fs::remove_file(stage.join("WebView2Loader.dll")).unwrap();
+        assert!(stage_is_stale(&install, &stage), "missing DLL");
+        sync_install_dir_to_stage(&install, &stage).unwrap();
+        assert!(!stage_is_stale(&install, &stage));
+
+        std::fs::write(stage.join("WebView2Loader.dll"), b"truncated-or-other").unwrap();
+        assert!(stage_is_stale(&install, &stage), "resized DLL");
+        sync_install_dir_to_stage(&install, &stage).unwrap();
+
+        std::fs::remove_dir_all(stage.join("resources")).unwrap();
+        assert!(stage_is_stale(&install, &stage), "missing resource dir");
+
+        assert!(stage_is_stale(&root.join("no-such-install"), &stage));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn status_checks_use_the_resolved_host_without_restaging() {
+        let root = std::env::temp_dir().join(format!(
+            "native-host-status-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let manifest = root.join("host.json");
+        // A previously resolved MSIX staging path, deliberately distinct
+        // from this test runner. Checking it must not resolve/stage again.
+        let expected = root.join("redd-block.exe");
+        let expected = expected.to_str().unwrap();
+        for browser in BrowserTarget::all() {
+            let body = manifest_body(browser, expected);
+            std::fs::write(&manifest, body.to_string()).unwrap();
+            assert!(manifest_is_current_at(browser, expected, &manifest));
+            assert!(manifest_is_current_at(browser, expected, &manifest));
+            assert_eq!(
+                std::fs::read_to_string(&manifest).unwrap(),
+                body.to_string()
+            );
+
+            assert!(!manifest_is_current_at(browser, "C:\\wrong.exe", &manifest));
+            let mut wrong_origin = body;
+            let field = if matches!(browser, BrowserTarget::Firefox) {
+                "allowed_extensions"
+            } else {
+                "allowed_origins"
+            };
+            wrong_origin[field] = json!([]);
+            std::fs::write(&manifest, wrong_origin.to_string()).unwrap();
+            assert!(!manifest_is_current_at(browser, expected, &manifest));
+        }
+        std::fs::write(&manifest, "invalid JSON").unwrap();
+        assert!(!manifest_is_current_at(
+            BrowserTarget::Chrome,
+            expected,
+            &manifest
+        ));
+        std::fs::remove_file(&manifest).unwrap();
+        assert!(!manifest_is_current_at(
+            BrowserTarget::Chrome,
+            expected,
+            &manifest
+        ));
+        std::fs::remove_dir(&root).unwrap();
+    }
 }

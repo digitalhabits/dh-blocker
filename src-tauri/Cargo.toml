@@ -1,10 +1,10 @@
 [package]
 name = "redd-block"
-version = "3.8.11"
+version = "3.11.0"
 description = "Digital Habits: Blocker"
 authors = ["Centre for Digital Habits <team@digitalhabits.org>"]
 license = "CC-BY-NC-ND-3.0"
-repository = "https://github.com/ulyngs/digital-habits-blocker"
+repository = "https://github.com/digitalhabits/dh-blocker"
 edition = "2021"
 rust-version = "1.77.2"
 
@@ -19,12 +19,6 @@ debug = 1
 
 [profile.release]
 incremental = false
-# Strip the symbol table from release binaries. This is not redundant with the
-# Android build: AGP's `strip<Variant>DebugSymbols` task runs the equivalent of
-# `llvm-strip --strip-debug`, which only removes DWARF sections — and a Cargo
-# release build emits none, so the task is a no-op while `.symtab`/`.strtab`
-# ride along into the APK. Measured on 3.8.9, that was 4.19 MB of the 13.96 MB
-# arm64 library, and 12.9 MB across the four ABIs of the universal APK.
 strip = true
 
 [lib]
@@ -92,7 +86,10 @@ libc = "0.2"
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"
 core-foundation = "0.10.1"
-core-graphics = "0.25.0"
+# `elcapitan` gates CGEventPostToPid, which the Firefox Accessibility
+# redirect uses to send keystrokes to one browser without activating it.
+# The app requires macOS 11+, so the gate is always satisfied.
+core-graphics = { version = "0.25.0", features = ["elcapitan"] }
 objc = "0.2"
 objc2-foundation = { version = "0.3", default-features = false, features = ["NSError", "NSFileManager", "NSString", "NSURL"] }
 plist = "1"
@@ -106,14 +103,13 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.
 [target.'cfg(target_os = "ios")'.dependencies]
 tauri-plugin-screentime = { path = "../tauri-plugin-screentime" }
 
-[target.'cfg(target_os = "android")'.dependencies]
-tauri-plugin-android-blocker = { path = "../tauri-plugin-android-blocker" }
-
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.61", features = [
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_Accessibility",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_HiDpi",
   "Win32_Foundation",
   "Win32_Security",
   "Win32_System_Threading",
@@ -121,8 +117,14 @@ windows = { version = "0.61", features = [
   "Win32_System_LibraryLoader",
   "Win32_System_ProcessStatus",
   "Win32_System_Time",
+  "Win32_System_Power",
+  "Win32_System_RemoteDesktop",
+  "Win32_System_SystemServices",
+  "Win32_Graphics_Gdi",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_Com",
+  "Win32_System_Ole",
+  "Win32_System_Variant",
   "Win32_Storage_FileSystem",
 ] }
 
@@ -130,7 +132,7 @@ windows = { version = "0.61", features = [
 sysinfo = "0.33"
 tauri-plugin-notification = "2"
 
-[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+[target.'cfg(not(target_os = "ios"))'.dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["fs", "io-util"] }

@@ -35,8 +35,13 @@ use serde_json::Value;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
 
+/// The app writes a browser key here to ask that browser's extension to open
+/// its own chrome://extensions page: Chromium drops such URLs from the command line.
+pub const OPEN_SETTINGS_FILE: &str = "open-extension-settings";
+
 enum HostEvent {
     Refresh,
+    OpenSettings,
     Recv(String),
     StdinClosed,
     StdinError(String),
@@ -72,11 +77,13 @@ pub fn run() -> ! {
     #[cfg(target_os = "windows")]
     crate::windows_process::set_native_host_process_directory();
 
+    // `browser=` stays last: diagnostics reads everything after it.
+    let launcher = launching_browser();
     log_to_file(&format!(
-        "spawned pid={} exe={:?} argv={:?}",
+        "spawned pid={} exe={:?} argv={:?} browser={launcher}",
         std::process::id(),
         std::env::current_exe().ok(),
-        std::env::args().collect::<Vec<_>>()
+        std::env::args().collect::<Vec<_>>(),
     ));
 
     let data_path = match resolve_data_path() {
@@ -89,7 +96,7 @@ pub fn run() -> ! {
 
     // Push once on connect.
     let (domains, blocks) = derive_payload(&data_path);
-    send_payload(&domains, &blocks);
+    send_payload(&domains, &blocks, false);
 
     // Background refresh: file-watch + 30 s poll. Read stdin on its
     // own thread so native-host updates do not depend on the extension
@@ -98,7 +105,12 @@ pub fn run() -> ! {
     // would otherwise prevent pause/stop updates from ever being
     // pushed until the browser writes something.
     let (tx, rx) = mpsc::channel::<HostEvent>();
-    spawn_file_watcher(&data_path, tx.clone());
+    let settings_path = data_path.with_file_name(OPEN_SETTINGS_FILE);
+    // Blocklist edits are fine at 2 s. The settings request is polled fast:
+    // the app's foreground grant only lasts until the user's next input.
+    let (slow, fast) = (Duration::from_secs(2), Duration::from_millis(250));
+    spawn_file_watcher(&data_path, slow, tx.clone(), || HostEvent::Refresh);
+    spawn_file_watcher(&settings_path, fast, tx.clone(), || HostEvent::OpenSettings);
     spawn_poller(tx.clone());
     spawn_stdin_reader(tx);
 
@@ -109,7 +121,14 @@ pub fn run() -> ! {
             Ok(HostEvent::Refresh) => {
                 log_to_file("refresh signal; deriving payload");
                 let (domains, blocks) = derive_payload(&data_path);
-                send_payload(&domains, &blocks);
+                send_payload(&domains, &blocks, false);
+            }
+            // A full payload, not a bare flag: older extensions replace their
+            // rules with whatever a frame carries.
+            Ok(HostEvent::OpenSettings) => {
+                let key = std::fs::read_to_string(&settings_path).unwrap_or_default();
+                let (domains, blocks) = derive_payload(&data_path);
+                send_payload(&domains, &blocks, opens_settings_for(&key, &launcher));
             }
             Ok(HostEvent::Recv(s)) => {
                 log_to_file(&format!("recv: {s}"));
@@ -130,6 +149,83 @@ pub fn run() -> ! {
     }
 }
 
+/// The browser that launched us. Chromium on Windows goes through
+/// `cmd.exe /d /s /c`, so step over it; Firefox (and macOS) launch directly.
+/// "unknown" when a parent has gone or its PID was reused (it started after us).
+fn launching_browser() -> String {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+    );
+    let mut pid = Pid::from_u32(std::process::id());
+    for _ in 0..2 {
+        let Some(child) = sys.process(pid) else { break };
+        let Some(parent) = child.parent().and_then(|p| sys.process(p)) else {
+            break;
+        };
+        if parent.start_time() > child.start_time() {
+            break;
+        }
+        let name = parent.name().to_string_lossy().to_lowercase();
+        if name != "cmd.exe" {
+            return format!("{name}{}", exe_version(parent.exe()));
+        }
+        pid = parent.pid();
+    }
+    "unknown".into()
+}
+
+#[cfg(target_os = "windows")]
+fn exe_version(exe: Option<&std::path::Path>) -> String {
+    use windows::core::{w, PCWSTR};
+    use windows::Win32::Storage::FileSystem::{
+        GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW, VS_FIXEDFILEINFO,
+    };
+    let Some(exe) = exe else {
+        return String::new();
+    };
+    let path = crate::native_host_install::to_wide(&exe.to_string_lossy());
+    unsafe {
+        let size = GetFileVersionInfoSizeW(PCWSTR(path.as_ptr()), None);
+        let mut buf = vec![0u8; size as usize];
+        if size == 0
+            || GetFileVersionInfoW(PCWSTR(path.as_ptr()), None, size, buf.as_mut_ptr().cast())
+                .is_err()
+        {
+            return String::new();
+        }
+        let (mut info, mut len) = (std::ptr::null_mut(), 0u32);
+        if !VerQueryValueW(buf.as_ptr().cast(), w!("\\"), &mut info, &mut len).as_bool()
+            || info.is_null()
+        {
+            return String::new();
+        }
+        let f = &*(info as *const VS_FIXEDFILEINFO);
+        let (ms, ls) = (f.dwProductVersionMS, f.dwProductVersionLS);
+        format!(" {}.{}.{}.{}", ms >> 16, ms & 0xffff, ls >> 16, ls & 0xffff)
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn exe_version(_exe: Option<&std::path::Path>) -> String {
+    String::new()
+}
+
+/// The extension only sends small messages; refuse larger ones before allocating.
+const MAX_INBOUND_BYTES: usize = 1 << 20;
+
+fn read_payload(reader: &mut impl Read, len: usize) -> std::io::Result<Vec<u8>> {
+    if len > MAX_INBOUND_BYTES {
+        return Err(std::io::Error::other("message too large"));
+    }
+    let mut payload = vec![0u8; len];
+    reader.read_exact(&mut payload)?;
+    Ok(payload)
+}
+
 fn spawn_stdin_reader(tx: mpsc::Sender<HostEvent>) {
     std::thread::spawn(move || {
         let stdin = std::io::stdin();
@@ -148,11 +244,13 @@ fn spawn_stdin_reader(tx: mpsc::Sender<HostEvent>) {
                 }
             }
             let len = u32::from_le_bytes(len_buf) as usize;
-            let mut payload = vec![0u8; len];
-            if let Err(e) = stdin_lock.read_exact(&mut payload) {
-                let _ = tx.send(HostEvent::StdinError(format!("payload: {e}")));
-                return;
-            }
+            let payload = match read_payload(&mut stdin_lock, len) {
+                Ok(payload) => payload,
+                Err(e) => {
+                    let _ = tx.send(HostEvent::StdinError(format!("payload: {e}")));
+                    return;
+                }
+            };
 
             // We accept but don't currently act on extension -> host
             // messages beyond logging. Heartbeats from the extension
@@ -171,17 +269,8 @@ fn spawn_stdin_reader(tx: mpsc::Sender<HostEvent>) {
 /// website domains belong there. `blocks` is additive, so allowlist-only
 /// website sessions intentionally serialize as an empty flat `blocklist` plus
 /// one or more allowlist entries in `blocks`.
-fn send_payload(domains: &[String], blocks: &[BlockInfo]) {
-    #[derive(Serialize)]
-    struct Msg<'a> {
-        blocklist: &'a [String],
-        blocks: &'a [BlockInfo],
-    }
-    let msg = Msg {
-        blocklist: domains,
-        blocks,
-    };
-    let body = match serde_json::to_vec(&msg) {
+fn send_payload(domains: &[String], blocks: &[BlockInfo], open_settings: bool) {
+    let body = match payload_json(domains, blocks, open_settings) {
         Ok(b) => b,
         Err(e) => {
             log_to_file(&format!("serialize error: {e}"));
@@ -207,20 +296,57 @@ fn send_payload(domains: &[String], blocks: &[BlockInfo]) {
     ));
 }
 
-fn spawn_file_watcher(path: &std::path::Path, tx: mpsc::Sender<HostEvent>) {
+fn payload_json(
+    domains: &[String],
+    blocks: &[BlockInfo],
+    open_settings: bool,
+) -> serde_json::Result<Vec<u8>> {
+    #[derive(Serialize)]
+    struct Msg<'a> {
+        blocklist: &'a [String],
+        blocks: &'a [BlockInfo],
+        #[serde(
+            rename = "openExtensionSettings",
+            skip_serializing_if = "std::ops::Not::not"
+        )]
+        open_settings: bool,
+    }
+    let msg = Msg {
+        blocklist: domains,
+        blocks,
+        open_settings,
+    };
+    serde_json::to_vec(&msg)
+}
+
+/// Whether the browser key the app wrote names the browser that launched us
+/// (`launcher` is `launching_browser()`, e.g. "msedge.exe 156.0…").
+fn opens_settings_for(key: &str, launcher: &str) -> bool {
+    match key.trim() {
+        "chrome" => launcher.starts_with("chrome.exe"),
+        "edge" => launcher.starts_with("msedge.exe"),
+        "brave" => launcher.starts_with("brave.exe"),
+        _ => false,
+    }
+}
+
+fn spawn_file_watcher(
+    path: &std::path::Path,
+    every: Duration,
+    tx: mpsc::Sender<HostEvent>,
+    event: fn() -> HostEvent,
+) {
     let path = path.to_path_buf();
     // We poll mtime rather than depend on the `notify` crate so this
     // module stays dependency-light and works identically on every OS.
-    // 2 s cadence is fine — blocklist changes are user-driven and not
-    // latency-sensitive at the second level.
     std::thread::spawn(move || {
         let mut last = mtime(&path);
         loop {
-            std::thread::sleep(Duration::from_secs(2));
+            std::thread::sleep(every);
             let current = mtime(&path);
             if current != last {
                 last = current;
-                let _ = tx.send(HostEvent::Refresh);
+                let _ = tx.send(event());
             }
         }
     });
@@ -675,7 +801,7 @@ fn match_schedule_now(schedule: &Value, now_ms: u64) -> Option<ScheduleMatch> {
         .unwrap_or(false);
     // `isPaused` with no `pauseEndTime` is a schedule the user switched OFF
     // (the card switch writes exactly this after the override challenge). The
-    // frontend engine, Android and iOS all read it as "paused until turned on
+    // frontend engine and iOS all read it as "paused until turned on
     // again", and desktop must agree or a switched-off space would keep
     // blocking on macOS/Windows only.
     if paused {

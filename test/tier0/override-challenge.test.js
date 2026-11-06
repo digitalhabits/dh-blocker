@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import {
     DEFAULT_MAX_OVERRIDE_WORDS_SETTING,
     DEFAULT_OVERRIDE_WORDS,
@@ -11,6 +11,7 @@ import {
     migrateOverrideDifficultyToWords,
     normalizeMaxOverrideWordsSetting,
     normalizeOverrideCount,
+    renderChallengeReferenceText,
 } from '../../src/override-challenge.js';
 
 describe('word-count limits', () => {
@@ -140,5 +141,53 @@ describe('the "maximum words" setting', () => {
         expect(migrateOverrideDifficultyToWords({ type: 'random-words', maxDifficulty: true }, { maxWords: 1000, countsAreChars: false }).count).toBe(300);
         // A current word count is untouched up to the ceiling.
         expect(migrateOverrideDifficultyToWords({ type: 'random-words', count: 800 }, { maxWords: 1000, countsAreChars: false }).count).toBe(800);
+    });
+});
+
+describe('renderChallengeReferenceText typing progress', () => {
+    const make = () => document.createElement('div');
+    // jsdom has no layout (Range#getBoundingClientRect); the scroll follow-up is not under test.
+    beforeEach(() => { vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 0); });
+
+    test('progress span holds exactly the typed prefix, rest stays plain', () => {
+        const el = make();
+        renderChallengeReferenceText(el, 'chief one', { cursorIndex: 2 });
+        const typed = el.querySelectorAll('.challenge-typed');
+        expect(typed).toHaveLength(1);
+        expect(typed[0].textContent).toBe('ch');
+        expect(el.textContent).toBe('chief one');
+        expect(el.querySelector('.error-char')).toBeNull();
+    });
+
+    test('error path keeps the teal prefix before the error char', () => {
+        const el = make();
+        renderChallengeReferenceText(el, 'a<b c', { cursorIndex: 2, errorIndex: 2 });
+        expect(el.querySelector('.challenge-typed').textContent).toBe('a<');
+        expect(el.querySelector('.error-char').textContent).toBe('b');
+        expect(el.textContent).toBe('a<b c');
+        expect(el.innerHTML.startsWith('<span class="challenge-typed">a&lt;</span><span class="error-char">b</span>')).toBe(true);
+    });
+
+    test('cursorIndex 0 without an error renders plain text (word mode, initial render)', () => {
+        const el = make();
+        renderChallengeReferenceText(el, 'chief', { cursorIndex: 0 });
+        expect(el.querySelector('span')).toBeNull();
+        expect(el.textContent).toBe('chief');
+        renderChallengeReferenceText(el, 'chief', { errorIndex: -1 });
+        expect(el.querySelector('span')).toBeNull();
+    });
+
+    test('growing cursorIndex updates the same span in place', () => {
+        const el = make();
+        renderChallengeReferenceText(el, 'chief', { cursorIndex: 1 });
+        const span = el.querySelector('.challenge-typed');
+        renderChallengeReferenceText(el, 'chief', { cursorIndex: 2 });
+        renderChallengeReferenceText(el, 'chief', { cursorIndex: 3 });
+        expect(el.querySelector('.challenge-typed')).toBe(span);
+        expect(span.textContent).toBe('chi');
+        expect(el.textContent).toBe('chief');
+        renderChallengeReferenceText(el, 'chief', { cursorIndex: 5 });
+        expect(el.querySelector('.challenge-typed')).toBe(span);
+        expect(span.textContent).toBe('chief');
     });
 });

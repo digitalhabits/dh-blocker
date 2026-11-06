@@ -5,10 +5,10 @@ import { getChallengeController } from './challenge-controller.js';
 import { startHelperUiRefreshLoop, stopHelperUiRefreshLoop, isModalVisible } from './modal-manager.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render } from './render.js';
-import { handleBlocklistSelect, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
+import { cancelIOSRestart, handleBlocklistSelect, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
 import { updateBlockedApps, openExternal, isHelperInstallCancelled, checkHelperStatus, requestScreentimeAuth } from './blocking-platform.js';
 import { attachCopyChipHandlers, extensionsUrlChipHtml, restartOnboardingFromSettings, BROWSER_STORE_LINKS, MAC_BLOCKING_METHOD_KEYS, browserBlockingMethod, browserIconUrl, browserUsesAutomation, lastOnboardingState, openExtensionSetupOverlay, updateGraceSettingLock } from './enforcement.js';
-import { hasAnyBlockingStateToClear, hasAnyEnforcedBlocks, isOneOffBlockStillActive, refreshDesktopHelperStatus, scheduleCanStillBecomeActive } from './schedule-engine.js';
+import { hasAnyBlockingStateToClear, hasAnyEnforcedBlocks, isOneOffBlockStillActive, refreshDesktopHelperStatus, scheduleCanStillBecomeActive, syncSchedulesToHelper } from './schedule-engine.js';
 import { tauriAPI, openUrl } from './tauri-api.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage } from './i18n.js';
 import { invoke } from '@tauri-apps/api/core';
@@ -23,7 +23,7 @@ import {
 
 export function setupHelpMenuLinks() {
     tauriAPI.onMenuHelpReportIssue(() => {
-        openExternal('https://github.com/ulyngs/digital-habits-blocker/issues');
+        openExternal('https://github.com/digitalhabits/dh-blocker/issues');
     }).catch(() => { });
 
     tauriAPI.onMenuHelpContactUs(() => {
@@ -37,7 +37,7 @@ export function setupHelpMenuLinks() {
 
 // Setup Helper Settings in the settings modal
 export function setupHelperSettings() {
-    if (state.isIOS || state.isAndroid) return;
+    if (state.isIOS) return;
     const statusIndicator = document.getElementById('helper-status-indicator');
     const cleanHostsBtn = document.getElementById('clean-hosts-btn');
 
@@ -150,7 +150,6 @@ export function logHelperRemovalFallback(result) {
     }
 }
 
-
 export async function confirmHelperRemoved() {
     const status = await refreshDesktopHelperStatus();
     const removed = !(status?.installed || status?.running);
@@ -196,7 +195,7 @@ export async function uninstallHelperAndConfirmRemoved() {
 }
 
 export function isDesktopBlockingEnforcedNow() {
-    if (state.isIOS || state.isAndroid) return false;
+    if (state.isIOS) return false;
     return hasAnyEnforcedBlocks();
 }
 
@@ -294,7 +293,7 @@ export function buildDiagnosticsReport(diag) {
     const osName = getDiagValue(diag, 'os_name', 'osName')
         || (navigator.platform?.startsWith('Mac') ? 'macOS' : navigator.platform?.startsWith('Win') ? 'Windows' : 'unknown');
     const arch = getDiagValue(diag, 'arch') || 'unknown';
-    const appVersion = document.getElementById('settings-version')?.textContent || '';
+    const appVersion = document.getElementById('current-app-version')?.dataset.appVersion || '';
     const installed = !!getDiagValue(diag, 'helper_installed', 'helperInstalled');
     const running = !!getDiagValue(diag, 'helper_running', 'helperRunning');
     const version = getDiagValue(diag, 'helper_version', 'helperVersion') || 'Unknown';
@@ -676,7 +675,7 @@ export function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) 
 
     // Browsers (extension)
     const extensionBrowserKeys = state.isMacOSDesktop
-        ? ['firefox', ...MAC_BLOCKING_METHOD_KEYS.filter((k) => browserBlockingMethod(k) === 'extension')]
+        ? MAC_BLOCKING_METHOD_KEYS.filter((k) => browserBlockingMethod(k) === 'extension')
         : ['chrome', 'brave', 'edge', 'firefox', 'safari'];
     const browsersHint = state.isMacOSDesktop
         ? tSettings('diagnosticsBrowsersSectionHintMacExtension')
@@ -689,6 +688,9 @@ export function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) 
     html += `<th>${e(tSettings('diagnosticsThExtInstalled'))}</th>`;
     html += `<th>${e(tSettings('diagnosticsThExtEnabled'))}</th>`;
     html += `<th>${e(tSettings('diagnosticsThExtPrivate'))}</th>`;
+    // Windows only: organisation policy that stops the browser reaching Blocker (none for Firefox/Safari)
+    const policies = d.native_host?.policies;
+    if (policies) html += `<th>${e(tSettings('diagnosticsThPolicy'))}</th>`;
     html += '</tr></thead><tbody>';
     for (const key of extensionBrowserKeys) {
         const b = d.browsers[key];
@@ -700,15 +702,32 @@ export function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) 
         html += `<td>${diagnosticsStatusDot(ext.installed)}</td>`;
         html += `<td>${diagnosticsStatusDot(ext.enabled)}</td>`;
         html += `<td>${diagnosticsStatusDot(ext.privateBrowsing)}</td>`;
+        if (policies) {
+            html += policies.find(p => p.browser === key)?.blocked
+                ? `<td><span class="diag-error">${e(tSettings('diagnosticsPolicyBlocks'))}</span></td>`
+                : `<td><span class="diag-muted">${e(tSettings('diagnosticsPolicyNone'))}</span></td>`;
+        }
         html += '</tr>';
     }
     html += '</tbody></table></div></div>';
+
+    // Windows: newest host launch per browser, from native-host.log
+    const connections = d.native_host?.last_connections;
+    if (connections) {
+        html += '<div class="diagnostics-section">';
+        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsConnectionsSection'))}</div>`;
+        html += '<div class="diagnostics-card">';
+        html += connections.length
+            ? connections.map(c => diagnosticsKvRow(e(c.browser), `<span class="diag-muted">${e(fmtTs(c.at * 1000))}</span>`)).join('')
+            : `<p class="diagnostics-section-desc">${e(tSettings('diagnosticsConnectionsNone'))}</p>`;
+        html += '</div></div>';
+    }
 
     // Enforcement
     html += '<div class="diagnostics-section">';
     html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsEnforcementSection'))}</div>`;
     html += '<div class="diagnostics-card">';
-    if (!state.isIOS && !state.isAndroid) {
+    if (!state.isIOS) {
         const forceLabel = enforcementEnabled
             ? tSettings('diagnosticsForceCloseEnabled')
             : tSettings('diagnosticsForceCloseDisabled');
@@ -918,7 +937,6 @@ export function updateOverrideAllButtonVisibility() {
 
 // Show challenge for removing helper when blocks are active
 
-
 // Setup the configurable browser-extension grace period.
 // Backend reads `settings.extensionGraceSeconds` from the data file
 // on every grace-start (no app restart needed). Backend rejects
@@ -927,7 +945,6 @@ export function updateOverrideAllButtonVisibility() {
 // Shows a searchable list of installed apps (scanned from Start Menu on
 // Windows, /Applications on macOS) so users don't have to navigate the
 // OS file picker to find executables.
-
 
 // Setup the configurable browser-extension grace period.
 export function setupGraceSetting() {
@@ -1092,8 +1109,7 @@ export function setupOverrideAll() {
 /**
  * Close the stop-all dialog and hand the user back to settings, where they came
  * from. Previously inlined at three call sites which had drifted — the success
- * path forgot to restore the settings modal — and absent from
- * ANDROID_MODAL_CLOSE_FNS entirely, so Android back left it half-reset.
+ * path forgot to restore the settings modal. Keep every close path in sync.
  */
 export function closeOverrideAllModal() {
     document.getElementById('override-all-modal')?.classList.add('hidden');
@@ -1298,7 +1314,7 @@ export function refreshUninstallButtonState() {
 }
 
 export function setupWindowsUninstallGuidance() {
-    if (state.isIOS || state.isAndroid) return;
+    if (state.isIOS) return;
     const btn = document.getElementById('windows-uninstall-open-settings-btn');
     if (!btn) return;
 
@@ -1323,7 +1339,6 @@ export function setupWindowsUninstallGuidance() {
         }
     });
 }
-
 
 // Find the hardest challenge among all block/schedule state that could still resume later.
 export function findHardestChallenge() {
@@ -1396,49 +1411,64 @@ export function compareDifficulties(a, b) {
     return withEffectiveCount(winner);
 }
 
+/**
+ * The info icons in Settings: a tap or click on the icon opens its tooltip and
+ * another closes it. On a touch screen the tap that closes an open tooltip does
+ * nothing else, so it can never press the control the tooltip was covering.
+ * On the window, in the capture phase, so it runs before any other click handler.
+ */
+export function setupSettingsInfoTooltips() {
+    const closeAll = () => document.querySelectorAll('.settings-info-hover-wrap.is-open')
+        .forEach((wrap) => wrap.classList.remove('is-open'));
+    window.addEventListener('click', (event) => {
+        const wrap = event.target.closest?.('.settings-info-btn')?.closest('.settings-info-hover-wrap');
+        if (wrap) {
+            const wasOpen = wrap.classList.contains('is-open');
+            closeAll();
+            wrap.classList.toggle('is-open', !wasOpen);
+            return;
+        }
+        if (!document.querySelector('.settings-info-hover-wrap.is-open') || !matchMedia('(hover: none)').matches) return;
+        closeAll();
+        event.preventDefault();
+        event.stopPropagation();
+    }, true);
+}
+
 // Perform the actual override-all operation
 export async function performOverrideAll() {
     try {
-        const androidManualBlockIds = state.isAndroid
-            ? state.appData.activeBlocks.map((block) => block.id).filter(Boolean)
-            : [];
+        const clearedBlocks = state.appData.activeBlocks;
 
         // Clear all active blocks
         state.appData.activeBlocks = [];
 
-        // Clear all schedules
-        state.appData.schedules = [];
+        // Switch every schedule off, keeping its days and times: paused with no end time is off.
+        for (const schedule of state.appData.schedules || []) {
+            schedule.isPaused = true;
+            delete schedule.pauseEndTime;
+        }
 
         // Save the data
         await saveData();
 
         // Full cleanup on the helper side
         if (state.isIOS) {
+            for (const block of clearedBlocks) await cancelIOSRestart(block);
             await tauriAPI.screentimeClearBlock();
-        } else if (state.isAndroid) {
-            for (const id of androidManualBlockIds) {
-                try {
-                    await tauriAPI.androidStopManualBlock(id);
-                } catch (e) {
-                    console.warn('Failed to clear Android manual block:', e);
-                }
-            }
-            try {
-                await tauriAPI.androidSetSchedules([]);
-            } catch (e) {
-                console.warn('Failed to clear Android schedules:', e);
-            }
         } else {
             const status = await refreshDesktopHelperStatus();
             if (status.helperReady) {
                 // Atomically set everything to empty — helper will know nothing should be blocked
                 try { await tauriAPI.setBlocksViaHelper([]); } catch (e) { console.warn('Failed to clear blocks:', e); }
-                try { await tauriAPI.setSchedulesViaHelper([]); } catch (e) { console.warn('Failed to clear schedules:', e); }
                 try { await tauriAPI.setBlockedAppsViaHelper([]); } catch (e) { console.warn('Failed to clear apps:', e); }
             }
             // Always clean the hosts file as a safety net, even if the helper is stopped or stale.
             try { await tauriAPI.cleanHostsFile(); } catch (e) { console.warn('Failed to clean hosts file:', e); }
         }
+
+        // Every platform learns the schedules are off the same way a single stop tells it.
+        await syncSchedulesToHelper({ reportFailure: false });
 
         // Update blocked apps (will stop watcher if no apps to block)
         await updateBlockedApps();

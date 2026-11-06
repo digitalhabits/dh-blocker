@@ -6,7 +6,8 @@ import { isNonRepeatingSchedule, isSchedulePausedNow, resolveOneShotOccurrences 
 import { saveData } from './persistence.js';
 import { commitDelete, dismissUndoToast, pendingDelete, showUndoToast, undoDelete } from './blocklists.js';
 import { handleTimeChange } from './confirm-modals.js';
-import { pad, parseEndTimeBoundedInt, scrollPopoverOptionIntoView } from './time-inputs.js';
+import { formatTimeOfDay, pad, parseTimeOfDay, scrollPopoverOptionIntoView } from './time-inputs.js';
+import { isAllDaySegment } from './when-to-block.js';
 export let pendingSegmentDelete = null;
 
 export function commitSegmentDelete() {
@@ -26,14 +27,7 @@ export function undoSegmentDelete() {
         days: Array.isArray(segment.days) ? [...segment.days] : segment.days,
     };
     state.scheduleSegments.splice(index, 0, restored);
-    sortScheduleSegments();
-    const restoredIndex = findScheduleSegmentIndex(restored);
-
-    if (restoredIndex >= 0) {
-        expandScheduleSegment(restoredIndex);
-    } else {
-        rebuildScheduleSegments();
-    }
+    rebuildScheduleSegments();
 
     handleTimeChange();
 }
@@ -55,23 +49,6 @@ function showSegmentDeleteUndoToast(segment, index) {
     );
     pendingSegmentDelete = { segment, index };
 }
-
-function scheduleSegmentsMatch(a, b) {
-    return a.startHour === b.startHour
-        && a.startMinute === b.startMinute
-        && a.endHour === b.endHour
-        && a.endMinute === b.endMinute
-        && arraysEqual(
-            [...(a.days || [])].sort((x, y) => x - y),
-            [...(b.days || [])].sort((x, y) => x - y),
-        );
-}
-
-function findScheduleSegmentIndex(segment) {
-    return state.scheduleSegments.findIndex((seg) => scheduleSegmentsMatch(seg, segment));
-}
-export const SEGMENT_SUMMARY_CLOCK_ICON = '<svg class="segment-summary-clock" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
-export const SEGMENT_SUMMARY_CHEVRON_ICON = '<svg class="segment-summary-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>';
 
 /** The schedule record of the focus space the editor is showing (none while creating). */
 export function getSelectedSchedule() {
@@ -367,8 +344,6 @@ export function addScheduleSegment() {
         days: defaultDays
     });
 
-    state.expandedScheduleSegmentIndex = state.scheduleSegments.length - 1;
-
     // Rebuild all segments to ensure consistent rendering
     rebuildScheduleSegments();
 
@@ -415,12 +390,6 @@ export function removeScheduleSegment(index) {
     // Remove from state
     state.scheduleSegments.splice(index, 1);
 
-    if (state.expandedScheduleSegmentIndex === index) {
-        state.expandedScheduleSegmentIndex = usesScheduleSegmentCollapse() ? -1 : 0;
-    } else if (state.expandedScheduleSegmentIndex > index) {
-        state.expandedScheduleSegmentIndex -= 1;
-    }
-
     // Rebuild DOM (simpler than updating indices)
     rebuildScheduleSegments();
 
@@ -436,7 +405,13 @@ export function removeScheduleSegment(index) {
 // otherwise a pending segment with an early time could swap places with a committed
 // one and corrupt subsequent saves.
 export function sortScheduleSegments() {
-    const cmp = (a, b) => (a.startHour * 60 + a.startMinute) - (b.startHour * 60 + b.startMinute);
+    // An all-day range sorts by the times it replaced, so switching it on does
+    // not jump it to the top as 00:00 under the user's next tap.
+    const startOf = (seg) => {
+        const t = timesBeforeAllDay.get(seg) || seg;
+        return t.startHour * 60 + t.startMinute;
+    };
+    const cmp = (a, b) => startOf(a) - startOf(b);
     if (state.activeScheduleSegmentCount > 0 && state.scheduleSegments.length > state.activeScheduleSegmentCount) {
         const committed = state.scheduleSegments.slice(0, state.activeScheduleSegmentCount).sort(cmp);
         const pending = state.scheduleSegments.slice(state.activeScheduleSegmentCount).sort(cmp);
@@ -446,225 +421,104 @@ export function sortScheduleSegments() {
     }
 }
 
-export function usesScheduleSegmentCollapse() {
-    return state.scheduleSegments.length > 1 || state.activeScheduleSegmentCount > 0;
+const REMOVE_SEGMENT_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+
+/** The minute column lists every fifth minute; any minute can still be typed. */
+const MINUTE_LIST_STEP = 5;
+
+/**
+ * The times a range had before "All day" was switched on, so switching it off
+ * puts them back. In memory only: a reopened editor falls back to 09:00 – 17:00.
+ */
+const timesBeforeAllDay = new WeakMap();
+const ALL_DAY_FALLBACK_TIMES = Object.freeze({ startHour: 9, startMinute: 0, endHour: 17, endMinute: 0 });
+
+function segmentEdgeTime(seg, edge) {
+    return edge === 'start'
+        ? { hour: seg.startHour, minute: seg.startMinute }
+        : { hour: seg.endHour, minute: seg.endMinute };
 }
 
-export function scheduleHasPendingSegments() {
-    return state.activeScheduleSegmentCount > 0 && state.scheduleSegments.length > state.activeScheduleSegmentCount;
-}
-
-export function getInitialExpandedScheduleSegmentIndex() {
-    if (!usesScheduleSegmentCollapse()) return 0;
-    if (scheduleHasPendingSegments()) return state.activeScheduleSegmentCount;
-    if (state.scheduleSegments.length > 1) return -1;
-    if (state.activeScheduleSegmentCount > 0) return -1;
-    return 0;
-}
-
-export function normalizeExpandedScheduleSegmentIndex() {
-    if (!usesScheduleSegmentCollapse()) {
-        state.expandedScheduleSegmentIndex = 0;
-        return;
-    }
-
-    const betweenBlocksEditable = canEditScheduleBetweenBlocks();
-    const allCommitted = state.activeScheduleSegmentCount >= state.scheduleSegments.length && state.activeScheduleSegmentCount > 0;
-    // When between-blocks editing is on, keep segments expandable (don't force the
-    // locked summary-pill collapse) — but do not auto-open any segment.
-    if (allCommitted && !betweenBlocksEditable) {
-        state.expandedScheduleSegmentIndex = -1;
-        return;
-    }
-
-    // -1 = accordion fully collapsed; any other in-range index is an explicit user choice
-    // (e.g. summary tap or a newly added segment) — do not reset it on every rebuild.
-    if (scheduleHasPendingSegments() && !betweenBlocksEditable) {
-        if (state.expandedScheduleSegmentIndex >= 0 && state.expandedScheduleSegmentIndex < state.activeScheduleSegmentCount) {
-            state.expandedScheduleSegmentIndex = state.activeScheduleSegmentCount;
-        }
-    }
-
-    if (state.expandedScheduleSegmentIndex >= state.scheduleSegments.length) {
-        state.expandedScheduleSegmentIndex = state.scheduleSegments.length - 1;
+function setSegmentEdgeTime(seg, edge, { hour, minute }) {
+    if (edge === 'start') {
+        seg.startHour = hour;
+        seg.startMinute = minute;
+    } else {
+        seg.endHour = hour;
+        seg.endMinute = minute;
     }
 }
 
-export function formatScheduleSegmentTimeRange(seg) {
-    const start = `${String(seg.startHour).padStart(2, '0')}:${String(seg.startMinute).padStart(2, '0')}`;
-    const end = `${String(seg.endHour).padStart(2, '0')}:${String(seg.endMinute).padStart(2, '0')}`;
-    return `${start} – ${end}`;
+function segmentTimeFieldHtml(seg, index, edge, label) {
+    const { hour, minute } = segmentEdgeTime(seg, edge);
+    return `
+        <div class="segment-time-anchor">
+            <input type="text" class="segment-time-field"
+                data-segment-index="${index}" data-edge="${edge}"
+                inputmode="numeric" maxlength="5" autocomplete="off" spellcheck="false"
+                value="${formatTimeOfDay(hour, minute)}" aria-label="${label}" />
+        </div>`;
 }
 
-export function formatScheduleSegmentDaysSummary(days) {
-    const selected = Array.isArray(days) ? [...days].sort((a, b) => a - b) : [];
-    if (selected.length === 0) return tSettings('segmentDaysNone');
-    const labels = weekdayAbbrevMon0List();
-    return selected.map((dayIndex) => labels[dayIndex]).join(', ');
-}
-
-export function arraysEqual(a, b) {
-    return Array.isArray(a) && Array.isArray(b)
-        && a.length === b.length
-        && a.every((value, index) => value === b[index]);
-}
-
-export function expandScheduleSegment(index) {
-    if (isScheduleSegmentMutationBlocked(index)) return;
-    if (!usesScheduleSegmentCollapse()) return;
-    state.expandedScheduleSegmentIndex = index;
-    rebuildScheduleSegments();
-}
-
-export function collapseExpandedScheduleSegment() {
-    if (state.scheduleSegments.length <= 1) return;
-    state.expandedScheduleSegmentIndex = -1;
-    rebuildScheduleSegments();
-}
-
-export function buildScheduleSegmentEditorHtml(seg, index, {
-    showLabels,
-    showMultiSegmentChrome,
+/**
+ * One time range: start – end, with × when there is more than one range, and
+ * the day circles underneath in Weekly. No field labels — the HH:MM fields
+ * and the dash read as a range on their own (the Mail account-hours layout).
+ */
+export function buildScheduleSegmentHtml(seg, index, {
+    showDays,
+    showRemove,
     dayLabels,
     fullDayLabels,
     labelStart,
     labelEnd,
-    labelDays,
-    hideDays = false,
+    labelRemove,
+    labelAllDay,
 }) {
     const segmentDays = seg.days || [];
+    const allDay = isAllDaySegment(seg);
     const dayTogglesHtml = dayLabels.map((label, i) =>
-        `<button type="button" class="segment-day-toggle${segmentDays.includes(i) ? ' active' : ''}" data-day="${i}" aria-label="${fullDayLabels[i]}">${label}</button>`
+        `<button type="button" class="segment-day-toggle${segmentDays.includes(i) ? ' active' : ''}" data-day="${i}" aria-label="${fullDayLabels[i]}" aria-pressed="${segmentDays.includes(i)}">${label}</button>`
     ).join('');
 
-    const footerHtml = showMultiSegmentChrome ? `
-        <div class="segment-editor-footer">
-            <button type="button" class="segment-delete-btn" data-segment-index="${index}">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M3 6h18"></path>
-                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                </svg>
-                ${tSettings('segmentDelete')}
-            </button>
-            <button type="button" class="segment-done-btn" data-segment-index="${index}">${tSettings('segmentDone')}</button>
-        </div>
-    ` : '';
-
     return `
-        <div class="segment-editor">
-            <div class="segment-row">
-                <div class="time-pickers-row">
-                    <div class="time-picker-group">
-                        ${showLabels ? `<label class="time-label">${labelStart}</label>` : ''}
-                        <div class="time-picker-row">
-                            <div class="time-display schedule-start-display">
-                                <div class="time-part-wrapper">
-                                    <input type="text" class="time-part schedule-hour-btn"
-                                        data-type="hour" data-target="schedule-start-${index}"
-                                        inputmode="numeric" maxlength="2" autocomplete="off"
-                                        value="${String(seg.startHour).padStart(2, '0')}"
-                                        aria-label="Schedule start hour" />
-                                </div>
-                                <span class="time-colon">:</span>
-                                <div class="time-part-wrapper">
-                                    <input type="text" class="time-part schedule-minute-btn"
-                                        data-type="minute" data-target="schedule-start-${index}"
-                                        inputmode="numeric" maxlength="2" autocomplete="off"
-                                        value="${String(seg.startMinute).padStart(2, '0')}"
-                                        aria-label="Schedule start minute" />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="time-picker-group">
-                        ${showLabels ? `<label class="time-label">${labelEnd}</label>` : ''}
-                        <div class="time-picker-row">
-                            <div class="time-display schedule-end-display">
-                                <div class="time-part-wrapper">
-                                    <input type="text" class="time-part schedule-hour-btn"
-                                        data-type="hour" data-target="schedule-end-${index}"
-                                        inputmode="numeric" maxlength="2" autocomplete="off"
-                                        value="${String(seg.endHour).padStart(2, '0')}"
-                                        aria-label="Schedule end hour" />
-                                </div>
-                                <span class="time-colon">:</span>
-                                <div class="time-part-wrapper">
-                                    <input type="text" class="time-part schedule-minute-btn"
-                                        data-type="minute" data-target="schedule-end-${index}"
-                                        inputmode="numeric" maxlength="2" autocomplete="off"
-                                        value="${String(seg.endMinute).padStart(2, '0')}"
-                                        aria-label="Schedule end minute" />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                ${hideDays ? '' : `<div class="segment-days-group">
-                    ${showLabels ? `<label class="time-label">${labelDays}</label>` : ''}
-                    <div class="segment-days" data-segment-index="${index}">
-                        ${dayTogglesHtml}
-                    </div>
-                </div>`}
-            </div>
-            ${footerHtml}
+        <div class="segment-times${showRemove ? ' has-remove' : ''}">
+            ${segmentTimeFieldHtml(seg, index, 'start', labelStart)}
+            <span class="segment-time-dash" aria-hidden="true">–</span>
+            ${segmentTimeFieldHtml(seg, index, 'end', labelEnd)}
+            <label class="segment-all-day">
+                <span class="segment-all-day-label">${labelAllDay}</span>
+                <span class="enforcement-switch">
+                    <input type="checkbox" class="segment-all-day-input" role="switch"${allDay ? ' checked' : ''} />
+                    <span class="enforcement-slider" aria-hidden="true"></span>
+                </span>
+            </label>
+            ${showRemove ? `<button type="button" class="remove-segment-btn" aria-label="${labelRemove}">${REMOVE_SEGMENT_ICON}</button>` : ''}
         </div>
-    `;
-}
-
-export function buildScheduleSegmentSummaryHtml(seg, index) {
-    return `
-        <button type="button" class="segment-summary-btn" data-segment-index="${index}" aria-expanded="false">
-            ${SEGMENT_SUMMARY_CLOCK_ICON}
-            <span class="segment-summary-time">${formatScheduleSegmentTimeRange(seg)}</span>
-            <span class="segment-summary-days">${formatScheduleSegmentDaysSummary(seg.days)}</span>
-            ${SEGMENT_SUMMARY_CHEVRON_ICON}
-        </button>
+        ${showDays ? `<div class="segment-days" data-segment-index="${index}">${dayTogglesHtml}</div>` : ''}
     `;
 }
 
 export function wireScheduleSegmentElement(segment, index) {
-    attachScheduleSegmentTimeInteractions(segment);
+    segment.querySelectorAll('.segment-time-field').forEach(bindScheduleTimeField);
 
     segment.querySelectorAll('.segment-day-toggle').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             const dayIndex = parseInt(btn.dataset.day, 10);
             handleSegmentDayToggle(index, dayIndex, btn);
+            btn.setAttribute('aria-pressed', btn.classList.contains('active') ? 'true' : 'false');
         });
     });
 
-    const deleteBtn = segment.querySelector('.segment-delete-btn');
-    if (deleteBtn) {
-        deleteBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            removeScheduleSegment(index);
-        });
-    }
+    segment.querySelector('.segment-all-day-input')?.addEventListener('change', (e) => {
+        setScheduleSegmentAllDay(index, e.currentTarget.checked);
+    });
 
-    const doneBtn = segment.querySelector('.segment-done-btn');
-    if (doneBtn) {
-        doneBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            collapseExpandedScheduleSegment();
-        });
-    }
-
-    const summaryBtn = segment.querySelector('.segment-summary-btn');
-    if (summaryBtn) {
-        summaryBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            expandScheduleSegment(index);
-        });
-    }
-
-    const removeBtn = segment.querySelector('.remove-segment-btn');
-    if (removeBtn) {
-        removeBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            removeScheduleSegment(index);
-        });
-    }
+    segment.querySelector('.remove-segment-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        removeScheduleSegment(index);
+    });
 }
 
 /**
@@ -677,71 +531,76 @@ export function applyScheduleSegmentLocks(container = document.getElementById('s
     const unlocked = canEditScheduleBetweenBlocks();
     container.querySelectorAll('.schedule-segment').forEach((segment, index) => {
         const locked = !unlocked && index < state.activeScheduleSegmentCount;
+        const allDay = isAllDaySegment(state.scheduleSegments[index]);
         segment.classList.toggle('segment-locked', locked);
-        segment.querySelectorAll(
-            '.time-part, .segment-day-toggle, .remove-segment-btn, .segment-delete-btn, .segment-done-btn, .segment-summary-btn'
-        ).forEach(el => { el.disabled = locked; });
+        segment.classList.toggle('segment-all-day-on', allDay);
+        segment.querySelectorAll('.segment-day-toggle, .remove-segment-btn, .segment-all-day-input')
+            .forEach(el => { el.disabled = locked; });
+        // An all-day range has no times to edit; the switch is the way back.
+        segment.querySelectorAll('.segment-time-field')
+            .forEach(el => { el.disabled = locked || allDay; });
     });
 }
 
 // Rebuild schedule segments DOM from state. In Daily mode there is exactly one
-// segment, rendered without the days row or the multi-segment chrome.
+// segment, rendered without the days row or the remove button.
 export function rebuildScheduleSegments(container = document.getElementById('schedule-segments')) {
     if (!container) return;
     // Sort chronologically before rebuilding
     sortScheduleSegments();
-    normalizeExpandedScheduleSegmentIndex();
 
     const daily = state.editorKind === 'daily';
     container.innerHTML = '';
 
-    // Day toggles are circles with a single letter (M T W T F S S) on every
-    // platform, like the Android app; the full name is the aria-label.
-    const fullDayLabels = weekdayAbbrevMon0List();
-    const dayLabels = weekdayLetterMon0List();
-    const labelStart = tSettings('startTime');
-    const labelEnd = tSettings('endTime');
-    const labelDays = tSettings('days');
-    const multiSegment = !daily && state.scheduleSegments.length > 1;
-    const useCollapse = !daily && usesScheduleSegmentCollapse();
+    const options = {
+        showDays: !daily,
+        showRemove: !daily && state.scheduleSegments.length > 1,
+        // Day toggles are circles with a single letter (M T W T F S S) on every
+        // platform, like the Android app; the full name is the aria-label.
+        dayLabels: weekdayLetterMon0List(),
+        fullDayLabels: weekdayAbbrevMon0List(),
+        labelStart: tSettings('startTime'),
+        labelEnd: tSettings('endTime'),
+        labelRemove: tSettings('segmentDelete'),
+        labelAllDay: tSettings('segmentAllDay'),
+    };
 
     state.scheduleSegments.forEach((seg, index) => {
         const segment = document.createElement('div');
-        const isExpanded = !useCollapse || index === state.expandedScheduleSegmentIndex;
-        segment.className = `schedule-segment${
-            isExpanded ? ' schedule-segment-expanded' : ' schedule-segment-collapsed'
-        }`;
+        segment.className = 'schedule-segment';
         segment.dataset.segmentIndex = index;
-
-        if (isExpanded) {
-            const showLabels = !multiSegment || index === 0 || state.expandedScheduleSegmentIndex === index;
-            segment.innerHTML = buildScheduleSegmentEditorHtml(seg, index, {
-                showLabels: multiSegment ? true : showLabels,
-                showMultiSegmentChrome: multiSegment,
-                dayLabels,
-                fullDayLabels,
-                labelStart,
-                labelEnd,
-                labelDays,
-                hideDays: daily,
-            });
-        } else {
-            segment.innerHTML = buildScheduleSegmentSummaryHtml(seg, index);
-        }
-
+        segment.innerHTML = buildScheduleSegmentHtml(seg, index, options);
         container.appendChild(segment);
         wireScheduleSegmentElement(segment, index);
     });
     applyScheduleSegmentLocks(container);
 }
 
-/** Parse `schedule-start-0` → { isStart, segmentIndex }. */
-export function parseScheduleTimeTarget(target) {
-    const parts = String(target || '').split('-');
-    return {
-        isStart: parts[1] === 'start',
-        segmentIndex: parseInt(parts[2], 10)
-    };
+/**
+ * "All day" stores start == end at 00:00 (see `isAllDaySegment`); switching
+ * it off restores the times the range had before.
+ */
+export function setScheduleSegmentAllDay(index, on) {
+    if (isScheduleSegmentMutationBlocked(index)) return;
+    const seg = state.scheduleSegments[index];
+    if (!seg || isAllDaySegment(seg) === on) return;
+    if (on) {
+        timesBeforeAllDay.set(seg, {
+            startHour: seg.startHour, startMinute: seg.startMinute,
+            endHour: seg.endHour, endMinute: seg.endMinute,
+        });
+        Object.assign(seg, { startHour: 0, startMinute: 0, endHour: 0, endMinute: 0 });
+    } else {
+        Object.assign(seg, timesBeforeAllDay.get(seg) || ALL_DAY_FALLBACK_TIMES);
+        timesBeforeAllDay.delete(seg);
+    }
+    document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
+    rebuildScheduleSegments();
+    handleTimeChange();
+}
+
+function fieldSegmentIndex(field) {
+    return parseInt(field.dataset.segmentIndex, 10);
 }
 
 /** The option list open for this time field, if any. */
@@ -749,27 +608,26 @@ function getScheduleTimePopoverFor(field) {
     return field.parentElement?.querySelector('.schedule-time-popover') || null;
 }
 
-/** Open the option list for a time field from the keyboard (same list the click opens). */
-function openScheduleTimePopoverFor(field) {
-    const type = field.dataset.type;
-    const target = field.dataset.target;
-    if (!type || !target) return false;
-    const { isStart, segmentIndex } = parseScheduleTimeTarget(target);
-    if (isScheduleSegmentMutationBlocked(segmentIndex)) return false;
-    if (!state.scheduleSegments[segmentIndex]) return false;
-    showScheduleTimePopover(field, type, isStart, segmentIndex);
-    return true;
+/**
+ * Which column the arrow keys walk: the half of HH:MM the caret is in, so
+ * the keyboard edits whatever the user is looking at.
+ */
+function caretTimePart(field) {
+    const colon = field.value.indexOf(':');
+    const caret = typeof field.selectionStart === 'number' ? field.selectionStart : 0;
+    return colon >= 0 && caret > colon ? 'minute' : 'hour';
 }
 
 /**
- * Move the arrow-key highlight within an open list. The highlight starts from
- * the field's current value (`.selected`) so the first Down lands on the next
- * option, not the top of the list. Returns false when no list is open.
+ * Move the arrow-key highlight within one column. The highlight starts from
+ * the current value (`.selected`) so the first Down lands on the next option,
+ * not the top of the list. Returns false when no list is open.
  */
-function moveScheduleTimePopoverHighlight(field, delta) {
+function moveScheduleTimePopoverHighlight(field, part, delta) {
     const popover = getScheduleTimePopoverFor(field);
     if (!popover) return false;
-    const options = [...popover.querySelectorAll('.popover-option')];
+    const column = popover.querySelector(`.popover-scroll[data-part="${part}"]`);
+    const options = [...(column?.querySelectorAll('.popover-option') || [])];
     if (options.length === 0) return false;
 
     let from = options.findIndex((o) => o.classList.contains('key-active'));
@@ -778,38 +636,74 @@ function moveScheduleTimePopoverHighlight(field, delta) {
         ? (delta > 0 ? 0 : options.length - 1)
         : Math.min(options.length - 1, Math.max(0, from + delta));
 
-    options.forEach((o) => o.classList.remove('key-active'));
+    popover.querySelectorAll('.popover-option.key-active').forEach((o) => o.classList.remove('key-active'));
     options[next].classList.add('key-active');
-    scrollPopoverOptionIntoView(popover.querySelector('.popover-scroll'), options[next]);
+    scrollPopoverOptionIntoView(column, options[next]);
     return true;
 }
 
-/** Commit whatever the arrow keys landed on. Returns false when nothing is highlighted. */
-function commitScheduleTimePopoverHighlight(field) {
-    const highlighted = getScheduleTimePopoverFor(field)?.querySelector('.popover-option.key-active');
-    if (!highlighted) return false;
-    highlighted.click();
-    return true;
+/** Write the field back from state (after a rejected edit or a list pick). */
+function syncScheduleTimeField(field) {
+    const seg = state.scheduleSegments[fieldSegmentIndex(field)];
+    if (!seg) return;
+    const { hour, minute } = segmentEdgeTime(seg, field.dataset.edge);
+    field.value = formatTimeOfDay(hour, minute);
 }
 
-/** Editable schedule HH:MM — same UX as instant end: click opens list; type to edit. */
-export function bindScheduleTimePartInput(el) {
-    el.addEventListener('input', () => {
-        document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
-        const next = el.value.replace(/\D/g, '').slice(0, 2);
-        if (next !== el.value) el.value = next;
+/** Commit what was typed. Unreadable text puts the previous time back. */
+export function commitScheduleTimeField(field) {
+    const index = fieldSegmentIndex(field);
+    if (isScheduleSegmentMutationBlocked(index)) return;
+    const seg = state.scheduleSegments[index];
+    if (!seg) return;
+
+    const typed = parseTimeOfDay(field.value);
+    const current = segmentEdgeTime(seg, field.dataset.edge);
+    if (!typed) {
+        syncScheduleTimeField(field);
+        return;
+    }
+    field.value = formatTimeOfDay(typed.hour, typed.minute);
+    if (typed.hour === current.hour && typed.minute === current.minute) return;
+    setSegmentEdgeTime(seg, field.dataset.edge, typed);
+    reflectTypedAllDay(seg);
+    handleTimeChange();
+}
+
+/**
+ * Times that meet (09:00 – 09:00) are enforced as a full day, so a committed
+ * edit that lands there shows the switch on rather than looking like an
+ * empty range.
+ */
+function reflectTypedAllDay(seg) {
+    if (isAllDaySegment(seg)) rebuildScheduleSegments();
+}
+
+/** Editable HH:MM: click (or Down / Up) opens the hour and minute lists; typing edits directly. */
+export function bindScheduleTimeField(field) {
+    if (field.dataset.scheduleUiBound === '1') return;
+    field.dataset.scheduleUiBound = '1';
+
+    field.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (getScheduleTimePopoverFor(field)) return;
+        showScheduleTimePopover(field);
     });
-    el.addEventListener('blur', () => commitScheduleTimePart(el));
-    el.addEventListener('keydown', (e) => {
-        // Down / Up walk the option list, opening it first if it is closed.
+    field.addEventListener('input', () => {
+        getScheduleTimePopoverFor(field)?.remove();
+        const cleaned = field.value.replace(/[^\d:. ]/g, '');
+        if (cleaned !== field.value) field.value = cleaned;
+    });
+    field.addEventListener('blur', () => commitScheduleTimeField(field));
+    field.addEventListener('keydown', (e) => {
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault();
-            if (!getScheduleTimePopoverFor(el) && !openScheduleTimePopoverFor(el)) return;
-            moveScheduleTimePopoverHighlight(el, e.key === 'ArrowDown' ? 1 : -1);
+            if (!getScheduleTimePopoverFor(field) && !showScheduleTimePopover(field)) return;
+            moveScheduleTimePopoverHighlight(field, caretTimePart(field), e.key === 'ArrowDown' ? 1 : -1);
             return;
         }
         if (e.key === 'Escape') {
-            const popover = getScheduleTimePopoverFor(el);
+            const popover = getScheduleTimePopoverFor(field);
             if (!popover) return;
             e.preventDefault();
             popover.remove();
@@ -817,114 +711,22 @@ export function bindScheduleTimePartInput(el) {
         }
         if (e.key !== 'Enter') return;
         e.preventDefault();
-        // Enter takes the highlighted option when the list is open, then moves
-        // on exactly as it does when the time was typed.
-        commitScheduleTimePopoverHighlight(el);
-        const type = el.dataset.type;
-        const target = el.dataset.target;
-        const segmentEl = el.closest('.schedule-segment');
-        if (type === 'hour') {
-            const minIn = segmentEl
-                ? segmentEl.querySelector(`[data-target="${target}"][data-type="minute"]`)
-                : null;
-            el.blur();
-            if (minIn) {
-                minIn.focus({ preventScroll: true });
-                if (typeof minIn.select === 'function') minIn.select();
-            }
-        } else {
-            el.blur();
-        }
+        // Enter takes the highlighted option when the list is open, then
+        // closes it and commits exactly as it does for a typed time.
+        const popover = getScheduleTimePopoverFor(field);
+        popover?.querySelector('.popover-option.key-active')?.click();
+        popover?.remove();
+        commitScheduleTimeField(field);
+        field.blur();
     });
 }
 
-export function commitScheduleTimePart(input) {
-    const type = input.dataset.type;
-    const target = input.dataset.target;
-    if (!type || !target || (type !== 'hour' && type !== 'minute')) return;
-    const { isStart, segmentIndex } = parseScheduleTimeTarget(target);
-    if (isScheduleSegmentMutationBlocked(segmentIndex)) return;
-    const seg = state.scheduleSegments[segmentIndex];
-    if (!seg) return;
-
-    const max = type === 'hour' ? 23 : 59;
-    const v = parseEndTimeBoundedInt(input.value, 0, max);
-    let current;
-    if (type === 'hour') {
-        current = isStart ? seg.startHour : seg.endHour;
-    } else {
-        current = isStart ? seg.startMinute : seg.endMinute;
-    }
-    if (v === null) {
-        input.value = pad(current);
-        return;
-    }
-    if (type === 'hour') {
-        if (isStart) seg.startHour = v;
-        else seg.endHour = v;
-    } else {
-        if (isStart) seg.startMinute = v;
-        else seg.endMinute = v;
-    }
-    input.value = pad(v);
-    handleTimeChange();
-}
-
-export function attachScheduleSegmentTimeInteractions(segment) {
-    segment
-        .querySelectorAll('.schedule-start-display input.time-part, .schedule-end-display input.time-part')
-        .forEach(el => {
-            if (el.dataset.scheduleUiBound === '1') return;
-            el.dataset.scheduleUiBound = '1';
-            el.addEventListener('click', handleScheduleTimeClick);
-            bindScheduleTimePartInput(el);
-        });
-}
-
-// Handle schedule time control click (show popover)
-export function handleScheduleTimeClick(e) {
-    e.stopPropagation();
-    const el = e.currentTarget;
-    const type = el.dataset.type; // 'hour' or 'minute'
-    const target = el.dataset.target; // e.g., 'schedule-start-0' or 'schedule-end-1'
-
-    // Parse target
-    const parts = target.split('-');
-    const isStart = parts[1] === 'start';
-    const segmentIndex = parseInt(parts[2]);
-    if (isScheduleSegmentMutationBlocked(segmentIndex)) return;
-
-    document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
-
-    // Create and show popover for time selection
-    showScheduleTimePopover(el, type, isStart, segmentIndex);
-}
-
-// Show time popover for schedule time selection (anchored to editable time pill)
-export function showScheduleTimePopover(field, type, isStart, segmentIndex) {
-    // Remove any existing schedule popovers
-    document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
-
-    const popover = document.createElement('div');
-    popover.className = 'time-popover schedule-time-popover';
-
-    const scroll = document.createElement('div');
-    scroll.className = 'popover-scroll';
-
-    const segment = state.scheduleSegments[segmentIndex];
-    const currentValue = type === 'hour'
-        ? (isStart ? segment.startHour : segment.endHour)
-        : (isStart ? segment.startMinute : segment.endMinute);
-
-    /** Nearest slot in the 5-minute list for scroll/highlight when value was typed freely. */
-    let listHighlightValue = currentValue;
-    if (type === 'minute' && currentValue % 5 !== 0) {
-        const rounded = Math.round(currentValue / 5) * 5;
-        listHighlightValue = rounded >= 60 ? 55 : rounded;
-    }
-
-    const max = type === 'hour' ? 24 : 60;
-    const step = type === 'hour' ? 1 : 5;
+/**
+ * On iPad/iPhone, dragging inside a scrollable list of buttons can be read as
+ * taps, and slow drags do not scroll in WKWebView. Drive the scroll ourselves
+ * and report whether a tap right now is really the end of a drag.
+ */
+function bindPopoverTouchScroll(scroll) {
     let suppressOptionClickUntil = 0;
     let touchStartY = null;
     let touchStartScrollTop = 0;
@@ -971,9 +773,6 @@ export function showScheduleTimePopover(field, type, isStart, segmentIndex) {
         momentumFrame = requestAnimationFrame(tick);
     }
 
-    // On iPad/iPhone, dragging inside a scrollable list of buttons can be
-    // interpreted as taps unless we explicitly suppress selection right after
-    // a scroll gesture.
     scroll.addEventListener('touchstart', (e) => {
         stopMomentum();
         touchStartY = e.touches[0]?.clientY ?? null;
@@ -998,8 +797,6 @@ export function showScheduleTimePopover(field, type, isStart, segmentIndex) {
             if (Math.abs(deltaY) > 6) {
                 isTouchDragging = true;
                 suppressOptionClickUntil = Date.now() + 250;
-                // Drive the scrolling ourselves so slow finger drags work
-                // reliably in iPad WKWebView even though the children are buttons.
                 scroll.scrollTop = touchStartScrollTop - deltaY;
                 e.preventDefault();
             }
@@ -1024,51 +821,88 @@ export function showScheduleTimePopover(field, type, isStart, segmentIndex) {
         lastTouchY = null;
     }, { passive: true });
 
-    for (let i = 0; i < max; i += step) {
-        const option = document.createElement('button');
-        option.className = 'popover-option' + (i === listHighlightValue ? ' selected' : '');
-        option.textContent = String(i).padStart(2, '0');
-        option.addEventListener('click', (e) => {
-            e.stopPropagation(); // Prevent blocklist deselection
-            if (Date.now() < suppressOptionClickUntil) {
-                return;
-            }
+    return () => Date.now() < suppressOptionClickUntil;
+}
 
-            // Update state
-            if (type === 'hour') {
-                if (isStart) segment.startHour = i;
-                else segment.endHour = i;
-            } else {
-                if (isStart) segment.startMinute = i;
-                else segment.endMinute = i;
-            }
+/**
+ * Hour and minute lists side by side under the field. Picking an hour keeps
+ * the list open for the minute; picking a minute closes it.
+ * Returns false when the segment cannot be edited.
+ */
+export function showScheduleTimePopover(field) {
+    const index = fieldSegmentIndex(field);
+    if (isScheduleSegmentMutationBlocked(index)) return false;
+    const segment = state.scheduleSegments[index];
+    if (!segment) return false;
+    const edge = field.dataset.edge;
 
-            // Update field display
-            field.value = String(i).padStart(2, '0');
+    document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
 
-            // Close popover
-            popover.remove();
+    const popover = document.createElement('div');
+    popover.className = 'time-popover schedule-time-popover';
+    const columns = document.createElement('div');
+    columns.className = 'popover-columns';
+    popover.appendChild(columns);
 
-            // Update calendar preview
-            handleTimeChange();
-        });
-        scroll.appendChild(option);
-    }
+    const buildColumn = (part) => {
+        const scroll = document.createElement('div');
+        scroll.className = 'popover-scroll';
+        scroll.dataset.part = part;
+        const isSuppressed = bindPopoverTouchScroll(scroll);
 
-    popover.appendChild(scroll);
+        const current = segmentEdgeTime(segment, edge)[part];
+        // A freely typed minute marks the nearest listed one.
+        const marked = part === 'minute'
+            ? Math.min(60 - MINUTE_LIST_STEP, Math.round(current / MINUTE_LIST_STEP) * MINUTE_LIST_STEP)
+            : current;
+        const max = part === 'hour' ? 24 : 60;
+        const step = part === 'hour' ? 1 : MINUTE_LIST_STEP;
+
+        for (let i = 0; i < max; i += step) {
+            const option = document.createElement('button');
+            option.type = 'button';
+            option.className = 'popover-option' + (i === marked ? ' selected' : '');
+            option.textContent = pad(i);
+            option.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent blocklist deselection
+                if (isSuppressed()) return;
+                const next = { ...segmentEdgeTime(segment, edge), [part]: i };
+                setSegmentEdgeTime(segment, edge, next);
+                syncScheduleTimeField(field);
+                scroll.querySelectorAll('.popover-option').forEach((o) =>
+                    o.classList.toggle('selected', o === option));
+                if (part === 'minute') {
+                    popover.remove();
+                    reflectTypedAllDay(segment);
+                }
+                handleTimeChange();
+            });
+            scroll.appendChild(option);
+        }
+        columns.appendChild(scroll);
+        return scroll;
+    };
+
+    const hourColumn = buildColumn('hour');
+    const minuteColumn = buildColumn('minute');
     field.parentElement.appendChild(popover);
 
-    // Scroll to current value inside the popover only
-    const activeOption = scroll.querySelector('.selected');
-    scrollPopoverOptionIntoView(scroll, activeOption);
+    // Scroll each column to its current value, inside the popover only.
+    scrollPopoverOptionIntoView(hourColumn, hourColumn.querySelector('.selected'));
+    scrollPopoverOptionIntoView(minuteColumn, minuteColumn.querySelector('.selected'));
 
     // Close on outside click
     setTimeout(() => {
         document.addEventListener('click', function closePopover(e) {
+            if (!popover.isConnected) {
+                document.removeEventListener('click', closePopover);
+                return;
+            }
             if (!popover.contains(e.target) && e.target !== field) {
                 popover.remove();
                 document.removeEventListener('click', closePopover);
             }
         });
     }, 10);
+    return true;
 }

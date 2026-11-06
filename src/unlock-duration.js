@@ -1,27 +1,25 @@
 // Auto-start after stop — what "stop" means for a focus space.
 //
 // Every focus space carries `unlockMinutes`. Stopping a running space (the
-// card switch, the Android friction gate) pauses it for that long and it turns
+// card switch) pauses it for that long and it turns
 // itself back on afterwards. 0 is
 // "Never": a Manual block is removed and a Daily / Weekly schedule is switched
 // off open-ended (`isPaused` with no `pauseEndTime`, honoured by every
-// enforcement layer). Mirrors `autoReenableMinutes` in the Android app.
+// enforcement layer).
 //
 // Pure helpers only (Tier 0). No DOM, no `state`.
 
-/** Minutes offered in the editor; 0 = Never. Same menu as Android. */
+/** Minutes offered in the editor; 0 = Never. */
 export const UNLOCK_MINUTE_OPTIONS = Object.freeze([0, 5, 10, 15, 30, 60, 120, 240, 480, 1440]);
 
-/** 24 hours, the Android default. Also applied to spaces saved before this field existed. */
+/** 24 hours. Also applied to spaces saved before this field existed. */
 export const DEFAULT_UNLOCK_MINUTES = 1440;
 
-/**
- * What a newly created focus space starts on: Never. Auto-start is opt-in, so
- * a new space stays off when stopped until the user picks a duration. This is
- * deliberately not DEFAULT_UNLOCK_MINUTES, which remains the fallback for
- * missing or malformed values on existing spaces.
- */
-export const NEW_SPACE_UNLOCK_MINUTES = 0;
+/** What a newly created focus space starts on after an early stop. */
+export const NEW_SPACE_UNLOCK_MINUTES = 10;
+
+/** An allow-only space starts on Never: once stopped, it stays off until turned on again. */
+export const NEW_ALLOW_SPACE_UNLOCK_MINUTES = 0;
 
 /**
  * Anything that is not exactly one of the menu options falls back to the
@@ -67,4 +65,18 @@ export function applyStopToTarget(appData, { block = null, schedule = null } = {
         return { kind: 'removed' };
     }
     return null;
+}
+
+/**
+ * Whether a failed iOS schedule sync lost a timed stop's own pause. Only the
+ * stopped schedule's own entries carry its pause to the monitor, so a manual
+ * block never depends on this sync and another space's failure is irrelevant.
+ * Without per-entry detail the pause may not have been saved, so that still
+ * counts as lost and the stop is undone.
+ */
+export function timedStopLostOwnPause(scheduleSync, schedule) {
+    if (!schedule) return false;
+    const failedSaveIds = scheduleSync?.failedSaveIds;
+    if (!Array.isArray(failedSaveIds)) return true;
+    return failedSaveIds.some(id => id.startsWith(`${schedule.id}-`));
 }

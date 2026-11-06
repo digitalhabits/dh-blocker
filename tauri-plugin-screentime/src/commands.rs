@@ -190,6 +190,15 @@ pub(crate) async fn set_resume_payload<R: Runtime>(
 }
 
 #[command]
+pub(crate) async fn cancel_resume<R: Runtime>(
+    app: AppHandle<R>,
+    block_id: String,
+) -> Result<SuccessResponse> {
+    app.screentime()
+        .cancel_resume(CancelResumeRequest { block_id })
+}
+
+#[command]
 pub(crate) async fn set_block_end_state<R: Runtime>(
     app: AppHandle<R>,
     block_id: String,
@@ -206,6 +215,37 @@ pub(crate) async fn set_block_end_state<R: Runtime>(
             category_token_data,
             mode,
         })
+}
+
+// --- Start warnings ---
+
+#[command]
+pub(crate) async fn set_start_warnings<R: Runtime>(
+    app: AppHandle<R>,
+    payload: SetStartWarningsRequest,
+) -> Result<StartWarningsResponse> {
+    app.screentime().set_start_warnings(payload)
+}
+
+#[command]
+pub(crate) async fn check_notification_permission<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<NotificationPermissionResponse> {
+    app.screentime().check_notification_permission()
+}
+
+#[command]
+pub(crate) async fn request_notification_permission<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<NotificationPermissionResponse> {
+    app.screentime().request_notification_permission()
+}
+
+#[command]
+pub(crate) async fn open_notification_settings<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<SuccessResponse> {
+    app.screentime().open_notification_settings()
 }
 
 // --- Activity Picker ---

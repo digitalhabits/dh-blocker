@@ -5,6 +5,31 @@ import SwiftUI
 import FamilyControls
 import ManagedSettings
 import DeviceActivity
+import UserNotifications
+import WebKit
+import os
+
+/// NSLog redacts its `%@` arguments to "<private>" and only reaches Console while
+/// something is attached to the process, so a standalone build — every build after
+/// a reboot — logged nothing usable. Log through Logger with public values instead.
+private let scheduleLog = Logger(subsystem: "com.reddblock.app", category: "schedule")
+
+private func logSchedule(_ message: String) {
+    scheduleLog.notice("[ReDD Schedule] \(message, privacy: .public)")
+}
+
+private let scheduleRecheckEvent = DeviceActivityEvent.Name("redd-recheck")
+
+extension ScheduleWindowSignature {
+    init(_ schedule: DeviceActivitySchedule) {
+        self.init(
+            intervalStart: schedule.intervalStart,
+            intervalEnd: schedule.intervalEnd,
+            repeats: schedule.repeats,
+            warningTime: schedule.warningTime
+        )
+    }
+}
 
 // MARK: - Argument Types
 
@@ -96,6 +121,12 @@ class ScheduleEntry: Decodable {
     /// "allowlist" when this entry's domains/tokens are ALLOWED items;
     /// nil/"blocklist" = blocked items (legacy semantics).
     let mode: String?
+    /// Focus space id, for start warnings.
+    let blocklistId: String?
+}
+
+class CancelResumeArgs: Decodable {
+    let blockId: String
 }
 
 class SetSchedulesArgs: Decodable {
@@ -313,6 +344,41 @@ struct ActivityPickerView: View {
     }
 }
 
+/// iPad: the inline picker has no search field on iPadOS 26 (Apple FB22855662); Apple's own sheet keeps it.
+@available(iOS 16.0, *)
+struct SystemActivityPickerHost: View {
+    @State private var selection: FamilyActivitySelection
+    @State private var pickerShown = false
+    let onDone: (FamilyActivitySelection) -> Void
+
+    init(initialSelection: FamilyActivitySelection, onDone: @escaping (FamilyActivitySelection) -> Void) {
+        self._selection = State(initialValue: initialSelection)
+        self.onDone = onDone
+    }
+
+    var body: some View {
+        Color.clear
+            .modifier(SystemPickerSheet(isPresented: $pickerShown, selection: $selection))
+            .onAppear { pickerShown = true }
+            .onChange(of: pickerShown) { shown in if !shown { onDone(selection) } }
+    }
+}
+
+/// Apple's picker sheet, titled "Select Apps" where the OS allows it.
+@available(iOS 16.0, *)
+private struct SystemPickerSheet: ViewModifier {
+    @Binding var isPresented: Bool
+    @Binding var selection: FamilyActivitySelection
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.2, *) {
+            content.familyActivityPicker(title: "Select Apps", headerText: nil, footerText: nil, isPresented: $isPresented, selection: $selection)
+        } else {
+            content.familyActivityPicker(isPresented: $isPresented, selection: $selection)
+        }
+    }
+}
+
 // MARK: - Screen Time Plugin
 
 @available(iOS 16.0, *)
@@ -320,6 +386,10 @@ class ScreentimePlugin: Plugin {
     
     private let store = ManagedSettingsStore()
     private let center = DeviceActivityCenter()
+
+    override func load(webview: WKWebView) {
+        UNUserNotificationCenter.current().delegate = StartWarningPresenter.shared
+    }
     
     // Persist the current selection to the App Group's UserDefaults so it survives
     // app restarts AND is accessible to the DeviceActivityMonitor extension.
@@ -477,10 +547,7 @@ class ScreentimePlugin: Plugin {
                 includeEntireCategory: isAllowMode
             ) ?? (hasExplicitInitialSelection ? FamilyActivitySelection(includeEntireCategory: isAllowMode) : ScreentimePlugin.currentSelection)
 
-            let pickerView = ActivityPickerView(
-                initialSelection: initialSelection,
-                isAllowMode: isAllowMode,
-                onDone: { selection in
+            let finish: (FamilyActivitySelection) -> Void = { selection in
                     // Store the selection
                     ScreentimePlugin.currentSelection = selection
 
@@ -501,17 +568,24 @@ class ScreentimePlugin: Plugin {
                         ]
                         invoke.resolve(response)
                     }
-                },
-                onCancel: {
-                    topVC.dismiss(animated: true) {
-                        invoke.resolve([
-                            "cancelled": true,
-                            "applicationCount": 0,
-                            "categoryCount": 0
-                        ])
-                    }
                 }
-            )
+            let cancel = {
+                topVC.dismiss(animated: true) {
+                    invoke.resolve([
+                        "cancelled": true,
+                        "applicationCount": 0,
+                        "categoryCount": 0
+                    ])
+                }
+            }
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                let host = UIHostingController(rootView: SystemActivityPickerHost(initialSelection: initialSelection, onDone: finish))
+                host.modalPresentationStyle = .overFullScreen
+                host.view.backgroundColor = .clear
+                topVC.present(host, animated: false)
+                return
+            }
+            let pickerView = ActivityPickerView(initialSelection: initialSelection, isAllowMode: isAllowMode, onDone: finish, onCancel: cancel)
             
             let hostingController = UIHostingController(rootView: pickerView)
             hostingController.modalPresentationStyle = .pageSheet
@@ -993,6 +1067,10 @@ class ScreentimePlugin: Plugin {
             replaceAllowlistFallback: true,
             allowlistFallback: nil
         )
+        // The schedule store's allow exceptions include the manual allowlist just
+        // cleared; re-derive them, as every other writer does.
+        IOSWebPolicyApplier.reapplyWebPolicy()
+        IOSAppPolicyApplier.reapplyAppPolicy()
     }
 
     /// Clear only the named "schedule" store — the OS-level shields the
@@ -1043,7 +1121,10 @@ class ScreentimePlugin: Plugin {
             endHour: args.endHour,
             endMinute: args.endMinute
         )
-        SharedScheduleStore.save(id: scheduleId, data: scheduleData)
+        guard SharedScheduleStore.save(id: scheduleId, data: scheduleData) else {
+            invoke.resolve(["success": false, "error": "Failed to persist schedule data"])
+            return
+        }
         
         let schedule = buildDeviceActivitySchedule(
             startHour: args.startHour,
@@ -1074,7 +1155,15 @@ class ScreentimePlugin: Plugin {
             return
         }
         let args = try invoke.parseArgs(SetSchedulesArgs.self)
-        NSLog("[ReDD Schedule] setSchedules called with %d entries", args.schedules.count)
+        logSchedule("setSchedules called with \(args.schedules.count) entries")
+        // Logged before this call re-registers anything: on the first launch after
+        // a restart this is what the system still holds, so an empty list means
+        // the reboot dropped our monitors and no interval could have fired.
+        let heldActivities = center.activities.map { $0.rawValue }
+        logSchedule(
+            "activities held before re-registering count=\(heldActivities.count)"
+            + " names=\(heldActivities.joined(separator: ","))"
+        )
         
         // Get current schedule IDs to determine which to remove
         let existingIds = Set(SharedScheduleStore.loadAll().keys)
@@ -1099,21 +1188,19 @@ class ScreentimePlugin: Plugin {
         
         // Add/update schedules
         var errors: [String] = []
+        var failedSaveIds: [String] = []
+        let now = Calendar.current.dateComponents([.hour, .minute], from: Date())
+        let nowMinuteOfDay = (now.hour ?? 0) * 60 + (now.minute ?? 0)
         for entry in args.schedules {
-            NSLog(
-                "[ReDD Schedule] registering id=%@ start=%02d:%02d end=%02d:%02d repeats=%@ from=%@ until=%@ paused=%@ pauseEnd=%@ days=%@ domains=%d",
-                entry.id,
-                entry.startHour,
-                entry.startMinute,
-                entry.endHour,
-                entry.endMinute,
-                String(entry.repeats ?? true),
-                entry.activeFromTimestampMs.map { String($0) } ?? "nil",
-                entry.activeUntilTimestampMs.map { String($0) } ?? "nil",
-                String(entry.isPaused ?? false),
-                entry.pauseEndTimestampMs.map { String($0) } ?? "nil",
-                String(describing: entry.days ?? []),
-                entry.domains?.count ?? 0
+            logSchedule(
+                "registering id=\(entry.id)"
+                + String(format: " start=%02d:%02d end=%02d:%02d", entry.startHour, entry.startMinute, entry.endHour, entry.endMinute)
+                + " repeats=\(entry.repeats ?? true)"
+                + " from=\(entry.activeFromTimestampMs.map { String($0) } ?? "nil")"
+                + " until=\(entry.activeUntilTimestampMs.map { String($0) } ?? "nil")"
+                + " paused=\(entry.isPaused ?? false)"
+                + " pauseEnd=\(entry.pauseEndTimestampMs.map { String($0) } ?? "nil")"
+                + " days=\(entry.days ?? []) domains=\(entry.domains?.count ?? 0)"
             )
             let scheduleData = buildScheduleData(
                 domains: entry.domains,
@@ -1131,9 +1218,14 @@ class ScreentimePlugin: Plugin {
                 blocklistEmoji: entry.blocklistEmoji,
                 blocklistName: entry.blocklistName,
                 blocklistColorHex: entry.blocklistColorHex,
-                mode: entry.mode
+                mode: entry.mode,
+                blocklistId: entry.blocklistId
             )
-            SharedScheduleStore.save(id: entry.id, data: scheduleData)
+            guard SharedScheduleStore.save(id: entry.id, data: scheduleData) else {
+                errors.append("Schedule \(entry.id): failed to persist schedule data")
+                failedSaveIds.append(entry.id)
+                continue
+            }
             
             let schedule = buildDeviceActivitySchedule(
                 startHour: entry.startHour,
@@ -1144,12 +1236,23 @@ class ScreentimePlugin: Plugin {
             )
             
             let activityName = DeviceActivityName("redd-block-\(entry.id)")
-            
+
+            // setSchedules runs on every launch; replacing a registration just before
+            // its start loses that start, so an unchanged one about to start is kept.
+            if leaveRegistrationAlone(
+                held: center.schedule(for: activityName).map(ScheduleWindowSignature.init),
+                desired: ScheduleWindowSignature(schedule),
+                nowMinuteOfDay: nowMinuteOfDay
+            ) {
+                logSchedule("startMonitoring skipped for \(entry.id): unchanged and starting within \(registrationQuietMinutes) min")
+                continue
+            }
+
             do {
-                try center.startMonitoring(activityName, during: schedule)
-                NSLog("[ReDD Schedule] startMonitoring succeeded for %@", entry.id)
+                try startScheduleMonitoring(activityName, during: schedule, watching: scheduleData)
+                logSchedule("startMonitoring succeeded for \(entry.id)")
             } catch {
-                NSLog("[ReDD Schedule] startMonitoring failed for %@: %@", entry.id, error.localizedDescription)
+                logSchedule("startMonitoring failed for \(entry.id): \(error.localizedDescription)")
                 errors.append("Schedule \(entry.id): \(error.localizedDescription)")
             }
         }
@@ -1162,13 +1265,42 @@ class ScreentimePlugin: Plugin {
                 "scheduledCount": args.schedules.count
             ])
         } else {
+            // Per-entry save failures let a timed stop tell its own lost pause from
+            // another space's failure; registration failures do not affect a pause.
             invoke.resolve([
                 "success": false,
-                "error": errors.joined(separator: "; ")
+                "error": errors.joined(separator: "; "),
+                "failedSaveIds": failedSaveIds
             ])
         }
     }
     
+    /// Adds a one-minute usage event so a start iOS never delivers is recovered by
+    /// use. Block mode watches the blocked apps; allow mode names none, meant to count
+    /// all use (logged, as that reading is undocumented). Falls back to no event.
+    private func startScheduleMonitoring(
+        _ name: DeviceActivityName,
+        during schedule: DeviceActivitySchedule,
+        watching scheduleData: ScheduleBlockData
+    ) throws {
+        let watchBlocked = !scheduleData.isAllowlist
+        let recheck = DeviceActivityEvent(
+            applications: watchBlocked ? decodeApplicationTokens(scheduleData.appTokenData) : [],
+            categories: watchBlocked ? decodeCategoryTokens(scheduleData.categoryTokenData) : [],
+            threshold: DateComponents(minute: 1)
+        )
+        do {
+            try center.startMonitoring(name, during: schedule, events: [scheduleRecheckEvent: recheck])
+            logSchedule(
+                "recheck event registered for \(name.rawValue) apps=\(recheck.applications.count)"
+                + " categories=\(recheck.categories.count) includesAllActivity=\(recheck.includesAllActivity)"
+            )
+        } catch {
+            logSchedule("recheck event refused for \(name.rawValue): \(error.localizedDescription); registering without it")
+            try center.startMonitoring(name, during: schedule)
+        }
+    }
+
     @objc public func unscheduleBlock(_ invoke: Invoke) throws {
         // Try to parse args to check if a specific ID was provided
         let args = try? invoke.parseArgs(UnscheduleBlockArgs.self)
@@ -1210,33 +1342,26 @@ class ScreentimePlugin: Plugin {
             return
         }
         let args = try invoke.parseArgs(RegisterOneOffActivityArgs.self)
-        let startDate = Date(timeIntervalSince1970: args.startTimestampMs / 1000.0)
-        let endDate = startDate.addingTimeInterval(15 * 60)
         let calendar = Calendar.current
-        let crossesMidnight = !calendar.isDate(startDate, inSameDayAs: endDate)
-        // Keep the existing same-day path unchanged. Only midnight-crossing one-offs
-        // opt into explicit date components so 23:xx -> 00:xx registrations remain
-        // anchored to the intended day boundary.
-        let components: Set<Calendar.Component> = crossesMidnight
-            ? [.year, .month, .day, .hour, .minute, .second]
-            : [.hour, .minute, .second]
-        let intervalStart = calendar.dateComponents(components, from: startDate)
-        let intervalEnd = calendar.dateComponents(components, from: endDate)
-        if crossesMidnight {
-            NSLog(
-                "[ReDD Schedule] registerOneOffActivity using date-aware midnight path name=%@ start=%@ end=%@",
-                args.activityName,
-                String(describing: intervalStart),
-                String(describing: intervalEnd)
-            )
-        }
-        let schedule = DeviceActivitySchedule(
-            intervalStart: intervalStart,
-            intervalEnd: intervalEnd,
-            repeats: false
-        )
-        let activityName = DeviceActivityName(args.activityName)
+        let now = Date()
         do {
+            let timing = try OneOffActivityTiming.resolve(
+                startTimestampMs: args.startTimestampMs,
+                now: now,
+                calendar: calendar
+            )
+            let schedule = DeviceActivitySchedule(
+                intervalStart: timing.intervalStart,
+                intervalEnd: timing.intervalEnd,
+                repeats: false
+            )
+            let nextInterval = schedule.nextInterval
+            guard timing.isResolvedIntervalSafe(nextInterval, now: now, calendar: calendar) else {
+                invoke.resolve(["success": false, "error": "Screen Time returned an unsafe one-off interval"])
+                return
+            }
+
+            let activityName = DeviceActivityName(args.activityName)
             center.stopMonitoring([activityName])
             try center.startMonitoring(activityName, during: schedule)
             invoke.resolve(["success": true])
@@ -1259,10 +1384,23 @@ class ScreentimePlugin: Plugin {
             days: nil,
             mode: args.mode
         )
-        SharedManualBlockStore.saveResumePayload(blockId: args.blockId, payload)
+        guard SharedManualBlockStore.saveResumePayload(blockId: args.blockId, payload) else {
+            invoke.resolve(["success": false, "error": "Failed to persist automatic restart payload"])
+            return
+        }
         invoke.resolve(["success": true])
     }
     
+    /// Cancel a Manual block's automatic restart: its one-off wake-up and the payload it
+    /// would re-apply. Nothing booked is fine; stopping an unknown activity is a no-op.
+    @objc public func cancelResume(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(CancelResumeArgs.self)
+        center.stopMonitoring([DeviceActivityName("redd-block-resume-\(args.blockId)")])
+        SharedManualBlockStore.removeResumePayload(blockId: args.blockId)
+        logSchedule("cancelled automatic restart for block \(args.blockId)")
+        invoke.resolve(["success": true])
+    }
+
     /// Save state to apply when a block ends (effective state without this block) so extension can apply at endTime.
     @objc public func setBlockEndState(_ invoke: Invoke) throws {
         guard isAuthorized() else {
@@ -1300,7 +1438,8 @@ class ScreentimePlugin: Plugin {
         blocklistEmoji: String? = nil,
         blocklistName: String? = nil,
         blocklistColorHex: String? = nil,
-        mode: String? = nil
+        mode: String? = nil,
+        blocklistId: String? = nil
     ) -> ScheduleBlockData {
         return ScheduleBlockData(
             domains: domains ?? [],
@@ -1318,7 +1457,8 @@ class ScreentimePlugin: Plugin {
             blocklistEmoji: blocklistEmoji,
             blocklistName: blocklistName,
             blocklistColorHex: blocklistColorHex,
-            mode: mode
+            mode: mode,
+            blocklistId: blocklistId
         )
     }
 
@@ -1356,13 +1496,9 @@ class ScreentimePlugin: Plugin {
         )
         let minutesBeforePaddedEnd = 15 - actualDurationMinutes
 
-        NSLog(
-            "[ReDD Schedule] padding short interval %02d:%02d-%02d:%02d to 15 minutes with warningTime=%d",
-            startHour,
-            startMinute,
-            endHour,
-            endMinute,
-            minutesBeforePaddedEnd
+        logSchedule(
+            String(format: "padding short interval %02d:%02d-%02d:%02d", startHour, startMinute, endHour, endMinute)
+            + " to 15 minutes with warningTime=\(minutesBeforePaddedEnd)"
         )
 
         return DeviceActivitySchedule(
@@ -1409,6 +1545,66 @@ class ScreentimePlugin: Plugin {
         IOSAppPolicyApplier.reapplyAppPolicy(now: now)
     }
     
+    // MARK: - Start warnings (notifications before a focus space starts)
+
+    /// Rebuilds the pending warnings from the saved schedules and this config.
+    /// Never touches blocking, and never changes the set_schedules result.
+    @objc public func setStartWarnings(_ invoke: Invoke) throws {
+        let config = try invoke.parseArgs(StartWarningConfig.self)
+        Task { @MainActor in
+            let result = await StartWarningBooker.rebuild(config: config)
+            logSchedule(
+                "start warnings rebuilt enabled=\(config.enabled) status=\(result.status)"
+                + " scheduled=\(result.scheduled) error=\(result.error ?? "none")"
+            )
+            var response: [String: Any] = [
+                "success": result.error == nil,
+                "status": result.status,
+                "scheduled": result.scheduled
+            ]
+            if let error = result.error { response["error"] = error }
+            invoke.resolve(response)
+        }
+    }
+
+    @objc public func checkNotificationPermission(_ invoke: Invoke) throws {
+        Task {
+            let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+            invoke.resolve([
+                "status": StartWarningBooker.statusString(status),
+                "granted": StartWarningBooker.canDeliver(status)
+            ])
+        }
+    }
+
+    /// Shows the iOS prompt only while iOS has never asked; afterwards it just reports.
+    @objc public func requestNotificationPermission(_ invoke: Invoke) throws {
+        Task {
+            let center = UNUserNotificationCenter.current()
+            do {
+                _ = try await center.requestAuthorization(options: [.alert, .sound])
+            } catch {
+                logSchedule("notification permission request failed: \(error.localizedDescription)")
+            }
+            let status = await center.notificationSettings().authorizationStatus
+            invoke.resolve([
+                "status": StartWarningBooker.statusString(status),
+                "granted": StartWarningBooker.canDeliver(status)
+            ])
+        }
+    }
+
+    @objc public func openNotificationSettings(_ invoke: Invoke) throws {
+        DispatchQueue.main.async {
+            guard let url = URL(string: UIApplication.openNotificationSettingsURLString) else {
+                invoke.resolve(["success": false, "error": "No notification settings link"])
+                return
+            }
+            UIApplication.shared.open(url)
+            invoke.resolve(["success": true])
+        }
+    }
+
     private func statusString(_ status: AuthorizationStatus) -> String {
         switch status {
         case .notDetermined:

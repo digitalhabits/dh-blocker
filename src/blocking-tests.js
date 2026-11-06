@@ -28,6 +28,12 @@
  * - T207: colour-swatch tick / + are inked against the swatch's own colour
  * - T208-T212: Desktop app-watcher payload: allow-mode spaces feed allowedApps, never the kill list
  * - T158b: iOS schedule entries drop protected domains, as the manual payload does
+ * - T158c: iOS schedule entries skip a segment with no days, which never applies
+ * - T240-T242: iOS start warnings: entries name their space; the payload's manual resumes and switch
+ * - T243-T245: iOS cancels a Manual space's pending restart when it is resumed early, stopped with Never or cleared by Stop all
+ * - T246: a space switched off with a restart time can be deleted; the delete cancels the restart once undo has passed
+ * - T247: Stop all switches every schedule off and keeps its days and times
+ * - T248-T251: "All day" stores start == end, locks the times, switching it off restores them, and a range keeps its place
  * - T226-T229: iOS allow-mode 50-item cap counted across every running space
  * - T213-T219, T222-T223: The start card names the space that just started and closes the app; allow mode gets its own card
  * - T220-T221: Diagnostics reports an allow-mode space as allowing, not blocking
@@ -1128,7 +1134,7 @@
             assertEqual(appData.activeBlocks.length, 0, 'T40: Override all → zero active blocks');
         })();
 
-        // T41: Only schedules → after override, schedules array empty
+        // T41: Only schedules → after override, every schedule is off but kept
         (function T41() {
             const bl = createMockBlocklist({ websites: ['youtube.com'] });
             const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
@@ -1142,7 +1148,8 @@
             });
 
             simulateOverrideAll(appData);
-            assertEqual(appData.schedules.length, 0, 'T41: Override all → zero schedules');
+            assert(appData.schedules.length === 2 && appData.schedules.every(s => s.isPaused && !s.pauseEndTime),
+                'T41: Override all → every schedule switched off, none deleted');
         })();
 
         // T42: Override all preserves blocklists (doesn't delete user's lists)
@@ -1576,113 +1583,6 @@
     }
 
     // ========================================
-    // CATEGORY 18: ANDROID PAYLOAD (T143-T152)
-    // ========================================
-
-    // Android's Kotlin side has no notion of allow mode at any layer, so
-    // blockedApps is always treated as a denylist. Sending an allow-mode focus
-    // space would block precisely the apps it is meant to permit, so the payload
-    // builder omits those spaces entirely.
-    function runAndroidPayloadTests() {
-        console.log('\n🤖 Category 18: Android Payload');
-        console.log('-------------------------------');
-
-        const {
-            buildAndroidScheduleEntries: build,
-            isAndroidAllowlistUnsupported: unsupported,
-        } = window.__REDDBLOCK_INTERNALS__;
-        const saved = window.__REDDBLOCK_INTERNALS__.appData;
-
-        const seg = { startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, days: [] };
-        const withData = (blocklists, { schedules = [], activeBlocks = [] } = {}) => {
-            window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({ blocklists, schedules, activeBlocks });
-        };
-
-        try {
-            (function T142() {
-                const allowMode = createMockBlocklist({ mode: 'allowlist', apps: ['com.allowed'] });
-                const blockMode = createMockBlocklist({ mode: 'blocklist', apps: ['com.blocked'] });
-                assert(unsupported(allowMode, true), 'T142: Android rejects allow-mode starts');
-                assert(!unsupported(blockMode, true), 'T142: Android still permits block-mode starts');
-                assert(!unsupported(allowMode, false), 'T142: allow mode remains supported on non-Android platforms');
-            })();
-
-            (function T143() {
-                const bl = createMockBlocklist({ mode: 'blocklist', apps: ['com.x'], websites: ['x.com'] });
-                withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
-                const entries = build();
-                assertEqual(entries.length, 1, 'T143: a block-mode schedule produces an entry');
-                assertEqual(entries[0].blockedApps, ['com.x'], 'T143: and carries its apps');
-            })();
-
-            (function T144() {
-                const bl = createMockBlocklist({ mode: 'allowlist', apps: ['com.x'], websites: ['x.com'] });
-                withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
-                assertEqual(build().length, 0, 'T144: an allow-mode schedule is omitted entirely');
-            })();
-
-            (function T145() {
-                // The dangerous case: without the skip, com.keepme would be sent as
-                // blockedApps and Kotlin would block the one app meant to stay open.
-                const bl = createMockBlocklist({ mode: 'allowlist', apps: ['com.keepme'], websites: [] });
-                withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
-                const allApps = build().flatMap(e => e.blockedApps || []);
-                assert(!allApps.includes('com.keepme'), 'T145: an allowed app never reaches the payload as a blocked app');
-            })();
-
-            (function T146() {
-                const bl = createMockBlocklist({ mode: 'allowlist', apps: ['com.x'] });
-                withData([bl], { activeBlocks: [createMockBlock(bl.id, Date.now() - 1000, Date.now() + 60000)] });
-                assertEqual(build().length, 0, 'T146: an allow-mode one-off block is omitted too');
-            })();
-
-            (function T147() {
-                const blockMode = createMockBlocklist({ mode: 'blocklist', apps: ['com.blocked'] });
-                const allowMode = createMockBlocklist({ mode: 'allowlist', apps: ['com.allowed'] });
-                withData([blockMode, allowMode], {
-                    schedules: [createMockSchedule(blockMode.id, [seg]), createMockSchedule(allowMode.id, [seg])],
-                });
-                const entries = build();
-                assertEqual(entries.length, 1, 'T147: only the block-mode space survives a mixed set');
-                assertEqual(entries[0].blockedApps, ['com.blocked'], 'T147: and it is the right one');
-            })();
-
-            (function T148() {
-                // Absent mode must behave as a blocklist — most saved data predates
-                // the field entirely.
-                const bl = createMockBlocklist({ apps: ['com.x'] });
-                delete bl.mode;
-                withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
-                assertEqual(build().length, 1, 'T148: a blocklist with no mode field is still enforced');
-            })();
-
-            (function T149() {
-                const bl = createMockBlocklist({ mode: 'blocklist', apps: ['com.x'] });
-                withData([bl], {
-                    schedules: [createMockSchedule(bl.id, [seg, { ...seg, startHour: 19, endHour: 20 }])],
-                });
-                assertEqual(build().length, 2, 'T149: each segment still becomes its own entry');
-            })();
-
-            (function T150() {
-                // An allow-mode space must not suppress an unrelated block-mode one
-                // that happens to share a segment shape.
-                const allowMode = createMockBlocklist({ mode: 'allowlist', apps: ['com.allowed'] });
-                const blockMode = createMockBlocklist({ mode: 'blocklist', apps: ['com.blocked'] });
-                withData([allowMode, blockMode], {
-                    schedules: [createMockSchedule(allowMode.id, [seg])],
-                    activeBlocks: [createMockBlock(blockMode.id, Date.now() - 1000, Date.now() + 60000)],
-                });
-                const entries = build();
-                assertEqual(entries.length, 1, 'T150: the block-mode one-off still syncs alongside a skipped allow space');
-                assertEqual(entries[0].type, 'MANUAL', 'T150: and keeps its MANUAL type');
-            })();
-        } finally {
-            window.__REDDBLOCK_INTERNALS__.appData = saved;
-        }
-    }
-
-    // ========================================
     // CATEGORY: DESKTOP APP WATCHER PAYLOAD (T208-T212)
     // ========================================
 
@@ -1831,6 +1731,25 @@
                     schedules: [createMockSchedule(a.id, [allDay], { isPaused: true })],
                 });
                 assertEqual(sourcesNow().length, 0, 'T229: a schedule paused with no end time is not an active source, as Swift and the rest of the JS already treat it');
+            })();
+
+            (function T235() {
+                // Switching a paused allow space back on runs the same check as starting it.
+                const running = allow(sites('a', 30));
+                const paused = allow(sites('b', 30));
+                const pausedBlock = createMockBlock(paused.id, now - 1000, now + 3600000, { isPaused: true, pauseEndTime: now + 600000 });
+                internals.appData = createMockAppData({
+                    blocklists: [running, paused],
+                    activeBlocks: [createMockBlock(running.id, now - 1000, now + 60000), pausedBlock],
+                });
+                const wasIOS = internals.isIOS;
+                internals.isIOS = true;
+                try {
+                    internals.turnFocusSpaceOn(paused.id, now)?.catch?.(() => {});
+                } finally {
+                    internals.isIOS = wasIOS;
+                }
+                assert(pausedBlock.isPaused === true, 'T235: resuming an allow space that would push the union past 50 is refused on iOS');
             })();
 
         } finally {
@@ -2027,7 +1946,8 @@
         const { buildIOSScheduleEntries: build } = window.__REDDBLOCK_INTERNALS__;
         const saved = window.__REDDBLOCK_INTERNALS__.appData;
 
-        const seg = { startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, days: [] };
+        // Every day: a segment with no days never applies and is not sent (T158c).
+        const seg = { startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, days: [0, 1, 2, 3, 4, 5, 6] };
         const withData = (blocklists, schedules) => {
             window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({ blocklists, schedules, activeBlocks: [] });
         };
@@ -2095,7 +2015,7 @@
                     createMockSchedule(blockMode.id, [seg]),
                 ]);
                 const entries = build();
-                assertEqual(entries.length, 2, 'T157: mixed modes both sync (unlike Android, which skips allow mode)');
+                assertEqual(entries.length, 2, 'T157: mixed modes both sync');
                 const byMode = Object.fromEntries(entries.map(e => [e.mode ?? 'null', e.domains[0]]));
                 assertEqual(byMode.allowlist, 'allowed.com', 'T157: the allow entry carries the allowed domain');
                 assertEqual(byMode.null, 'blocked.com', 'T157: the block entry carries the blocked domain');
@@ -2128,6 +2048,62 @@
                 assertEqual(entries.length, 1, 'T158b: the schedule produces an entry');
                 assert(!entries[0].domains.includes(protectedDomain), 'T158b: a protected domain never ships in a schedule entry');
                 assert(entries[0].domains.includes('x.com'), 'T158b: ordinary domains still ship');
+            })();
+
+            (function T158c() {
+                // The editor lets a segment keep no days, and the app reads it as never
+                // active. Swift reads an empty day list as "every day", so a shipped
+                // entry blocked daily while the app was closed and the app stripped it
+                // again once opened.
+                const bl = createMockBlocklist({ mode: 'blocklist', websites: ['x.com'] });
+                withData([bl], [createMockSchedule(bl.id, [{ ...seg, days: [] }, { ...seg, startHour: 19, endHour: 20 }])]);
+                const entries = build();
+                assertEqual(entries.length, 1, 'T158c: a segment with no days is not sent');
+                assertEqual(entries[0].startHour, 19, 'T158c: the segment with days still is');
+                assert(entries[0].id.endsWith('-1'), 'T158c: and keeps its own segment index in its id');
+            })();
+
+            (function T240() {
+                // Swift groups a space's segments by this id, so touching segments of one
+                // space are not warned twice and two spaces are never merged.
+                const bl = createMockBlocklist({ mode: 'blocklist', websites: ['x.com'] });
+                withData([bl], [createMockSchedule(bl.id, [seg, { ...seg, startHour: 17, endHour: 20 }])]);
+                const entries = build();
+                assert(entries.length === 2 && entries.every((e) => e.blocklistId === bl.id),
+                    'T240: every schedule entry carries its focus space id');
+            })();
+
+            (function T241() {
+                const { buildStartWarningsPayload } = window.__REDDBLOCK_INTERNALS__;
+                const now = Date.now();
+                const bl = createMockBlocklist({ mode: 'blocklist', websites: ['x.com'] });
+                const block = (id, extra) => ({ id, blocklistId: bl.id, startTime: now - 1000, endTime: now + 1e12, ...extra });
+                window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({
+                    blocklists: [bl],
+                    schedules: [],
+                    activeBlocks: [
+                        block('timed', { isPaused: true, pauseEndTime: now + 3600000 }),
+                        block('expired', { isPaused: true, pauseEndTime: now - 1000 }),
+                        block('open', { isPaused: true }),
+                        block('running', {}),
+                    ],
+                });
+                const resumes = buildStartWarningsPayload(now).manualResumes;
+                assertEqual(resumes.length, 1, 'T241: only a manual space stopped until a future time is sent');
+                assertEqual(resumes[0].id, 'timed', 'T241: and it is the timed stop');
+                assertEqual(resumes[0].resumeAtMs, now + 3600000, 'T241: with its resume time');
+                assertEqual(resumes[0].name, bl.name, 'T241: and its name for the wording');
+            })();
+
+            (function T242() {
+                const { buildStartWarningsPayload } = window.__REDDBLOCK_INTERNALS__;
+                withData([], []);
+                const payload = buildStartWarningsPayload();
+                assertEqual(payload.enabled, false, 'T242: without Screen Time access nothing is booked');
+                assert(payload.strings.startTitleFmt.includes('{name}') && payload.strings.blockBodyFmt.includes('{time}'),
+                    'T242: the wording carries the placeholders Swift fills in');
+                window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({ blocklists: [], schedules: [], activeBlocks: [], settings: { startWarningsEnabled: false } });
+                assertEqual(buildStartWarningsPayload().enabled, false, 'T242: the Settings switch turns them off');
             })();
         } finally {
             window.__REDDBLOCK_INTERNALS__.appData = saved;
@@ -2375,6 +2351,250 @@
         }
     }
 
+    // iOS timed-stop orchestration is async because the native payload and
+    // DeviceActivity registration must both settle before the pause commits.
+    // These tests drive the actual stopFocusSpaceTarget path with a mocked
+    // native API; no Screen Time entitlement is involved.
+    async function runIOSResumeOrderingTests() {
+        console.log('\n📱 iOS timed-stop native ordering');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        if (typeof internals.stopFocusSpaceTarget !== 'function') {
+            assert(false, 'T69: stopFocusSpaceTarget is exposed to tests');
+            return;
+        }
+
+        const api = internals.tauriAPI;
+        const methodNames = ['saveData', 'screentimeSetResumePayload', 'screentimeRegisterOneOffActivity', 'screentimeCancelResume',
+            'screentimeStartBlock', 'screentimeClearBlock', 'screentimeClearManualBlock',
+            'setSchedulesPlugin', 'checkHelperStatus', 'setBlockedAppsViaHelper'];
+        const savedMethods = Object.fromEntries(methodNames.map(name => [name, api[name]]));
+        const savedAppData = internals.appData;
+        const savedLastBlockedDomains = internals.lastBlockedDomains;
+        const savedIsIOS = internals.isIOS;
+        const savedAlert = window.alert;
+        const forever = 253402300799999;
+        const blocklist = createMockBlocklist({ id: 'bl-ios-resume-order', unlockMinutes: 10, websites: ['resume-order.invalid'] });
+        const makeBlock = (extra = {}) => createMockBlock(blocklist.id, Date.now() - 1000, forever, { isAlwaysOn: true, ...extra });
+        const scheduleBlocklist = createMockBlocklist({ id: 'bl-ios-resume-schedule', unlockMinutes: 10, websites: ['schedule-resume.invalid'] });
+        const overlapBlocklist = createMockBlocklist({ id: 'bl-ios-resume-overlap', unlockMinutes: 10, websites: ['overlap-resume.invalid'] });
+        const allDay = { startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, days: [0, 1, 2, 3, 4, 5, 6] };
+        let events = [], currentTarget = null, registrationDelay = false, registrationThrows = false;
+        let registrationResult = { success: true };
+        let scheduleSyncResults = null;
+        let registrationPauseState = null;
+        let registeredDeadline = null;
+
+        try {
+            internals.isIOS = true;
+            window.alert = () => {};
+            api.saveData = async () => { events.push('save'); return { success: true }; };
+            api.screentimeSetResumePayload = async () => { events.push('payload'); return { success: true }; };
+            api.screentimeRegisterOneOffActivity = async (_name, deadline) => {
+                events.push('register');
+                registrationPauseState = currentTarget?.isPaused;
+                registeredDeadline = deadline;
+                if (registrationDelay) await new Promise(resolve => setTimeout(resolve, 0));
+                if (registrationThrows) throw new Error('registration threw');
+                return registrationResult;
+            };
+            api.screentimeCancelResume = async (blockId) => { events.push(`cancel:${blockId}`); return { success: true }; };
+            api.screentimeStartBlock = async () => { events.push('start-block'); return { success: true }; };
+            api.screentimeClearBlock = async () => { events.push('clear-block'); return { success: true }; };
+            api.screentimeClearManualBlock = async () => { events.push('clear-manual'); return { success: true }; };
+            api.setSchedulesPlugin = async () => {
+                events.push('schedule-sync');
+                return scheduleSyncResults?.length ? scheduleSyncResults.shift() : { success: true };
+            };
+            api.setBlockedAppsViaHelper = async () => { events.push('desktop-app-sync'); return { success: true }; };
+
+            const setBlock = (block) => {
+                currentTarget = block;
+                internals.appData = createMockAppData({ blocklists: [blocklist], activeBlocks: [block], schedules: [] });
+            };
+            const setSchedules = (schedule, overlap = null) => {
+                currentTarget = schedule;
+                internals.appData = createMockAppData({
+                    blocklists: [scheduleBlocklist, overlapBlocklist],
+                    activeBlocks: [],
+                    schedules: overlap ? [schedule, overlap] : [schedule],
+                });
+            };
+
+            // Manual success: native sees the running block still protected,
+            // and the commit uses the exact deadline passed to registration.
+            const currentBlock = makeBlock();
+            setBlock(currentBlock);
+            events = [];
+            registrationDelay = true;
+            const success = await internals.stopFocusSpaceTarget({ block: currentBlock });
+            assert(success?.kind === 'unlocked' && registrationPauseState === undefined,
+                'T69: manual registration precedes the pause mutation');
+            assertEqual(currentBlock.pauseEndTime, registeredDeadline, 'T69: committed deadline equals registered deadline');
+            assert(events.indexOf('register') < events.indexOf('save'), 'T69: registration precedes persistence');
+
+            const successfulSchedule = createMockSchedule(scheduleBlocklist.id, [allDay]);
+            const overlappingSchedule = createMockSchedule(overlapBlocklist.id, [allDay]);
+            setSchedules(successfulSchedule, overlappingSchedule);
+            events = [];
+            const scheduleSuccess = await internals.stopFocusSpaceTarget({ schedule: successfulSchedule });
+            assert(scheduleSuccess?.kind === 'unlocked' && registrationPauseState === undefined,
+                'T69b: schedule registration precedes its pause mutation');
+            assertEqual(successfulSchedule.pauseEndTime, registeredDeadline, 'T69b: schedule commits registered deadline');
+            assert(events.indexOf('register') < events.indexOf('schedule-sync') && !overlappingSchedule.isPaused,
+                'T69b: schedule registration precedes sync and preserves overlap');
+
+            // A native schedule-data persistence failure after registration must
+            // restore the running schedule and report no successful stop.
+            const syncFailureSchedule = createMockSchedule(scheduleBlocklist.id, [allDay]);
+            setSchedules(syncFailureSchedule);
+            events = [];
+            scheduleSyncResults = [
+                { success: false, error: 'schedule sync rejected' },
+                { success: true }
+            ];
+            const syncFailure = await internals.stopFocusSpaceTarget({ schedule: syncFailureSchedule });
+            assert(syncFailure === null && !syncFailureSchedule.isPaused && events.filter(event => event === 'schedule-sync').length >= 2,
+                'T69c: schedule sync failure restores blocking and returns no successful stop');
+            scheduleSyncResults = null;
+
+            // Only the stopped schedule's own failed save can lose its pause.
+            const otherFailureSchedule = createMockSchedule(scheduleBlocklist.id, [allDay]);
+            setSchedules(otherFailureSchedule);
+            scheduleSyncResults = [{ success: false, error: 'another space failed', failedSaveIds: ['some-other-schedule-0'] }];
+            const otherFailure = await internals.stopFocusSpaceTarget({ schedule: otherFailureSchedule });
+            assert(otherFailure?.kind === 'unlocked' && otherFailureSchedule.isPaused === true,
+                "T69d: another schedule's failed save does not undo this schedule's timed stop");
+            scheduleSyncResults = null;
+
+            const ownFailureSchedule = createMockSchedule(scheduleBlocklist.id, [allDay]);
+            setSchedules(ownFailureSchedule);
+            scheduleSyncResults = [
+                { success: false, error: 'own save failed', failedSaveIds: [`${ownFailureSchedule.id}-0`] },
+                { success: true }
+            ];
+            const ownFailure = await internals.stopFocusSpaceTarget({ schedule: ownFailureSchedule });
+            assert(ownFailure === null && !ownFailureSchedule.isPaused,
+                "T69e: the stopped schedule's own failed save still restores blocking");
+            scheduleSyncResults = null;
+
+            const unrelatedSyncBlock = makeBlock();
+            setBlock(unrelatedSyncBlock);
+            scheduleSyncResults = [{ success: false, error: 'schedule sync rejected' }];
+            const blockStop = await internals.stopFocusSpaceTarget({ block: unrelatedSyncBlock });
+            assert(blockStop?.kind === 'unlocked' && unrelatedSyncBlock.isPaused === true,
+                'T69f: a schedule sync failure does not undo a manual block timed stop');
+            scheduleSyncResults = null;
+
+            // Payload rejection leaves a running space untouched and never registers.
+            const payloadFailureBlock = makeBlock();
+            setBlock(payloadFailureBlock);
+            events = [];
+            registrationDelay = false;
+            api.screentimeSetResumePayload = async () => { events.push('payload'); return { success: false, error: 'rejected' }; };
+            const payloadFailure = await internals.stopFocusSpaceTarget({ block: payloadFailureBlock });
+            assert(payloadFailure === null && !payloadFailureBlock.isPaused && !events.includes('register'),
+                'T70: payload rejection preserves the active block');
+            api.screentimeSetResumePayload = async () => { events.push('payload'); return { success: true }; };
+
+            // A thrown registration after replacing a paused manual monitor
+            // restores the manual enforcement path.
+            registrationThrows = true;
+            const pausedBlock = makeBlock({ isPaused: true, pauseEndTime: Date.now() + 60_000 });
+            setBlock(pausedBlock);
+            events = [];
+            const pausedBlockFailure = await internals.stopFocusSpaceTarget({ block: pausedBlock });
+            assert(pausedBlockFailure === null && !pausedBlock.isPaused && events.includes('start-block'),
+                'T70b: failed manual replacement restores and reapplies blocking');
+            registrationThrows = false;
+
+            // An explicit native rejection leaves an active schedule and its
+            // overlapping space unchanged.
+            const activeSchedule = createMockSchedule(scheduleBlocklist.id, [allDay]);
+            const activeOverlap = createMockSchedule(overlapBlocklist.id, [allDay]);
+            setSchedules(activeSchedule, activeOverlap);
+            events = [];
+            registrationResult = { success: false, error: 'schedule rejected' };
+            const activeScheduleFailure = await internals.stopFocusSpaceTarget({ schedule: activeSchedule });
+            assert(activeScheduleFailure === null && !activeSchedule.isPaused && !activeOverlap.isPaused,
+                'T71: registration rejection preserves active and overlapping schedules');
+            assert(!events.includes('schedule-sync') && !events.includes('clear-block'), 'T71: rejection does not resync or clear');
+
+            // A paused schedule is restored if registration replaces its old monitor.
+            const pausedSchedule = createMockSchedule(scheduleBlocklist.id, [allDay], { isPaused: true, pauseEndTime: Date.now() + 60_000 });
+            setSchedules(pausedSchedule);
+            events = [];
+            const pausedScheduleFailure = await internals.stopFocusSpaceTarget({ schedule: pausedSchedule });
+            assert(pausedScheduleFailure === null && !pausedSchedule.isPaused && events.includes('schedule-sync'),
+                'T71b: failed replacement restores and resyncs the paused schedule');
+
+            // Keep the existing non-iOS and Never semantics away from the timed path.
+            registrationResult = { success: true };
+            internals.isIOS = false;
+            const desktopBlock = makeBlock();
+            setBlock(desktopBlock);
+            events = [];
+            api.checkHelperStatus = async () => ({ running: false, version_ok: false });
+            await internals.stopFocusSpaceTarget({ block: desktopBlock });
+            assert(!events.includes('register'), 'T72: non-iOS stop does not register an iOS activity');
+
+            internals.isIOS = true;
+            const neverBlocklist = { ...blocklist, id: 'bl-ios-never', unlockMinutes: 0 };
+            const neverBlock = createMockBlock(neverBlocklist.id, Date.now() - 1000, forever, { isAlwaysOn: true });
+            internals.appData = createMockAppData({ blocklists: [neverBlocklist], activeBlocks: [neverBlock], schedules: [] });
+            events = [];
+            const never = await internals.stopFocusSpaceTarget({ block: neverBlock });
+            assert(never?.kind === 'removed', 'T72: Never keeps the existing removal semantics');
+
+            // A Manual space's restart is booked with iOS and re-applies its saved apps
+            // on its own, so every way it stops being wanted must cancel it.
+            assert(events.includes(`cancel:${neverBlock.id}`), 'T243: stopping with Never cancels a restart left from an earlier timed stop');
+
+            const earlyBlock = makeBlock({ isPaused: true, pauseEndTime: Date.now() + 60_000 });
+            setBlock(earlyBlock);
+            events = [];
+            await internals.resumePausedBlock(earlyBlock);
+            assert(events.includes(`cancel:${earlyBlock.id}`), 'T244: switching a stopped Manual space on early cancels its restart');
+
+            const stoppedBlock = makeBlock({ isPaused: true, pauseEndTime: Date.now() + 60_000 });
+            setBlock(stoppedBlock);
+            events = [];
+            await internals.performOverrideAll();
+            assert(events.includes(`cancel:${stoppedBlock.id}`), 'T245: Stop all cancels the restart of a stopped Manual space');
+
+            // The switch reads off, so the space can go; only a running one is refused.
+            const runningBlock = makeBlock();
+            setBlock(runningBlock);
+            await internals.deleteBlocklist(blocklist.id);
+            assertEqual(internals.appData.activeBlocks.length, 1, 'T246: a running Manual space still cannot be deleted');
+            const deletedBlock = makeBlock({ isPaused: true, pauseEndTime: Date.now() + 60_000 });
+            setBlock(deletedBlock);
+            events = [];
+            await internals.deleteBlocklist(blocklist.id);
+            assertEqual(internals.appData.activeBlocks.length, 0, 'T246: a Manual space switched off with a restart time can be deleted');
+            assert(!events.some(event => event.startsWith('cancel:')), 'T246: its restart is kept while the delete can still be undone');
+            internals.commitDelete();
+            assert(events.includes(`cancel:${deletedBlock.id}`), 'T246: committing the delete cancels its restart');
+
+            const keptSchedule = createMockSchedule(scheduleBlocklist.id, [allDay]);
+            const timedSchedule = createMockSchedule(overlapBlocklist.id, [allDay], { isPaused: true, pauseEndTime: Date.now() + 60_000 });
+            setSchedules(keptSchedule, timedSchedule);
+            assert(internals.hasAnyBlockingStateToClear(), 'T247: running and timed-off schedules count for Stop all');
+            events = [];
+            await internals.performOverrideAll();
+            const kept = internals.appData.schedules;
+            assert(kept.length === 2 && kept.every(s => s.isPaused && !s.pauseEndTime && s.segments.length === 1),
+                'T247: Stop all switches every schedule off and keeps its days and times');
+            assert(events.includes('schedule-sync'), 'T247: and syncs the switched-off schedules to iOS');
+            assert(!internals.hasAnyBlockingStateToClear(), 'T247: after which Stop all has nothing left to stop');
+        } finally {
+            internals.appData = savedAppData;
+            internals.lastBlockedDomains = savedLastBlockedDomains;
+            internals.isIOS = savedIsIOS;
+            window.alert = savedAlert;
+            for (const [name, method] of Object.entries(savedMethods)) api[name] = method;
+        }
+    }
+
     // ========================================
     // CATEGORY 16: CHALLENGE PRIMITIVES (T94-T115)
     // ========================================
@@ -2596,6 +2816,7 @@
             root.innerHTML = `
                 <div class="modal-content">
                     <div data-el="text" class="challenge-text"></div>
+                    <strong data-el="wordsRemaining" class="challenge-words-remaining"></strong>
                     <div data-el="wordProgress" class="challenge-word-progress hidden"></div>
                     <div data-el="currentWord" class="challenge-current-word hidden"></div>
                     <input data-el="wordInput" class="challenge-input challenge-word-input hidden">
@@ -2609,6 +2830,7 @@
                 inputEl: pick('input'),
                 wordInputEl: pick('wordInput'),
                 wordProgressEl: pick('wordProgress'),
+                wordsRemainingEl: pick('wordsRemaining'),
                 currentWordEl: pick('currentWord'),
                 progressBarEl: pick('progressBar'),
                 confirmBtnEl: pick('confirmBtn'),
@@ -2817,6 +3039,97 @@
             assertEqual(h.elements.wordProgressEl.textContent, 'Word 2 of 3', 'T131: and tracks the current word');
         })();
 
+        (function T237() {
+            // Phones type one word at a time: no passage, just a count of words left.
+            const h = makeHarness();
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            assert(h.elements.textEl.classList.contains('hidden'), 'T237: word mode hides the passage');
+            assertEqual(h.elements.wordsRemainingEl.textContent, '2 words remaining', 'T237: the heading counts the current word as remaining');
+            typeWord(h, 'alpha');
+            h.controller.handleConfirm();
+            assertEqual(h.elements.wordsRemainingEl.textContent, '1 word remaining', 'T237: and is singular for the last word');
+            assert(h.elements.modalContentEl.classList.contains('challenge-word-mode'), 'T237: the sheet is flagged word mode for the instruction swap');
+            h.controller.open({ text: 'alpha beta' });
+            assert(!h.elements.modalContentEl.classList.contains('challenge-word-mode'), 'T237: char mode clears the word-mode flag');
+        })();
+
+        (function T254() {
+            // Word mode: the button reads "Next word" until the last word, then its own label and icon.
+            const h = makeHarness();
+            h.elements.confirmBtnEl.innerHTML = '<svg class="start-confirm-primary-icon"></svg><span class="start-confirm-primary-label">Stop</span>';
+            const label = h.elements.confirmBtnEl.querySelector('span');
+            const icon = h.elements.confirmBtnEl.querySelector('svg');
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            assertEqual(label.textContent, 'Next word', 'T254: a word that is not the last says Next word');
+            assert(icon.classList.contains('hidden'), 'T254: and hides the stop icon');
+            typeWord(h, 'alpha');
+            h.controller.handleConfirm();
+            assertEqual(label.textContent, 'Stop', 'T254: the last word says Stop');
+            assert(!icon.classList.contains('hidden'), 'T254: with the stop icon back');
+            h.controller.open({ text: 'alpha', wordMode: true });
+            assertEqual(label.textContent, 'Stop', 'T254: a single word says Stop straight away');
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            h.controller.reset();
+            assertEqual(label.textContent, 'Stop', 'T254: reset restores the label');
+            h.controller.open({ text: 'alpha beta' });
+            assertEqual(label.textContent, 'Stop', 'T254: char mode never says Next word');
+        })();
+
+        (function T255() {
+            // iOS drops the keyboard if the tap moves focus off the word field.
+            const h = makeHarness();
+            const tap = () => h.elements.confirmBtnEl.dispatchEvent(new MouseEvent('mousedown', { cancelable: true }));
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            assert(!tap(), 'T255: word mode keeps focus on the word field');
+            h.controller.open({ text: 'alpha beta' });
+            assert(tap(), 'T255: char mode leaves the button alone');
+        })();
+
+        (function T256() {
+            // Word mode: the button is muted until the current word has a letter in it.
+            const h = makeHarness();
+            const btn = h.elements.confirmBtnEl;
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            assert(btn.disabled, 'T256: muted before anything is typed');
+            typeWord(h, 'a');
+            assert(!btn.disabled, 'T256: enabled by the first letter');
+            typeWord(h, '');
+            assert(btn.disabled, 'T256: muted again when the word is cleared');
+            typeWord(h, 'alpha');
+            h.controller.handleConfirm();
+            assert(btn.disabled, 'T256: muted again for the next word');
+            typeWord(h, 'b');
+            assert(!btn.disabled, 'T256: the last word works the same way');
+            h.controller.open({ text: 'alpha beta' });
+            assert(!btn.disabled, 'T256: char mode never mutes it');
+        })();
+
+        (function T238() {
+            const h = makeHarness();
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            typeWord(h, 'alpha beta');
+            assertEqual(h.elements.wordInputEl.value, 'alphabeta', 'T238: the word input never keeps a space');
+            const ev = new KeyboardEvent('keydown', { key: ' ', cancelable: true });
+            h.elements.wordInputEl.dispatchEvent(ev);
+            assert(ev.defaultPrevented, 'T238: the space key is blocked in the word input');
+        })();
+
+        (function T239() {
+            const h = makeHarness();
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            const mark = () => h.elements.currentWordEl.querySelector('.error-char');
+            typeWord(h, 'alp');
+            assert(!mark(), 'T239: a correct prefix shows no error');
+            typeWord(h, 'alx');
+            assertEqual(mark()?.textContent, 'p', 'T239: a wrong letter marks the expected letter');
+            typeWord(h, 'alphas');
+            assertEqual(mark()?.textContent, 'a', 'T239: typing past the word marks its last letter');
+            assertEqual(h.elements.currentWordEl.textContent, 'alpha', 'T239: without changing the word shown');
+            typeWord(h, 'alpha');
+            h.controller.handleConfirm();
+            assert(!mark(), 'T239: the next word starts clean');
+        })();
+
         // ---- skipChallenge ----
         (function T132() {
             // Bug 2: override-all's skip path left stale text in a now-hidden
@@ -2965,7 +3278,7 @@
         }
         const body = document.body;
         if (body.classList.contains('mobile-phone-home') || body.classList.contains('handset-device')
-            || body.classList.contains('ios') || body.classList.contains('android')) {
+            || body.classList.contains('ios')) {
             console.warn('   ⏭️ Compact card tap tests skipped: desktop-only layout path');
             return;
         }
@@ -3189,17 +3502,126 @@
         console.log('\n🧩 Editor defaults and dialogs');
         const internals = window.__REDDBLOCK_INTERNALS__;
 
-        // T183: auto-start after stop is opt-in, so a new space starts on Never.
+        // T183: a new space starts on a 10-minute auto-start after stop.
         if (typeof internals.openBlocklistModal !== 'function') {
             assert(false, 'T183: openBlocklistModal is exposed to tests');
         } else {
             internals.openBlocklistModal();
             try {
-                assertEqual(document.getElementById('unlock-duration-select')?.value, '0', 'T183: a new focus space starts on Never');
+                assertEqual(document.getElementById('unlock-duration-select')?.value, '10', 'T183: a new focus space starts on 10 minutes');
+            } finally {
+                internals.closeBlocklistModal();
+            }
+            // An allow-only space starts on Never, and a block space opened after it is back on 10.
+            internals.openBlocklistModal(null, { mode: 'allowlist' });
+            try {
+                assertEqual(document.getElementById('unlock-duration-select')?.value, '0', 'T183: a new allow-only space starts on Never');
+            } finally {
+                internals.closeBlocklistModal();
+            }
+            internals.openBlocklistModal();
+            try {
+                assertEqual(document.getElementById('unlock-duration-select')?.value, '10', 'T183: a block space after an allow-only one is back on 10 minutes');
             } finally {
                 internals.closeBlocklistModal();
             }
         }
+
+        // T230: Discard undoes the fields without collapsing the section you are
+        // working in — populating the editor closes every section, which reads as
+        // a reset rather than an undo.
+        (function T230() {
+            const saved = internals.appData;
+            try {
+                const bl = createMockBlocklist({ name: 'Focus', websites: ['x.com'], apps: [] });
+                internals.appData = createMockAppData({ blocklists: [bl] });
+                internals.setupFocusSpaceEditor();
+                internals.populateFocusSpaceEditor(bl);
+                internals.setOpenEditorSection('when');
+                const nameInput = document.getElementById('blocklist-name');
+                if (nameInput) nameInput.value = 'Changed';
+                internals.discardFocusSpaceEditor();
+                assert(
+                    !document.getElementById('editor-section-when-body')?.classList.contains('hidden'),
+                    'T230: and leaves the open section open',
+                );
+            } finally {
+                internals.appData = saved;
+            }
+        })();
+
+        // T232: a running allow-mode space cannot take new items (each one lets more
+        // through); a running block-mode space still can (each one blocks more).
+        (function T232() {
+            const saved = internals.appData;
+            const now = Date.now();
+            const addControls = ['modal-website-input', 'modal-import-websites-btn', ...(internals.isIOS ? [] : ['modal-browse-apps-btn'])];
+            try {
+                for (const mode of ['allowlist', 'blocklist']) {
+                    const bl = createMockBlocklist({ mode, websites: ['docs.google.com'] });
+                    internals.appData = createMockAppData({
+                        blocklists: [bl],
+                        activeBlocks: [{ id: `blk-${mode}`, blocklistId: bl.id, startTime: now - 60_000, endTime: now + 3_600_000 }],
+                    });
+                    internals.setupFocusSpaceEditor();
+                    internals.populateFocusSpaceEditor(bl);
+                    for (const id of addControls) {
+                        const el = document.getElementById(id);
+                        if (!el) continue;
+                        assertEqual(el.disabled, mode === 'allowlist', `T232: ${id} is ${mode === 'allowlist' ? 'disabled' : 'enabled'} while a ${mode} space runs`);
+                    }
+                }
+            } finally {
+                internals.appData = saved;
+            }
+        })();
+
+        // T253: a paused always-on block gets no "Always on" chip, so it cannot open a stop dialog.
+        (function T253() {
+            const saved = internals.appData;
+            const now = Date.now();
+            try {
+                const bl = createMockBlocklist({ name: 'Paused' });
+                internals.appData = createMockAppData({
+                    blocklists: [bl],
+                    activeBlocks: [{ id: 'blk-t253', blocklistId: bl.id, startTime: now - 60_000, endTime: internals.ALWAYS_ON_END_TIME ?? 8640000000000000, isPaused: true, pauseEndTime: now + 600_000 }],
+                });
+                internals.renderScheduleAlwaysOnRow();
+                assertEqual(document.querySelectorAll('#schedule-always-on-chips .always-on-chip').length, 0, 'T253: a paused always-on block has no chip');
+            } finally {
+                internals.appData = saved;
+                internals.renderScheduleAlwaysOnRow();
+            }
+        })();
+
+        // T231: Saving a switch from Manual to a schedule must not start the space.
+        // A space reads as on merely by having an unpaused schedule, so creating
+        // one used to turn it on even with every segment in the past or future.
+        (function T231() {
+            const saved = internals.appData;
+            try {
+                const off = createMockBlocklist({ name: 'Off space' });
+                const on = createMockBlocklist({ name: 'On space' });
+                const now = Date.now();
+                internals.appData = createMockAppData({
+                    blocklists: [off, on],
+                    activeBlocks: [createMockBlock(on.id, now - 1000, now + 60000)],
+                });
+                internals.setupFocusSpaceEditor();
+
+                internals.populateFocusSpaceEditor(off);
+                internals.setWhenToBlockKind('weekly');
+                internals.applyEditorScheduleForBlocklist(off.id);
+                assertEqual(internals.isFocusSpaceOn(off.id), false, 'T231: saving a schedule onto an off space leaves it off');
+
+                internals.populateFocusSpaceEditor(on);
+                internals.setWhenToBlockKind('weekly');
+                internals.applyEditorScheduleForBlocklist(on.id);
+                assertEqual(internals.isFocusSpaceOn(on.id), true, 'T231: a running space stays on');
+            } finally {
+                internals.appData = saved;
+            }
+        })();
 
         // T203/T204: Custom Text sits directly under Method, and the field wraps
         // rather than scrolling sideways (WKWebView does not wrap a long
@@ -3365,6 +3787,44 @@
         }
     }
 
+    // T232-T234: changing strictness on a stopped space redoes the stop with the new setting.
+    // Checked synchronously: the stop updates appData before its first await; the native sync tail is not under test.
+    function runRestopForNewStrictnessTests() {
+        console.log('\n🔁 Strictness change on a stopped space');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        if (typeof internals.restopForNewStrictness !== 'function') {
+            assert(false, 'T232: restopForNewStrictness is exposed to tests');
+            return;
+        }
+        const saved = internals.appData;
+        const now = Date.now();
+        const FOREVER = 253402300799999;
+        const block = (id, extra = {}) => createMockBlock(id, now - 60000, FOREVER, { isAlwaysOn: true, ...extra });
+        const pending = { isPaused: true, pauseEndTime: now + 24 * 3600000 };
+        try {
+            const never = createMockBlocklist({ id: 'bl-restop-never', unlockMinutes: 0 });
+            const five = createMockBlocklist({ id: 'bl-restop-five', unlockMinutes: 5 });
+            const running = createMockBlocklist({ id: 'bl-restop-running', unlockMinutes: 0 });
+            internals.appData = createMockAppData({
+                blocklists: [never, five, running],
+                activeBlocks: [block(never.id, pending), block(five.id, pending), block(running.id)],
+                schedules: [],
+            });
+            const settle = (p) => p?.catch?.(() => {});
+            settle(internals.restopForNewStrictness(never.id));
+            assert(!internals.appData.activeBlocks.some((b) => b.blocklistId === never.id),
+                'T232: switching a stopped space to Never cancels its pending restart');
+            settle(internals.restopForNewStrictness(five.id));
+            const fiveEnd = internals.appData.activeBlocks.find((b) => b.blocklistId === five.id)?.pauseEndTime;
+            assert(Math.abs(fiveEnd - (now + 5 * 60000)) < 60000, `T233: switching it to 5 min restarts it 5 min from now (got ${fiveEnd - now} ms)`);
+            settle(internals.restopForNewStrictness(running.id));
+            const runningBlock = internals.appData.activeBlocks.find((b) => b.blocklistId === running.id);
+            assert(!!runningBlock && !runningBlock.isPaused, 'T234: a running space is not stopped by a strictness change');
+        } finally {
+            internals.appData = saved;
+        }
+    }
+
     // ========================================
     // CATEGORY: CARD TIMING TEXT AND SECTION KEYBOARD (T187-T190)
     // ========================================
@@ -3393,6 +3853,10 @@
                 `T187: a stopped Manual space that auto-starts drops "starts when enabled" (got "${autoText}")`);
             assert(statusText(never.id).includes('starts when enabled'),
                 `T188: a Manual space set to Never keeps "starts when enabled" (got "${statusText(never.id)}")`);
+            // A 24 h stop always ends on the next calendar day.
+            internals.appData.activeBlocks[0].pauseEndTime = now + 24 * 3600000;
+            internals.render();
+            assert(statusText(autoStart.id).includes('tomorrow'), `T236: a pause ending tomorrow says so (got "${statusText(autoStart.id)}")`);
         } finally {
             internals.appData = savedAppData;
             internals.render();
@@ -3432,8 +3896,10 @@
     // ========================================
     // CATEGORY: SCHEDULE TIME LIST KEYBOARD (T196-T199)
     // ========================================
-    // Clicking an hour / minute opens a list of options; the arrow keys walk it
-    // and Enter takes the highlighted one, so the field is usable without a mouse.
+    // Each end of a time range is one HH:MM field. Clicking it opens an hour
+    // list and a minute list side by side; the arrow keys walk the column the
+    // caret is in and Enter takes the highlighted option, so the field is
+    // usable without a mouse. Typing a time edits it directly.
     function runScheduleTimeKeyboardTests() {
         console.log('\n⌨️  Schedule time list keyboard');
         const internals = window.__REDDBLOCK_INTERNALS__;
@@ -3442,64 +3908,152 @@
             return;
         }
         const press = (el, key) => el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
-        const options = () => [...document.querySelectorAll('.schedule-time-popover .popover-option')];
-        const activeIndex = () => options().findIndex((o) => o.classList.contains('key-active'));
+        const column = (part) => document.querySelector(`.schedule-time-popover .popover-scroll[data-part="${part}"]`);
+        const options = (part) => [...(column(part)?.querySelectorAll('.popover-option') || [])];
+        const activeIndex = (part) => options(part).findIndex((o) => o.classList.contains('key-active'));
         const optionText = () => document.querySelector('.schedule-time-popover .popover-option.key-active')?.textContent ?? null;
+        const caretAt = (field, pos) => field.setSelectionRange?.(pos, pos);
 
         internals.setupFocusSpaceEditor();
         internals.openBlocklistModal();
         try {
             document.getElementById('when-kind-weekly')?.click();
-            const hour = document.querySelector('.schedule-start-display input.time-part[data-type="hour"]');
-            if (!hour) {
-                assert(false, 'T196: the Weekly editor renders an hour field');
+            const field = document.querySelector('.segment-time-field[data-edge="start"]');
+            if (!field) {
+                assert(false, 'T196: the Weekly editor renders a start-time field');
                 return;
             }
+            assert(/^\d{2}:\d{2}$/.test(field.value), 'T196: the start time is one HH:MM field');
 
-            // T196: clicking the field opens the list, with the current value marked.
-            hour.click();
-            const popover = document.querySelector('.schedule-time-popover');
-            assert(!!popover, 'T196: clicking an hour opens the option list');
-            const selected = popover?.querySelector('.popover-option.selected');
-            assertEqual(selected?.textContent, hour.value, 'T196: the list marks the field\'s current value');
+            // T196: clicking the field opens both lists, each marking the current value.
+            field.click();
+            assert(!!document.querySelector('.schedule-time-popover'), 'T196: clicking the time opens the option lists');
+            const [hh, mm] = field.value.split(':');
+            assertEqual(column('hour')?.querySelector('.selected')?.textContent, hh, 'T196: the hour list marks the current hour');
+            assertEqual(column('minute')?.querySelector('.selected')?.textContent, mm, 'T196: the minute list marks the current minute');
 
-            // T197: the walk starts from the current value rather than the top of
-            // the list, and stops at the ends (no wrap from 23 back to 00).
-            const selectedIndex = options().findIndex((o) => o.classList.contains('selected'));
-            const lastIndex = options().length - 1;
-            const stepDown = selectedIndex < lastIndex ? 'ArrowDown' : 'ArrowUp';
+            // T197: with the caret in the hour, the walk starts from the current
+            // hour rather than the top of the list, and stops at the ends.
+            field.focus();
+            caretAt(field, 1);
+            const selectedIndex = options('hour').findIndex((o) => o.classList.contains('selected'));
+            const lastIndex = options('hour').length - 1;
+            // The next assertions walk twice before reversing. At 22:00,
+            // Down has only one step left, so walk up near the upper end.
+            const stepDown = selectedIndex + 2 <= lastIndex ? 'ArrowDown' : 'ArrowUp';
             const stepUp = stepDown === 'ArrowDown' ? 'ArrowUp' : 'ArrowDown';
             const delta = stepDown === 'ArrowDown' ? 1 : -1;
 
-            press(hour, stepDown);
-            assertEqual(activeIndex(), selectedIndex + delta,
-                'T197: the first press moves one option from the current value');
-            press(hour, stepDown);
-            assertEqual(activeIndex(), selectedIndex + 2 * delta,
+            press(field, stepDown);
+            assertEqual(activeIndex('hour'), selectedIndex + delta,
+                'T197: the first press moves one hour from the current value');
+            press(field, stepDown);
+            assertEqual(activeIndex('hour'), selectedIndex + 2 * delta,
                 'T197: pressing again keeps walking the list');
-            press(hour, stepUp);
-            assertEqual(activeIndex(), selectedIndex + delta,
+            press(field, stepUp);
+            assertEqual(activeIndex('hour'), selectedIndex + delta,
                 'T197: the opposite arrow walks back');
-
-            // The end of the list is a stop, not a wrap.
-            for (let i = 0; i < options().length + 2; i++) press(hour, stepUp);
-            assertEqual(activeIndex(), delta > 0 ? 0 : lastIndex,
+            for (let i = 0; i < options('hour').length + 2; i++) press(field, stepUp);
+            assertEqual(activeIndex('hour'), delta > 0 ? 0 : lastIndex,
                 'T197: the highlight stops at the end of the list');
-            press(hour, stepDown);
+            press(field, stepDown);
 
-            // T198: Enter takes the highlighted option and closes the list.
-            const expected = optionText();
-            press(hour, 'Enter');
-            assertEqual(hour.value, expected, 'T198: Enter commits the highlighted option');
+            // T198: Enter takes the highlighted hour, keeps the minute, closes the list.
+            const expectedHour = optionText();
+            press(field, 'Enter');
+            assertEqual(field.value, `${expectedHour}:${mm}`, 'T198: Enter commits the highlighted hour');
             assert(!document.querySelector('.schedule-time-popover'), 'T198: Enter closes the list');
 
-            // T199: Down with no list open opens one; Escape closes it, value untouched.
-            const beforeEscape = hour.value;
-            press(hour, 'ArrowDown');
+            // T199: Down with no list open opens one; the caret after the colon
+            // walks minutes; Escape closes it, value untouched.
+            field.focus();
+            caretAt(field, 4);
+            const beforeEscape = field.value;
+            press(field, 'ArrowDown');
             assert(!!document.querySelector('.schedule-time-popover'), 'T199: Down opens the list when it is closed');
-            press(hour, 'Escape');
+            assert(activeIndex('minute') >= 0 && activeIndex('hour') < 0,
+                'T199: with the caret in the minutes, the arrows walk the minute list');
+            press(field, 'Escape');
             assert(!document.querySelector('.schedule-time-popover'), 'T199: Escape closes the list');
-            assertEqual(hour.value, beforeEscape, 'T199: Escape leaves the value alone');
+            assertEqual(field.value, beforeEscape, 'T199: Escape leaves the value alone');
+
+            // T199: a typed time commits on Enter; an unreadable one is put back.
+            field.value = '730';
+            press(field, 'Enter');
+            assertEqual(field.value, '07:30', 'T199: a typed time is read and written back as HH:MM');
+            field.value = '25:00';
+            field.dispatchEvent(new Event('blur'));
+            assertEqual(field.value, '07:30', 'T199: an impossible time puts the previous one back');
+        } finally {
+            document.querySelectorAll('.schedule-time-popover').forEach((el) => el.remove());
+            document.activeElement?.blur?.();
+            internals.closeBlocklistModal();
+        }
+    }
+
+    // ========================================
+    // CATEGORY: ALL-DAY RANGES (T248-T251)
+    // ========================================
+    // "All day" is stored as start == end at 00:00, which desktop
+    // (native_host) and iOS (ScheduleData) enforce as a full day.
+    function runScheduleAllDayTests() {
+        console.log('\n🌞 All-day ranges');
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        if (typeof internals.openBlocklistModal !== 'function' || typeof internals.setupFocusSpaceEditor !== 'function') {
+            assert(false, 'T248: openBlocklistModal and setupFocusSpaceEditor are exposed to tests');
+            return;
+        }
+        const toggle = () => document.querySelector('.schedule-segment .segment-all-day-input');
+        const fields = () => [...document.querySelectorAll('.schedule-segment .segment-time-field')];
+        const setSwitch = (on) => {
+            const input = toggle();
+            input.checked = on;
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+
+        internals.setupFocusSpaceEditor();
+        internals.openBlocklistModal();
+        try {
+            document.getElementById('when-kind-weekly')?.click();
+            if (!toggle()) {
+                assert(false, 'T248: each range has an All day switch');
+                return;
+            }
+            const before = fields().map((f) => f.value);
+            assert(!toggle().checked, 'T248: a new range is not all day');
+
+            // T249: on stores 00:00 – 00:00 and locks the times.
+            setSwitch(true);
+            assertEqual(fields().map((f) => f.value).join(' – '), '00:00 – 00:00',
+                'T249: All day stores start == end at midnight');
+            assert(toggle().checked, 'T249: the switch stays on after the rebuild');
+            assert(fields().every((f) => f.disabled), 'T249: an all-day range\'s times cannot be edited');
+
+            // T250: off puts the previous times back and unlocks them.
+            setSwitch(false);
+            assertEqual(fields().map((f) => f.value).join(' – '), before.join(' – '),
+                'T250: switching All day off restores the times it replaced');
+            assert(fields().every((f) => !f.disabled), 'T250: the times are editable again');
+
+            // T251: a later range switched to All day stays where it is. Sorting by its
+            // new 00:00 moved it to the top, so the switch seemed to turn on the first range.
+            internals.addScheduleSegment();
+            const switches = () => [...document.querySelectorAll('.schedule-segment .segment-all-day-input')];
+            const flip = (input, on) => { input.checked = on; input.dispatchEvent(new Event('change', { bubbles: true })); };
+            flip(switches()[1], true);
+            assertEqual(switches().map((input) => input.checked).join(','), 'false,true',
+                'T251: All day on the second range turns on the second card, not the first');
+            flip(switches()[1], false);
+            document.querySelectorAll('.schedule-segment .remove-segment-btn')[1]?.click();
+
+            // T250: typing times that meet shows the switch on.
+            // Adding a range can wrap past midnight and sort it ahead of the
+            // original range. Use the surviving range's start, not `before`.
+            const start = document.querySelector('.segment-time-field[data-edge="start"]');
+            const end = document.querySelector('.segment-time-field[data-edge="end"]');
+            end.value = start.value;
+            end.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            assert(toggle()?.checked, 'T250: typed times that meet are shown as All day');
         } finally {
             document.querySelectorAll('.schedule-time-popover').forEach((el) => el.remove());
             document.activeElement?.blur?.();
@@ -3557,7 +4111,32 @@
         }
     }
 
-    function runAllTests() {
+    async function runWindowsOnboardingTests() {
+        const { state } = await import('./state.js');
+        const { windowsBrowserSetupIsAutomatic } = await import('./onboarding.js');
+        const windows = state.isWindowsDesktop;
+        const methods = state.appData.settings.blockingMethods;
+        try {
+            state.isWindowsDesktop = true;
+            state.appData.settings.blockingMethods = {};
+            assert(!windowsBrowserSetupIsAutomatic(), 'Windows defaults retain extension setup');
+            state.appData.settings.blockingMethods = Object.fromEntries(
+                ['chrome', 'edge', 'brave', 'firefox'].map(key => [key, 'automation']));
+            assert(windowsBrowserSetupIsAutomatic(), 'Explicit automation for every browser skips setup');
+            for (const browser of ['chrome', 'edge', 'brave', 'firefox']) {
+                state.appData.settings.blockingMethods = { [browser]: 'extension' };
+                assert(!windowsBrowserSetupIsAutomatic(), 'Explicit extension mode retains setup: ' + browser);
+            }
+            state.isWindowsDesktop = false;
+            state.appData.settings.blockingMethods = {};
+            assert(!windowsBrowserSetupIsAutomatic(), 'Other platforms retain their setup flow');
+        } finally {
+            state.isWindowsDesktop = windows;
+            state.appData.settings.blockingMethods = methods;
+        }
+    }
+
+    async function runAllTests() {
         console.clear();
         console.log('🧪 ReddBlock Blocking Tests');
         console.log('============================');
@@ -3566,6 +4145,8 @@
         resetTestResults();
 
         try {
+            await runWindowsOnboardingTests();
+            await runIOSResumeOrderingTests();
             runTimeBasedTests();
             runOverlapTests();
             runSharedDomainTests();
@@ -3579,7 +4160,7 @@
             runSelfBlockPreventionTests();
             runProtectedDomainTests();
             runIOSAllowlistPolicyTests();
-            runAndroidPayloadTests();
+
             runDesktopAppPayloadTests();
             runIOSAllowLimitTests();
             runWarningAttributionTests();
@@ -3589,6 +4170,7 @@
             runChallengePrimitiveTests();
             runChallengeControllerTests();
             runTemporaryUnlockTests();
+            runRestopForNewStrictnessTests();
             runCompactDesktopCardTapTests();
             runFocusSpaceSwitchTests();
             runCardRenderStabilityTests();
@@ -3597,6 +4179,7 @@
             runCardTimingAndSectionKeyboardTests();
             runCustomSelectTests();
             runScheduleTimeKeyboardTests();
+            runScheduleAllDayTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
         }
@@ -3620,13 +4203,14 @@
         runSelfBlockPreventionTests,
         runProtectedDomainTests,
         runIOSAllowlistPolicyTests,
-        runAndroidPayloadTests,
+
         runDesktopAppPayloadTests,
         runIOSSchedulePayloadTests,
         runEditFrictionGateTests,
         runChallengePrimitiveTests,
         runChallengeControllerTests,
         runTemporaryUnlockTests,
+        runIOSResumeOrderingTests,
         runCompactDesktopCardTapTests
     };
 

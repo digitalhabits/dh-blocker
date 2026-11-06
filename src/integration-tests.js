@@ -223,7 +223,7 @@
         console.log('🔧 Setting up Tier 2 integration suite...');
         const appData = getAppData();
         assertOrThrow(appData, 'App internals not available. Ensure app.js loaded.');
-        
+
         // Take a complete snapshot of the user's state to ensure we restore it exactly
         originalAppDataBackup = JSON.parse(JSON.stringify(appData));
         await callSaveData();
@@ -234,7 +234,7 @@
         console.log('🧹 Cleaning up Tier 2 integration suite...');
         try {
             const tauriAPI = getTauriAPI();
-            
+
             // Restore structural state from snapshot
             if (originalAppDataBackup) {
                 const appData = getAppData();
@@ -245,7 +245,7 @@
             } else {
                 removeTestDataFromAppState();
             }
-            
+
             await callSaveData();
 
             // Sync the precisely restored state to the daemon (handles both hosts and apps)
@@ -255,7 +255,7 @@
                     await callUpdateHostsFile(false);
                 }
             }
-            
+
             callRender();
             console.log('   ✅ Cleanup complete');
             return true;
@@ -1019,7 +1019,7 @@
     }
 
     // ========================================
-    // Testing Group I: Modal workflows and Android back boundary
+    // Testing Group I: Modal workflows
     // ========================================
 
     async function testI1_stopAllCancelRestoresSettings() {
@@ -1116,38 +1116,6 @@
         });
     }
 
-    async function testI4_androidBackClosesTopmostModal() {
-        return runIsolatedIntegrationTest('I4', async () => {
-            hideAllIntegrationModals();
-            const internals = getInternals();
-            assertOrThrow(
-                typeof internals?.setupAndroidBackButtonHandling === 'function',
-                'I4: Android back setup hook unavailable',
-            );
-
-            // The native WryActivity maps hardware/gesture back to webView.goBack(),
-            // which reaches this exact popstate callback. Toggle classes after setup
-            // so MutationObserver arms the trap even when the app started on desktop.
-            internals.setupAndroidBackButtonHandling();
-            const settingsModal = document.getElementById('settings-modal');
-            const overrideAllModal = document.getElementById('override-all-modal');
-            assertOrThrow(settingsModal && overrideAllModal, 'I4: modal fixtures missing');
-            settingsModal.classList.remove('hidden');
-            overrideAllModal.classList.remove('hidden');
-            await shortWait(0);
-
-            window.dispatchEvent(new PopStateEvent('popstate', { state: { androidModalTrap: true } }));
-            await waitForIntegrationCondition(
-                () => !isVisible('override-all-modal') && isVisible('settings-modal'),
-                'I4 first back closes topmost modal',
-            );
-            window.dispatchEvent(new PopStateEvent('popstate', { state: { androidModalTrap: true } }));
-            await waitForIntegrationCondition(() => !isVisible('settings-modal'), 'I4 second back closes settings');
-            hideAllIntegrationModals();
-            return { passed: true };
-        });
-    }
-
     async function testI5_switchStopUnlocksEditor() {
         return runIsolatedIntegrationTest('I5', async () => {
             hideAllIntegrationModals();
@@ -1224,6 +1192,69 @@
         });
     }
 
+    // A running allow-mode space takes no new websites but lets them be removed
+    // (stricter) down to the last one: an empty allow list allows everything.
+    async function testI7_runningAllowModeRemovesDownToOne() {
+        return runIsolatedIntegrationTest('I7', async () => {
+            hideAllIntegrationModals();
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.b], name: 'I7 Allow', mode: 'allowlist' });
+            addActiveBlock(bl.id, { durationMs: 5 * 60 * 1000 });
+            await callSaveData();
+            callRender();
+
+            getInternals().discardFocusSpaceEditor(); // an earlier test's unsaved edits would prompt
+            const card = document.querySelector(`.blocklist-card[data-id="${bl.id}"]`);
+            assertOrThrow(card, 'I7: focus-space card missing');
+            card.click();
+            // The card loads the space asynchronously and the panel may already be
+            // showing the previous test's space, so wait for this one's lock.
+            await waitForIntegrationCondition(
+                () => isVisible('time-picker-container') && document.getElementById('override-type')?.disabled,
+                'I7 editor shows the running space',
+            );
+            if (document.getElementById('editor-section-what-header')?.getAttribute('aria-expanded') !== 'true') {
+                document.getElementById('editor-section-what-header')?.click();
+            }
+            const removeButtons = () => document.querySelectorAll('#modal-websites-tags .tag-remove');
+            assertOrThrow(document.getElementById('modal-website-input')?.disabled, 'I7: adding must be locked while running');
+            assertOrThrow(removeButtons().length === 2, `I7: both allowed websites should be removable (got ${removeButtons().length})`);
+            removeButtons()[0].click();
+            assertOrThrow(document.querySelectorAll('#modal-websites-tags .tag').length === 1, 'I7: removing one should leave one');
+            assertOrThrow(removeButtons().length === 0, 'I7: the last allowed website must not be removable');
+            hideAllIntegrationModals();
+            return { passed: true };
+        });
+    }
+
+    // An editor already open when its space starts (here a Manual block added
+    // underneath it, as a schedule would) locks within a tick, in both modes.
+    async function testI8_openEditorLocksWhenSpaceStarts() {
+        return runIsolatedIntegrationTest('I8', async () => {
+            for (const mode of ['allowlist', 'blocklist']) {
+                hideAllIntegrationModals();
+                getInternals().discardFocusSpaceEditor();
+                const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: `I8 ${mode}`, mode });
+                await callSaveData();
+                callRender();
+                document.querySelector(`.blocklist-card[data-id="${bl.id}"]`)?.click();
+                await waitForIntegrationCondition(
+                    () => getInternals().state?.editingBlocklistId === bl.id || document.getElementById('blocklist-select')?.value === bl.id,
+                    `I8 ${mode} editor opens`,
+                );
+                await shortWait(300);
+                assertOrThrow(!document.getElementById('override-type')?.disabled, `I8: ${mode} editor starts unlocked`);
+                addActiveBlock(bl.id, { durationMs: 5 * 60 * 1000 });
+                await waitForIntegrationCondition(() => document.getElementById('override-type')?.disabled, `I8 ${mode} editor locks after start`);
+                assertOrThrow(
+                    !!document.getElementById('modal-website-input')?.disabled === (mode === 'allowlist'),
+                    `I8: adding should be ${mode === 'allowlist' ? 'locked' : 'open'} once a ${mode} space starts`,
+                );
+            }
+            hideAllIntegrationModals();
+            return { passed: true };
+        });
+    }
+
     async function testI6_letsGoAcknowledgesBeforeShellReconcile() {
         const internals = getInternals();
         const tauriAPI = getTauriAPI();
@@ -1274,9 +1305,11 @@
             { group: 'I', name: 'I1: Stop-all cancel restores Settings', fn: testI1_stopAllCancelRestoresSettings },
             { group: 'I', name: 'I2: Stop-all success restores Settings', fn: testI2_stopAllSuccessRestoresSettings },
             { group: 'I', name: 'I3: Stop cancel keeps the block', fn: testI3_stopCancelWorkflow },
-            { group: 'I', name: 'I4: Android back closes topmost modal', fn: testI4_androidBackClosesTopmostModal },
+
             { group: 'I', name: 'I5: Card switch stop unlocks editor', fn: testI5_switchStopUnlocksEditor },
-            { group: 'I', name: 'I6: Let\'s go acknowledges before shell reconcile', fn: testI6_letsGoAcknowledgesBeforeShellReconcile }
+            { group: 'I', name: 'I6: Let\'s go acknowledges before shell reconcile', fn: testI6_letsGoAcknowledgesBeforeShellReconcile },
+            { group: 'I', name: 'I7: Running allow mode removes down to one', fn: testI7_runningAllowModeRemovesDownToOne },
+            { group: 'I', name: 'I8: Open editor locks when its space starts', fn: testI8_openEditorLocksWhenSpaceStarts }
         ];
 
         if (profile === PROFILE_CORE) return coreTests;

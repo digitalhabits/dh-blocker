@@ -318,6 +318,102 @@ for the availability-guard check.
 - [ ] Re-select in `FamilyActivityPicker`: the reselection marker clears and enforcement resumes
 - [ ] On iOS 16–26.4, startup and schedule transitions remain unchanged (no unavailable-API crash)
 
+### 14.3 Timed automatic resume (physical device only)
+
+- [ ] On a physical device, verify 10-minute re-enable for a manual block and
+      an active recurring schedule while the app is backgrounded.
+- [ ] Repeat both cases at 24 hours; without reopening the app before the
+      deadline, verify next-day blocking resumes.
+- [ ] Test deadlines just before and after midnight; verify the intended date.
+      With overlapping schedules, verify the other space remains enforced.
+- [ ] Change a pending restart deadline and verify only the new deadline wins.
+- [ ] Suspend or terminate the app and record callback delivery while the
+      device is used. Apple documents this boundary in
+      [DeviceActivitySchedule.nextInterval](https://developer.apple.com/documentation/deviceactivity/deviceactivityschedule/nextinterval): sleeping through the entire 15-minute window can miss callbacks.
+- [ ] Force native registration failure in a development build; verify the
+      running space stays blocked and the retry error is shown. Foundation and
+      Tier 1 tests do not cover device callback delivery.
+
+### 14.4 Pre-start notifications (start warnings)
+
+A local notification 2 minutes before a scheduled focus space starts, or before
+a paused/stopped space (scheduled or manual) comes back on. At most 64 are
+booked, soonest first, rebuilt on every schedule sync, app foreground, language
+change and Settings switch change. Times follow the phone's 12/24-hour setting.
+Diagnostics: Console.app, subsystem `com.reddblock.app`, line
+`[ReDD Schedule] start warnings rebuilt enabled=… status=… scheduled=…`.
+Physical device, Screen Time authorized, app closed (swiped away) unless a step
+says otherwise.
+
+Onboarding and permission:
+
+- [ ] Fresh install → grant Screen Time: "Get a heads-up before blocks start"
+      appears straight after, with "Turn on notifications" and "Not now"
+- [ ] "Turn on notifications" → iOS prompt → Allow: main UI shows; Settings ›
+      General › "Warn me before blocks start" is on
+- [ ] Reinstall, "Not now": main UI shows, no iOS prompt; the switch reads off;
+      turning it on shows the iOS prompt
+- [ ] Existing install upgraded: never sees the onboarding screen; only the
+      Settings switch (off until iOS has granted permission)
+- [ ] Deny at the iOS prompt: the switch is replaced by the "turned off in iOS
+      Settings" note and "Open iOS Settings"; the button opens the app's page
+      there; allow notifications, return to the app: the switch shows on and
+      the log reads `status=authorized` with `scheduled` > 0
+- [ ] Settings switch off: log `enabled=false scheduled=0`, nothing arrives;
+      back on: `enabled=true`, warnings return
+
+Wording and delivery:
+
+- [ ] Block space scheduled ~5 min ahead: at T−2 "<emoji> <name> starts in 2
+      minutes" / "Time to wrap up. From <time>, your blocked apps and websites
+      won't open."; block enforces at T
+- [ ] Allow-mode space: body reads "…only the apps and websites you've allowed
+      will open."
+- [ ] App open in front at T−2: banner still shows
+- [ ] Tap the notification with the app fully closed: the app opens, nothing
+      else happens
+- [ ] Two spaces starting the same minute: one notification, "2 focus spaces
+      start in 2 minutes", body lists both names and the time
+- [ ] Switch the phone between 12- and 24-hour time, reopen the app: the next
+      warning's time follows it
+- [ ] Language → Dansk, close the app: later warnings read "… starter om 2
+      minutter" / "Tid til at runde af. Fra kl. …"
+
+Pause and stop (resume warning):
+
+- [ ] Pause a running schedule for 10 min: at 8 min "<name> is back on in 2
+      minutes" / "Your pause ends at <time>…"; blocking resumes at the time
+- [ ] Same with a manual block stopped for 10 min (block's end is later than
+      the resume): same resume warning
+- [ ] Pause/stop for 24 h: resume warning arrives next day, 2 min before the
+      pause ends (schedule: only if its window is open at that moment)
+- [ ] Paused or switched-off space: no start warning for occurrences it skips
+
+Schedule edits (each rebuilds the booking; check the log line):
+
+- [ ] Switch a schedule off: its pending warning is gone; on again: back
+- [ ] Delete a space: its warning never arrives
+- [ ] Edit the start time: the warning moves to the new T−2, not the old one
+- [ ] Remove today from its days: no warning today; date range ended: none
+- [ ] Stop all: no warnings arrive afterwards (log `scheduled=0`)
+
+No warning expected:
+
+- [ ] Space A ends as space B starts: B still warns (different spaces always do)
+- [ ] One space with touching segments (e.g. 09:00–10:00 and 10:00–11:00): only
+      09:00 warns; overnight carry-over and consecutive all-day days likewise
+      warn once, at the first start
+- [ ] Space switched on 90 s before its start: no warning (time already past),
+      block still starts
+- [ ] Start at 00:01: warning arrives at 23:59 the previous day
+
+Persistence and time zone:
+
+- [ ] Force-quit after booking, and separately reboot: warnings still arrive
+      without opening the app
+- [ ] Change time zone in iOS Settings (Date & Time, automatic off), reopen the
+      app: warnings follow the new wall clock (rebuilt on foreground)
+
 ---
 
 ## 15. Desktop Allowlist (Allow-Mode Focus Spaces)
@@ -372,6 +468,34 @@ space active. Log: `~/Library/Logs/com.reddblock/Digital Habits Blocker.log`
 - [ ] Diagnostics view shows "Current enforcement" with the allow-mode entry, mode label, and allowed website union while an allowlist is active
 
 ---
+
+## Windows MSIX block-page resources
+
+- [ ] Build x64 and arm64 MSIX packages. Unpack each and confirm
+  `blocked/blocked.html`, `blocked/blocked.js` and `blocked/reddblock-icon.svg`
+  sit beside `redd-block.exe` and match the source hashes.
+- [ ] Install the signed package on a clean Windows account/VM without the
+  source checkout (so the development fallback cannot hide missing resources).
+- [ ] With Chrome, Edge, Brave and Firefox in Automation mode and no extension,
+  activate a safe website block: the browser opens the packaged block page
+  under `C:/Program Files/WindowsApps/...`, including its script and icon.
+- [ ] End the block and confirm the original URL restores, including its query
+  string. Verify the displayed block-page URL retains a decodable `u=` value.
+- [ ] Repeat after a Store package update; review Store certification results.
+
+## Windows Automation power and idle checks
+
+- [ ] With no active website rules and no restore ledger entries, verify no UIA
+  address-bar reads occur; activate a block/allowlist and verify enforcement resumes.
+- [ ] Park two tabs in the same window, end the block, and activate each tab:
+  both restore, including after restarting the blocker before restoration.
+- [ ] Lock/unlock and turn the display off/on during a block: no watcher ticks
+  while suspended; enforcement resumes after the desktop is interactive.
+  Unlocking while the display remains off must not resume polling.
+- [ ] Repeat with a disconnected/reconnected remote session and with a dimmed
+  screen (dimming alone must not suspend enforcement).
+- [ ] Measure idle/active/suspended CPU and battery on a packaged Store build;
+  these guards alone do not establish battery consumption or Store compatibility.
 
 ## Sign-off
 

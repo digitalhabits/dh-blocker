@@ -1,4 +1,5 @@
 use super::*;
+use crate::block_page::*;
 use std::collections::VecDeque;
 
 /// One planned tab action: `(window_index, tab_index, url)` — the tuple
@@ -98,10 +99,7 @@ impl AutomationIo for FakeIo {
         self.permissions.push((browser, state));
         let mut state_guard = shared.lock().expect("fake shared state");
         let runtime = state_guard.runtimes.entry(browser).or_default();
-        runtime.state = state;
-        if state == PermState::Denied {
-            runtime.next_attempt = now + denied_retry;
-        }
+        apply_permission(runtime, state, denied_retry, now);
     }
 }
 
@@ -779,4 +777,88 @@ fn file_url_encodes_spaces() {
             path_to_file_url(p),
             "file:///Applications/Digital%20Habits%20Blocker.app/Contents/Resources/blocked/blocked.html"
         );
+}
+
+#[test]
+fn parse_tab_rows_keeps_empty_urls_and_skips_malformed_rows() {
+    // The joined output has no trailing linefeed, and Safari's empty
+    // tabs come back as an empty third field.
+    let tabs =
+        parse_tab_rows("1\t1\thttps://a.example/\n1\t2\t\nnot a row\n2\t1\thttps://b.example/?q=1");
+    let got: Vec<(u32, u32, &str)> = tabs
+        .iter()
+        .map(|t| (t.window_index, t.tab_index, t.url.as_str()))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            (1, 1, "https://a.example/"),
+            (1, 2, ""),
+            (2, 1, "https://b.example/?q=1"),
+        ]
+    );
+}
+
+#[test]
+fn join_rows_handler_joins_with_linefeeds() {
+    // Runs the same handler the read script uses, on synthetic rows, so
+    // the join is checked without a browser.
+    let script = format!(
+        "{JOIN_ROWS_HANDLER}\non run\n  return joinRows({{\"1\" & tab & \"1\" & tab & \"https://a.example/\", \"1\" & tab & \"2\" & tab & \"\"}}, linefeed)\nend run"
+    );
+    let out = run_osascript(&script).expect("osascript runs a script with no Apple Events");
+    assert_eq!(
+        out.trim_end_matches('\n'),
+        "1\t1\thttps://a.example/\n1\t2\t"
+    );
+    let empty = format!("{JOIN_ROWS_HANDLER}\non run\n  return joinRows({{}}, linefeed)\nend run");
+    assert_eq!(run_osascript(&empty).unwrap().trim(), "");
+}
+
+#[test]
+fn read_tabs_script_runs_against_safari() {
+    // Safari ships with every macOS, so this compiles the real read
+    // script against a real scripting dictionary and runs it. With Safari
+    // closed the `is running` guard sends it no Apple Event, so no
+    // Automation prompt is involved; skip rather than prompt if it is open.
+    if running_supported_browsers().contains(&SupportedBrowser::Safari) {
+        return;
+    }
+    let out = run_osascript(&read_tabs_script(SupportedBrowser::Safari))
+        .expect("read script compiles and runs against Safari's dictionary");
+    assert!(parse_tab_rows(&out).is_empty());
+}
+
+#[test]
+fn a_successful_script_vouches_for_the_grant_only_briefly() {
+    let start = Instant::now();
+    let mut rt = BrowserRuntime::default();
+    apply_permission(&mut rt, PermState::Granted, DENIED_RETRY, start);
+    assert!(grant_is_fresh(
+        rt.granted_at,
+        start + BACKGROUND_BROWSER_TICK
+    ));
+    assert!(
+        !grant_is_fresh(rt.granted_at, start + GRANT_CONFIRMATION_TTL + TICK),
+        "a grant nobody has re-confirmed must not excuse the enforcer's probe"
+    );
+}
+
+#[test]
+fn a_denial_withdraws_the_confirmed_grant_at_once() {
+    // Revoking Automation must reach the enforcer on the next tick, not
+    // after the confirmation would have expired.
+    let start = Instant::now();
+    let mut rt = BrowserRuntime::default();
+    apply_permission(&mut rt, PermState::Granted, DENIED_RETRY, start);
+    apply_permission(&mut rt, PermState::Denied, DENIED_RETRY, start + TICK);
+    assert!(!grant_is_fresh(rt.granted_at, start + TICK));
+}
+
+#[test]
+fn an_unknown_answer_is_no_confirmation() {
+    let mut rt = BrowserRuntime::default();
+    assert!(!grant_is_fresh(rt.granted_at, Instant::now()));
+    apply_permission(&mut rt, PermState::Unknown, DENIED_RETRY, Instant::now());
+    assert!(!grant_is_fresh(rt.granted_at, Instant::now()));
 }

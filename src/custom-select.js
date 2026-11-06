@@ -12,6 +12,8 @@
 //
 // Declarations only at module top level (see AGENTS.md).
 
+import { getActiveUiZoomScale, isIosTablet } from './theme.js';
+
 /** Selects that stay native: the hidden bookkeeping select for the selected space. */
 const NATIVE_SELECT_IDS = new Set(['blocklist-select']);
 
@@ -191,7 +193,8 @@ function openMenu(inst) {
     positionMenu(inst);
     const current = inst.menu.querySelector('.custom-select-option--selected') || inst.menu.querySelector('.custom-select-option');
     current?.focus({ preventScroll: true });
-    current?.scrollIntoView?.({ block: 'nearest' });
+    // Scroll the menu only: scrollIntoView can move the page, which closes the menu.
+    if (current) inst.menu.scrollTop = current.offsetTop + current.offsetHeight - inst.menu.clientHeight;
 }
 
 function closeMenu(inst, { focusTrigger }) {
@@ -248,6 +251,10 @@ function onMenuKeydown(inst, e) {
 function positionMenu(inst) {
     const { trigger, menu } = inst;
     const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+    // iPad zoom scales .app-container, which this <body>-level menu is outside of.
+    const scale = isIosTablet() ? getActiveUiZoomScale() : 1;
+    menu.style.transformOrigin = 'top left';
+    menu.style.transform = scale === 1 ? '' : `scale(${scale})`;
     const rect = trigger.getBoundingClientRect();
     const viewportW = window.innerWidth / zoom;
     const viewportH = window.innerHeight / zoom;
@@ -258,7 +265,7 @@ function positionMenu(inst) {
     const bottom = rect.bottom / zoom;
     const width = rect.width / zoom;
 
-    menu.style.minWidth = `${width}px`;
+    menu.style.minWidth = `${width / scale}px`;
     menu.style.maxHeight = '';
     menu.style.left = '0px';
     menu.style.top = '0px';
@@ -270,7 +277,7 @@ function positionMenu(inst) {
     const spaceAbove = top - gap - margin;
     const placeAbove = menuH > spaceBelow && spaceAbove > spaceBelow;
     const available = Math.max(120, placeAbove ? spaceAbove : spaceBelow);
-    menu.style.maxHeight = `${available}px`;
+    menu.style.maxHeight = `${available / scale}px`;
     const finalH = Math.min(menuH, available);
 
     const x = Math.max(margin, Math.min(left, viewportW - menuW - margin));

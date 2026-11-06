@@ -30,7 +30,7 @@ free to download).
 6. Copy the app’s **Store ID** (Apps and games → Digital Habits: Blocker → Product
    identity / Store listing URL segment, e.g. `9P…`).
 
-## GitHub Actions secrets (`ulyngs/digital-habits-blocker`)
+## GitHub Actions secrets (`digitalhabits/dh-blocker`)
 
 Add these repository secrets (separate from Trusted Signing `AZURE_CLIENT_*`
 and from package identity `WINDOWS_IDENTITY_*`):

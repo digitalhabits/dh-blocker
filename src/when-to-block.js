@@ -87,13 +87,25 @@ function pad2(n) {
     return String(n).padStart(2, '0');
 }
 
-export function formatSegmentRange(seg) {
+/**
+ * "All day" is stored as start == end (the switch writes 00:00 – 00:00).
+ * Desktop (`native_host`) and iOS (`ScheduleData`) both enforce a range whose
+ * end equals its start as a full day, so it needs no field of its own.
+ */
+export function isAllDaySegment(seg) {
+    if (!seg) return false;
+    return seg.startHour === seg.endHour && seg.startMinute === seg.endMinute;
+}
+
+/** `allDayLabel`, when given, replaces "00:00 – 00:00" for an all-day range. */
+export function formatSegmentRange(seg, allDayLabel) {
+    if (allDayLabel && isAllDaySegment(seg)) return allDayLabel;
     return `${pad2(seg.startHour)}:${pad2(seg.startMinute)} – ${pad2(seg.endHour)}:${pad2(seg.endMinute)}`;
 }
 
 /**
  * One-line summary for the "When to block" section header.
- * `labels`: { manual, dailyFmt(range), weeklyFmt(days, range), dayNames: string[7], noDays }
+ * `labels`: { manual, dailyFmt(range), weeklyFmt(days, range), dayNames: string[7], noDays, allDay? }
  *
  * Compact (default) shows the first segment and counts the rest ("+2").
  * `full` lists every range instead, grouped under identical day sets in the
@@ -104,7 +116,7 @@ export function formatWhenToBlockSummary(kind, segments, labels, { full = false 
         return labels.manual;
     }
     if (kind === 'daily') {
-        return labels.dailyFmt(formatSegmentRange(segments[0]));
+        return labels.dailyFmt(formatSegmentRange(segments[0], labels.allDay));
     }
     const sortedDays = (seg) => (Array.isArray(seg.days) ? [...seg.days].sort((a, b) => a - b) : []);
     const dayTextFor = (days) => (days.length === 0
@@ -117,7 +129,7 @@ export function formatWhenToBlockSummary(kind, segments, labels, { full = false 
             const days = sortedDays(seg);
             const key = days.join(',');
             if (!groups.has(key)) groups.set(key, { dayText: dayTextFor(days), ranges: [] });
-            groups.get(key).ranges.push(formatSegmentRange(seg));
+            groups.get(key).ranges.push(formatSegmentRange(seg, labels.allDay));
         }
         return [...groups.values()]
             .map((group) => labels.weeklyFmt(group.dayText, group.ranges.join(', ')))
@@ -126,7 +138,7 @@ export function formatWhenToBlockSummary(kind, segments, labels, { full = false 
 
     const first = segments[0];
     const range = segments.length > 1
-        ? `${formatSegmentRange(first)} +${segments.length - 1}`
-        : formatSegmentRange(first);
+        ? `${formatSegmentRange(first, labels.allDay)} +${segments.length - 1}`
+        : formatSegmentRange(first, labels.allDay);
     return labels.weeklyFmt(dayTextFor(sortedDays(first)), range);
 }

@@ -1,6 +1,7 @@
 import DeviceActivity
 import ManagedSettings
 import Foundation
+import os
 
 /// DeviceActivityMonitor extension that applies/clears blocks when scheduled time windows start/end.
 /// This runs as a separate process — it does NOT have access to the main app's memory.
@@ -16,23 +17,34 @@ class ReddBlockMonitor: DeviceActivityMonitor {
     
     /// Default store for manual blocks (resume/block-end one-offs write here).
     private let defaultStore = ManagedSettingsStore()
-    
+
+    /// NSLog's `%@` arguments are redacted to `<private>` in Console for an
+    /// extension nothing is debugging, which left this process undiagnosable on
+    /// a user's phone. Mark every value public instead.
+    private let log = Logger(subsystem: "com.reddblock.monitor", category: "schedule")
+
+    private func logLine(_ message: String) {
+        log.notice("[ReDD Schedule] \(message, privacy: .public)")
+    }
+
     /// Called by the system when a scheduled DeviceActivity interval starts.
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
         
         let raw = activity.rawValue
-        NSLog("[ReDD Schedule] intervalDidStart raw=%@", raw)
+        logLine("intervalDidStart raw=\(raw)")
 
         if raw.hasPrefix("redd-schedule-resume-") {
             recomputeActiveScheduleUnion()
+            releaseFiredOneOff(activity)
             return
         }
-        
+
         // One-off: pause resume — merge manual state + resume payload and apply to default store
         if raw.hasPrefix("redd-block-resume-") {
             let blockId = String(raw.dropFirst("redd-block-resume-".count))
             handleResumeOneOff(blockId: blockId)
+            releaseFiredOneOff(activity)
             return
         }
         
@@ -44,9 +56,20 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         }
         
         // Regular schedule segment
-        recomputeActiveScheduleUnion()
+        let now = Date()
+        let evaluateAt = SharedScheduleStore.load(id: extractScheduleId(from: activity))?
+            .startCallbackEvaluationTime(now: now) ?? now
+        if evaluateAt != now { logLine("start arrived early; evaluating at the start") }
+        recomputeActiveScheduleUnion(now: evaluateAt)
     }
     
+    /// Block resumes get a new name per manual start and nothing else stops them,
+    /// so they would pile toward iOS's ~20-activity limit. intervalDidEnd ignores them.
+    private func releaseFiredOneOff(_ activity: DeviceActivityName) {
+        DeviceActivityCenter().stopMonitoring([activity])
+        logLine("stopped fired one-off \(activity.rawValue)")
+    }
+
     /// Re-tag a merged/subtracted payload as allowlist so the record keeps its semantics.
     private func taggedAllowlist(_ payload: ManualBlockStatePayload) -> ManualBlockStatePayload {
         ManualBlockStatePayload(
@@ -70,25 +93,35 @@ class ReddBlockMonitor: DeviceActivityMonitor {
     /// mode (blocked vs allowed are separate App Group records), re-apply, clean up.
     private func handleResumeOneOff(blockId: String) {
         guard let resumePayload = SharedManualBlockStore.loadResumePayload(blockId: blockId) else {
+            logLine("resume one-off \(blockId) had no stored payload; nothing re-applied")
             return
         }
+        logLine("resume one-off \(blockId) allowlist=\(resumePayload.isAllowlist)")
+        let save: () -> Bool
         if resumePayload.isAllowlist {
             let base = SharedManualBlockStore.loadManualAllowlistState()
             let merged = taggedAllowlist(mergePayloads(base: base, extra: resumePayload))
-            SharedManualBlockStore.saveManualAllowlistState(merged)
+            save = { SharedManualBlockStore.saveManualAllowlistState(merged) }
         } else {
             let base = SharedManualBlockStore.loadManualBlockState()
             let merged = mergePayloads(base: base, extra: resumePayload)
-            SharedManualBlockStore.saveManualBlockState(merged)
+            save = { SharedManualBlockStore.saveManualBlockState(merged) }
         }
-        reapplyDerivedPolicies()
-        SharedManualBlockStore.removeResumePayload(blockId: blockId)
+        let committed = ManualResumePayloadCommit.commit(
+            save: save,
+            reapply: { reapplyDerivedPolicies() },
+            remove: { SharedManualBlockStore.removeResumePayload(blockId: blockId) }
+        )
+        if !committed {
+            logLine("resume one-off \(blockId) payload commit failed; retaining payload")
+        }
     }
 
     /// Handle one-off block end (Option B): subtract this block's payload from the
     /// record matching its mode, re-apply, write back.
     private func handleBlockEndOneOff(blockId: String) {
         guard let toRemove = SharedManualBlockStore.loadBlockEndState(blockId: blockId) else {
+            logLine("block-end one-off \(blockId) had no stored payload; nothing removed")
             return
         }
         let emptyPayload = ManualBlockStatePayload(domains: [], appTokenData: [], categoryTokenData: [], days: nil)
@@ -153,12 +186,20 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         super.intervalDidEnd(for: activity)
         
         let raw = activity.rawValue
-        NSLog("[ReDD Schedule] intervalDidEnd raw=%@", raw)
+        logLine("intervalDidEnd raw=\(raw)")
         // One-off resume/block-end: we only care about intervalDidStart; do not clear default store when interval ends
         if raw.hasPrefix("redd-schedule-resume-") || raw.hasPrefix("redd-block-resume-") || raw.hasPrefix("redd-block-end-") {
             return
         }
         
+        recomputeActiveScheduleUnion()
+    }
+
+    /// The one-minute usage event: the start may never have arrived, so recompute.
+    /// In a window that started correctly, or is paused, this changes nothing.
+    override func eventDidReachThreshold(_ event: DeviceActivityEvent.Name, activity: DeviceActivityName) {
+        super.eventDidReachThreshold(event, activity: activity)
+        logLine("eventDidReachThreshold event=\(event.rawValue) activity=\(activity.rawValue)")
         recomputeActiveScheduleUnion()
     }
 
@@ -169,7 +210,7 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         super.intervalWillEndWarning(for: activity)
 
         let raw = activity.rawValue
-        NSLog("[ReDD Schedule] intervalWillEndWarning raw=%@", raw)
+        logLine("intervalWillEndWarning raw=\(raw)")
         if raw.hasPrefix("redd-schedule-resume-") || raw.hasPrefix("redd-block-resume-") || raw.hasPrefix("redd-block-end-") {
             return
         }
@@ -187,18 +228,25 @@ class ReddBlockMonitor: DeviceActivityMonitor {
     /// (the writer partitions blocklist rows vs the allowlist fallback itself).
     private func recomputeActiveScheduleUnion(now: Date = Date()) {
         let allSchedules = SharedScheduleStore.loadAll()
-        NSLog("[ReDD Schedule] recomputeActiveScheduleUnion schedules=%d", allSchedules.count)
+        logLine("recomputeActiveScheduleUnion schedules=\(allSchedules.count)")
         var activePairs: [(String, ScheduleBlockData)] = []
 
-        for (id, data) in allSchedules where data.isActiveNow(now: now) {
-            NSLog(
-                "[ReDD Schedule] active schedule id=%@ mode=%@ domains=%d apps=%d categories=%d",
-                id, data.mode ?? "blocklist", data.domains.count, data.appTokenData.count, data.categoryTokenData.count
+        // Log every entry with whether it is active: "schedules=1" and no active
+        // entry is the signal that distinguishes an unreadable App Group from a
+        // schedule the window or pause state ruled out.
+        for (id, data) in allSchedules {
+            let active = data.isActiveNow(now: now)
+            logLine(
+                "schedule id=\(id) active=\(active) paused=\(data.isPaused == true)"
+                + " pauseEnd=\(data.pauseEndTimestampMs.map { String($0) } ?? "nil")"
+                + " mode=\(data.mode ?? "blocklist") domains=\(data.domains.count)"
+                + " apps=\(data.appTokenData.count) categories=\(data.categoryTokenData.count)"
             )
-            activePairs.append((id, data))
+            if active { activePairs.append((id, data)) }
         }
 
         if activePairs.isEmpty {
+            logLine("no active schedule entries; clearing the schedule store")
             store.clearAllSettings()
         }
         ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: activePairs, now: now)

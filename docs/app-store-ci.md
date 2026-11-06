@@ -44,7 +44,7 @@ Focus Spaces & Blocking
 Fixes & Polish
 - …
 
-Remember that the app is open source — keep your feedback and suggestions coming at https://github.com/ulyngs/digital-habits-blocker
+Remember that the app is open source — keep your feedback and suggestions coming at https://github.com/digitalhabits/dh-blocker
 
 Cheers,
 Ulrik & all of us at Centre for Digital Habits
@@ -62,7 +62,6 @@ Other stores use the same script with different filters:
 
 - `--platform windows` → untagged + `[desktop]` + `[windows]`
 - `--platform macos` → untagged + `[desktop]` + `[macos]`
-- `--platform android` → untagged + `[android]`
 
 If a release has **no** iOS-facing bullets (desktop-only release), the
 Publish (App Store) job logs a notice and skips submission instead of
@@ -93,7 +92,7 @@ entitlements, and the extension bundle IDs (com.reddblock.monitor,
 com.reddblock.shieldconfiguration) already exist from manual releases —
 nothing to change there.
 
-## GitHub Actions secrets (`ulyngs/digital-habits-blocker`)
+## GitHub Actions secrets (`digitalhabits/dh-blocker`)
 
 | Secret | Source |
 | --- | --- |

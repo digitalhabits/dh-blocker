@@ -14,8 +14,6 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
     _app: &AppHandle<R>,
     api: PluginApi<R, C>,
 ) -> crate::Result<Screentime<R>> {
-    #[cfg(target_os = "android")]
-    let handle = api.register_android_plugin("", "ScreentimePlugin")?;
     #[cfg(target_os = "ios")]
     let handle = api.register_ios_plugin(init_plugin_screentime)?;
     Ok(Screentime(handle))
@@ -148,12 +146,53 @@ impl<R: Runtime> Screentime<R> {
             .map_err(Into::into)
     }
 
+    pub fn cancel_resume(&self, payload: CancelResumeRequest) -> crate::Result<SuccessResponse> {
+        self.0
+            .run_mobile_plugin("cancelResume", payload)
+            .map_err(Into::into)
+    }
+
     pub fn set_block_end_state(
         &self,
         payload: SetBlockEndStateRequest,
     ) -> crate::Result<SuccessResponse> {
         self.0
             .run_mobile_plugin("setBlockEndState", payload)
+            .map_err(Into::into)
+    }
+
+    // --- Start warnings ---
+
+    pub fn set_start_warnings(
+        &self,
+        payload: SetStartWarningsRequest,
+    ) -> crate::Result<StartWarningsResponse> {
+        self.0
+            .run_mobile_plugin("setStartWarnings", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn check_notification_permission(&self) -> crate::Result<NotificationPermissionResponse> {
+        self.0
+            .run_mobile_plugin(
+                "checkNotificationPermission",
+                NotificationPermissionRequest {},
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn request_notification_permission(&self) -> crate::Result<NotificationPermissionResponse> {
+        self.0
+            .run_mobile_plugin(
+                "requestNotificationPermission",
+                NotificationPermissionRequest {},
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn open_notification_settings(&self) -> crate::Result<SuccessResponse> {
+        self.0
+            .run_mobile_plugin("openNotificationSettings", NotificationPermissionRequest {})
             .map_err(Into::into)
     }
 

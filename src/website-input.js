@@ -1,6 +1,7 @@
 // Website input: domain validation/parsing and the Edit Blocklist
 // websites-import menu. Extracted verbatim from app.js.
 import { state } from './state.js';
+import { getActiveUiZoomScale, isIosTablet } from './theme.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { readTextFile } from '@tauri-apps/plugin-fs';
 import { tSettings } from './i18n.js';
@@ -147,10 +148,15 @@ export function setupWebsitesImportMenu({
         const viewportPadding = 12;
         const gap = 4;
         const isIOS = document.body.classList.contains('ios');
+        // Rects are on-screen pixels; the menu is positioned in unzoomed ones.
+        const ipad = isIosTablet();
+        const z = ipad ? getActiveUiZoomScale() : parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+        const frame = (ipad && menu.closest('.app-container')?.getBoundingClientRect())
+            || { top: 0, right: window.innerWidth, bottom: window.innerHeight };
 
         menu.classList.add('websites-import-menu-fixed');
         menu.style.left = 'auto';
-        menu.style.right = `${Math.max(viewportPadding, window.innerWidth - rect.right)}px`;
+        menu.style.right = `${Math.max(viewportPadding, (frame.right - rect.right) / z)}px`;
         menu.style.maxHeight = '';
 
         if (isIOS) {
@@ -175,7 +181,7 @@ export function setupWebsitesImportMenu({
             ? footer.getBoundingClientRect().top
             : window.innerHeight - viewportPadding;
 
-        const menuHeight = menu.scrollHeight;
+        const menuHeight = menu.scrollHeight * z;
         const spaceBelow = bottomLimit - rect.bottom - gap;
         const spaceAbove = rect.top - topLimit - gap;
         const fitsAbove = spaceAbove >= menuHeight;
@@ -183,10 +189,10 @@ export function setupWebsitesImportMenu({
 
         if (openUpward) {
             menu.style.top = 'auto';
-            menu.style.bottom = `${Math.max(viewportPadding, window.innerHeight - rect.top + gap)}px`;
+            menu.style.bottom = `${Math.max(viewportPadding, (frame.bottom - rect.top + gap) / z)}px`;
         } else {
             menu.style.bottom = 'auto';
-            menu.style.top = `${Math.max(viewportPadding, rect.bottom + gap)}px`;
+            menu.style.top = `${Math.max(viewportPadding, (rect.bottom + gap - frame.top) / z)}px`;
         }
     };
 

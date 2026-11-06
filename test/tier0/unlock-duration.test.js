@@ -1,26 +1,30 @@
 import { describe, expect, test } from 'vitest';
 import {
     DEFAULT_UNLOCK_MINUTES,
+    NEW_ALLOW_SPACE_UNLOCK_MINUTES,
     NEW_SPACE_UNLOCK_MINUTES,
     UNLOCK_MINUTE_OPTIONS,
     applyStopToTarget,
     getBlocklistUnlockMinutes,
     normalizeUnlockMinutes,
+    timedStopLostOwnPause,
 } from '../../src/unlock-duration.js';
 
 describe('new focus spaces', () => {
-    // Auto-start after stop is opt-in: a new space stays off when stopped
-    // until the user picks a duration. Existing spaces with nothing saved keep
-    // the 24-hour fallback (below), so none of them silently becomes permanent.
-    test('a new space starts on Never, which is a real menu option', () => {
-        expect(NEW_SPACE_UNLOCK_MINUTES).toBe(0);
+    test('a new space starts on 10 minutes, which is a real menu option', () => {
+        expect(NEW_SPACE_UNLOCK_MINUTES).toBe(10);
         expect(UNLOCK_MINUTE_OPTIONS).toContain(NEW_SPACE_UNLOCK_MINUTES);
-        expect(normalizeUnlockMinutes(NEW_SPACE_UNLOCK_MINUTES)).toBe(0);
+        expect(normalizeUnlockMinutes(NEW_SPACE_UNLOCK_MINUTES)).toBe(10);
+    });
+
+    test('a new allow-only space starts on Never, which survives normalizing', () => {
+        expect(NEW_ALLOW_SPACE_UNLOCK_MINUTES).toBe(0);
+        expect(normalizeUnlockMinutes(NEW_ALLOW_SPACE_UNLOCK_MINUTES)).toBe(0);
     });
 });
 
 describe('normalizeUnlockMinutes', () => {
-    test('the option set matches the Android app (0 = Never … 24 hours)', () => {
+    test('the option set spans Never through 24 hours', () => {
         expect([...UNLOCK_MINUTE_OPTIONS]).toEqual([0, 5, 10, 15, 30, 60, 120, 240, 480, 1440]);
         expect(DEFAULT_UNLOCK_MINUTES).toBe(1440);
     });
@@ -99,5 +103,34 @@ describe('applyStopToTarget', () => {
         const before = JSON.stringify(data);
         expect(applyStopToTarget(data, {}, 10, now)).toBeNull();
         expect(JSON.stringify(data)).toBe(before);
+    });
+});
+
+describe('timedStopLostOwnPause', () => {
+    const schedule = { id: 'sched-a' };
+    const failed = (failedSaveIds) => ({ success: false, error: 'sync failed', failedSaveIds });
+
+    test('a manual block stop never depends on the schedule sync', () => {
+        expect(timedStopLostOwnPause(failed(undefined), null)).toBe(false);
+        expect(timedStopLostOwnPause(failed(['sched-a-0']), null)).toBe(false);
+    });
+
+    test('a failure with no per-schedule detail counts as losing the pause', () => {
+        expect(timedStopLostOwnPause(failed(undefined), schedule)).toBe(true);
+        expect(timedStopLostOwnPause({ success: false }, schedule)).toBe(true);
+    });
+
+    test("the stopped schedule's own failed save loses the pause", () => {
+        expect(timedStopLostOwnPause(failed(['sched-a-0']), schedule)).toBe(true);
+        expect(timedStopLostOwnPause(failed(['other-0', 'sched-a-1-2']), schedule)).toBe(true);
+    });
+
+    test("another schedule's failed save does not", () => {
+        expect(timedStopLostOwnPause(failed(['other-0']), schedule)).toBe(false);
+        expect(timedStopLostOwnPause(failed([]), schedule)).toBe(false);
+    });
+
+    test('a schedule whose id merely starts the same way is not mistaken for this one', () => {
+        expect(timedStopLostOwnPause(failed(['sched-ab-0']), schedule)).toBe(false);
     });
 });

@@ -28,10 +28,61 @@ Tier 0 and Tier 1 overlap in kind but not in reach. Tier 1 owns the
 *composed* question — schedule windows, overlaps, allowlist resolution — and
 runs the real runner inside a page. Tier 0 exists for the leaf functions that
 composition is built out of, which previously had no home above Tier 2: things
-like `normalizeUnlockMinutes`, `androidFrictionChallengeFields` or
+like `normalizeUnlockMinutes` or
 `isProtectedApp` are pure, are asserted in milliseconds, and do not need a
 browser to be meaningful. When a case fits both, prefer Tier 1 — it is the
 layer closer to observed behavior.
+
+---
+
+## Choosing regression coverage
+
+Follow [AGENTS.md's verification policy](AGENTS.md#match-verification-to-risk):
+match effort to behavioral risk. Small, low-risk changes do not require new
+tests or a test-first workflow; run relevant existing checks and visually inspect
+UI changes. For enforcement changes and substantive bug fixes, prefer a
+regression test that demonstrably fails on the original code. If the test was
+written after the fix, running it against the original code can still establish
+that it detects the regression.
+
+Regression coverage is especially valuable for enforcement, where the
+characteristic failure mode is silence rather than an error:
+
+- A browser-specific URL-bar quirk makes extraction return nothing. The browser
+  stays in the supported map, blocking just stops working for it, and nothing
+  logs an error — that is how Samsung Internet's invisible `U+200E` prefix went
+  unnoticed.
+- `web_automation::tests::file_url_encodes_spaces` asserted the pre-rename
+  product name and could never pass. Nothing ran it, so nobody found out until
+  `cargo test --lib` was wired into CI.
+
+When adding or updating coverage, put it where CI will actually run it,
+matching the layer you changed:
+
+| What you changed | Where the test goes |
+| --- | --- |
+| A single pure helper in `src/` — boundaries, malformed input | `test/tier0/` (Tier 0) |
+| Blocking/schedule/allowlist logic in `src/` | `src/blocking-tests.js` (Tier 1) |
+| Desktop enforcement semantics — derivation, URL decisions, payloads | `#[cfg(test)]` in the Rust module |
+| Command paths, persistence round-trips | `src/integration-tests.js` (Tier 2) |
+| Appearance or layout regressions | reuse or add a screen in `test/ui/screens.js`, then `pnpm ui:shoot --screen=<name> --measure` and **look at it** |
+
+Prefer the highest row that can hold the case — except that a case about
+*composed* behavior belongs in Tier 1 even when its pieces are individually
+Tier 0-able. Use `scripts/manual-test-checklist.md` for behavior that needs
+real-system verification, such as a browser redirecting or an app being quit.
+If automated reproduction is impractical, briefly explain why and record the
+closest reliable verification.
+
+**A test that names a CSS class is not a test that the UI works.** jsdom has no
+layout engine, so Tier 0 cannot measure a box —
+`getBoundingClientRect()` returns zeros there. Asserting that a bar gained a
+`.compact` class proves the class was added, not that the result is legible, and
+it stays green if the matching rule is deleted from `styles.css`. For substantive layout fixes, check *geometry* (`pnpm ui:shoot --measure`
+reports what a real browser measured) and look at the screenshot. Neither half
+substitutes for the other. Minor styling and copy edits need visual inspection,
+but do not require a new screenshot fixture or geometry assertion when existing
+screens or a direct UI check suffice.
 
 ---
 
@@ -49,7 +100,13 @@ layer closer to observed behavior.
   - In app dev console (expanded profile): `runIntegrationTests('full')`
 - **UI shots**: `pnpm ui:shoot` (all screens) or `pnpm ui:shoot --screen=week-crowded --measure`
 - **Rust**: `cd src-tauri && cargo test --lib`
-- **Android Kotlin**: `cd src-tauri/gen/android && ./gradlew :tauri-plugin-android-blocker:testDebugUnitTest`
+- **Windows address-bar smoke probe**: in Windows PowerShell, run
+  `powershell -NoProfile -MTA -File scripts/test-windows-address-bar.ps1 -Browser firefox`
+  (also accepts `chrome`, `msedge`, or `brave`), then foreground a disposable
+  `https://example.com/` window and click the page. The probe uses the same
+  UIA selectors via .NET and verifies redirect to a temporary local file and
+  restore. Its page includes lookalike Firefox IDs to exercise toolbar scoping.
+  This does **not** run the Rust watcher or prove policy/schedule/MSIX behavior.
 
 ---
 
@@ -60,19 +117,19 @@ summarized below:
 
 | Workflow | Job | Runs | Trigger |
 | --- | --- | --- | --- |
-| `ci.yml` | Frontend bundle | `vite:build`, `vite:build:android`, `verify:android-bundle` | every PR, every push to `main` |
+| `ci.yml` | Frontend bundle | `vite:build` | every PR, every push to `main` |
 | `ci.yml` | Tier 0 unit tests | `pnpm test:tier0` — vitest over `test/tier0/**` | every PR, every push to `main` |
 | `ci.yml` | Tier 1 logic tests | `pnpm test:tier1` — `runBlockingTests()` in headless Chromium | every PR, every push to `main` |
+| `ci.yml` | iOS one-off activity timing | Foundation-only Swift host tests on macOS: `scripts/ci/test-ios-activity-timing.sh`, `test-ios-schedule-registration.sh`, `test-ios-schedule-data.sh`, and `test-ios-start-warnings.sh` (run in four time zones) | every PR, every push to `main` |
 | `release.yml` | Checks (lint + Tier 1) | `pnpm lint`, `pnpm test:tier1` — gates all four build jobs | every release run |
 | `release.yml` | macOS (.pkg) | `cargo test --lib` before signing | every release run |
 | `rust-ci.yml` | Rust unit tests | `cargo test --lib` on `macos-latest` | `src-tauri/**` changes, on PRs and `main` |
 | `rust-ci.yml` | Clippy (desktop) | `cargo clippy --lib --bins --tests --locked -- -D warnings` on `macos-latest` **and** `windows-latest` | `src-tauri/**` changes, on PRs and `main` |
-| `android-ci.yml` | Android debug + release APK | debug APK build, `:tauri-plugin-android-blocker:testDebugUnitTest`, then a release APK build + strip assertion | `src/**`, `src-tauri/**`, plugin, build config, on PRs and `main` |
 | `e2e-ci.yml` | Tier 2 (macOS + Windows) | `runIntegrationTests('full')` against a real built app over WebDriver | Tier 2 sources, `e2e/**`, `vite.config.js`, on PRs and `main` |
 
 Notes on the non-obvious choices:
 
-- **`ci.yml`, `rust-ci.yml`, `android-ci.yml` and `e2e-ci.yml` also run on pushes to `main`.**
+- **`ci.yml`, `rust-ci.yml` and `e2e-ci.yml` also run on pushes to `main`.**
   PR checks run against the merge preview, not the commit that ends up on
   `main`, and there is no merge queue — two independently-green PRs can land a
   broken `main`. The push trigger is also the only coverage for commits that
@@ -91,33 +148,13 @@ Notes on the non-obvious choices:
 
 - **Rust runs on macOS, not Linux.** `web_automation.rs`, `window_inventory.rs`
   and `workspace_events.rs` are `#[cfg(target_os = "macos")]`, and the
-  `cfg(not(ios|android))` modules depend on macOS/Windows-only crates, so the
-  lib does not compile on a Linux runner at all. No Windows-only module carries
-  tests, so macOS covers the whole suite. The job also runs `pnpm vite:build`
+  `cfg(not(ios))` modules depend on macOS/Windows-only crates, so the
+  lib does not compile on a Linux runner at all. The full Windows backend
+  suite runs in the Windows desktop clippy job with `cargo test --lib --locked`,
+  including method policy, shared block-page decisions, and IPC registration.
+  The job also runs `pnpm vite:build`
   first — `tauri_build::build()` refuses to run when the configured
   `frontendDist` (`../dist`) is missing.
-- **Kotlin tests run after the APK build, in the same job.** `settings.gradle`
-  applies the generated, gitignored `tauri.settings.gradle`, which is what adds
-  `:tauri-android` and `:tauri-plugin-android-blocker` to the build. Gradle
-  cannot configure the project until the Tauri CLI has written it.
-- **A debug APK does not cover the release packaging path.** Release merges
-  consumer ProGuard files, runs R8, runs lintVital and strips native libraries;
-  debug does none of those. Two release-only failures reached `main` while this
-  job was green — Tauri's plugin crates declaring a `consumer-rules.pro` they do
-  not ship, and a lint crash in AGP 9.1.1 / Kotlin 2.2.21 — and
-  `scripts/build-android-play.sh` runs those same Gradle tasks, so the Play
-  build was broken too. The job therefore ends with a single-ABI release APK
-  build, plus an assertion that the packaged library carries no `.symtab` /
-  `.strtab`. That last check exists because nothing in the Android toolchain
-  notices if `strip = true` leaves `[profile.release]`: AGP's own strip task
-  removes DWARF sections only, and a Cargo release build emits none, so the
-  symbol table would quietly return (~4 MB per ABI).
-- **The Robolectric suites need network on their first run.** Robolectric
-  fetches an `android-all` runtime jar from Maven for the SDK level pinned in
-  `src/test/resources/robolectric.properties` and caches it. CI has network, so
-  this only shows up as a slower first run; offline, those two suites fail while
-  the plain-JUnit ones still pass.
-
 **Tier 2 runs in CI** (`e2e-ci.yml`) against a real built app, because it drives
 the actual Tauri command layer and cannot run on a bare page like Tier 1. See
 "Tier 2 under WebDriver" below. Running it by hand from the dev console still
@@ -137,7 +174,7 @@ cases belong — boundary values, malformed input, "exact match, not substring".
 
 - Cases: `test/tier0/**/*.test.js`
 - Config: `vitest.config.mjs` (kept separate from `vite.config.js`, which
-  carries the index.html rewriting, PurgeCSS and Android asset-pruning plugins
+  carries the index.html rewriting plugins
   that mean nothing when the entry point is a test file)
 - Run: `pnpm test:tier0`
 
@@ -146,7 +183,7 @@ cases belong — boundary values, malformed input, "exact match, not substring".
 | File | Module under test |
 | --- | --- |
 | `blocklist-utils.test.js` | protected apps/domains, always-on detection, iOS Screen Time selection normalization, legacy quick-start cleanup, focus-space colours |
-| `schedule-engine.test.js` | Android payload mapping (day names, friction fields), repeat classification, one-off enforcement windows, pause state, weekday indexing |
+| `schedule-engine.test.js` | repeat classification, one-off enforcement windows, pause state, weekday indexing |
 | `time-inputs.test.js` | end-time field parsing |
 | `unlock-duration.test.js` | the temporary unlock menu (0 = Never … 1440), fallback to the 24 h default, what a confirmed stop does to a block or schedule in memory |
 
@@ -155,10 +192,6 @@ cases belong — boundary values, malformed input, "exact match, not substring".
 - `environment: 'jsdom'`. Most of these modules are leaf-ish, but several
   import siblings that touch `document` at import time; jsdom means a Tier 0
   test never has to hand-roll a DOM just to get an import to resolve.
-- `__ANDROID_BUILD__` is defined as `false`, so modules resolve the same
-  branches they do in a desktop build. A helper whose Android behavior differs
-  needs the runtime `state.isAndroid` flag, not the compile-time constant — see
-  the note in `AGENTS.md`.
 - Tests that mutate the shared `state` object must restore it (`try`/`finally`);
   vitest runs a file's tests in one module registry, so a leaked `state.appData`
   is visible to every later case in that file.
@@ -452,7 +485,7 @@ Add an entry to `test/ui/screens.js`; do not edit the driver. Always set
 Windows, so an unstamped screenshot taken on Linux silently claims to be a
 Windows one. Stamping it is also how mobile-only problems become visible:
 hover-dependent affordances such as native `title` tooltips do not exist on iOS
-or Android, and only show up as missing when the page is rendered as those.
+devices, and only show up as missing when the page is rendered as those.
 
 ---
 
@@ -486,105 +519,36 @@ Run these before merging changes to `web_automation.rs`, `native_host.rs`,
 
 ---
 
-## Android Kotlin unit tests
-
-```
-cd src-tauri/gen/android && ./gradlew :tauri-plugin-android-blocker:testDebugUnitTest
-```
-
-CI runs this too, as a step of the Android debug-APK job (`android-ci.yml`);
-on failure the HTML report is uploaded as the `kotlin-unit-test-report`
-artifact.
-
-| Suite | Covers | Runner |
-| --- | --- | --- |
-| `BrowserUrlParserTest` | URL-bar text → blockable domain, per browser | plain JUnit |
-| `SchedulesTest` | which schedule blocks an app/domain; session, pause and time-window gating; SharedPreferences round-trip | plain JUnit |
-| `BlockerServiceTest` | an accessibility event → the friction gate launches with the right payload, or provably does not (keyguard, self-package, throttle, unblocked app) | Robolectric |
-| `UnlockActivityTest` | the friction gate: challenge generation and validation, pause commit, dismissal paths | Robolectric |
-
-Why this matters more than it looks: **Android shares none of the desktop
-enforcement code.** `Schedules.kt` re-implements the semantics
-`native_host::derive_payload` derives on desktop, and nothing but these suites
-keeps the two in step. A change to blocking semantics needs a case on both
-sides.
-
-### `BrowserUrlParserTest`: fixtures dumped from real devices
-
-Android website blocking hinges on reading the URL out of each browser's URL
-bar via the accessibility tree. That parsing lives in
-`tauri-plugin-android-blocker/.../service/BrowserUrlParser.kt` — deliberately
-free of Android framework types so it runs as a plain JVM test.
-
-`BrowserUrlParserTest` pins **verbatim URL-bar strings dumped from real
-devices** (`adb shell uiautomator dump`), quirks included. This matters because
-a browser-specific quirk here fails *silently*: the browser stays in the
-supported-package map, extraction just returns nothing, and that browser never
-blocks with no error anywhere. That is exactly how Samsung Internet's invisible
-`U+200E` LTR-mark prefix went unnoticed.
-
-**When adding or fixing a browser:** open a site in it, `uiautomator dump` the
-tree, add the raw `text` value of its URL-bar node as a fixture, then verify on
-a device (`logcat -s BlockerService` should log `Blocking website …`). The unit
-test proves parsing; only the device proves the accessibility event actually
-arrives and the friction gate launches.
-
-### Environment notes
-
-- `isReturnDefaultValues = true` keeps plain-JUnit tests from throwing on
-  `android.util.Log`. Robolectric supplies its own framework implementation and
-  is unaffected.
-- A real `org.json` is on the test classpath ahead of the stub, so
-  `Schedules`'s persistence round-trips actually round-trip instead of silently
-  producing empty data.
-- Robolectric emulates the SDK level pinned in
-  `src/test/resources/robolectric.properties` rather than following `compileSdk`,
-  so bumping `compileSdk` does not silently change what the tests run against.
-- `isIncludeAndroidResources = true` lets `UnlockActivityTest` inflate
-  `R.layout.activity_unlock` and resolve `R.string` / `R.color`.
-- `androidx.work:work-testing` supplies the WorkManager that
-  `Schedules.pauseSchedule` enqueues a `ReEnableWorker` into; without it the
-  gate's confirm path throws.
-
-### What these do not cover
-
-- The **website interception path** in `BlockerService`, which reads the browser
-  accessibility tree via `rootInActiveWindow`. Robolectric cannot populate that
-  for an AccessibilityService. The parsing half is covered by
-  `BrowserUrlParserTest`; the end-to-end half stays on the manual checklist.
-- `ScheduleManager`'s real WorkManager scheduling, and anything that depends on
-  a real device's accessibility grant.
-
----
-
 ## Tier Comparison
 
 - **Tier 0 (unit)**: narrow but exhaustive per helper, fastest feedback, proves nothing about composition — and it runs in jsdom, which has no layout engine, so never a claim about appearance.
 - **Tier 1 (logic)**: high breadth of logic permutations, zero system mutation.
 - **Tier 2 (integration)**: moderate breadth, Tauri command paths with the `current_blocking` enforcement snapshot as read-back.
 - **Rust unit tests**: enforcement decision logic (URL matching, allowlist composition, payload derivation).
-- **Android Kotlin unit tests**: URL-bar parsing against fixtures dumped from real devices, plus schedule decisions, the friction gate and event interception.
 - **UI shots**: appearance and layout geometry, from fixtures, in a real browser. Renders; does not assert.
 - **Manual checklist**: required for website enforcement, permissions, enforcer behaviour, and visual UX on real devices.
 
 Recommended stance:
 
 - Run Tier 0 and Tier 1 during feature work.
-- Run `pnpm ui:shoot` after any change to `styles.css` or to rendering code, and look at the output.
+- Visually inspect UI changes, using relevant `pnpm ui:shoot` screens or a direct UI check. For substantive layout fixes, also check measured geometry; see [Choosing regression coverage](#choosing-regression-coverage).
 - Run Tier 2 for data/sync/shim regressions; do not treat passing Tier 2 as proof of website blocking.
-- Run the manual checklist before every release.
+- Before every release, run the relevant automated system/device tests and complete the remaining applicable manual checklist cases.
 
 ---
 
 ## iOS and testing tiers
 
+See [the repeatable iOS testing protocol](docs/ios-testing.md) for build, Simulator and connected-device commands and evidence.
+
 iOS enforcement uses the Screen Time plugin (`tauri-plugin-screentime`).
 
 - **Tier 1 (logic):** Runs in the app; safe on iOS. Same blocking/schedule/override logic applies. **Category 14 (T55–T62)** covers the iOS allowlist effective-policy resolvers — run it on the desktop dev build; the resolvers are shared JS and encode iOS-only constraints (Apple's 50-exception cap, `specific-block` vs `all-except`, category-token exclusion).
-- **Tier 2 (integration):** Desktop-oriented; helper-dependent paths always see the shim as “ready” but do not exercise Screen Time. **Manual checklist is the primary way to validate iOS.**
-- **Enforcement layer:** cannot be automated — FamilyControls authorization and shields do not work meaningfully in the simulator, and `ManagedSettingsStore` state cannot be read back. See `architecture.md` §12.3 for device-validation findings and known carve-outs.
+- **Tier 2 (integration):** Desktop-oriented; helper-dependent paths always see the shim as “ready” but do not exercise Screen Time. Use the connected-device runner for its automated iOS cases and the physical-device checklist for remaining coverage.
+- **Connected-device enforcement:** the `website` profile creates a temporary date-limited rule through the app UI, verifies Safari blocking and the allowed control, observes natural expiry with Blocker backgrounded, and removes its own fixture. It uses external XCTest and CoreDevice, requires no manual test-data entry, and records assertions and evidence. Device unlock, signing and Apple's UI Automation approval can require initial user action. This profile has been verified on an iPad; physical iPhone verification remains outstanding.
+- **Remaining device coverage:** authorisation, native picker/app shielding, allowlist combinations, pause/resume and long-duration or recovery scenarios remain separate checklist cases in this version of the runner. A passing website profile does not imply these passed. FamilyControls authorisation and shields do not work meaningfully in the simulator, so Simulator UI checks cannot replace device cases. See `architecture.md` §12.3 for device-validation findings and known carve-outs.
 
-For release, run the **manual test checklist** (section **14. iOS-Specific**, including the **14.1 iOS allowlist matrix**) on a physical iPhone.
+For release, run the automated physical-device profile and complete the remaining applicable cases in **section 14. iOS-Specific**, including the **14.1 iOS allowlist matrix**. Record device/OS and any cases not run; iPad evidence does not establish iPhone-specific layout or interaction coverage.
 
 ---
 
@@ -593,12 +557,18 @@ For release, run the **manual test checklist** (section **14. iOS-Specific**, in
 1. Run Tier 1 during active feature work for fast feedback.
 2. Run Tier 2 before merging changes that touch save/sync/shim/app-blocking command paths (Group H when touching allowlist derivation or sync).
 3. Run `cargo test --lib` before merging changes to Rust enforcement code.
-4. Run the manual checklist for website blocking, permissions, enforcer, and release confidence — section 15 for desktop allowlist, section 14/14.1 for iOS.
+4. Run the connected-device iOS profile for its automated website lifecycle. Complete remaining website, permission, enforcer and release checks using the manual checklist — section 15 for desktop allowlist, section 14/14.1 for iOS.
 
 ---
 
 ## Common troubleshooting
 
+- **Windows Rust tests exit with `0xc0000139` before running any tests:**
+  - The dialog plugin imports `TaskDialogIndirect`, which requires a Common
+    Controls v6 manifest. Tauri embeds its manifest only in binary targets;
+    `src-tauri/build.rs` supplies one for the library test executable too.
+  - Keep the binary-specific `/MANIFEST:NO` override: the app already has
+    Tauri's resource manifest, and generating another produces `CVT1100`.
 - **Tier 1 not running:**
   - confirm `src/index.html` includes `test-utils.js` and `blocking-tests.js`.
   - confirm shortcut handler in `src/app.js` is active in current build.
@@ -606,3 +576,13 @@ For release, run the **manual test checklist** (section **14. iOS-Specific**, in
   - confirm the `get_system_diagnostics` command is registered and `tauriAPI.getSystemDiagnostics` exists in `src/app.js`.
 - **Tier 2 failing at setup/teardown:**
   - confirm `window.__REDDBLOCK_INTERNALS__` exports are present from `src/app.js`.
+
+### Windows MSIX resource staging
+
+Run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-msix-resources.ps1`.
+This needs no compiler, Windows SDK or Store credentials. It exercises the same
+staging script as `build-msix.ps1`, checks all three real block-page assets and
+hashes in a path containing spaces, and rejects missing sources and incorrect
+runtime mappings. Windows Rust CI runs it, including on `scripts/*msix*.ps1`
+changes. This does not prove that installed browsers can read `WindowsApps`;
+use the packaged-install checks in `scripts/manual-test-checklist.md`.

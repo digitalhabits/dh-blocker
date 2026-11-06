@@ -28,7 +28,7 @@ export function isVersionHigher(versionA, versionB) {
 /** Key in latest-versions.json — iOS uses its own release line, not desktop macos. */
 export function getLatestVersionPlatformKey() {
     if (state.isIOS) return 'ios';
-    if (state.isAndroid) return 'android';
+
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
     return isMac ? 'macos' : 'windows';
 }
@@ -122,11 +122,13 @@ export async function startUpdateDownload(latestVersion) {
     const btn = document.getElementById('update-banner-link');
     if (!btn || btn.disabled || updateDownloadInProgress) return;
 
-    const version = normalizeReleaseVersion(latestVersion);
     updateDownloadInProgress = true;
     setUpdateDownloadButtonState('downloading', 0);
 
     try {
+        // The banner may be days old: refresh it so the newest release is shown and installed.
+        await checkForAppUpdate();
+        const version = normalizeReleaseVersion(btn.dataset.latestVersion || latestVersion);
         await ensureUpdateDownloadProgressListener();
         await tauriAPI.downloadAndRunUpdate(version);
         setUpdateDownloadButtonState('opening');
@@ -165,7 +167,7 @@ export function wireUpdateBannerDownloadLink(latestVersion, pkgBytes = null) {
     } else {
         delete btn.dataset.pkgBytes;
     }
-    resetUpdateDownloadButtonState();
+    if (!updateDownloadInProgress) resetUpdateDownloadButtonState();
 
     if (!btn.dataset.wired) {
         btn.dataset.wired = '1';
@@ -227,7 +229,9 @@ export async function showUpdateBanner(latestVersion, currentVersion = '', { pkg
     const notesPanel = document.getElementById('update-banner-notes');
     const notesContent = document.getElementById('update-banner-notes-content');
 
-    if (!banner || !versionEl) return;
+    // Periodic re-checks leave a banner already shown for this version, or dismissed, alone.
+    if (!banner || !versionEl || banner.dataset.shownVersion === latestVersion) return;
+    banner.dataset.shownVersion = latestVersion;
 
     versionEl.textContent = latestVersion;
     wireUpdateBannerDownloadLink(latestVersion, pkgBytes);
@@ -268,12 +272,8 @@ export async function showUpdateBanner(latestVersion, currentVersion = '', { pkg
 }
 
 // Check if a newer app version is available and show update banner.
-// Desktop-only: Android/iOS update via their app stores. The compile-time
-// guard makes this a no-op on Android and lets Rollup drop the transitive
-// update-banner UI chain — including changelog.js and the bundled
-// changelog.md (~57 KB of otherwise-unreachable startup parse).
+// Desktop updates; iOS updates through the App Store.
 export async function checkForAppUpdate() {
-    if (__ANDROID_BUILD__) return;
     if (await resolveMicrosoftStorePackage()) {
         return;
     }
@@ -281,7 +281,7 @@ export async function checkForAppUpdate() {
         const currentVersion = await tauriAPI.getAppVersion();
         if (!currentVersion) return;
 
-        const response = await fetch(`https://ulyngs.github.io/digital-habits-blocker/latest-versions.json?t=${Date.now()}`);
+        const response = await fetch(`https://digitalhabits.github.io/dh-blocker/latest-versions.json?t=${Date.now()}`);
         const manifest = await response.json();
         const platformKey = getLatestVersionPlatformKey();
         const latestVersion = manifest[platformKey];

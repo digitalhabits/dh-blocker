@@ -21,7 +21,8 @@ import {
 export const UI_ZOOM_MIN = 0.8;
 export const UI_ZOOM_MAX = 1.8;
 export const UI_ZOOM_MAX_DESKTOP = 1.5;  // cap on macOS/Windows (native webview zoom)
-export const UI_ZOOM_MAX_IOS = 1.4;  // cap on iOS (CSS zoom on phone; transform scale on iPad)
+export const UI_ZOOM_MAX_IOS = 1.4;  // cap on iPad (transform scale)
+export const UI_ZOOM_MAX_IPHONE = 1.2;  // phone text is already large; iOS text size covers more
 /** Layout breakpoints — CSS `zoom` does not affect @media / @container; tiers use effective width. */
 export const UI_ZOOM_LAYOUT_STACK_MAX = 718;
 export const UI_ZOOM_LAYOUT_CRAMPED_MAX = 1024;
@@ -32,6 +33,7 @@ let uiZoomLayoutObserverBound = false;
 let schedTabsIconOnlyEnteredAtWidth = 0;
 export const UI_ZOOM_STEP = 0.1;
 export const DEFAULT_UI_ZOOM = 1.0;
+export const IPAD_DEFAULT_UI_ZOOM = 1.2;
 let zoomToastHideTimeout = null;
 let nativeWebviewZoomSupported = null;
 
@@ -97,7 +99,7 @@ export function setupTheme() {
 
                     if (!(await resolveMicrosoftStorePackage())) {
                         try {
-                            const response = await fetch(`https://ulyngs.github.io/digital-habits-blocker/latest-versions.json?t=${Date.now()}`);
+                            const response = await fetch(`https://digitalhabits.github.io/dh-blocker/latest-versions.json?t=${Date.now()}`);
                             const versions = await response.json();
                             const latestVersion = versions[getLatestVersionPlatformKey()];
 
@@ -188,7 +190,7 @@ export function applyTheme() {
 }
 
 export function getUiZoomMax() {
-    if (state.isIOS) return UI_ZOOM_MAX_IOS;
+    if (state.isIOS) return isIosTablet() ? UI_ZOOM_MAX_IOS : UI_ZOOM_MAX_IPHONE;
     const isDesktop = document.body.classList.contains('windows') || document.body.classList.contains('mac');
     return isDesktop ? UI_ZOOM_MAX_DESKTOP : UI_ZOOM_MAX;
 }
@@ -198,7 +200,7 @@ export function clampUiZoom(scale) {
 }
 
 export function getDefaultUiZoom() {
-    return DEFAULT_UI_ZOOM;
+    return isIosTablet() ? IPAD_DEFAULT_UI_ZOOM : DEFAULT_UI_ZOOM;
 }
 
 export function getSavedUiZoom() {
@@ -221,7 +223,7 @@ export function usesNativeWebviewZoom() {
 
 let handsetViewportGuardBound = false;
 
-/** Unstick phone/Android webview scroll after keyboard or modal dismiss. */
+/** Unstick phone webview scroll after keyboard or modal dismiss. */
 function resetHandsetViewport() {
     document.activeElement?.blur?.();
     window.scrollTo(0, 0);
@@ -232,10 +234,10 @@ function resetHandsetViewport() {
     }
 }
 
-/** Pin document scroll + heal viewport after inputs/modals (iPhone + Android only). */
+/** Pin document scroll + heal viewport after inputs/modals (iPhone only). */
 export function setupHandsetViewportGuard() {
     if (handsetViewportGuardBound) return;
-    const isPhone = document.body.classList.contains('ios-phone') || state.isAndroid;
+    const isPhone = document.body.classList.contains('ios-phone');
     if (!isPhone) return;
     handsetViewportGuardBound = true;
 
@@ -259,6 +261,84 @@ export function setupHandsetViewportGuard() {
         if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
         heal();
     }, { passive: true });
+
+    if (state.isIOS) {
+        window.visualViewport?.addEventListener('resize', fitStopChallengeAboveKeyboard, { passive: true });
+        window.visualViewport?.addEventListener('scroll', fitStopChallengeAboveKeyboard, { passive: true });
+        window.addEventListener('scroll', fitStopChallengeAboveKeyboard, { passive: true });
+        fitStopChallengeAboveKeyboard(); // record the keyboard-less height
+        // Re-measure just before the keyboard rises, in case the zoom changed.
+        document.addEventListener('focusin', fitStopChallengeAboveKeyboard);
+        // A tap lets iOS pan the page to the field, unpredictably far; focusing
+        // it ourselves without scrolling leaves the placement to the fit above.
+        // Also suppresses the Paste / AutoFill callout on a second tap.
+        document.addEventListener('touchend', (e) => {
+            const input = e.target.closest?.('#override-modal .challenge-input, #override-all-modal .challenge-input');
+            if (!input) return;
+            e.preventDefault();
+            input.focus({ preventScroll: true });
+        }, { passive: false });
+    }
+}
+
+/**
+ * When the keyboard opens on a stop challenge, the sheet scrolls as one page
+ * (header included) with room for the keyboard below, starting where the input
+ * clears the keyboard, then the word to type and the heading stay in view if
+ * they fit, then Cancel / Stop sit on the keyboard if there is room.
+ */
+let fullViewport = { width: 0, height: 0, scale: 1 };
+let fittedViewportHeight = 0;
+function fitStopChallengeAboveKeyboard() {
+    const vv = window.visualViewport;
+    // innerHeight shrinks with the keyboard too, so measure against the tallest
+    // viewport seen at this width (reset when the phone rotates). Whether the
+    // viewport reports zoomed or unzoomed px varies by iOS version, so record
+    // the ratio to element boxes while the keyboard is down.
+    if (vv.width !== fullViewport.width) fullViewport = { width: vv.width, height: 0, scale: 1 };
+    if (vv.height >= fullViewport.height) {
+        fullViewport.height = vv.height;
+        fullViewport.scale = document.documentElement.getBoundingClientRect().height / vv.height;
+    }
+    const keyboardUp = vv.height < fullViewport.height - 100;
+    for (const sheet of document.querySelectorAll('#override-modal .modal-content, #override-all-modal .modal-content')) {
+        const input = sheet.querySelector('.challenge-input:not(.hidden)');
+        if (!input || !keyboardUp || !sheet.contains(document.activeElement)) {
+            if (sheet.classList.contains('keyboard-up')) {
+                sheet.classList.remove('keyboard-up');
+                sheet.scrollTop = 0;
+            }
+            continue;
+        }
+        // Only reposition when the keyboard changes, never while the user scrolls.
+        if (sheet.classList.contains('keyboard-up') && vv.height === fittedViewportHeight) continue;
+        fittedViewportHeight = vv.height;
+        const keyboardHeight = (fullViewport.height - vv.height) * fullViewport.scale;
+        sheet.style.setProperty('--keyboard-height', `${keyboardHeight}px`);
+        sheet.classList.add('keyboard-up');
+        sheet.scrollTop = 0;
+        const keyboardTop = vv.height * fullViewport.scale - 12;
+        // Positions within the sheet, measured unscrolled.
+        const origin = sheet.getBoundingClientRect().top;
+        const top = (el) => el.getBoundingClientRect().top - origin;
+        const bottom = (el) => el.getBoundingClientRect().bottom - origin;
+        const header = sheet.querySelector('.mobile-modal-header');
+        // Below the notch: where the header's own content starts.
+        const safeTop = header ? Math.min(...[...header.children].map(top)) : 0;
+        const heading = sheet.querySelector('.challenge-word-mode .challenge-word-instruction, .override-challenge:not(.challenge-word-mode) .challenge-char-instruction');
+        const word = sheet.querySelector('.challenge-current-word:not(.hidden)') ?? input;
+        const buttons = sheet.querySelector('.modal-buttons');
+        const keep = heading && bottom(input) - top(heading) <= keyboardTop - safeTop ? heading : word;
+        let scroll = Math.max(0, bottom(buttons ?? input) - keyboardTop);
+        scroll = Math.min(scroll, top(keep) - safeTop);
+        scroll = Math.max(0, scroll, bottom(input) - keyboardTop);
+        // Older WebKit scrolls in CSS px but reports boxes zoomed; probe how far a
+        // scroll actually moves the content rather than trust either unit.
+        const inputTop = top(input);
+        sheet.scrollTop = scroll;
+        const moved = inputTop - top(input);
+        if (moved > 0 && sheet.scrollTop > 0) sheet.scrollTop = scroll * sheet.scrollTop / moved;
+    }
 }
 
 export function getActiveUiZoomScale() {
@@ -310,10 +390,7 @@ export function syncUiZoomResponsiveLayout() {
 }
 
 export function usesStackSettingsPlacement() {
-    if (window.matchMedia('(max-width: 718px)').matches) return true;
-    return document.body.classList.contains('ios')
-        && !document.body.classList.contains('ios-phone')
-        && window.matchMedia('(min-width: 719px) and (max-width: 1024px) and (orientation: portrait)').matches;
+    return window.matchMedia('(max-width: 718px)').matches;
 }
 
 /** True when labelled Now/Schedule tabs do not fit in the scheduler header row. */
@@ -519,19 +596,6 @@ export function resetUiZoom(options = {}) {
 
 export function setupUiZoomShortcuts() {
     setupFooterZoomControl();
-
-    // One-time zoom reset on Android. Early Android builds inherited the
-    // desktop default zoom (1.2) and PERSISTED it into settings.uiZoom, so
-    // just changing the default doesn't heal existing installs. CSS zoom
-    // above 1.0 on Android WebView shrinks the effective viewport (~327px
-    // on a 393dp phone → horizontal overflow) and triggers paint bugs
-    // (duplicated/offset text). Reset once; the user can still zoom
-    // manually afterwards and that choice sticks.
-    if (state.isAndroid && state.appData.settings?.uiZoom !== undefined && !state.appData.settings.androidZoomReset) {
-        state.appData.settings.uiZoom = DEFAULT_UI_ZOOM;
-        state.appData.settings.androidZoomReset = true;
-        saveData();
-    }
 
     applyUiZoom(getSavedUiZoom());
     bindUiZoomLayoutObserver();

@@ -13,7 +13,9 @@
 //
 // This is the macOS replacement for the extension on Safari + Chromium.
 // Firefox has no usable scripting dictionary, so it stays on the
-// extension + enforcer path (see enforcer.rs). Windows is unchanged.
+// extension + enforcer path (see enforcer.rs). Windows has a narrower
+// counterpart for policy-managed PCs in uia_web_automation.rs; the URL
+// decisions both share live in block_page.rs.
 //
 // Trade-off vs. the extension path: this requires **Automation** TCC
 // permission ("ReDD Blocker wants to control Google Chrome"). The first
@@ -32,12 +34,14 @@
 
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
+use crate::block_page::{plan_actions, Tab};
+pub use crate::block_page::{url_is_blocked, web_enforcement_active};
 use crate::native_host::{self, BlockInfo};
 
 /// How often we sweep running browsers. 1s keeps redirects feeling
@@ -124,18 +128,6 @@ impl SupportedBrowser {
     /// Name used in `tell application "<name>"`. Must match the app's
     /// registered name exactly or the Apple Event won't reach it.
     fn applescript_name(self) -> &'static str {
-        match self {
-            SupportedBrowser::Safari => "Safari",
-            SupportedBrowser::Chrome => "Google Chrome",
-            SupportedBrowser::Brave => "Brave Browser",
-            SupportedBrowser::Edge => "Microsoft Edge",
-        }
-    }
-
-    /// Main-process name as reported by sysinfo on macOS (bundle binary).
-    /// Suffix-matched so renderer/helper processes ("Google Chrome
-    /// Helper") don't count as the browser being open.
-    fn process_name(self) -> &'static str {
         match self {
             SupportedBrowser::Safari => "Safari",
             SupportedBrowser::Chrome => "Google Chrome",
@@ -282,6 +274,9 @@ struct BrowserRuntime {
     state: PermState,
     /// Earliest instant we'll re-attempt an Apple Event after a denial.
     next_attempt: Instant,
+    /// When a tick last scripted this browser successfully; cleared by any
+    /// other outcome. See `GRANT_CONFIRMATION_TTL`.
+    granted_at: Option<Instant>,
 }
 
 impl Default for BrowserRuntime {
@@ -289,6 +284,7 @@ impl Default for BrowserRuntime {
         BrowserRuntime {
             state: PermState::Unknown,
             next_attempt: Instant::now(),
+            granted_at: None,
         }
     }
 }
@@ -297,15 +293,30 @@ impl Default for BrowserRuntime {
 struct Shared {
     enabled: bool,
     runtimes: HashMap<SupportedBrowser, BrowserRuntime>,
+    /// False when every browser is on the extension: the loop then waits on
+    /// `wake` instead of ticking, so extension-only installs pay nothing.
+    automation_wanted: bool,
 }
 
 /// Handle returned from `start`. Drop it (or call `set_enabled(false)`)
 /// to make the loop go idle.
 pub struct WebAutomationHandle {
     shared: Arc<Mutex<Shared>>,
+    wake: Arc<Condvar>,
 }
 
 impl WebAutomationHandle {
+    /// Re-read whether any browser blocks through Automation and wake the
+    /// loop if one now does. Call after anything that changes a browser's
+    /// method; `set_blocking_method` is the only writer today.
+    pub fn refresh_automation_wanted(&self, app: &AppHandle) {
+        let wanted = crate::blocking_method::any_uses_automation(app);
+        if let Ok(mut s) = self.shared.lock() {
+            s.automation_wanted = wanted;
+        }
+        self.wake.notify_all();
+    }
+
     pub fn set_enabled(&self, enabled: bool) {
         if let Ok(mut s) = self.shared.lock() {
             s.enabled = enabled;
@@ -336,12 +347,26 @@ impl WebAutomationHandle {
             .collect()
     }
 
+    /// True when a tick scripted `browser` successfully within
+    /// `GRANT_CONFIRMATION_TTL`, so the grant needs no probe of its own.
+    pub fn grant_recently_confirmed(&self, browser: SupportedBrowser) -> bool {
+        let granted_at = self
+            .shared
+            .lock()
+            .ok()
+            .and_then(|s| s.runtimes.get(&browser).and_then(|r| r.granted_at));
+        grant_is_fresh(granted_at, Instant::now())
+    }
+
     /// Persist a permission probe result so the watcher tick and UI agree.
     pub fn record_permission(&self, browser: SupportedBrowser, state: PermState) {
         if let Ok(mut s) = self.shared.lock() {
             let rt = s.runtimes.entry(browser).or_default();
             let prev = rt.state;
             rt.state = state;
+            if state != PermState::Granted {
+                rt.granted_at = None;
+            }
             // Only arm the denial backoff on a fresh transition — UI
             // polls every ~2.5 s and must not keep pushing retries back.
             if state == PermState::Denied && prev != PermState::Denied {
@@ -355,8 +380,13 @@ impl WebAutomationHandle {
 /// of the bundled blocked.html (no query string), resolved once by the
 /// caller from the Tauri resource dir.
 pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
-    let shared = Arc::new(Mutex::new(Shared::default()));
+    let shared = Arc::new(Mutex::new(Shared {
+        automation_wanted: crate::blocking_method::any_uses_automation(&app),
+        ..Shared::default()
+    }));
+    let wake = Arc::new(Condvar::new());
     let shared_thread = shared.clone();
+    let wake_thread = wake.clone();
     std::thread::spawn(move || {
         // When true, the next idle ticks run a full restore sweep for
         // tabs still parked on blocked.html. Set while website
@@ -368,6 +398,11 @@ pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
         // frontmost one) was scripted — drives BACKGROUND_BROWSER_TICK.
         let mut last_full_pass: Option<Instant> = None;
         loop {
+            // No browser on Automation: block until a method changes rather
+            // than waking every second to find nothing to script.
+            if let Ok(guard) = shared_thread.lock() {
+                drop(wake_thread.wait_while(guard, |s| !s.automation_wanted));
+            }
             std::thread::sleep(TICK);
             let enabled = shared_thread.lock().map(|s| s.enabled).unwrap_or(false);
             if !enabled {
@@ -388,7 +423,7 @@ pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
             );
         }
     });
-    WebAutomationHandle { shared }
+    WebAutomationHandle { shared, wake }
 }
 
 fn tick(
@@ -654,55 +689,20 @@ fn tick_with_io<I: AutomationIo>(
     }
 }
 
-/// True when any active block enforces website restrictions (blocklist
-/// domains or allowlist-only browsing).
-pub fn web_enforcement_active(blocks: &[BlockInfo]) -> bool {
-    // Both modes come down to the same question: an allowlist block with no
-    // domains allows everything, and a blocklist block with no domains blocks
-    // nothing. Matches `enforcer::website_blocking_active`.
-    blocks.iter().any(|b| !b.domains.is_empty())
-}
-
-/// Decide what to do with each tab: redirect blocked sites to the block
-/// page, restore block-page tabs whose original URL is no longer
-/// blocked. Returns (window_index, tab_index, new_url) triples.
-///
-/// Restore matches the extension's `restoreUnblockedTabs`: any parked
-/// tab whose original URL is no longer blocked is restored, even when
-/// other website enforcement is still active.
-fn plan_actions(
-    tabs: &[Tab],
-    blocks: &[BlockInfo],
-    block_page_url: &str,
-) -> Vec<(u32, u32, String)> {
-    let mut actions = Vec::new();
-    for tab in tabs {
-        if is_block_page_url(&tab.url, block_page_url) {
-            #[cfg(feature = "system-test")]
-            if std::env::var_os("SYSTEM_TEST_RUNNER").is_some()
-                && !block_page_owned_by_system_test(&tab.url)
-            {
-                // Shared-browser runs may coexist with the production app.
-                // Never restore a parked tab that this test process did not
-                // create; its active block belongs to another process/store.
-                continue;
-            }
-            if let Some(original) = original_url_from_block_page(&tab.url) {
-                if is_http_url(&original) && !url_is_blocked(&original, blocks) {
-                    actions.push((tab.window_index, tab.tab_index, original));
-                }
-            }
-            continue;
-        }
-        if !is_http_url(&tab.url) {
-            continue;
-        }
-        if url_is_blocked(&tab.url, blocks) {
-            let target = build_blocked_url(block_page_url, &tab.url, blocks);
-            actions.push((tab.window_index, tab.tab_index, target));
-        }
+/// Record one tick's outcome for a browser; true when the state changed.
+fn apply_permission(
+    rt: &mut BrowserRuntime,
+    new_state: PermState,
+    denied_retry: Duration,
+    now: Instant,
+) -> bool {
+    let changed = rt.state != new_state;
+    rt.state = new_state;
+    if new_state == PermState::Denied {
+        rt.next_attempt = now + denied_retry;
     }
-    actions
+    rt.granted_at = (new_state == PermState::Granted).then_some(now);
+    changed
 }
 
 fn set_perm_inner_at(
@@ -716,12 +716,8 @@ fn set_perm_inner_at(
     let mut transitioned_to = None;
     if let Ok(mut s) = shared.lock() {
         let rt = s.runtimes.entry(browser).or_default();
-        if rt.state != new_state {
-            rt.state = new_state;
+        if apply_permission(rt, new_state, denied_retry, now) {
             transitioned_to = Some(new_state);
-        }
-        if new_state == PermState::Denied {
-            rt.next_attempt = now + denied_retry;
         }
     }
     match transitioned_to {
@@ -760,36 +756,15 @@ fn set_perm_inner_at(
 }
 
 pub fn running_supported_browsers() -> Vec<SupportedBrowser> {
-    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
-    let mut sys = System::new();
-    // Name matching only — skip the default per-process CPU/memory/disk/
-    // exe/cmdline refresh, which is system-wide work this 1 s tick (and
-    // the UI's permission polling) would otherwise repeat forever.
-    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
-    let mut out = Vec::new();
-    for browser in SupportedBrowser::all() {
-        let needle = browser.process_name().to_ascii_lowercase();
-        let running = sys.processes().values().any(|p| {
-            p.name()
-                .to_string_lossy()
-                .to_ascii_lowercase()
-                .ends_with(&needle)
-        });
-        if running {
-            out.push(browser);
-        }
-    }
-    out
+    // Launch Services, not a process-table scan: this runs on every full
+    // pass of the 1 s tick and on the UI's permission polling.
+    SupportedBrowser::all()
+        .into_iter()
+        .filter(|browser| crate::running_apps::any_running(&[browser.bundle_id()]))
+        .collect()
 }
 
 // ---- AppleScript ----------------------------------------------------------
-
-#[derive(Debug)]
-struct Tab {
-    window_index: u32,
-    tab_index: u32,
-    url: String,
-}
 
 #[derive(Debug)]
 enum AutomationError {
@@ -802,12 +777,24 @@ enum AutomationError {
 /// linefeed never appear inside a URL, so parsing back is unambiguous.
 const FIELD_SEP: char = '\t';
 
-fn read_tabs(browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
-    let app_name = browser.applescript_name();
+/// AppleScript handler that joins the read script's rows. Building one
+/// text by `set _out to _out & …` copies everything built so far on every
+/// row, so a read cost grew with the square of the open tab count;
+/// collecting a list and coercing it once under `text item delimiters`
+/// is linear. Shared with the tests, which run it on synthetic rows.
+const JOIN_ROWS_HANDLER: &str = r#"on joinRows(_rows, _eol)
+  set _saved to AppleScript's text item delimiters
+  set AppleScript's text item delimiters to _eol
+  set _out to _rows as text
+  set AppleScript's text item delimiters to _saved
+  return _out
+end joinRows"#;
+
+fn read_tabs_script(browser: SupportedBrowser) -> String {
     // The `is running` guard keeps the read from *launching* the browser
     // if it quit between the sysinfo check and now (referencing the
     // `running` property does not launch the app).
-    // NOTE: `tab` and `linefeed` are resolved at the TOP LEVEL here, before the
+    // NOTE: `tab` and `linefeed` are resolved OUTSIDE the
     // `tell application` block. Inside a browser `tell` block the bare word
     // `tab` binds to the app's `tab` *element class* (Safari/Chrome both define
     // it), so `... & tab & ...` would concatenate the literal text "tab"
@@ -823,38 +810,55 @@ fn read_tabs(browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
     // the `tab <i> of window <w>` addressing `apply_actions` uses.
     // Safari reports `missing value` for empty tabs; the `as text`
     // coercion is wrapped in `try` so those rows degrade to "".
-    let script = format!(
-        r#"set _sep to tab
-set _eol to linefeed
-if application "{app}" is running then
-  tell application "{app}"
-    set _out to ""
-    set _wi to 0
-    repeat with w in windows
-      set _wi to _wi + 1
-      try
-        set _urls to URL of every tab of w
-      on error
-        set _urls to {{}}
-      end try
-      set _ti to 0
-      repeat with _u in _urls
-        set _ti to _ti + 1
-        set _u_text to ""
-        try
-          set _u_text to _u as text
-        end try
-        set _out to _out & _wi & _sep & _ti & _sep & _u_text & _eol
-      end repeat
-    end repeat
-    return _out
-  end tell
-else
-  return ""
-end if"#,
-        app = app_name
-    );
-    let out = run_osascript(&script)?;
+    //
+    // The explicit `on run` keeps the variables local; at the top level
+    // of an implicit run handler they would be script globals.
+    //
+    // `with timeout` bounds each Apple Event, while run_osascript also
+    // caps the whole subprocess. A timeout (-1712) inside the per-window `try`
+    // is rethrown: swallowing it would report a hung window as having no
+    // tabs, and a restore pass would take that as "nothing left parked".
+    format!(
+        r#"{join}
+
+on run
+  set _sep to tab
+  set _eol to linefeed
+  set _rows to {{}}
+  if application "{app}" is running then
+    with timeout of {timeout} seconds
+      tell application "{app}"
+        set _wi to 0
+        repeat with w in windows
+          set _wi to _wi + 1
+          try
+            set _urls to URL of every tab of w
+          on error _msg number _num
+            if _num is -1712 then error _msg number _num
+            set _urls to {{}}
+          end try
+          set _ti to 0
+          repeat with _u in _urls
+            set _ti to _ti + 1
+            set _u_text to ""
+            try
+              set _u_text to _u as text
+            end try
+            set end of _rows to (_wi as text) & _sep & _ti & _sep & _u_text
+          end repeat
+        end repeat
+      end tell
+    end timeout
+  end if
+  return joinRows(_rows, _eol)
+end run"#,
+        join = JOIN_ROWS_HANDLER,
+        app = browser.applescript_name(),
+        timeout = OSASCRIPT_TIMEOUT.as_secs()
+    )
+}
+
+fn parse_tab_rows(out: &str) -> Vec<Tab> {
     let mut tabs = Vec::new();
     for line in out.lines() {
         if line.is_empty() {
@@ -872,7 +876,12 @@ end if"#,
             });
         }
     }
-    Ok(tabs)
+    tabs
+}
+
+fn read_tabs(browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
+    let out = run_osascript(&read_tabs_script(browser))?;
+    Ok(parse_tab_rows(&out))
 }
 
 fn apply_actions(
@@ -1095,6 +1104,19 @@ pub fn resolve_permission_state_for_status(
     }
 }
 
+/// How long a successful tick vouches for a browser's Automation grant. While
+/// a block is active every running browser on Automation is scripted at least
+/// every `BACKGROUND_BROWSER_TICK`, and a revoked grant fails that script with
+/// -1743, which clears the confirmation at once. Three passes of margin keeps
+/// a slow tick from making the enforcer spawn its own probe.
+pub const GRANT_CONFIRMATION_TTL: Duration = Duration::from_secs(15);
+
+fn grant_is_fresh(granted_at: Option<Instant>, now: Instant) -> bool {
+    granted_at
+        .map(|t| now.saturating_duration_since(t) <= GRANT_CONFIRMATION_TTL)
+        .unwrap_or(false)
+}
+
 /// Whether the enforcer should treat Automation as missing for this browser.
 ///
 /// The silent TCC read (`query_automation_permission`) often returns
@@ -1181,319 +1203,6 @@ fn applescript_string_expr(s: &str) -> String {
         .map(|part| format!("\"{}\"", applescript_escape(part)))
         .collect::<Vec<_>>()
         .join(" & \"&\" & ")
-}
-
-// ---- Block-page URL + matching (ported from background.js) ----------------
-
-/// True if the tab is already showing our block page. Primary check is
-/// the resolved `file://` prefix; the path fallback guards against
-/// browser-specific file-URL normalization that could otherwise cause
-/// an infinite redirect loop.
-fn is_block_page_url(url: &str, block_page_url: &str) -> bool {
-    url.starts_with(block_page_url) || url.contains("blocked/blocked.html")
-}
-
-/// Pull the original site URL back out of a block-page URL's `u` param.
-fn original_url_from_block_page(url: &str) -> Option<String> {
-    let query = url.split('?').nth(1)?;
-    for pair in query.split('&') {
-        let mut kv = pair.splitn(2, '=');
-        if kv.next() == Some("u") {
-            return kv.next().map(pct_decode);
-        }
-    }
-    None
-}
-
-#[cfg(feature = "system-test")]
-fn block_page_owned_by_system_test(url: &str) -> bool {
-    let Some(query) = url.split('?').nth(1) else {
-        return false;
-    };
-    query.split('&').any(|pair| {
-        let mut kv = pair.splitn(2, '=');
-        kv.next() == Some("id")
-            && kv
-                .next()
-                .map(pct_decode)
-                .is_some_and(|id| id.starts_with("system-test-"))
-    })
-}
-
-/// Build the block-page URL with as much block metadata as we have, so
-/// the page shows the same pill / countdown / source the extension does.
-/// Mirrors `buildBlockedUrl` in background.js.
-fn build_blocked_url(block_page_url: &str, original_url: &str, blocks: &[BlockInfo]) -> String {
-    let mut query = format!("u={}", pct_encode(original_url));
-    if let Some(info) = block_info_for_url(original_url, blocks) {
-        query.push_str(&format!("&id={}", pct_encode(&info.blocklist_id)));
-        query.push_str(&format!("&mode={}", pct_encode(&info.mode)));
-        if let Some(name) = &info.name {
-            query.push_str(&format!("&name={}", pct_encode(name)));
-        }
-        if let Some(emoji) = &info.emoji {
-            query.push_str(&format!("&emoji={}", pct_encode(emoji)));
-        }
-        if let Some(color) = &info.color {
-            query.push_str(&format!("&color={}", pct_encode(color)));
-        }
-        query.push_str(&format!("&source={}", pct_encode(info.source)));
-        if let Some(ends_at) = info.ends_at {
-            query.push_str(&format!("&endsAt={ends_at}"));
-        }
-        if let Some(started_at) = info.started_at {
-            query.push_str(&format!("&startedAt={started_at}"));
-        }
-    }
-    format!("{block_page_url}?{query}")
-}
-
-/// Metadata block to attribute a blocked URL to.
-///
-/// Mirrors desktop app composition: blocklist hits win for attribution, then
-/// allowlist-mode blocks attribute to the earliest-started active allowlist
-/// that excludes the host. For schedules this uses the current active segment's
-/// start time from `derive_payload`, so "first in time" means first enforcement
-/// start, not schedule creation order.
-fn block_info_for_url<'a>(url: &str, blocks: &'a [BlockInfo]) -> Option<&'a BlockInfo> {
-    let host = hostname_of(url)?;
-    if !url_is_blocked(url, blocks) {
-        return None;
-    }
-
-    // Blocklist hit takes precedence for metadata (same as app watcher).
-    if let Some(b) = blocks.iter().find(|b| {
-        !native_host::blocklist_mode_is_allowlist(&b.mode)
-            && b.domains.iter().any(|d| domain_matches(&host, d))
-    }) {
-        return Some(b);
-    }
-
-    // Blocked by allowlist — attribute to the earliest-started active allowlist
-    // that excludes the host. Tie-break by soonest-ending block so the choice
-    // stays deterministic when two allowlists started together.
-    blocks
-        .iter()
-        .filter(|b| native_host::blocklist_mode_is_allowlist(&b.mode) && !b.domains.is_empty())
-        .filter(|b| !b.domains.iter().any(|d| domain_matches(&host, d)))
-        .min_by_key(|b| {
-            (
-                b.started_at.unwrap_or(u64::MAX),
-                b.ends_at.unwrap_or(u64::MAX),
-            )
-        })
-}
-
-const PROTECTED_HOSTS: &[&str] = &[
-    "localhost",
-    "localhost.localdomain",
-    "127.0.0.1",
-    "0.0.0.0",
-    "::1",
-    "broadcasthost",
-    "local",
-    "reddfocus.org",
-    "www.reddfocus.org",
-    "digitalhabits.org",
-    "www.digitalhabits.org",
-    "ulyngs.github.io",
-];
-
-fn is_protected_host(host: &str) -> bool {
-    let lower = host.to_ascii_lowercase();
-    PROTECTED_HOSTS
-        .iter()
-        .any(|p| lower == *p || lower.ends_with(&format!(".{p}")))
-}
-
-/// Whether a tab URL should redirect to the block page given active blocks.
-///
-/// Composition matches desktop app enforcement:
-/// 1. Blocklist-mode domains always block (blocklist wins over allowlist).
-/// 2. When any allowlist website block is active, the union of allowlisted
-///    domains is allowed; everything else is blocked.
-pub fn url_is_blocked(url: &str, blocks: &[BlockInfo]) -> bool {
-    if !is_http_url(url) {
-        return false;
-    }
-    let host = match hostname_of(url) {
-        Some(h) => h,
-        None => return false,
-    };
-    if is_protected_host(&host) {
-        return false;
-    }
-
-    // Blocklist blocks: URL matches → blocked.
-    for b in blocks
-        .iter()
-        .filter(|b| !native_host::blocklist_mode_is_allowlist(&b.mode))
-    {
-        if b.domains.iter().any(|d| domain_matches(&host, d)) {
-            return true;
-        }
-    }
-
-    // Allowlist blocks: any active allowlist with domains → block unless allowed.
-    let allowlist_active = blocks
-        .iter()
-        .any(|b| native_host::blocklist_mode_is_allowlist(&b.mode) && !b.domains.is_empty());
-    if allowlist_active {
-        let allowed = blocks.iter().any(|b| {
-            native_host::blocklist_mode_is_allowlist(&b.mode)
-                && b.domains.iter().any(|d| domain_matches(&host, d))
-        });
-        if !allowed {
-            return true;
-        }
-    }
-
-    false
-}
-
-fn domain_matches(host: &str, domain: &str) -> bool {
-    host == domain || host.ends_with(&format!(".{domain}"))
-}
-
-fn is_http_url(url: &str) -> bool {
-    let lower = url.to_ascii_lowercase();
-    lower.starts_with("http://") || lower.starts_with("https://")
-}
-
-/// Lowercased hostname of an http(s) URL, sans userinfo/port. Small
-/// hand-rolled parser so we don't pull in the `url` crate just for this.
-fn hostname_of(url: &str) -> Option<String> {
-    let after_scheme = url.split_once("://").map(|(_, rest)| rest)?;
-    let authority_end = after_scheme
-        .find(['/', '?', '#'])
-        .unwrap_or(after_scheme.len());
-    let authority = &after_scheme[..authority_end];
-    let host_port = authority
-        .rsplit_once('@')
-        .map(|(_, h)| h)
-        .unwrap_or(authority);
-    let host = if let Some(rest) = host_port.strip_prefix('[') {
-        // IPv6 literal: keep everything up to the closing bracket.
-        rest.split_once(']').map(|(h, _)| h).unwrap_or(rest)
-    } else {
-        host_port.split(':').next().unwrap_or(host_port)
-    };
-    if host.is_empty() {
-        None
-    } else {
-        Some(host.to_ascii_lowercase())
-    }
-}
-
-/// Percent-encode a query-component value: keep unreserved chars
-/// (RFC 3986 ALPHA / DIGIT / -._~), `%`-escape everything else byte-wise.
-fn pct_encode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for &b in s.as_bytes() {
-        let keep = b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~');
-        if keep {
-            out.push(b as char);
-        } else {
-            out.push('%');
-            out.push(hex_digit(b >> 4));
-            out.push(hex_digit(b & 0x0f));
-        }
-    }
-    out
-}
-
-fn hex_digit(n: u8) -> char {
-    match n {
-        0..=9 => (b'0' + n) as char,
-        _ => (b'A' + (n - 10)) as char,
-    }
-}
-
-/// Inverse of `pct_encode` (also turns `+` into space, matching how
-/// browsers treat query components).
-fn pct_decode(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'%' if i + 2 < bytes.len() => {
-                let hi = hex_val(bytes[i + 1]);
-                let lo = hex_val(bytes[i + 2]);
-                if let (Some(hi), Some(lo)) = (hi, lo) {
-                    out.push((hi << 4) | lo);
-                    i += 3;
-                    continue;
-                }
-                out.push(b'%');
-                i += 1;
-            }
-            b'+' => {
-                out.push(b' ');
-                i += 1;
-            }
-            b => {
-                out.push(b);
-                i += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-fn hex_val(b: u8) -> Option<u8> {
-    match b {
-        b'0'..=b'9' => Some(b - b'0'),
-        b'a'..=b'f' => Some(b - b'a' + 10),
-        b'A'..=b'F' => Some(b - b'A' + 10),
-        _ => None,
-    }
-}
-
-/// Turn a filesystem path into a `file://` URL, percent-encoding each
-/// segment (the app bundle path contains a space: "ReDD Blocker.app").
-pub fn path_to_file_url(path: &std::path::Path) -> String {
-    let mut url = String::from("file://");
-    for component in path.to_string_lossy().split('/') {
-        if component.is_empty() {
-            continue;
-        }
-        url.push('/');
-        url.push_str(&pct_encode_path_segment(component));
-    }
-    url
-}
-
-/// Like `pct_encode` but also preserves a handful of path-safe sub-delims
-/// so the URL stays readable; the spaces in "Digital Habits Blocker" become %20.
-fn pct_encode_path_segment(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for &b in s.as_bytes() {
-        let keep = b.is_ascii_alphanumeric()
-            || matches!(
-                b,
-                b'-' | b'_'
-                    | b'.'
-                    | b'~'
-                    | b'!'
-                    | b'$'
-                    | b'&'
-                    | b'('
-                    | b')'
-                    | b'+'
-                    | b','
-                    | b'='
-                    | b'@'
-            );
-        if keep {
-            out.push(b as char);
-        } else {
-            out.push('%');
-            out.push(hex_digit(b >> 4));
-            out.push(hex_digit(b & 0x0f));
-        }
-    }
-    out
 }
 
 #[cfg(test)]

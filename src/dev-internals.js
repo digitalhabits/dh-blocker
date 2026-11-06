@@ -5,10 +5,11 @@
 // src/test-utils.js / src/blocking-tests.js / src/integration-tests.js —
 // never rename them.
 import { state } from './state.js';
-import { canEnableAllowEditsBetweenBlocks } from './schedule-editor.js';
+import { addScheduleSegment, canEnableAllowEditsBetweenBlocks } from './schedule-editor.js';
 import { tauriAPI } from './tauri-api.js';
 import { PROTECTED_APP_NAMES, PROTECTED_DOMAINS, isAllowlistBlocklist, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
-import { buildAndroidScheduleEntries, buildIOSScheduleEntries, isAndroidAllowlistUnsupported, isSchedulePausedNow } from './schedule-engine.js';
+import { buildIOSScheduleEntries, hasAnyBlockingStateToClear, isSchedulePausedNow } from './schedule-engine.js';
+import { buildStartWarningsPayload } from './ios-start-warnings.js';
 import { isFocusSpaceOn, setFocusSpaceEnabled, turnFocusSpaceOn } from './focus-space-switch.js';
 import {
     buildWordChallengeState,
@@ -22,19 +23,10 @@ import {
 } from './override-challenge.js';
 import { createChallengeController } from './challenge-controller.js';
 import { saveData, updateHostsFile } from './persistence.js';
-import {
-    acceptEula,
-    appBlockingWarningRows,
-    findResponsibleBlocklistsForWarningApps,
-    isAppBlockingWarningScheduleEligible,
-    newWarningRow,
-    renderAppBlockingWarningOverlay,
-    setupAndroidBackButtonHandling,
-    updateBlockedApps,
-} from './blocking-platform.js';
+import { acceptEula, appBlockingWarningRows, findResponsibleBlocklistsForWarningApps, isAppBlockingWarningScheduleEligible, newWarningRow, renderAppBlockingWarningOverlay, updateBlockedApps } from './blocking-platform.js';
 import { CURRENT_EULA_REVISION } from './onboarding.js';
 import { render, isClockTickRunning } from './render.js';
-import { duplicateBlocklist, getNextCopyName, isBlocklistEditFrictionRequired } from './blocklists.js';
+import { commitDelete, deleteBlocklist, duplicateBlocklist, getNextCopyName, isBlocklistEditFrictionRequired } from './blocklists.js';
 import { getMaxOverrideCountForType, getMaxOverrideWords } from './override-challenge.js';
 import {
     collectActiveIOSEnforcementSources,
@@ -50,15 +42,20 @@ import {
     applyStopToTarget,
     normalizeUnlockMinutes,
 } from './unlock-duration.js';
-import { applyOverrideTypeUi, closeBlocklistModal, closeStartConfirmModal, openBlocklistModal, openScheduleOverrideModal } from './confirm-modals.js';
-import { setOpenEditorSection, setWhenToBlockKind, setupFocusSpaceEditor, showEditorDiscardConfirmModal } from './focus-space-editor.js';
+import { applyOverrideTypeUi, closeBlocklistModal, closeStartConfirmModal, openBlocklistModal, openScheduleOverrideModal, restopForNewStrictness, resumePausedBlock, stopFocusSpaceTarget } from './confirm-modals.js';
+import { applyEditorScheduleForBlocklist, discardFocusSpaceEditor, populateFocusSpaceEditor, setOpenEditorSection, setWhenToBlockKind, setupFocusSpaceEditor, showEditorDiscardConfirmModal } from './focus-space-editor.js';
 import { enhanceNativeSelects, enhanceSelect } from './custom-select.js';
-import { renderDiagnosticsEnforcementSection } from './settings.js';
+import { performOverrideAll, renderDiagnosticsEnforcementSection } from './settings.js';
+import { renderScheduleAlwaysOnRow } from './render.js';
 
 // Expose for integration tests (dev mode only)
 window.__REDDBLOCK_INTERNALS__ = {
+    get lastBlockedDomains() { return state.lastBlockedDomains; },
+    set lastBlockedDomains(val) { state.lastBlockedDomains = val; },
     get appData() { return state.appData; },
     set appData(val) { state.appData = val; },
+    get isIOS() { return state.isIOS; },
+    set isIOS(val) { state.isIOS = val; },
     saveData,
     updateHostsFile,
     get tauriAPI() { return tauriAPI; },
@@ -73,9 +70,9 @@ window.__REDDBLOCK_INTERNALS__ = {
     getNextCopyName,
     getMaxOverrideCountForType,
     getMaxOverrideWords,
-    buildAndroidScheduleEntries,
-    isAndroidAllowlistUnsupported,
+
     buildIOSScheduleEntries,
+    buildStartWarningsPayload,
     isSchedulePausedNow,
     isFocusSpaceOn,
     setFocusSpaceEnabled,
@@ -108,11 +105,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     // The e2e harness calls this rather than hand-patching settings, which
     // leaves the app sitting behind the gate with a doctored in-memory value.
     acceptEula,
-    // Tier 2 drives the same popstate path that Android's WryActivity invokes
-    // after hardware/gesture back. The native Activity is not present in the
-    // desktop WebDriver binary, so expose the setup hook for that boundary
-    // test rather than duplicating modal-close logic in the harness.
-    setupAndroidBackButtonHandling,
+
     appBlockingWarningRows,
     findResponsibleBlocklistsForWarningApps,
     isAppBlockingWarningScheduleEligible,
@@ -123,6 +116,13 @@ window.__REDDBLOCK_INTERNALS__ = {
     UNLOCK_MINUTE_OPTIONS,
     applyStopToTarget,
     normalizeUnlockMinutes,
+    restopForNewStrictness,
+    resumePausedBlock,
+    stopFocusSpaceTarget,
+    performOverrideAll,
+    deleteBlocklist,
+    commitDelete,
+    hasAnyBlockingStateToClear,
     openScheduleOverrideModal,
     closeStartConfirmModal,
     turnFocusSpaceOn,
@@ -130,11 +130,16 @@ window.__REDDBLOCK_INTERNALS__ = {
     applyOverrideTypeUi,
     // The create form (new-space defaults) and the editor's discard dialog.
     openBlocklistModal,
+    addScheduleSegment,
     closeBlocklistModal,
     showEditorDiscardConfirmModal,
     // Idempotent. The headless Tier 1 page has no Tauri transport, so app
     // startup stops at loadData() before wiring the editor's listeners; tests
     // that drive the editor call this first.
+    applyEditorScheduleForBlocklist,
+    discardFocusSpaceEditor,
+    populateFocusSpaceEditor,
+    renderScheduleAlwaysOnRow,
     setOpenEditorSection,
     setWhenToBlockKind,
     setupFocusSpaceEditor,

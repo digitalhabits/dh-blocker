@@ -28,7 +28,7 @@ import {
     sanitizeChallengeTargetText,
     shouldBlockChallengeSpaceKey,
 } from './override-challenge.js';
-import { tSettingsFmt } from './i18n.js';
+import { tSettings, tSettingsFmt } from './i18n.js';
 
 const DEFAULT_PROGRESS_GRADIENT = 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)';
 
@@ -65,20 +65,29 @@ export function challengeProgressPercent(doneLength, totalLength) {
 
 /**
  * @param {object} elements - textEl, inputEl, wordInputEl, wordProgressEl,
- *   currentWordEl, progressBarEl, confirmBtnEl, modalContentEl. Passed as a map
+ *   wordsRemainingEl, currentWordEl, progressBarEl, confirmBtnEl, modalContentEl. Passed as a map
  *   because the three modals use three unrelated id conventions (pause drops the
  *   `challenge-` infix, override-all renames the progress bar) — there is no
  *   mechanical prefix rule to derive them from.
  */
 export function createChallengeController(elements) {
     const {
-        textEl, inputEl, wordInputEl, wordProgressEl,
+        textEl, inputEl, wordInputEl, wordProgressEl, wordsRemainingEl,
         currentWordEl, progressBarEl, confirmBtnEl, modalContentEl,
     } = elements;
 
     let targetText = '';
     let wordState = null;
     let skipped = false;
+    // Word mode: the confirm button reads "Next word" until the last word, then its own label again.
+    let stopLabel = null;
+    const setNextWordLabel = (on) => {
+        const labelEl = confirmBtnEl?.querySelector('.start-confirm-primary-label') || confirmBtnEl;
+        if (!labelEl || on === (stopLabel !== null)) return;
+        if (on) [stopLabel, labelEl.textContent] = [labelEl.textContent, tSettings('challengeNextWord')];
+        else [labelEl.textContent, stopLabel] = [stopLabel, null];
+        confirmBtnEl.querySelector('.start-confirm-primary-icon')?.classList.toggle('hidden', on);
+    };
 
     /**
      * @param {'char'|'word'|'none'} mode - 'none' hides the whole stack, for a
@@ -89,11 +98,13 @@ export function createChallengeController(elements) {
     const setStackMode = (mode) => {
         const hideAll = mode === 'none';
         const word = mode === 'word';
-        textEl?.classList.toggle('hidden', hideAll);
+        // Word mode shows only the current word, never the whole passage.
+        textEl?.classList.toggle('hidden', hideAll || word);
         wordProgressEl?.classList.toggle('hidden', hideAll || !word);
         currentWordEl?.classList.toggle('hidden', hideAll || !word);
         wordInputEl?.classList.toggle('hidden', hideAll || !word);
         inputEl?.classList.toggle('hidden', hideAll || word);
+        modalContentEl?.classList.toggle('challenge-word-mode', word);
         // Visibility is driven by the `hidden` class alone. override-all used to
         // mix in inline style.display and never clear it, so an element could
         // stay hidden no matter what the class said — clear any such leftovers.
@@ -115,8 +126,12 @@ export function createChallengeController(elements) {
     const renderWordState = () => {
         if (!wordState) return;
         const currentWord = getCurrentChallengeWord(wordState);
+        const remaining = wordState.words.length - wordState.currentIndex;
+        if (wordsRemainingEl) {
+            wordsRemainingEl.textContent = tSettingsFmt(remaining === 1 ? 'challengeWordsRemainingOneFmt' : 'challengeWordsRemainingFmt', { count: remaining });
+        }
+        // Only finished words count: the bar starts empty, not on the word still to type.
         const completed = getCompletedChallengeText(wordState);
-        const reached = completed ? `${completed} ${currentWord}` : currentWord;
         if (wordProgressEl) {
             wordProgressEl.textContent = tSettingsFmt('challengeWordProgressFmt', {
                 current: wordState.currentIndex + 1,
@@ -125,8 +140,10 @@ export function createChallengeController(elements) {
         }
         if (currentWordEl) currentWordEl.textContent = currentWord;
         if (wordInputEl) wordInputEl.value = '';
-        setProgress(reached.length);
-        if (confirmBtnEl) confirmBtnEl.disabled = !currentWord;
+        setProgress(completed.length);
+        // Muted until the first letter of each word, like the Android friction gate.
+        if (confirmBtnEl) confirmBtnEl.disabled = true;
+        setNextWordLabel(remaining > 1);
     };
 
     const wiggle = () => {
@@ -155,11 +172,21 @@ export function createChallengeController(elements) {
 
     const onWordInput = () => {
         if (!wordState || !currentWordEl) return;
-        currentWordEl.textContent = getCurrentChallengeWord(wordState);
+        // One word at a time: a space is never part of the answer. Stripped here
+        // as well as blocked on keydown, for the iOS predictive bar's "word ".
+        if (/\s/.test(wordInputEl.value)) wordInputEl.value = wordInputEl.value.replace(/\s+/g, '');
+        if (confirmBtnEl) confirmBtnEl.disabled = !wordInputEl.value;
+        const expected = getCurrentChallengeWord(wordState);
+        const typed = normalizeChallengeComparableText(wordInputEl.value);
+        const correct = countCorrectChallengeChars(typed, expected);
+        const wrong = correct < typed.length;
+        // Typed past the end: mark the last letter rather than nothing.
+        renderChallengeReferenceText(currentWordEl, expected,
+            { errorIndex: wrong ? Math.min(correct, expected.length - 1) : -1 });
     };
 
     const onKeyDown = (e) => {
-        if (shouldBlockChallengeSpaceKey(e.currentTarget, e)) {
+        if ((e.currentTarget === wordInputEl && e.key === ' ') || shouldBlockChallengeSpaceKey(e.currentTarget, e)) {
             e.preventDefault();
             return;
         }
@@ -173,6 +200,8 @@ export function createChallengeController(elements) {
     };
 
     const blockPaste = (e) => e.preventDefault();
+    // Word mode: tapping the button must not take focus from the word field, or iOS drops the keyboard between words.
+    const keepWordFocus = (e) => { if (wordState) e.preventDefault(); };
 
     inputEl?.addEventListener('input', onTextInput);
     inputEl?.addEventListener('keydown', onKeyDown);
@@ -180,6 +209,7 @@ export function createChallengeController(elements) {
     wordInputEl?.addEventListener('input', onWordInput);
     wordInputEl?.addEventListener('keydown', onKeyDown);
     wordInputEl?.addEventListener('paste', blockPaste);
+    confirmBtnEl?.addEventListener('mousedown', keepWordFocus);
 
     return {
         /**
@@ -194,6 +224,7 @@ export function createChallengeController(elements) {
          */
         open({ difficulty = null, text = null, wordMode = null, progressColor = null, skipChallenge = false } = {}) {
             skipped = !!skipChallenge;
+            setNextWordLabel(false);
 
             if (inputEl) inputEl.value = '';
             if (wordInputEl) wordInputEl.value = '';
@@ -283,7 +314,8 @@ export function createChallengeController(elements) {
             const typed = getTypedValue();
             if (typed === targetText) return { status: 'ok' };
             wiggle();
-            renderReference(findFirstChallengeMismatch(typed, targetText));
+            const mismatch = findFirstChallengeMismatch(typed, targetText);
+            renderReference(mismatch, mismatch);
             return { status: 'rejected' };
         },
 
@@ -294,6 +326,7 @@ export function createChallengeController(elements) {
             targetText = '';
             wordState = null;
             skipped = false;
+            setNextWordLabel(false);
             if (inputEl) inputEl.value = '';
             if (wordInputEl) wordInputEl.value = '';
             setStackMode('char');
@@ -308,6 +341,7 @@ export function createChallengeController(elements) {
             wordInputEl?.removeEventListener('input', onWordInput);
             wordInputEl?.removeEventListener('keydown', onKeyDown);
             wordInputEl?.removeEventListener('paste', blockPaste);
+            confirmBtnEl?.removeEventListener('mousedown', keepWordFocus);
         },
     };
 }
@@ -323,6 +357,7 @@ const CHALLENGE_ELEMENT_IDS = {
         inputEl: 'challenge-input',
         wordInputEl: 'challenge-word-input',
         wordProgressEl: 'challenge-word-progress',
+        wordsRemainingEl: 'challenge-words-remaining',
         currentWordEl: 'challenge-current-word',
         progressBarEl: 'challenge-progress-bar',
         confirmBtnEl: 'confirm-override-btn',
@@ -333,6 +368,7 @@ const CHALLENGE_ELEMENT_IDS = {
         inputEl: 'override-all-challenge-input',
         wordInputEl: 'override-all-challenge-word-input',
         wordProgressEl: 'override-all-word-progress',
+        wordsRemainingEl: 'override-all-words-remaining',
         currentWordEl: 'override-all-current-word',
         progressBarEl: 'override-all-progress-bar',
         confirmBtnEl: 'confirm-override-all-btn',

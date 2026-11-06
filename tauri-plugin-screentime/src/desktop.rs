@@ -150,6 +150,13 @@ impl<R: Runtime> Screentime<R> {
         })
     }
 
+    pub fn cancel_resume(&self, _payload: CancelResumeRequest) -> crate::Result<SuccessResponse> {
+        Ok(SuccessResponse {
+            success: false,
+            error: Some("Automatic restart is only available on iOS".to_string()),
+        })
+    }
+
     pub fn set_block_end_state(
         &self,
         _payload: SetBlockEndStateRequest,
@@ -157,6 +164,36 @@ impl<R: Runtime> Screentime<R> {
         Ok(SuccessResponse {
             success: false,
             error: Some("Block end state is only available on iOS".to_string()),
+        })
+    }
+
+    pub fn set_start_warnings(
+        &self,
+        _payload: SetStartWarningsRequest,
+    ) -> crate::Result<StartWarningsResponse> {
+        Ok(StartWarningsResponse {
+            success: false,
+            status: "unsupported".to_string(),
+            scheduled: 0,
+            error: Some("Start warnings are only available on iOS".to_string()),
+        })
+    }
+
+    pub fn check_notification_permission(&self) -> crate::Result<NotificationPermissionResponse> {
+        Ok(NotificationPermissionResponse {
+            status: "unsupported".to_string(),
+            granted: false,
+        })
+    }
+
+    pub fn request_notification_permission(&self) -> crate::Result<NotificationPermissionResponse> {
+        self.check_notification_permission()
+    }
+
+    pub fn open_notification_settings(&self) -> crate::Result<SuccessResponse> {
+        Ok(SuccessResponse {
+            success: false,
+            error: Some("Notification settings are only available on iOS".to_string()),
         })
     }
 

@@ -1,36 +1,25 @@
-// Blocking platform: app-blocking "Let's go!" warning, Android/iOS blocking
-// init, friction gate, warning-overlay coordinator, window sizing, handset
+// Blocking platform: app-blocking "Let's go!" warning, iOS blocking
+// init, warning-overlay coordinator, window sizing, handset
 // modal screens, platform detection. Extracted verbatim from app.js.
 import { state, appState } from './state.js';
-import { Channel } from '@tauri-apps/api/core';
+
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import snoozeIconUrl from './images/snooze.png';
 import { tauriAPI, openUrl } from './tauri-api.js';
 import { escapeHtml } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
-import {
-    ALWAYS_ON_END_TIME,
-    applyIOSScreenTimeTokenRefreshResult,
-    getBlocklistIOSScreenTimeSelection,
-    hasUsableIOSScreenTimeSelection,
-    displayNameForBlockedApp,
-    isAllowlistBlocklist,
-    isProtectedApp,
-    normalizeBlockedAppKey,
-    uniqueBlockedAppDisplayNames,
-} from './blocklist-utils.js';
+import { applyIOSScreenTimeTokenRefreshResult, getBlocklistIOSScreenTimeSelection, hasUsableIOSScreenTimeSelection, displayNameForBlockedApp, isAllowlistBlocklist, isProtectedApp, normalizeBlockedAppKey, uniqueBlockedAppDisplayNames } from './blocklist-utils.js';
 import { isSchedulePausedNow, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
-import { render } from './render.js';
+
 import { renderBlocklists } from './blocklists.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { applyScheduleStartOverlayPresentation, getScheduleStartOverlayForWarningApps, playAppBlockingLetsGoVoice } from './schedule-overlay.js';
-import { closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, initializeOverrideModalChallenge, openScheduleOverrideModal, populateOverrideConfirmModalContent } from './confirm-modals.js';
-import { isModalVisible } from './modal-manager.js';
-import { updateManageSectionVisibility, closeOverrideAllModal } from './settings.js';
-import { closeEditorDiscardConfirmModal } from './focus-space-editor.js';
+
+import { updateManageSectionVisibility } from './settings.js';
+
 import { CURRENT_EULA_REVISION, getAcceptedEulaRevision, hasAcceptedEula, isFirstRunOnboardingInProgress } from './onboarding.js';
-import { generateId, runPostAcceptanceStartup } from './app.js';
+import { runPostAcceptanceStartup } from './app.js';
 import { isIOSLeftEdgeBackSwipe } from './ios-gesture.js';
 
 // Update blocked apps sent to the in-process app watcher (desktop only).
@@ -52,10 +41,6 @@ let appBlockingPreviousAppsSet = null;
 export async function updateBlockedApps() {
     // iOS uses Screen Time API for app blocking
     if (state.isIOS) return;
-    // Android: app blocking is embedded in the schedule sync itself
-    // (blockedApps on each Kotlin Schedule), not a separate helper-daemon
-    // push — see syncSchedulesToHelper.
-    if (state.isAndroid) return;
 
     const now = Date.now();
     const nowDate = new Date(now);
@@ -378,7 +363,7 @@ export function onAppBlockingSnoozeExpired() {
 }
 
 export function setupAppBlockingWarningOverlay() {
-    if (state.isIOS || state.isAndroid || appBlockingWarningUiAttached) return;
+    if (state.isIOS || appBlockingWarningUiAttached) return;
     appBlockingWarningUiAttached = true;
 
     const snoozeIconEl = document.querySelector('#app-blocking-snooze-btn .app-blocking-snooze-icon');
@@ -594,7 +579,7 @@ export function renderAppBlockingWarningOverlay() {
 // function is purely DOM-side: overlay visibility, body class for the
 // compact-mode CSS, and resize-observer setup.
 export function applyWarningOverlayPresence({ reconcileNativeShell = true } = {}) {
-    if (state.isIOS || state.isAndroid) return;
+    if (state.isIOS) return;
     const overlay = document.getElementById('app-blocking-warning-overlay');
     if (!overlay) return;
 
@@ -617,12 +602,12 @@ export function applyWarningOverlayPresence({ reconcileNativeShell = true } = {}
 }
 
 export function restoreBlockingWarningShellIfIdle() {
-    if (state.isIOS || state.isAndroid) return Promise.resolve();
+    if (state.isIOS) return Promise.resolve();
     return tauriAPI.reconcileBlockingWarningShell().catch(() => {});
 }
 
 export async function reconcileBlockingWarningShell() {
-    if (state.isIOS || state.isAndroid) return;
+    if (state.isIOS) return;
     applyWarningOverlayPresence();
 }
 
@@ -687,11 +672,7 @@ export function stopAppBlockingClosedownTick() {
 
 let installedAppsCachePromise = null;
 
-/**
- * Populate display names without putting PackageManager's launcher scan on the
- * startup path. Android reads its persisted cache by default; callers opening
- * the app picker pass `refresh: true` to intentionally rescan and replace it.
- */
+/** Cache installed desktop app names for display and selection. */
 export async function ensureInstalledAppsCache({ refresh = false } = {}) {
     if (state.installedAppsCache && !refresh) return;
     if (state.isIOS) return;
@@ -699,22 +680,7 @@ export async function ensureInstalledAppsCache({ refresh = false } = {}) {
 
     installedAppsCachePromise = (async () => {
         try {
-            if (state.isAndroid) {
-                const result = refresh
-                    ? await tauriAPI.androidRefreshInstalledApps()
-                    : await tauriAPI.androidGetCachedInstalledApps();
-                const apps = result?.apps || [];
-                if (apps.length > 0) {
-                    state.installedAppsCache = apps.map((app) => ({
-                        display_name: app.label || app.packageName,
-                        process_name: app.packageName,
-                    }))
-                        .filter((app) => app.process_name)
-                        .sort((a, b) => a.display_name.localeCompare(b.display_name));
-                }
-            } else {
-                state.installedAppsCache = await tauriAPI.listInstalledApps();
-            }
+            state.installedAppsCache = await tauriAPI.listInstalledApps();
         } catch (e) {
             console.warn('[installed-apps] Failed to load installed apps cache:', e);
         } finally {
@@ -746,7 +712,7 @@ export function joinAppListWithLimit(names, max = 3, { bold = true, oxford = fal
 
 // Check if the helper daemon is available (desktop only)
 export async function checkHelperStatus() {
-    if (state.isIOS || state.isAndroid) return; // Mobile uses platform blockers, not helper daemon.
+    if (state.isIOS) return; // Mobile uses platform blockers, not helper daemon.
     const status = await refreshDesktopHelperStatus();
     console.log('Helper status:', status);
 
@@ -757,7 +723,6 @@ export async function checkHelperStatus() {
     }
 
 }
-
 
 /// True if a failed install-helper result looks like the user cancelled the UAC / admin prompt
 /// rather than an actual failure. Backend returns messages prefixed with "cancelled:" for this.
@@ -771,7 +736,6 @@ export function isHelperConnectionError(errorMsg) {
     if (!errorMsg || typeof errorMsg !== 'string') return false;
     return errorMsg.includes('Failed to connect to helper') || errorMsg.includes('refused') || errorMsg.includes('10061');
 }
-
 
 // Check Screen Time authorization (iOS only)
 export async function checkScreentimeAuth() {
@@ -805,410 +769,6 @@ export async function requestScreentimeAuth() {
     } finally {
         state.screentimeAuthChecked = true;
     }
-}
-
-// Check Accessibility permission (Android only). Called on startup and
-// again on `visibilitychange` while the onboarding gate is showing,
-// since the user grants Accessibility in a separate system settings
-// screen and there's no callback for "user came back".
-export async function checkAndroidPermissions() {
-    try {
-        const result = await tauriAPI.androidCheckPermissions();
-        state.androidPermissionsGranted = !!result.accessibilityEnabled;
-        console.log('Android permissions:', result);
-    } catch (err) {
-        console.error('Error checking Android permissions:', err);
-        state.androidPermissionsGranted = false;
-    }
-    updateOnboardingVisibility();
-}
-
-export async function initializeAndroidBlockingState() {
-    await migrateAndroidNativeSchedules();
-    // Adopt pauses granted by the native activity before syncing, otherwise
-    // stale JS state would immediately overwrite Kotlin's pause.
-    await reconcileAndroidNativePauses();
-    await syncSchedulesToHelper();
-
-    // Display-name hydration is cosmetic. Read the persisted cache only after
-    // enforcement state is reconciled; PackageManager is never scanned here.
-    void ensureInstalledAppsCache().then(() => {
-        if (state.installedAppsCache) render();
-    });
-}
-
-/** Adopt still-active pauses granted by the native Android pause activity. */
-export async function reconcileAndroidNativePauses() {
-    let states;
-    try {
-        ({ states } = await tauriAPI.androidGetScheduleStates());
-    } catch (e) {
-        console.warn('[reconcileAndroidNativePauses] Failed to read native states:', e);
-        return;
-    }
-
-    const now = Date.now();
-    let changed = false;
-    for (const entity of states || []) {
-        if (entity.isEnabled || !entity.disabledUntil || entity.disabledUntil <= now) continue;
-        const target = findAndroidBlockingTarget(entity.id);
-        if (!target) continue;
-
-        const pauseTarget = target.type === 'block' ? target.block : target.schedule;
-        if (!pauseTarget.isPaused || (pauseTarget.pauseEndTime || 0) < entity.disabledUntil) {
-            pauseTarget.isPaused = true;
-            pauseTarget.pauseEndTime = entity.disabledUntil;
-            changed = true;
-        }
-    }
-
-    if (changed) {
-        await saveData();
-        render();
-    }
-}
-
-export const ANDROID_DAY_TO_MON0 = {
-    MONDAY: 0, TUESDAY: 1, WEDNESDAY: 2, THURSDAY: 3, FRIDAY: 4, SATURDAY: 5, SUNDAY: 6,
-};
-
-// One-time upward migration: reads the legacy redd-block-android app's
-// SharedPreferences (via `read_native_schedules`, same device-protected
-// storage file the Kotlin plugin still writes/reads — applicationId is
-// unchanged across the update, see tauri-plugin-android-blocker/README)
-// and converts each legacy Schedule into this app's blocklist+schedule
-// model. Runs once; the flag is only set after a successful save+sync so
-// a crash mid-migration doesn't leave a half-imported state.
-export async function migrateAndroidNativeSchedules() {
-    if (!state.isAndroid) return;
-    if (state.appData.settings?.androidMigrationDone) return;
-
-    // Blocks restored from currently-running legacy MANUAL schedules; their
-    // Kotlin sessions are (re)started after the post-migration sync below.
-    const restoredAlwaysOnBlockIds = [];
-
-    try {
-        const { routinesJson, activeSessionsJson } = await tauriAPI.androidReadNativeSchedules();
-        const legacySchedules = JSON.parse(routinesJson || '[]');
-
-        // Legacy MANUAL blocks are "on" when the user toggled them on
-        // (isEnabled), which in the old app always started a live session.
-        // Collect session ids too as a robustness fallback in case the
-        // session pref and the enabled flag ever drifted apart.
-        const activeSessionScheduleIds = new Set();
-        try {
-            const sessions = JSON.parse(activeSessionsJson || '[]');
-            if (Array.isArray(sessions)) {
-                for (const s of sessions) {
-                    const sid = s?.scheduleId || s?.routineId;
-                    if (sid) activeSessionScheduleIds.add(sid);
-                }
-            }
-        } catch (_) { /* malformed sessions → treat as none active */ }
-
-        if (Array.isArray(legacySchedules) && legacySchedules.length > 0) {
-            for (const legacy of legacySchedules) {
-                const timing = legacy.schedule || {};
-
-                const blocklistId = generateId();
-                state.appData.blocklists.push({
-                    id: blocklistId,
-                    name: legacy.name || 'Imported Schedule',
-                    websites: legacy.blockedWebsites || [],
-                    apps: legacy.blockedApps || [],
-                    overrideDifficulty: { type: 'random-words', count: legacy.frictionWordCount || 15 },
-                });
-
-                if (timing.type === 'MANUAL') {
-                    // Legacy MANUAL schedules are indefinite toggle-on/off
-                    // blocks. If one was toggled on (enabled, or a live
-                    // session exists), carry it over as an always-on block so
-                    // the user's protection survives the upgrade — the new
-                    // app supports indefinite ("Until I stop") blocks. Idle
-                    // MANUAL schedules survive as the blocklist above only.
-                    // (Without this, the first set_schedules sync deletes the
-                    // legacy schedule/session and blocking silently stops.)
-                    const isRunning = legacy.isEnabled || activeSessionScheduleIds.has(legacy.id);
-                    if (isRunning) {
-                        const blockId = generateId();
-                        state.appData.activeBlocks.push({
-                            id: blockId,
-                            blocklistId,
-                            startTime: Date.now(),
-                            endTime: ALWAYS_ON_END_TIME,
-                            isAlwaysOn: true,
-                        });
-                        restoredAlwaysOnBlockIds.push(blockId);
-                        console.info('[migrateAndroidNativeSchedules] Imported running MANUAL legacy schedule as always-on block:', legacy.id);
-                    } else {
-                        console.info('[migrateAndroidNativeSchedules] Imported MANUAL legacy schedule as blocklist only:', legacy.id);
-                    }
-                    continue;
-                }
-
-                const days = timing.type === 'WEEKLY'
-                    ? (timing.daysOfWeek || []).map(d => ANDROID_DAY_TO_MON0[d]).filter(d => d !== undefined)
-                    : [0, 1, 2, 3, 4, 5, 6]; // DAILY: every day
-
-                // Map legacy disabled state onto the pause model:
-                //  - disabledUntil in the future = mid temporary-unlock →
-                //    timed pause, auto-resumes at the same moment.
-                //  - disabledUntil passed = the legacy re-enable was due →
-                //    import as enabled.
-                //  - no disabledUntil = user turned it off → indefinite pause.
-                const nowMs = Date.now();
-                const disabledUntil = typeof legacy.disabledUntil === 'number' ? legacy.disabledUntil : null;
-                const isPaused = !legacy.isEnabled && (!disabledUntil || disabledUntil > nowMs);
-                const pauseEndTime = (isPaused && disabledUntil) ? disabledUntil : undefined;
-
-                state.appData.schedules.push({
-                    id: generateId(),
-                    blocklistId,
-                    isPaused,
-                    ...(pauseEndTime ? { pauseEndTime } : {}),
-                    // Legacy DAILY/WEEKLY schedules recur indefinitely.
-                    // Without repeatType, isNonRepeatingSchedule() would
-                    // misclassify these as one-shot occurrences.
-                    repeatType: 'forever',
-                    repeatDate: null,
-                    createdAt: Date.now(),
-                    segments: [{
-                        startHour: timing.timeHour ?? 0,
-                        startMinute: timing.timeMinute ?? 0,
-                        endHour: timing.endTimeHour ?? 23,
-                        endMinute: timing.endTimeMinute ?? 59,
-                        days,
-                    }],
-                });
-            }
-        }
-
-        if (!state.appData.settings) state.appData.settings = {};
-        state.appData.settings.androidMigrationDone = true;
-        // No legacy data to import leaves a fresh install empty, as on every
-        // other platform: there is no default focus space.
-        await saveData();
-
-        // Restore Kotlin sessions for carried-over always-on blocks: the sync
-        // (re)creates their MANUAL Schedule entities, then start_manual_block
-        // activates the session with no auto-stop — mirrors proceedWithBlock.
-        // Must run before initializeAndroidBlockingState's own sync, which
-        // would otherwise leave the entities present but sessionless.
-        if (restoredAlwaysOnBlockIds.length > 0) {
-            await syncSchedulesToHelper();
-            for (const blockId of restoredAlwaysOnBlockIds) {
-                try {
-                    await tauriAPI.androidStartManualBlock(blockId, null);
-                } catch (startErr) {
-                    console.warn('[migrateAndroidNativeSchedules] Failed to start restored always-on block:', blockId, startErr);
-                }
-            }
-        }
-
-        console.log('[migrateAndroidNativeSchedules] Imported', legacySchedules.length, 'legacy schedules');
-    } catch (e) {
-        // Leave the flag unset on failure so we retry on next launch —
-        // the Kotlin side keeps enforcing the legacy prefs regardless,
-        // so there's no urgency/harm in retrying.
-        console.error('[migrateAndroidNativeSchedules] Failed:', e);
-    }
-}
-
-// Registers the friction-gate Channel with the Kotlin plugin. BlockerService
-// launches the main activity with block details as intent extras when it
-// intercepts a blocked app/website; BlockerPlugin forwards them through this
-// channel. See tauri-plugin-android-blocker/android/.../BlockerPlugin.kt.
-export function listenForAndroidFrictionGate() {
-    const channel = new Channel();
-    channel.onmessage = (event) => {
-        if (event.type === 'resumed') {
-            // BlockerPlugin.onResume() — the reliable native-lifecycle
-            // signal for "user came back from a system settings screen".
-            // DOM visibilitychange is unreliable inside an Android
-            // WebView-hosted Activity, so this is the primary path (the
-            // visibilitychange listener in setupEventListeners is a
-            // fallback in case onResume didn't fire for some reason).
-            onAndroidResumed();
-        } else if (event.type === 'friction-gate') {
-            openAndroidFrictionGateModal(event);
-        }
-    };
-    tauriAPI.androidSetEventHandler(channel).catch((err) => {
-        console.error('Failed to register Android friction-gate handler:', err);
-    });
-}
-
-export async function onAndroidResumed() {
-    if (state.androidPermissionsGranted) {
-        await reconcileAndroidNativePauses();
-        await syncSchedulesToHelper();
-        return;
-    }
-    const wasGranted = state.androidPermissionsGranted;
-    await checkAndroidPermissions();
-    if (!wasGranted && state.androidPermissionsGranted) {
-        try {
-            await initializeAndroidBlockingState();
-            render();
-        } catch (err) {
-            console.error('Error initializing Android blocking state after permission grant:', err);
-        }
-    }
-}
-
-// Dedicated close functions for modals where blindly re-adding .hidden
-// would skip cleanup (resetting state.editingBlocklistId, state.challengeText, etc.).
-// Modals not listed here (app-picker-modal's close is a local closure,
-// settings-modal has no dedicated close fn) fall back to a plain hide —
-// an acceptable degradation (stale state clears on next legitimate
-// open/close), much better than the app closing outright.
-export const ANDROID_MODAL_CLOSE_FNS = {
-    'blocklist-modal': closeBlocklistModal,
-    'override-modal': closeOverrideModal,
-    'start-block-confirm-modal': closeStartConfirmModal,
-    'override-all-modal': closeOverrideAllModal,
-    // An arrow, so the binding is read at back-press time, not while this
-    // module is still evaluating (focus-space-editor.js imports back into it).
-    'editor-discard-modal': () => closeEditorDiscardConfirmModal(false),
-};
-
-// Tauri's generated WryActivity.onKeyDown only calls webView.goBack() on
-// hardware/gesture back if canGoBack() is true; otherwise it falls
-// through to the default Activity behavior, which closes the app (see
-// gen/android/.../WryActivity.kt). This app never pushed history state
-// for its modals, so every back press closed the app outright —
-// including e.g. backing out of the blocklist/schedule editor. Trap
-// it: push one history entry whenever a modal-overlay opens, and on
-// popstate (which goBack() triggers) close the topmost open modal
-// instead of letting the Activity finish.
-export function setupAndroidBackButtonHandling() {
-    if (document.documentElement.dataset.androidBackHandling === '1') return;
-    document.documentElement.dataset.androidBackHandling = '1';
-
-    let trapArmed = false;
-
-    function topmostVisibleModal() {
-        const overlays = document.querySelectorAll('.modal-overlay');
-        let topmost = null;
-        for (const el of overlays) {
-            if (!el.classList.contains('hidden')) topmost = el;
-        }
-        return topmost;
-    }
-
-    function armTrapIfNeeded() {
-        if (trapArmed) return;
-        if (!topmostVisibleModal()) return;
-        trapArmed = true;
-        history.pushState({ androidModalTrap: true }, '');
-    }
-
-    // Any modal-overlay's `hidden` class toggling is how every open*Modal
-    // function in this codebase shows a modal — watching that generically
-    // avoids having to hook every individual open function.
-    const observer = new MutationObserver(() => armTrapIfNeeded());
-    document.querySelectorAll('.modal-overlay').forEach((el) => {
-        observer.observe(el, { attributes: true, attributeFilter: ['class'] });
-    });
-
-    window.addEventListener('popstate', () => {
-        const modal = topmostVisibleModal();
-        if (!modal) {
-            trapArmed = false;
-            return;
-        }
-        const closeFn = ANDROID_MODAL_CLOSE_FNS[modal.id];
-        if (closeFn) {
-            closeFn();
-        } else {
-            modal.classList.add('hidden');
-        }
-        // Re-arm if another modal was underneath (nested case).
-        trapArmed = false;
-        armTrapIfNeeded();
-    });
-}
-
-export function findAndroidBlockingTarget(nativeScheduleId) {
-    const activeBlock = state.appData.activeBlocks?.find(block => block.id === nativeScheduleId);
-    if (activeBlock) {
-        return { type: 'block', block: activeBlock };
-    }
-
-    for (const schedule of state.appData.schedules || []) {
-        // Kotlin ids are the schedule id plus a flattened suffix:
-        // `<id>-<segIdx>` for repeating segments, `<id>-<segIdx>-<occIdx>`
-        // for one-shot occurrences. Schedule ids are UUIDs, so prefix
-        // matching can't collide with another schedule.
-        if (nativeScheduleId === schedule.id || nativeScheduleId.startsWith(`${schedule.id}-`)) {
-            return { type: 'schedule', schedule };
-        }
-    }
-
-    return null;
-}
-
-// Shows the shared challenge UI for a block that fired on Android.
-// Kotlin sends either the manual block id or the flattened schedule-segment id
-// (`<scheduleId>-<segmentIndex>`). Manual blocks can still be stopped; schedule
-// blocks only offer a pause from this interruption surface.
-export function openAndroidFrictionGateModal(event) {
-    // A friction-gate event is emitted by BlockerService itself, so the
-    // Accessibility permission is active even if the startup permission
-    // check has not completed yet. Hide any stale onboarding guess before
-    // opening the challenge surface.
-    state.androidPermissionsGranted = true;
-    updateOnboardingVisibility();
-
-    const target = findAndroidBlockingTarget(event.scheduleId);
-    if (!target) {
-        // Every Kotlin schedule is created from state.appData via set_schedules
-        // (or imported by migrateAndroidNativeSchedules), so an unknown id
-        // means the two stores are out of sync. Don't show a challenge we
-        // can't act on (and don't disturb a gate that is already open);
-        // the next syncSchedulesToHelper reconciles Kotlin.
-        console.error('[friction-gate] No matching block/schedule for id:', event.scheduleId);
-        return;
-    }
-
-    // Newest gate wins. A friction gate only makes sense for the app the
-    // user is trying to open right now, so a gate that is still open for a
-    // *different* target (user hopped between blocked apps) must be closed
-    // before opening the new one, because closing is also what clears the
-    // gate's backing state (state.overrideBlockId / window.overrideScheduleId).
-    // If the incoming event matches the gate already showing, keep it instead
-    // so a half-typed challenge survives re-interception.
-    if (target.type === 'block'
-        && isModalVisible('override-modal')
-        && state.overrideBlockId === target.block.id) {
-        return;
-    }
-    if (target.type === 'schedule'
-        && isModalVisible('override-modal')
-        && !state.overrideBlockId
-        && window.overrideScheduleId === (target.schedule.id || target.schedule.blocklistId)) {
-        return;
-    }
-    closeOverrideModal();
-
-    if (target.type === 'block') {
-        state.overrideBlockId = target.block.id;
-        state.overrideBlocklistIdForHelper = target.block.blocklistId;
-        const blocklist = state.appData.blocklists.find(bl => bl.id === target.block.blocklistId);
-        if (!blocklist) {
-            console.error('[friction-gate] No matching blocklist for block:', target.block.blocklistId);
-            return;
-        }
-        const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 15 };
-        populateOverrideConfirmModalContent(blocklist, { block: target.block });
-        initializeOverrideModalChallenge(difficulty, blocklist.color);
-        return;
-    }
-
-    // A schedule target goes through the same stop modal as the card switch:
-    // the challenge (waived for a Flexible schedule between blocks), then the
-    // space's temporary unlock duration.
-    openScheduleOverrideModal(target.schedule);
 }
 
 export async function initializeIOSBlockingState() {
@@ -1281,29 +841,27 @@ export function updateOnboardingVisibility() {
     }
     const eulaOverlay = document.getElementById('eula-onboarding');
     const screentimeOverlay = document.getElementById('ios-screentime-onboarding');
-    const androidOverlay = document.getElementById('android-permissions-onboarding');
+
     const main = document.getElementById('main-content');
     const showEula = !hasAcceptedEula();
     const showScreentime = state.isIOS && !showEula && state.screentimeAuthChecked && !state.screentimeAuthorized;
-    const showAndroidPermissions = state.isAndroid && !showEula && state.androidPermissionsGranted === false;
+    const showNotifications = state.isIOS && !showEula && state.screentimeAuthorized && state.iosNotificationOnboardingPending;
+    const notificationsOverlay = document.getElementById('ios-notifications-onboarding');
+
     const keepEulaVisibleForPendingSetup = !state.isIOS
-        && !state.isAndroid
         && isFirstRunOnboardingInProgress()
         && !state.migrationOnboardingActive;
     const showEulaScreen = showEula || keepEulaVisibleForPendingSetup;
     const blockMainUi = showEulaScreen
         || showScreentime
-        || showAndroidPermissions
+        || showNotifications
         || state.migrationOnboardingActive
-        || (!state.isIOS && !state.isAndroid && isFirstRunOnboardingInProgress());
+        || (!state.isIOS && isFirstRunOnboardingInProgress());
 
     eulaOverlay?.classList.toggle('hidden', !showEulaScreen);
     screentimeOverlay?.classList.toggle('hidden', !showScreentime);
-    androidOverlay?.classList.toggle('hidden', !showAndroidPermissions);
+    notificationsOverlay?.classList.toggle('hidden', !showNotifications);
     main?.classList.toggle('hidden', blockMainUi);
-    if (showAndroidPermissions) {
-        document.getElementById('android-accessibility-status')?.classList.toggle('hidden', state.androidPermissionsGranted);
-    }
 
 }
 
@@ -1328,7 +886,7 @@ export function showExclusiveOnboardingScreen(activeId) {
         'fda-onboarding',
         'migration-onboarding',
         'ios-screentime-onboarding',
-        'android-permissions-onboarding',
+        'ios-notifications-onboarding',
     ];
     screenIds.forEach((id) => {
         document.getElementById(id)?.classList.toggle('hidden', id !== activeId);
@@ -1348,8 +906,6 @@ export async function acceptEula() {
     }
     if (state.isIOS) {
         await checkScreentimeAuth();
-    } else if (state.isAndroid) {
-        await checkAndroidPermissions();
     } else {
         if (!state.appData.settings.onboardingComplete) {
             state.firstRunExtensionSetupPending = true;
@@ -1374,7 +930,7 @@ export async function openExternal(target) {
         await openUrl(target);
     } catch (err) {
         console.warn('[openExternal] opener plugin failed:', err);
-        if (!state.isIOS && !state.isAndroid) {
+        if (!state.isIOS) {
             window.open(target, '_blank', 'noopener,noreferrer');
         }
     }
@@ -1382,7 +938,7 @@ export async function openExternal(target) {
 
 /** Mobile webviews do not reliably open target=_blank links in the system browser; route via opener plugin. */
 export function setupMobileExternalLinkOpens() {
-    if (!state.isIOS && !state.isAndroid) return;
+    if (!state.isIOS) return;
     document.addEventListener('click', (event) => {
         const anchor = event.target.closest('a[href]');
         if (!anchor) return;
@@ -1452,10 +1008,6 @@ export async function runExpiryOnce() {
     await syncSchedulesToHelper();
     await updateBlockedApps();
 }
-
-
-
-
 
 export function getModalDismissButton(modalOverlay) {
     if (!modalOverlay) return null;
@@ -1712,7 +1264,6 @@ export function setupHandsetModalScreens() {
     }
 }
 
-
 function configureMobileBlocklistFields() {
     // Mobile apps are selected from the platform picker. Keep the text fields
     // out of the UI and the tab order so app names cannot be entered manually.
@@ -1764,20 +1315,6 @@ export function detectPlatform() {
 
         // iOS app blocking uses Screen Time tokens (not app names).
         configureMobileBlocklistFields();
-    } else if (/Android/.test(navigator.userAgent)) {
-        state.isAndroid = true;
-        document.body.classList.add('android');
-        document.body.classList.add('mobile-phone-home');
-        document.body.classList.add('handset-device');
-        // Hide desktop-only UI on Android — same fullscreen-webview
-        // treatment as iOS (custom title bar / window controls make no
-        // sense on a mobile OS).
-        document.getElementById('window-controls')?.classList.add('hidden');
-        document.querySelector('.title-bar')?.classList.add('hidden');
-        document.getElementById('helper-settings-section')?.classList.add('hidden');
-        // Android app blocking uses the installed-app picker. Keep package
-        // names out of the manual text-entry path on mobile.
-        configureMobileBlocklistFields();
     } else {
         const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
         if (isMac) {
@@ -1787,6 +1324,7 @@ export function detectPlatform() {
             document.getElementById('window-controls')?.classList.add('hidden');
         } else {
             document.body.classList.add('windows');
+            state.isWindowsDesktop = true;
             // Show custom HTML controls on Windows (frameless window)
             document.getElementById('window-controls')?.classList.remove('hidden');
         }

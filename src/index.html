@@ -207,13 +207,19 @@
 
                 <div class="eula-onboarding-card-wrap">
                     <div class="onboarding-focus-card legal-onboarding-card welcome-onboarding-card">
-                        <div class="legal-onboarding-checkbox-row">
+                        <h2 id="eula-privacy-title" class="eula-privacy-title">Private by design</h2>
+                        <p id="eula-privacy-lead" class="eula-privacy-lead">We collect no personal data. We only count how many people use Blocker.</p>
+                        <details id="eula-how-we-count" class="eula-how-we-count">
+                            <summary id="eula-how-we-count-summary">How we count</summary>
+                            <p id="eula-how-we-count-body"></p>
+                        </details>
+                        <hr class="eula-privacy-divider" />
+                        <label class="legal-onboarding-checkbox-row">
                             <input type="checkbox" id="eula-agree-checkbox"
                                 aria-label="I agree to the End User License Agreement and Privacy Policy">
-                            <span class="legal-onboarding-checkbox-text" data-toggle-target="eula-agree-checkbox"><span
+                            <span class="legal-onboarding-checkbox-text"><span
                                     id="eula-agree-line-inner"></span></span>
-                        </div>
-                        <p id="eula-note" class="legal-onboarding-note"></p>
+                        </label>
                         <div class="eula-onboarding-actions">
                             <button id="eula-back-btn"
                                     class="eula-back-btn"
@@ -232,7 +238,6 @@
 
                 <footer class="eula-onboarding-desktop-footer welcome-onboarding-footer">
                     <p id="eula-onboarding-footer-1" class="welcome-footer-line"></p>
-                    <p id="eula-onboarding-footer-2" class="welcome-footer-line"></p>
                 </footer>
             </div>
         </div>
@@ -391,7 +396,6 @@
 
                 <footer class="welcome-onboarding-footer">
                     <p id="welcome-onboarding-footer-1" class="welcome-footer-line"></p>
-                    <p id="welcome-onboarding-footer-2" class="welcome-footer-line"></p>
                 </footer>
             </div>
         </div>
@@ -615,18 +619,18 @@
             </div>
         </div>
 
-        <div id="android-permissions-onboarding" class="onboarding-screen hidden">
-            <div class="onboarding-content android-permissions-onboarding-content">
+        <div id="ios-notifications-onboarding" class="onboarding-screen hidden">
+            <div class="onboarding-content ios-screentime-onboarding-content">
                 <div class="onboarding-icon">
-                    <img id="android-permissions-onboarding-app-icon" src="/reddblock-icon.svg" alt="" class="onboarding-app-icon">
+                    <img id="ios-notifications-onboarding-app-icon" src="/reddblock-icon.svg" alt="" class="onboarding-app-icon">
                 </div>
-                <h1 id="android-permissions-onboarding-title"></h1>
+                <h1 id="ios-notifications-onboarding-title"></h1>
                 <div class="onboarding-focus-card">
-                    <p id="android-permissions-onboarding-body" class="onboarding-primary-copy"></p>
-                    <button id="android-accessibility-grant-btn" class="modal-btn primary-btn onboarding-primary-btn" type="button"></button>
-                    <p id="android-accessibility-status" class="subtle hidden"></p>
+                    <p id="ios-notifications-onboarding-body" class="onboarding-primary-copy"></p>
+                    <button id="ios-notifications-turn-on-btn" class="modal-btn primary-btn onboarding-primary-btn" type="button"></button>
+                    <button id="ios-notifications-not-now-btn" class="migration-skip-btn" type="button"></button>
                 </div>
-                <p id="android-permissions-onboarding-note" class="subtle"></p>
+                <p id="ios-notifications-onboarding-note" class="onboarding-footnote"></p>
             </div>
         </div>
 
@@ -673,8 +677,8 @@
 <div class="focus-space-editor" id="focus-space-editor">
 
 <div class="form-group" id="blocklist-name-group">
-    <label for="blocklist-name" id="blocklist-name-label">Focus space name</label>
-    <input type="text" id="blocklist-name" maxlength="60" placeholder="e.g., Social Media" class="form-input">
+    <label for="blocklist-name" id="blocklist-name-label">Name</label>
+    <input type="text" id="blocklist-name" maxlength="60" placeholder="e.g., Social Media" class="form-input" autocomplete="off">
 </div>
 
 <div class="editor-section" id="editor-section-what" data-section="what">
@@ -692,7 +696,7 @@
                         <div class="input-with-button websites-input-with-import">
                             <input type="text" id="modal-website-input" placeholder="e.g., facebook.com"
                                 class="form-input" autocomplete="off" autocorrect="off" autocapitalize="off"
-                                spellcheck="false">
+                                spellcheck="false" writingsuggestions="false">
                             <button type="button" id="modal-import-websites-btn" class="browse-btn"
                                 title="Import websites" aria-haspopup="menu" aria-expanded="false">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -748,7 +752,7 @@
                     <div id="modal-apps-tags" class="tags-container apps-tags"></div>
                     <input type="text" id="modal-app-input" placeholder="e.g., Safari" class="form-input hidden"
                         autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-                        aria-hidden="true" tabindex="-1">
+                        writingsuggestions="false" aria-hidden="true" tabindex="-1">
                     <button type="button" id="modal-browse-apps-btn" class="add-app-btn" title="Add App">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                             <circle cx="5" cy="5" r="2"></circle><circle cx="12" cy="5" r="2"></circle><circle cx="19" cy="5" r="2"></circle>
@@ -842,9 +846,9 @@
                                 </div>
                                 <div class="exit-difficulty-row-control settings-row-control">
                                     <select id="unlock-duration-select" class="form-select unlock-duration-select">
-                                        <option value="0" id="unlock-option-0" selected>Never</option>
+                                        <option value="0" id="unlock-option-0">Never</option>
                                         <option value="5" id="unlock-option-5">5 minutes</option>
-                                        <option value="10" id="unlock-option-10">10 minutes</option>
+                                        <option value="10" id="unlock-option-10" selected>10 minutes</option>
                                         <option value="15" id="unlock-option-15">15 minutes</option>
                                         <option value="30" id="unlock-option-30">30 minutes</option>
                                         <option value="60" id="unlock-option-60">1 hour</option>
@@ -866,7 +870,7 @@
     <button type="button" class="editor-section-header" id="editor-section-advanced-header" aria-expanded="false" aria-controls="editor-section-advanced-body">
         <span class="editor-section-copy">
             <span class="editor-section-title" id="editor-section-advanced-title">Advanced options</span>
-            
+
         </span>
         <span class="editor-section-icon" aria-hidden="true"></span>
     </button>
@@ -1121,7 +1125,6 @@
             </div>
         </div>
 
-
         <!-- Enter scheduler (iPhone always; desktop when single-column ≤768px) -->
         <div id="enter-scheduler-modal" class="modal-overlay hidden">
             <div class="modal-content enter-scheduler-modal-content">
@@ -1162,7 +1165,8 @@
                 <h3 id="app-picker-title">Select Apps to Block</h3>
                 <div class="app-picker-search-wrap">
                     <input type="text" id="app-picker-search" class="form-input" placeholder="Search installed apps..."
-                        autocomplete="off">
+                        autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                        writingsuggestions="false">
                     <svg class="app-picker-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
                         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="11" cy="11" r="8"></circle>
@@ -1189,20 +1193,7 @@
         <div id="override-modal" class="modal-overlay hidden">
             <div class="modal-content start-confirm-modal override-challenge">
                 <div class="start-confirm-header-room">
-                    <h3 id="override-modal-title">Stop focus space?</h3>
-                    <div class="start-confirm-room-chip" id="override-confirm-room-chip">
-                        <span class="start-confirm-room-chip-emoji" id="override-confirm-room-chip-emoji" aria-hidden="true">🎯</span>
-                        <span class="start-confirm-room-chip-name" id="override-confirm-room-chip-name"></span>
-                    </div>
-                </div>
-                <div class="start-confirm-status-row">
-                    <div class="start-confirm-status-icon" aria-hidden="true">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
-                        </svg>
-                    </div>
-                    <p class="start-confirm-subtitle" id="override-confirm-subtitle"></p>
+                    <h3 id="override-modal-title"></h3>
                 </div>
                 <div class="start-confirm-summary-card">
                     <div class="start-confirm-summary-row" id="override-confirm-blocking-row">
@@ -1219,8 +1210,40 @@
                                 id="override-confirm-show-all-blocking">show all</button>
                         </div>
                     </div>
+                    <div class="start-confirm-summary-divider"></div>
+                    <div class="start-confirm-summary-row" id="override-confirm-duration-row">
+                        <div class="start-confirm-row-label">
+                            <svg class="start-confirm-row-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                            <span id="override-confirm-duration-label">Duration</span>
+                        </div>
+                        <div class="start-confirm-row-value">
+                            <div class="start-confirm-duration-copy" id="override-confirm-duration"></div>
+                        </div>
+                    </div>
+                    <div class="start-confirm-summary-divider"></div>
+                    <div class="start-confirm-summary-row" id="override-confirm-unlock-row">
+                        <div class="start-confirm-row-label">
+                            <svg class="start-confirm-row-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <rect x="3" y="11" width="18" height="11" rx="2"></rect>
+                                <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+                            </svg>
+                            <span id="override-confirm-unlock-label">If turned off</span>
+                        </div>
+                        <div class="start-confirm-row-value">
+                            <div class="start-confirm-duration-copy" id="override-confirm-unlock"></div>
+                        </div>
+                    </div>
                 </div>
-                <p id="override-modal-instruction" class="override-challenge-instruction">To stop this focus space early, type the following:</p>
+                <p id="override-modal-instruction" class="override-challenge-instruction challenge-char-instruction">To stop this focus space early, type the following:</p>
+                <div class="override-challenge-instruction challenge-word-instruction">
+                    <strong id="challenge-words-remaining" class="challenge-words-remaining"></strong>
+                    <span id="override-modal-word-instruction">Type one word at a time</span>
+                </div>
                 <div id="challenge-text" class="challenge-text"></div>
                 <div id="challenge-word-progress" class="challenge-word-progress hidden"></div>
                 <div id="challenge-current-word" class="challenge-current-word hidden"></div>
@@ -1242,26 +1265,12 @@
             </div>
         </div>
 
-
         <!-- Start focus space confirmation: what is about to be blocked, the
              way out (typing challenge) and what turning it off does (unlock duration). -->
         <div id="start-block-confirm-modal" class="modal-overlay hidden">
             <div class="modal-content start-confirm-modal">
                 <div class="start-confirm-header-room">
-                    <h3 id="start-block-confirm-title">Start focus space?</h3>
-                    <div class="start-confirm-room-chip" id="start-confirm-room-chip">
-                        <span class="start-confirm-room-chip-emoji" id="start-confirm-room-chip-emoji" aria-hidden="true">🎯</span>
-                        <span class="start-confirm-room-chip-name" id="start-confirm-room-chip-name"></span>
-                    </div>
-                </div>
-                <div class="start-confirm-status-row">
-                    <div class="start-confirm-status-icon" aria-hidden="true">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
-                        </svg>
-                    </div>
-                    <p class="start-confirm-subtitle" id="start-confirm-subtitle"></p>
+                    <h3 id="start-block-confirm-title"></h3>
                 </div>
                 <div class="start-confirm-summary-card">
                     <div class="start-confirm-summary-row" id="start-confirm-blocking-row">
@@ -1316,7 +1325,7 @@
                                 <polyline points="12 6 12 12 16 14"></polyline>
                             </svg>
                         </span>
-                        <span id="confirm-override-header">Leaving early takes a moment — on purpose.</span>
+                        <span id="confirm-override-header">Stopping early takes a moment.</span>
                     </div>
                     <p id="start-confirm-override-text"></p>
                 </div>
@@ -1324,7 +1333,7 @@
                     <button id="cancel-start-confirm-btn" class="modal-btn cancel-btn">Cancel</button>
                     <button id="proceed-start-confirm-btn" class="modal-btn black-btn start-confirm-primary-btn">
                         <svg class="start-confirm-primary-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                        <span class="start-confirm-primary-label">Start focus space</span>
+                        <span class="start-confirm-primary-label">Start</span>
                     </button>
                 </div>
             </div>
@@ -1628,6 +1637,20 @@
             </div>
         </div>
 
+        <div id="store-review-prompt" class="store-review-prompt hidden" role="region">
+            <div class="store-review-prompt-content">
+                <div class="store-review-prompt-top">
+                    <div class="store-review-prompt-stars" aria-hidden="true"></div>
+                    <button type="button" id="store-review-dismiss" class="store-review-prompt-dismiss" aria-label="Dismiss review prompt"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                </div>
+                <p id="store-review-prompt-body">Enjoying Blocker? A review helps others find it.</p>
+                <div class="store-review-prompt-actions">
+                    <a href="#" id="store-review-leave-link" target="_blank" rel="noopener noreferrer" class="store-review-leave-link">Leave a review</a>
+                    <button type="button" id="store-review-no-thanks">I already did</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Undo Toast -->
         <div id="undo-toast" class="undo-toast hidden">
             <span id="undo-toast-message">Deleted blocklist</span>
@@ -1755,6 +1778,75 @@
                                     </button>
                                 </div>
                             </div>
+
+                            <div id="settings-usage-ping-row" class="settings-row">
+                                <div class="settings-row-copy">
+                                    <div class="settings-row-label-line">
+                                        <span class="settings-row-icon" aria-hidden="true">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                <path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"></path>
+                                            </svg>
+                                        </span>
+                                        <span id="settings-usage-ping-label" class="settings-row-label">Send anonymous usage count</span>
+                                        <div class="settings-info-hover-wrap">
+                                            <button id="settings-usage-ping-info-btn" type="button" class="info-toggle-btn settings-info-btn"
+                                                aria-describedby="settings-usage-ping-hint">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                    <circle cx="12" cy="12" r="10"></circle>
+                                                    <path d="M12 16v-4"></path>
+                                                    <path d="M12 8h.01"></path>
+                                                </svg>
+                                            </button>
+                                            <div id="settings-usage-ping-hint" class="settings-info-tooltip" role="tooltip">Once a day, with an ID that changes every month. Nothing about your blocks, sites or apps.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="settings-row-control">
+                                    <label class="enforcement-switch" for="settings-usage-ping-input">
+                                        <input type="checkbox" id="settings-usage-ping-input" checked />
+                                        <span class="enforcement-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div id="settings-start-warnings-row" class="settings-row hidden">
+                                <div class="settings-row-copy">
+                                    <div class="settings-row-label-line">
+                                        <span class="settings-row-icon" aria-hidden="true">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                <path d="M10.268 21a2 2 0 0 0 3.464 0"></path>
+                                                <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"></path>
+                                            </svg>
+                                        </span>
+                                        <span id="settings-start-warnings-label" class="settings-row-label">Send schedule-start notifications</span>
+                                        <div class="settings-info-hover-wrap">
+                                            <button id="settings-start-warnings-info-btn" type="button" class="info-toggle-btn settings-info-btn"
+                                                aria-describedby="settings-start-warnings-hint">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                    <circle cx="12" cy="12" r="10"></circle>
+                                                    <path d="M12 16v-4"></path>
+                                                    <path d="M12 8h.01"></path>
+                                                </svg>
+                                            </button>
+                                            <div id="settings-start-warnings-hint" class="settings-info-tooltip" role="tooltip">A notification 2 minutes before a scheduled focus space starts or comes back from a pause.</div>
+                                        </div>
+                                    </div>
+                                    <span id="settings-start-warnings-denied" class="settings-row-hint hidden">Notifications are turned off for Blocker in iOS Settings.</span>
+                                </div>
+                                <div class="settings-row-control">
+                                    <label id="settings-start-warnings-switch" class="enforcement-switch" for="settings-start-warnings-input">
+                                        <input type="checkbox" id="settings-start-warnings-input" />
+                                        <span class="enforcement-slider"></span>
+                                    </label>
+                                    <button id="settings-start-warnings-open-btn" class="settings-blocklists-io-btn hidden" type="button">
+                                        <span id="settings-start-warnings-open-btn-label">Open iOS Settings</span>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                         </div>
                     </section>
@@ -1816,7 +1908,6 @@
                         </div>
                         </div>
                     </section>
-
 
                     <section id="settings-help-section" class="settings-section settings-help-section desktop-only" aria-labelledby="settings-help-label">
                         <h4 id="settings-help-label" class="settings-section-heading">Something not working?</h4>
@@ -1902,7 +1993,7 @@
                             </div>
                             <p id="grace-error" class="grace-error hidden"></p>
 
-                            <div id="settings-blocking-method-section" class="settings-blocking-method-section macos-only">
+                            <div id="settings-blocking-method-section" class="settings-blocking-method-section desktop-only">
                                 <button id="settings-blocking-method-toggle" type="button"
                                     class="settings-enforcement-subsection-toggle"
                                     aria-expanded="false"
@@ -1981,6 +2072,31 @@
                                                     <option value="automation">Automation</option>
                                                     <option value="extension">Extension</option>
                                                 </select>
+                                            </div>
+                                        </div>
+                                        <!-- Firefox has no AppleScript dictionary for tabs, so its
+                                             choice is the extension or the Accessibility API, never
+                                             Automation. app.js rebuilds these options per browser. -->
+                                        <div class="settings-row">
+                                            <div class="settings-row-copy">
+                                                <span class="settings-blocking-method-label">
+                                                    <img id="settings-blocking-method-firefox-icon" class="settings-blocking-method-icon" src="" alt="" aria-hidden="true">
+                                                    <span id="settings-blocking-method-firefox-label" class="settings-row-label">Firefox</span>
+                                                </span>
+                                            </div>
+                                            <div class="settings-row-control">
+                                                <select id="blocking-method-firefox" class="blocking-method-select" aria-label="Firefox blocking method">
+                                                    <option value="extension">Extension</option>
+                                                    <option value="accessibility">Accessibility</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div id="settings-firefox-ax-row" class="settings-row settings-safari-fda-row hidden">
+                                            <div class="settings-row-copy">
+                                                <p id="settings-firefox-ax-status" class="settings-row-hint"></p>
+                                            </div>
+                                            <div class="settings-row-control">
+                                                <button id="settings-firefox-ax-grant-btn" type="button" class="modal-btn primary-btn settings-safari-fda-grant-btn">Allow access</button>
                                             </div>
                                         </div>
                                     </div>
@@ -2107,7 +2223,11 @@
                         app. It will also stop any future
                         scheduled blocking.</p>
                 </div>
-                <p class="override-all-subline" id="override-all-instruction">To do this, type the following:</p>
+                <p class="override-all-subline challenge-char-instruction" id="override-all-instruction">To do this, type the following:</p>
+                <div class="override-all-subline challenge-word-instruction">
+                    <strong id="override-all-words-remaining" class="challenge-words-remaining"></strong>
+                    <span id="override-all-word-instruction">Type one word at a time</span>
+                </div>
                 <div id="override-all-challenge-text" class="challenge-text"></div>
                 <div id="override-all-word-progress" class="challenge-word-progress hidden"></div>
                 <div id="override-all-current-word" class="challenge-current-word hidden"></div>

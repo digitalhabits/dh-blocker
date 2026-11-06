@@ -21,6 +21,7 @@ heading that fits.
 | **Branding** | App name, icons, organisation identity, installer/store branding, companion-extension naming when it is a rename or identity change. |
 | **Focus Spaces & Blocking** | Focus Spaces, schedules, Quick Start, Block/Allow mode, override/stop/pause challenges, Strictness, app and website blocking, and changes to how blocking behaves (including the “Let’s go!” screen and browser setup that makes blocking work). |
 | **Performance** | Speed, responsiveness, CPU, memory, battery, or similar resource use. |
+| **Privacy** | What the app sends off your device, what it keeps about you, and the settings that control it (for example the anonymous usage count). |
 | **Fixes & Polish** | Screen layout, wording, translations, Settings, onboarding, and other user-visible polish that does not change how Focus Spaces or blocking work. |
 | **Internal** | Refactors, dependencies, tests, build/CI, signing, release publishing, docs-only edits, and other changes with no meaningful effect for people using the app. Same bullet format as other sections; keep wording clear. These stay in the GitHub changelog and are excluded from store “What’s New”. |
 
@@ -34,7 +35,7 @@ platform limits on the bullet.
 
 ## Platform tags
 
-Supported platforms: **macOS**, **Windows**, **iOS**, and **Android**.
+Supported platforms: **macOS**, **Windows**, and **iOS**.
 Desktop means macOS + Windows.
 
 Optional tags go at the start of the bullet:
@@ -45,7 +46,7 @@ Optional tags go at the start of the bullet:
 | `[macos]` | macOS only |
 | `[windows]` | Windows only |
 | `[ios]` | iOS only |
-| `[android]` | Android only |
+| `[android]` | Historical Android-only notes; retained for filtering old releases |
 
 Rules:
 
@@ -146,6 +147,8 @@ Use consistently: **Digital Habits: Blocker**, **Digital Habits: Focus**,
   native messaging, polling, IPC, “under the hood”.
 - Hype or filler: “goes harder”, “stays solid”, “enhancements”, “various
   improvements”, “polish throughout” with no screen or topic named.
+- GitHub references: pull request or issue numbers, repository or branch
+  names, commit hashes, tags, or the GitHub address.
 - Technical paths or slug names unless users need them (prefer “fixed the
   Firefox install link for Digital Habits: Focus” over addon IDs).
 - Putting Settings wording or layout under **Focus Spaces & Blocking** just
@@ -195,7 +198,7 @@ allowed. Store automation may replace it with the standard intro.
 | --- | --- |
 | **GitHub Release** | Exact `## vX.Y.Z` section as markdown: update intro line, all non-empty headings, platform tags, and **Internal** |
 | **Any app-store “What’s New”** | Update intro line + non-empty user-facing sections with headings; **exclude Internal** |
-| **Platform store (Windows / macOS / iOS / Android)** | Untagged bullets + bullets tagged for that platform + parent tags (e.g. macOS store: untagged + `[macos]` + `[desktop]`) |
+| **Platform store (Windows / macOS / iOS)** | Untagged bullets + bullets tagged for that platform + parent tags (e.g. macOS store: untagged + `[macos]` + `[desktop]`) |
 | **Platform-specific store text** | Platform tags removed; plain sentences (no `*` / other markdown) |
 
 ### Update intro line (required in `changelog.md`)
@@ -241,7 +244,7 @@ Fixes & Polish
 - The design of the create / edit Focus Space screen has been improved.
 - The design of the Settings screen has been improved.
 
-Remember that the app is open source — keep your feedback and suggestions coming at https://github.com/ulyngs/digital-habits-blocker
+Remember that the app is open source — keep your feedback and suggestions coming at https://github.com/digitalhabits/dh-blocker
 
 Cheers,
 Ulrik & all of us at Centre for Digital Habits

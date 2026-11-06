@@ -238,4 +238,13 @@ export const allowScheduleOff = switchedOffSchedule(
     { id: 'bl-focus', name: 'Writing', emoji: '📚', color: '#BCD9B6', mode: 'allowlist', websites: ['docs.invalid'], apps: [] },
 );
 
-export const fixtures = { crowdedWeek, singleSchedule, weeklyOffPeak, longStartAlertName, manualRunning, cardStates, flexibleBetweenBlocks, multiRangeSchedules, emptyInstall, cardNamesShown, cardNamesHidden, highWordMaximum, loweredWordMaximum, blockScheduleOff, allowScheduleOff };
+// macOS settings: Firefox switched to the Accessibility method, with the grant
+// not yet given — the state that shows the status copy and the button.
+export const firefoxAccessibility = {
+    blocklists: [],
+    activeBlocks: [],
+    schedules: [],
+    settings: { blockingMethods: { firefox: 'accessibility' } },
+};
+
+export const fixtures = { crowdedWeek, singleSchedule, weeklyOffPeak, longStartAlertName, manualRunning, cardStates, flexibleBetweenBlocks, multiRangeSchedules, emptyInstall, cardNamesShown, cardNamesHidden, highWordMaximum, loweredWordMaximum, blockScheduleOff, allowScheduleOff, firefoxAccessibility };
