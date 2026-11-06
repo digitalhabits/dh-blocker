@@ -16930,3 +16930,43 @@ body:not(.handset-device) #enter-scheduler-modal .editor-panel-back-btn:hover{
     outline: 2px solid var(--accent-color);
     outline-offset: 4px;
 }
+
+/* Pause duration belongs to the confirmation, never the schedule editor. */
+#override-modal .unlock-duration-row { margin: 0 0 12px; padding: 12px 0; border-top: 0; }
+#override-modal .unlock-duration-select { max-width: 100%; }
+#override-modal #pause-never-warning { margin: 0 0 16px; color: var(--text-secondary); }
+.blocklist-resume-btn { background: none; border: 0; color: var(--redd-teal); font: inherit; padding: 6px 0 0; text-decoration: underline; cursor: pointer; }
+
+/* The iPhone pause sheet keeps only the decision and the challenge. Its
+   word-position label supplies progress without a second heading or meter. */
+body.ios-phone #override-modal .start-confirm-summary-card,
+body.ios-phone #override-modal .challenge-word-instruction,
+body.ios-phone #override-modal .challenge-progress,
+body.ios-phone #override-modal #pause-never-warning {
+    display: none;
+}
+body.ios-phone #override-modal #unlock-duration-row {
+    margin: 0 0 24px;
+    padding: 0;
+}
+body.ios-phone #override-modal .challenge-word-progress {
+    margin: 0 0 8px;
+    font-size: 13px;
+}
+body.ios-phone #override-modal .start-confirm-actions {
+    margin-top: 16px;
+}
+@media (max-width: 360px) {
+    body.ios-phone #override-modal #unlock-duration-row {
+        grid-template-columns: minmax(0, 1fr);
+        row-gap: 8px;
+    }
+    body.ios-phone #override-modal #unlock-duration-row > .settings-row-control {
+        grid-column: 1;
+        grid-row: 2;
+        width: 100%;
+    }
+    body.ios-phone #override-modal .unlock-duration-select {
+        width: 100%;
+    }
+}

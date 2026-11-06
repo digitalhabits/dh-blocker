@@ -86,6 +86,11 @@ screens or a direct UI check suffice.
 
 ---
 
+The UI fixtures `pause-flow-verified`, `pause-editor-active`, and
+`pause-dialog-iphone` cover the remembered-duration flow, an active word-count
+increase, and the mobile Never recommendation. Their native transport is stubbed;
+they do not establish real-device enforcement.
+
 ## Quick run guide
 
 - **Tier 0**: `pnpm test:tier0` (that script wraps `vitest run`, so for watch

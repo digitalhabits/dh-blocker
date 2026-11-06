@@ -6,6 +6,9 @@
 // Module-private state stays as plain `let` inside its own module.
 // Leaf module: must not import from any other app module.
 export const state = {
+    pendingPauseSpaceId: null,
+    pauseChallengeSnapshot: null,
+    pauseSubmitting: false,
     appData: {
         blocklists: [],
         activeBlocks: [],

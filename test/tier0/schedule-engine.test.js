@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { dayIndexMonday0FromDate, getRepeatScheduleLastDayInclusiveMs, isNonRepeatingSchedule, isOneOffBlockEnforced, isOneOffBlockStillActive, isSchedulePausedNow } from '../../src/schedule-engine.js';
+import { buildPersistedAppData, dayIndexMonday0FromDate, getRepeatScheduleLastDayInclusiveMs, isNonRepeatingSchedule, isOneOffBlockEnforced, isOneOffBlockStillActive, isSchedulePausedNow } from '../../src/schedule-engine.js';
+import { state } from '../../src/state.js';
 
 describe('schedule repeat classification', () => {
     test('forever and dated repeats are repeating', () => {
@@ -22,6 +23,35 @@ describe('schedule repeat classification', () => {
         expect(endDate.getMinutes()).toBe(59);
         expect(getRepeatScheduleLastDayInclusiveMs({ repeatType: 'forever' })).toBeNull();
         expect(getRepeatScheduleLastDayInclusiveMs({ repeatType: 'date' })).toBeNull();
+    });
+});
+
+describe('schedule persistence', () => {
+    test('date-limited schedules send a string to Rust without changing the local cutoff day', () => {
+        const date = new Date(2026, 10, 6);
+        const repeatDate = date.getTime();
+        const schedule = { repeatType: 'date', repeatDate, segments: [] };
+        const previousAppData = state.appData;
+        try {
+            state.appData = {
+                schedules: [
+                    schedule,
+                    { ...schedule, repeatDate: date.toISOString() },
+                    { ...schedule, repeatType: 'forever', repeatDate: null },
+                ],
+            };
+
+            const [dated, alreadyEncoded, forever] = buildPersistedAppData().schedules;
+            expect(dated.repeatDate).toBe(date.toISOString());
+            expect(getRepeatScheduleLastDayInclusiveMs(dated)).toBe(new Date(2026, 10, 6, 23, 59, 59, 999).getTime());
+            expect(alreadyEncoded.repeatDate).toBe(dated.repeatDate);
+            expect(forever.repeatDate).toBeNull();
+            expect(schedule.repeatDate).toBe(repeatDate);
+            schedule.repeatDate = Infinity;
+            expect(() => buildPersistedAppData()).toThrow(RangeError);
+        } finally {
+            state.appData = previousAppData;
+        }
     });
 });
 
