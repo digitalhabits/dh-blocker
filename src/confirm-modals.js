@@ -7,7 +7,7 @@ import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipCo
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
 import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn, formatSpaceTitleLabel } from './blocklist-utils.js';
 import { DEFAULT_OVERRIDE_WORDS, generateOverrideChallengeText, getMaxOverrideCountForType, getMaxOverrideWords, getMinOverrideCountForType, getOverrideWordsSliderMax, getOverrideEstimatedMinutes, isMobileOverrideChallengePlatform, migrateOverrideDifficultyToWords, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType, sanitizeChallengeTargetText } from './override-challenge.js';
-import { isAndroidAllowlistUnsupported, isSchedulePausedNow, refreshDesktopHelperStatus, reportIOSScheduleSyncFailure, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
+import { isSchedulePausedNow, refreshDesktopHelperStatus, reportIOSScheduleSyncFailure, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
 import { isBlocklistEditFrictionRequired,renderBlocklists, truncateBlocklistName } from './blocklists.js';
@@ -712,7 +712,6 @@ export function usesEnterSchedulerSheet() {
     if (document.body.classList.contains('ios')) return document.body.classList.contains('ui-zoom-tier-stack');
     if (
         document.body.classList.contains('ios')
-        || document.body.classList.contains('android')
         || document.body.classList.contains('handset-device')
     ) {
         return false;
@@ -1018,10 +1017,7 @@ export function deselectBlocklist() {
 export async function startManualBlock(blocklistId) {
     const blocklist = state.appData.blocklists.find(bl => bl.id === blocklistId);
     if (!blocklist) return false;
-    if (isAndroidAllowlistUnsupported(blocklist)) {
-        alert(tSettings('androidAllowlistUnsupported'));
-        return false;
-    }
+
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this block')) return false;
     if (!await ensureIOSAllowlistStartable(blocklist)) return false;
 
@@ -1065,27 +1061,6 @@ export async function startManualBlock(blocklistId) {
         } catch (err) {
             state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
             state.activatedBlockIds.delete(block.id);
-            result = { success: false, error: err.toString() };
-        }
-    } else if (state.isAndroid) {
-        // Android: push locally, sync (creates the MANUAL Schedule entity in
-        // Kotlin), then explicitly start the session — set_schedules alone
-        // doesn't activate a MANUAL schedule, see syncSchedulesToHelper.
-        try {
-            state.appData.activeBlocks.push(block);
-            await saveData();
-            await syncSchedulesToHelper();
-            const startResult = await tauriAPI.androidStartManualBlock(block.id, null);
-            if (!startResult.success) {
-                state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-                await saveData();
-                result = { success: false, error: startResult.error || 'Failed to start block' };
-            } else {
-                result = { success: true };
-            }
-        } catch (err) {
-            state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-            await saveData();
             result = { success: false, error: err.toString() };
         }
     } else {
@@ -1497,9 +1472,7 @@ export function closeOverrideModal() {
 }
 
 export function initializeOverrideModalChallenge(difficulty, progressColor = null, { skipChallenge = false } = {}) {
-    // Signature preserved: the Android friction gate deliberately bypasses
-    // openOverrideModal and calls this directly (blocking-platform.js), setting
-    // state.overrideBlockId itself.
+    // The shared stop flow applies the focus space's unlock duration.
     const controller = getChallengeController('override');
     state.pauseChallengeSnapshot = JSON.stringify({ difficulty, skipChallenge });
     controller.open({ difficulty, progressColor, skipChallenge });
@@ -1651,13 +1624,6 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
             await tauriAPI.screentimeClearManualBlock();
             state.lastBlockedDomains = new Set();
             await updateHostsFile();
-            await syncSchedulesToHelper();
-        } else if (state.isAndroid) {
-            try {
-                await tauriAPI.androidStopManualBlock(block.id);
-            } catch (err) {
-                console.error('androidStopManualBlock failed:', err);
-            }
             await syncSchedulesToHelper();
         } else {
             const status = await refreshDesktopHelperStatus();

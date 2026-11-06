@@ -1,6 +1,5 @@
 # PR checks: lint, build the frontend bundle, and run the Tier 1 logic suite
-# headlessly. The Android debug build lives in android-ci.yml and the Rust unit
-# tests in rust-ci.yml, so frontend-only PRs do not pay for those toolchains.
+# headlessly. Rust tests run separately in rust-ci.yml.
 #
 # Also runs on every push to main. PR checks run against the merge preview, not
 # the commit that ends up on main, so a green PR can still land a broken main
@@ -33,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
@@ -46,14 +45,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: rustfmt
-      # `--all` from src-tauri also covers tauri-plugin-screentime (a path
-      # dependency); tauri-plugin-android-blocker is a separate crate graph and
-      # needs its own invocation. Neither compiles anything.
       - name: cargo fmt --check (src-tauri, tauri-plugin-screentime)
         working-directory: src-tauri
-        run: cargo fmt --all --check
-      - name: cargo fmt --check (tauri-plugin-android-blocker)
-        working-directory: tauri-plugin-android-blocker
         run: cargo fmt --all --check
 
   frontend:
@@ -61,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
@@ -70,17 +63,13 @@ jobs:
       # Compiles the whole src/ ES-module graph and the index.html entry.
       # Fails on syntax errors, duplicate declarations, unresolved imports.
       - run: pnpm vite:build
-      # Exercises the Android-only Vite transforms without requiring the
-      # native Android/Gradle toolchain.
-      - run: pnpm vite:build:android
-      - run: pnpm verify:android-bundle
 
   tier0:
     name: Tier 0 unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
@@ -96,7 +85,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24

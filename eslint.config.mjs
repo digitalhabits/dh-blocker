@@ -27,9 +27,6 @@ export default [
             'src-tauri/target/**',
             'src-tauri/gen/**',
             'browser-ext-migration/**',
-            // Gradle output — the Kotlin unit-test run drops an HTML report
-            // with its own bundled JS in here. Git ignores it too.
-            'tauri-plugin-android-blocker/android/build/**',
         ],
     },
 
@@ -65,7 +62,6 @@ export default [
             globals: {
                 ...globals.browser,
                 // Compile-time constant injected by vite.config.js `define`.
-                __ANDROID_BUILD__: 'readonly',
                 __SYSTEM_TEST_BUILD__: 'readonly',
             },
         },
@@ -91,7 +87,6 @@ export default [
             sourceType: 'module',
             globals: {
                 ...globals.browser,
-                __ANDROID_BUILD__: 'readonly',
             },
         },
     },

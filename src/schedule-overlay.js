@@ -339,7 +339,7 @@ export function revokeOverlayAssetBlobUrls() {
 }
 
 export async function resolveOverlayImageAssetUrl(relativePath) {
-    if (!relativePath || state.isIOS || state.isAndroid) return null;
+    if (!relativePath || state.isIOS) return null;
     try {
         const fullPath = await tauriAPI.resolveOverlayAssetPath(relativePath);
         const ext = relativePath.split('.').pop()?.toLowerCase() || 'png';
@@ -362,7 +362,7 @@ export async function resolveOverlayImageAssetUrl(relativePath) {
 }
 
 export async function resolveOverlayAudioAssetUrl(relativePath) {
-    if (!relativePath || state.isIOS || state.isAndroid) return null;
+    if (!relativePath || state.isIOS) return null;
     try {
         const fullPath = await tauriAPI.resolveOverlayAssetPath(relativePath);
         const ext = relativePath.split('.').pop()?.toLowerCase() || 'webm';
@@ -378,7 +378,7 @@ export async function resolveOverlayAudioAssetUrl(relativePath) {
 }
 
 export async function resolveOverlayAssetUrl(relativePath) {
-    if (!relativePath || state.isIOS || state.isAndroid) return null;
+    if (!relativePath || state.isIOS) return null;
     if (/\.(png|jpe?g|gif|webp)$/i.test(relativePath)) {
         return resolveOverlayImageAssetUrl(relativePath);
     }
@@ -734,7 +734,7 @@ export async function applyScheduleStartOverlayPresentation({
 }
 
 export async function playAppBlockingLetsGoVoice() {
-    if (!state.appBlockingActiveStartOverlay?.voiceAsset || state.isIOS || state.isAndroid) return;
+    if (!state.appBlockingActiveStartOverlay?.voiceAsset || state.isIOS) return;
     try {
         const url = await resolveOverlayAssetUrl(state.appBlockingActiveStartOverlay.voiceAsset);
         if (!url) return;
@@ -1019,7 +1019,7 @@ export async function refreshScheduleOverlayCustomisePreview() {
 }
 
 export async function removeScheduleOverlayAsset(relativePath) {
-    if (!relativePath || state.isIOS || state.isAndroid) return;
+    if (!relativePath || state.isIOS) return;
     try {
         await tauriAPI.deleteOverlayAsset(relativePath);
     } catch (err) {
@@ -1392,7 +1392,7 @@ export function closeScheduleOverlayDeleteConfirmModal(confirmed) {
 }
 
 export async function openScheduleOverlayCustomiseModal(blocklist) {
-    if (!blocklist || state.isIOS || state.isAndroid) return;
+    if (!blocklist || state.isIOS) return;
     scheduleOverlayCustomiseBlocklist = blocklist;
 
     const messageEditorEl = document.getElementById('schedule-overlay-message-editor');

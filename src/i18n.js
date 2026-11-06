@@ -66,7 +66,6 @@ export const SETTINGS_TRANSLATIONS = {
             'I agree to Centre for Digital Habits\' <a href="https://digitalhabits.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/eula">End User License Agreement</a>',
         eulaPrivacyTitle: 'Private by design',
         eulaPrivacyLead: 'We collect no personal data. We only count how many people use Blocker.',
-        eulaPrivacyLeadNoPing: 'We collect no personal data, and Blocker sends nothing to us.',
         eulaHowWeCount: 'How we count',
         eulaHowWeCountHtml:
             'Once a day, Blocker sends an anonymous count with an ID that changes every month. You can turn it off in Settings. <a href="https://digitalhabits.org/privacy-policy#usage-count" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy#usage-count">Privacy Policy</a>',
@@ -100,18 +99,7 @@ export const SETTINGS_TRANSLATIONS = {
         startWarningMultiTitleFmt: '{count} focus spaces start in 2 minutes',
         startWarningMultiBodyFmt: '{names} start at {time}.',
         startWarningUnnamedSpace: 'Your focus space',
-        // Android Accessibility permission onboarding
-        androidPermissionsOnboardingBody:
-            'Digital Habits: Blocker needs the Accessibility permission to detect and block distracting apps and websites.',
-        androidAccessibilityGrantBtn: 'Grant accessibility access',
-        androidAccessibilityOpeningBtn: 'Opening Settings...',
-        androidAccessibilityWaitingStatus:
-            'Waiting for you to enable Digital Habits: Blocker in Accessibility settings…',
-        androidAccessibilityReturnStatus:
-            'Enable Digital Habits: Blocker in Accessibility, then return here.',
-        androidAccessibilityOpenFailedStatusFmt: 'Could not open Accessibility settings: {error}',
-        androidAllowlistUnsupported:
-            'Allow-mode focus spaces are not supported on Android yet. Choose Block mode or use this focus space on iOS.',
+
         allowlistPickerNoAdditions:
             'This allow-mode focus space is running, so nothing new can be allowed. To allow more apps, stop the focus space first.',
         allowlistPickerKeepOne:
@@ -143,9 +131,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeStep2TitleIosHtml: 'Allow Screen Time access',
         welcomeStep2BodyIosHtml:
             '<em>Digital Habits: Blocker</em> uses Screen Time to shield apps and websites on iPhone and iPad. We\'ll ask for permission before your first block.',
-        welcomeStep2TitleAndroidHtml: 'Enable Android Accessibility setting',
-        welcomeStep2BodyAndroidHtml:
-            '<em>Digital Habits: Blocker</em> uses Android Accessibility to detect blocked apps and websites and show the block screen. We\'ll open Android Settings so you can enable it.',
+
         welcomeStep3TitleHtml: 'Start blocking! 🥳',
         welcomeStep3BodyHtml:
             'Pick the websites and apps that pull you off task, and set the times you want them out of reach. <em>Digital Habits: Blocker</em> takes care of the rest.',
@@ -477,6 +463,10 @@ export const SETTINGS_TRANSLATIONS = {
         settingsBlocklistsIoHint: 'Save a backup or restore from a file.',
         settingsUsagePingLabel: 'Send anonymous usage count',
         settingsUsagePingHint: 'Once a day, with an ID that changes every month. Nothing about your blocks, sites or apps.',
+        storeReviewPromptBody: 'Enjoying Blocker? A review helps others find it.',
+        storeReviewLeaveReview: 'Leave a review',
+        storeReviewAlreadyDid: 'I already did',
+        storeReviewDismissAria: 'Dismiss review prompt',
         settingsStartWarningsLabel: 'Send schedule-start notifications',
         settingsStartWarningsHint: 'A notification 2 minutes before a scheduled focus space starts or comes back on after a pause.',
         settingsStartWarningsDenied: 'Notifications are turned off for Digital Habits: Blocker in iOS Settings.',
@@ -907,7 +897,6 @@ export const SETTINGS_TRANSLATIONS = {
         overrideAllBlocks: 'Stop All Blocks (with challenge)',
         settingsOverrideAllLabel: 'Stop all blocks & schedules',
         settingsOverrideAllBtn: 'Stop all',
-        // Android also prefills its native block screen from this setting.
         // In-app uninstall (macOS only)
         uninstallApp: 'Uninstall Digital Habits: Blocker',
         uninstallAppBtn: 'Uninstall…',
@@ -1028,7 +1017,6 @@ export const SETTINGS_TRANSLATIONS = {
             'Jeg accepterer Center for Digitale Vaners <a href="https://digitalhabits.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/eula">brugerbetingelser</a>',
         eulaPrivacyTitle: 'Privatliv som udgangspunkt',
         eulaPrivacyLead: 'Vi indsamler ingen persondata. Vi tæller kun, hvor mange der bruger Blocker.',
-        eulaPrivacyLeadNoPing: 'Vi indsamler ingen persondata, og Blocker sender intet til os.',
         eulaHowWeCount: 'Sådan tæller vi',
         eulaHowWeCountHtml:
             'Én gang om dagen sender Blocker en anonym optælling med et ID, der skifter hver måned. Du kan slå det fra under Indstillinger. <a href="https://digitalhabits.org/privacy-policy#usage-count" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy#usage-count">Privatlivspolitik</a>',
@@ -1062,18 +1050,7 @@ export const SETTINGS_TRANSLATIONS = {
         startWarningMultiTitleFmt: '{count} fokusrum starter om 2 minutter',
         startWarningMultiBodyFmt: '{names} starter kl. {time}.',
         startWarningUnnamedSpace: 'Dit fokusrum',
-        // Android Accessibility permission onboarding
-        androidPermissionsOnboardingBody:
-            'Digital Habits: Blocker har brug for Accessibility-tilladelse for at registrere og blokere distraherende apps og hjemmesider.',
-        androidAccessibilityGrantBtn: 'Giv Accessibility-adgang',
-        androidAccessibilityOpeningBtn: 'Åbner Indstillinger...',
-        androidAccessibilityWaitingStatus:
-            'Venter på, at du aktiverer Digital Habits: Blocker under Accessibility-indstillinger…',
-        androidAccessibilityReturnStatus:
-            'Aktiver Digital Habits: Blocker under Accessibility, og vend derefter tilbage hertil.',
-        androidAccessibilityOpenFailedStatusFmt: 'Kunne ikke åbne Accessibility-indstillinger: {error}',
-        androidAllowlistUnsupported:
-            'Tilladelsestilstand er endnu ikke understøttet på Android. Vælg Blokering, eller brug dette fokusrum på iOS.',
+
         allowlistPickerNoAdditions:
             'Dette fokusrum i tilladelsestilstand kører, så intet nyt kan tillades. Stop fokusrummet først for at tillade flere apps.',
         allowlistPickerKeepOne:
@@ -1105,9 +1082,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeStep2TitleIosHtml: 'Giv adgang til Screen Time',
         welcomeStep2BodyIosHtml:
             '<em>Digital Habits: Blocker</em> bruger Screen Time til at skærme apps og hjemmesider på iPhone og iPad. Vi beder om tilladelse før din første blokering.',
-        welcomeStep2TitleAndroidHtml: 'Slå Android Accessibility-indstilling til',
-        welcomeStep2BodyAndroidHtml:
-            '<em>Digital Habits: Blocker</em> bruger Android Accessibility til at registrere blokerede apps og hjemmesider og vise blokeringsskærmen. Vi åbner Android-indstillinger, så du kan slå det til.',
+
         welcomeStep3TitleHtml: 'Vælg, hvad der skal blokeres',
         welcomeStep3BodyHtml:
             'Vælg de hjemmesider og apps, der distraherer dig, og bestem hvornår de skal være utilgængelige. <em>Digital Habits: Blocker</em> klarer resten.',
@@ -1422,6 +1397,10 @@ export const SETTINGS_TRANSLATIONS = {
         settingsBlocklistsIoHint: 'Gem en sikkerhedskopi, eller gendan fra en fil.',
         settingsUsagePingLabel: 'Send anonym brugsoptælling',
         settingsUsagePingHint: 'Én gang om dagen, med et ID der skifter hver måned. Intet om dine blokeringer, sider eller apps.',
+        storeReviewPromptBody: 'Kan du lide Blocker? En anmeldelse hjælper andre med at finde appen.',
+        storeReviewLeaveReview: 'Skriv en anmeldelse',
+        storeReviewAlreadyDid: 'Det har jeg allerede',
+        storeReviewDismissAria: 'Luk anmeldelsesprompt',
         settingsStartWarningsLabel: 'Send notifikationer, før planlagte fokusrum starter',
         settingsStartWarningsHint: 'En notifikation 2 minutter før et planlagt fokusrum starter eller slår til igen efter en pause.',
         settingsStartWarningsDenied: 'Notifikationer er slået fra for Digital Habits: Blocker under iOS-indstillinger.',
@@ -1961,7 +1940,6 @@ export const SETTINGS_TRANSLATIONS = {
         eulaAgreeLineHtml: '我同意 Centre for Digital Habits 的 <a href="https://digitalhabits.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/eula">最终用户许可协议</a>',
         eulaPrivacyTitle: '隐私优先',
         eulaPrivacyLead: '我们不收集任何个人数据，只统计有多少人在使用 Blocker。',
-        eulaPrivacyLeadNoPing: '我们不收集任何个人数据，Blocker 也不会向我们发送任何内容。',
         eulaHowWeCount: '我们如何统计',
         eulaHowWeCountHtml:
             'Blocker 每天发送一次匿名计数，其 ID 每月更换。你可以在设置中关闭此功能。<a href="https://digitalhabits.org/privacy-policy#usage-count" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy#usage-count">隐私政策</a>',
@@ -1991,13 +1969,7 @@ export const SETTINGS_TRANSLATIONS = {
         startWarningMultiTitleFmt: '{count} 个专注空间将在 2 分钟后开始',
         startWarningMultiBodyFmt: '{names} 将在 {time} 开始。',
         startWarningUnnamedSpace: '你的专注空间',
-        androidPermissionsOnboardingBody: 'Digital Habits: Blocker 需要无障碍权限以检测并阻止分心的应用和网站。',
-        androidAccessibilityGrantBtn: '授予无障碍访问权限',
-        androidAccessibilityOpeningBtn: '正在打开设置…',
-        androidAccessibilityWaitingStatus: '等待你在无障碍设置中启用 Digital Habits: Blocker…',
-        androidAccessibilityReturnStatus: '在无障碍设置中启用 Digital Habits: Blocker，然后返回此处。',
-        androidAccessibilityOpenFailedStatusFmt: '无法打开无障碍设置：{error}',
-        androidAllowlistUnsupported: 'Android 目前尚不支持允许模式的专注空间。请选择阻止模式，或在 iOS 上使用此专注空间。',
+
         allowlistPickerNoAdditions: '此允许模式专注空间正在运行，因此无法允许新的内容。如需允许更多应用，请先停止此专注空间。',
         allowlistPickerKeepOne: '此允许模式专注空间启动时至少选择了一个应用。移除所有应用将使所有应用都可访问。如需移除所有应用，请先停止此专注空间。',
         // One-time rename notice for users upgrading from ReDD Blocker
@@ -2020,8 +1992,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeStep2BodyHtml: '{LOGO}<strong>Digital Habits: Focus</strong> 扩展负责真正阻止网站。能自动安装的浏览器我们会自动处理，并告诉你需要手动完成的步骤。',
         welcomeStep2TitleIosHtml: '允许屏幕使用时间访问',
         welcomeStep2BodyIosHtml: '在 iPhone 和 iPad 上，<em>Digital Habits: Blocker</em> 使用屏幕时间来屏蔽应用和网站。首次阻止前我们会请求权限。',
-        welcomeStep2TitleAndroidHtml: '启用 Android 无障碍设置',
-        welcomeStep2BodyAndroidHtml: '<em>Digital Habits: Blocker</em> 使用 Android 无障碍功能来检测被阻止的应用和网站并显示阻止界面。我们会打开 Android 设置以便你启用它。',
+
         welcomeStep3TitleHtml: '开始阻止吧！🥳',
         welcomeStep3BodyHtml: '选择让你分心的网站和应用，并设置你希望它们不可访问的时间。剩下的交给 <em>Digital Habits: Blocker</em>。',
         welcomeDemoToggleLabel: '查看 30 秒演示',
@@ -2346,6 +2317,10 @@ export const SETTINGS_TRANSLATIONS = {
         settingsBlocklistsIoHint: '备份或恢复你的专注空间。',
         settingsUsagePingLabel: '发送匿名使用计数',
         settingsUsagePingHint: '每天一次，ID 每月更换。不包含你的屏蔽、网站或应用信息。',
+        storeReviewPromptBody: '喜欢 Blocker 吗？写条评价可以帮助其他人发现它。',
+        storeReviewLeaveReview: '去评价',
+        storeReviewAlreadyDid: '我已经评价过了',
+        storeReviewDismissAria: '关闭评价提示',
         settingsStartWarningsLabel: '发送计划开始通知',
         settingsStartWarningsHint: '在已计划的专注空间开始前 2 分钟，或暂停结束、重新开启前 2 分钟发送通知。',
         settingsStartWarningsDenied: 'Digital Habits: Blocker 的通知已在 iOS 设置中关闭。',
@@ -2836,7 +2811,6 @@ export function weekdayLetterMon0List() {
     if (Array.isArray(row) && row.length === 7) return row;
     return SETTINGS_TRANSLATIONS.en.dayLetterMon0;
 }
-
 
 export function tSettings(key) {
     const lang = getSettingsLanguage();

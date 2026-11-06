@@ -7,16 +7,23 @@ fn main() {
         build_and_link_safari_bridge();
     }
 
-    // Align the native library's LOAD segments to 16 KB pages on Android
-    // (Android 15+ 16 KB page-size devices; Play Store requires it for uploads
-    // from Nov 2025). NDK r28+ makes this the linker default, but we build with
-    // r27, so opt in. Done via rustc-link-arg rather than .cargo/config.toml
-    // rustflags, which the Tauri Android build overrides through RUSTFLAGS.
-    if std::env::var("CARGO_CFG_TARGET_OS").ok().as_deref() == Some("android") {
-        println!("cargo:rustc-link-arg=-Wl,-z,max-page-size=16384");
-    }
-
     watch_icon_assets();
+
+    // Tauri embeds Common Controls v6 in the app, but its resource is not
+    // linked into the lib unit-test executable. TaskDialogIndirect then fails
+    // to resolve before the test harness starts (STATUS_ENTRYPOINT_NOT_FOUND).
+    // Apply this to all linked outputs, including lib unit tests. Cargo has no
+    // link-arg selector for lib unit tests; rustc-link-arg-tests only covers
+    // standalone integration-test targets.
+    if std::env::var("CARGO_CFG_TARGET_OS").ok().as_deref() == Some("windows")
+        && std::env::var("CARGO_CFG_TARGET_ENV").ok().as_deref() == Some("msvc")
+    {
+        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+        println!("cargo:rustc-link-arg=/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'");
+        // The app already links Tauri's manifest resource. Do not generate a
+        // second resource with the same ID when linking that binary.
+        println!("cargo:rustc-link-arg-bins=/MANIFEST:NO");
+    }
 
     tauri_build::build();
 }

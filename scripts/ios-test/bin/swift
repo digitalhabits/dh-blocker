@@ -1,0 +1,20 @@
+#!/usr/bin/env sh
+set -eu
+# Xcode 27's SwiftPM default can fail to produce the static iOS Tauri plug-in.
+# Leave host Swift and other Xcode versions on their normal build systems.
+if [ "${1:-}" = build ]; then
+    xcode_version=$(/usr/bin/xcodebuild -version)
+    for arg do
+        case "$arg" in
+            *iPhoneOS*.sdk*|*iPhoneSimulator*.sdk*)
+                case "$xcode_version" in
+                    'Xcode 27.'*)
+                        shift
+                        exec /usr/bin/swift build --build-system native "$@"
+                        ;;
+                esac
+                ;;
+        esac
+    done
+fi
+exec /usr/bin/swift "$@"

@@ -1583,113 +1583,6 @@
     }
 
     // ========================================
-    // CATEGORY 18: ANDROID PAYLOAD (T143-T152)
-    // ========================================
-
-    // Android's Kotlin side has no notion of allow mode at any layer, so
-    // blockedApps is always treated as a denylist. Sending an allow-mode focus
-    // space would block precisely the apps it is meant to permit, so the payload
-    // builder omits those spaces entirely.
-    function runAndroidPayloadTests() {
-        console.log('\n🤖 Category 18: Android Payload');
-        console.log('-------------------------------');
-
-        const {
-            buildAndroidScheduleEntries: build,
-            isAndroidAllowlistUnsupported: unsupported,
-        } = window.__REDDBLOCK_INTERNALS__;
-        const saved = window.__REDDBLOCK_INTERNALS__.appData;
-
-        const seg = { startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, days: [] };
-        const withData = (blocklists, { schedules = [], activeBlocks = [] } = {}) => {
-            window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({ blocklists, schedules, activeBlocks });
-        };
-
-        try {
-            (function T142() {
-                const allowMode = createMockBlocklist({ mode: 'allowlist', apps: ['com.allowed'] });
-                const blockMode = createMockBlocklist({ mode: 'blocklist', apps: ['com.blocked'] });
-                assert(unsupported(allowMode, true), 'T142: Android rejects allow-mode starts');
-                assert(!unsupported(blockMode, true), 'T142: Android still permits block-mode starts');
-                assert(!unsupported(allowMode, false), 'T142: allow mode remains supported on non-Android platforms');
-            })();
-
-            (function T143() {
-                const bl = createMockBlocklist({ mode: 'blocklist', apps: ['com.x'], websites: ['x.com'] });
-                withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
-                const entries = build();
-                assertEqual(entries.length, 1, 'T143: a block-mode schedule produces an entry');
-                assertEqual(entries[0].blockedApps, ['com.x'], 'T143: and carries its apps');
-            })();
-
-            (function T144() {
-                const bl = createMockBlocklist({ mode: 'allowlist', apps: ['com.x'], websites: ['x.com'] });
-                withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
-                assertEqual(build().length, 0, 'T144: an allow-mode schedule is omitted entirely');
-            })();
-
-            (function T145() {
-                // The dangerous case: without the skip, com.keepme would be sent as
-                // blockedApps and Kotlin would block the one app meant to stay open.
-                const bl = createMockBlocklist({ mode: 'allowlist', apps: ['com.keepme'], websites: [] });
-                withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
-                const allApps = build().flatMap(e => e.blockedApps || []);
-                assert(!allApps.includes('com.keepme'), 'T145: an allowed app never reaches the payload as a blocked app');
-            })();
-
-            (function T146() {
-                const bl = createMockBlocklist({ mode: 'allowlist', apps: ['com.x'] });
-                withData([bl], { activeBlocks: [createMockBlock(bl.id, Date.now() - 1000, Date.now() + 60000)] });
-                assertEqual(build().length, 0, 'T146: an allow-mode one-off block is omitted too');
-            })();
-
-            (function T147() {
-                const blockMode = createMockBlocklist({ mode: 'blocklist', apps: ['com.blocked'] });
-                const allowMode = createMockBlocklist({ mode: 'allowlist', apps: ['com.allowed'] });
-                withData([blockMode, allowMode], {
-                    schedules: [createMockSchedule(blockMode.id, [seg]), createMockSchedule(allowMode.id, [seg])],
-                });
-                const entries = build();
-                assertEqual(entries.length, 1, 'T147: only the block-mode space survives a mixed set');
-                assertEqual(entries[0].blockedApps, ['com.blocked'], 'T147: and it is the right one');
-            })();
-
-            (function T148() {
-                // Absent mode must behave as a blocklist — most saved data predates
-                // the field entirely.
-                const bl = createMockBlocklist({ apps: ['com.x'] });
-                delete bl.mode;
-                withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
-                assertEqual(build().length, 1, 'T148: a blocklist with no mode field is still enforced');
-            })();
-
-            (function T149() {
-                const bl = createMockBlocklist({ mode: 'blocklist', apps: ['com.x'] });
-                withData([bl], {
-                    schedules: [createMockSchedule(bl.id, [seg, { ...seg, startHour: 19, endHour: 20 }])],
-                });
-                assertEqual(build().length, 2, 'T149: each segment still becomes its own entry');
-            })();
-
-            (function T150() {
-                // An allow-mode space must not suppress an unrelated block-mode one
-                // that happens to share a segment shape.
-                const allowMode = createMockBlocklist({ mode: 'allowlist', apps: ['com.allowed'] });
-                const blockMode = createMockBlocklist({ mode: 'blocklist', apps: ['com.blocked'] });
-                withData([allowMode, blockMode], {
-                    schedules: [createMockSchedule(allowMode.id, [seg])],
-                    activeBlocks: [createMockBlock(blockMode.id, Date.now() - 1000, Date.now() + 60000)],
-                });
-                const entries = build();
-                assertEqual(entries.length, 1, 'T150: the block-mode one-off still syncs alongside a skipped allow space');
-                assertEqual(entries[0].type, 'MANUAL', 'T150: and keeps its MANUAL type');
-            })();
-        } finally {
-            window.__REDDBLOCK_INTERNALS__.appData = saved;
-        }
-    }
-
-    // ========================================
     // CATEGORY: DESKTOP APP WATCHER PAYLOAD (T208-T212)
     // ========================================
 
@@ -2122,7 +2015,7 @@
                     createMockSchedule(blockMode.id, [seg]),
                 ]);
                 const entries = build();
-                assertEqual(entries.length, 2, 'T157: mixed modes both sync (unlike Android, which skips allow mode)');
+                assertEqual(entries.length, 2, 'T157: mixed modes both sync');
                 const byMode = Object.fromEntries(entries.map(e => [e.mode ?? 'null', e.domains[0]]));
                 assertEqual(byMode.allowlist, 'allowed.com', 'T157: the allow entry carries the allowed domain');
                 assertEqual(byMode.null, 'blocked.com', 'T157: the block entry carries the blocked domain');
@@ -2473,7 +2366,7 @@
         const api = internals.tauriAPI;
         const methodNames = ['saveData', 'screentimeSetResumePayload', 'screentimeRegisterOneOffActivity', 'screentimeCancelResume',
             'screentimeStartBlock', 'screentimeClearBlock', 'screentimeClearManualBlock',
-            'setSchedulesPlugin', 'checkHelperStatus', 'setBlockedAppsViaHelper', 'androidSetSchedules'];
+            'setSchedulesPlugin', 'checkHelperStatus', 'setBlockedAppsViaHelper'];
         const savedMethods = Object.fromEntries(methodNames.map(name => [name, api[name]]));
         const savedAppData = internals.appData;
         const savedLastBlockedDomains = internals.lastBlockedDomains;
@@ -2513,7 +2406,6 @@
                 return scheduleSyncResults?.length ? scheduleSyncResults.shift() : { success: true };
             };
             api.setBlockedAppsViaHelper = async () => { events.push('desktop-app-sync'); return { success: true }; };
-            api.androidSetSchedules = async () => { events.push('android-schedule-sync'); return { success: true }; };
 
             const setBlock = (block) => {
                 currentTarget = block;
@@ -3386,7 +3278,7 @@
         }
         const body = document.body;
         if (body.classList.contains('mobile-phone-home') || body.classList.contains('handset-device')
-            || body.classList.contains('ios') || body.classList.contains('android')) {
+            || body.classList.contains('ios')) {
             console.warn('   ⏭️ Compact card tap tests skipped: desktop-only layout path');
             return;
         }
@@ -4268,7 +4160,7 @@
             runSelfBlockPreventionTests();
             runProtectedDomainTests();
             runIOSAllowlistPolicyTests();
-            runAndroidPayloadTests();
+
             runDesktopAppPayloadTests();
             runIOSAllowLimitTests();
             runWarningAttributionTests();
@@ -4311,7 +4203,7 @@
         runSelfBlockPreventionTests,
         runProtectedDomainTests,
         runIOSAllowlistPolicyTests,
-        runAndroidPayloadTests,
+
         runDesktopAppPayloadTests,
         runIOSSchedulePayloadTests,
         runEditFrictionGateTests,

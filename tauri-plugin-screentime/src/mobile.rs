@@ -14,8 +14,6 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
     _app: &AppHandle<R>,
     api: PluginApi<R, C>,
 ) -> crate::Result<Screentime<R>> {
-    #[cfg(target_os = "android")]
-    let handle = api.register_android_plugin("", "ScreentimePlugin")?;
     #[cfg(target_os = "ios")]
     let handle = api.register_ios_plugin(init_plugin_screentime)?;
     Ok(Screentime(handle))

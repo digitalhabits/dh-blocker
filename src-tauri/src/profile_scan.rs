@@ -404,7 +404,16 @@ fn firefox_exe_dir() -> Option<PathBuf> {
 /// on exactly one main executable path. Helper processes and processes whose
 /// executable path is unavailable are deliberately ignored; an ambiguous or
 /// empty observation falls back to the installed-app lookup below.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
+fn firefox_running_exe_dir() -> Option<PathBuf> {
+    let processes = crate::running_apps::instances(crate::running_apps::FIREFOX)
+        .into_iter()
+        .map(|app| ("firefox".to_string(), app.executable))
+        .collect::<Vec<_>>();
+    firefox_exe_dir_from_processes(&processes)
+}
+
+#[cfg(target_os = "windows")]
 fn firefox_running_exe_dir() -> Option<PathBuf> {
     use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
@@ -529,7 +538,7 @@ pub fn find_browser_exe(name: &str) -> Option<PathBuf> {
 fn firefox_app_present() -> bool {
     #[cfg(target_os = "macos")]
     {
-        is_process_running(&["firefox", "firefox-bin"])
+        crate::running_apps::any_running(crate::running_apps::FIREFOX)
     }
     #[cfg(target_os = "windows")]
     {
@@ -764,12 +773,16 @@ enum ChromiumBrowser {
 /// because install paths vary widely (Setapp, manual relocations,
 /// portable installs, etc.) and stale profile dirs remain after
 /// uninstall. The compliance banner only matters when the user has
-/// the browser open; if it's closed, no nag.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+/// the browser open; if it's closed, no nag. macOS asks Launch Services
+/// instead (`crate::running_apps`).
+#[cfg(target_os = "windows")]
 fn is_process_running(names: &[&str]) -> bool {
-    use sysinfo::{ProcessesToUpdate, System};
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
     let mut sys = System::new();
-    sys.refresh_processes(ProcessesToUpdate::All, true);
+    // Names only. The default refresh also reads every process's CPU,
+    // memory, command line and environment, and the enforcer runs this for
+    // each running browser every tick of an active block.
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
     sys.processes().values().any(|p| {
         let pname = p.name().to_string_lossy().to_string();
         names.iter().any(|n| pname.eq_ignore_ascii_case(n))
@@ -838,27 +851,35 @@ impl ChromiumBrowser {
     }
 
     fn app_present(self) -> bool {
-        // Process names as reported by `sysinfo` (which mirrors what
-        // /bin/ps and tasklist see on each platform).
         #[cfg(target_os = "macos")]
-        let names: &[&str] = match self {
-            ChromiumBrowser::Chrome => &["Google Chrome", "Google Chrome Helper"],
-            ChromiumBrowser::Brave => &["Brave Browser", "Brave Browser Helper"],
-            ChromiumBrowser::Edge => &["Microsoft Edge", "Microsoft Edge Helper"],
-        };
+        {
+            let bundle_id = match self {
+                ChromiumBrowser::Chrome => "com.google.Chrome",
+                ChromiumBrowser::Brave => "com.brave.Browser",
+                ChromiumBrowser::Edge => "com.microsoft.edgemac",
+            };
+            crate::running_apps::any_running(&[bundle_id])
+        }
+        // Process names as reported by `sysinfo` (which mirrors what
+        // tasklist sees).
         #[cfg(target_os = "windows")]
-        let names: &[&str] = match self {
-            ChromiumBrowser::Chrome => &["chrome.exe"],
-            ChromiumBrowser::Brave => &["brave.exe"],
-            ChromiumBrowser::Edge => &["msedge.exe"],
-        };
+        {
+            let names: &[&str] = match self {
+                ChromiumBrowser::Chrome => &["chrome.exe"],
+                ChromiumBrowser::Brave => &["brave.exe"],
+                ChromiumBrowser::Edge => &["msedge.exe"],
+            };
+            is_process_running(names)
+        }
         #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-        let names: &[&str] = match self {
-            ChromiumBrowser::Chrome => &["chrome", "google-chrome"],
-            ChromiumBrowser::Brave => &["brave", "brave-browser"],
-            ChromiumBrowser::Edge => &["microsoft-edge", "msedge"],
-        };
-        is_process_running(names)
+        {
+            let names: &[&str] = match self {
+                ChromiumBrowser::Chrome => &["chrome", "google-chrome"],
+                ChromiumBrowser::Brave => &["brave", "brave-browser"],
+                ChromiumBrowser::Edge => &["microsoft-edge", "msedge"],
+            };
+            is_process_running(names)
+        }
     }
 
     fn root(self) -> Option<PathBuf> {
@@ -1343,7 +1364,7 @@ fn safari_presence_only() -> BrowserStatus {
         || dirs::home_dir()
             .map(|h| h.join("Applications/Safari.app").exists())
             .unwrap_or(false);
-    let running = is_process_running(&["Safari"]);
+    let running = crate::running_apps::any_running(&["com.apple.Safari"]);
     BrowserStatus {
         present: running,
         installed,
@@ -1426,7 +1447,7 @@ fn parse_safari_extensions_plist(
 #[cfg(target_os = "macos")]
 fn scan_safari() -> BrowserStatus {
     log::info!("tcc-probe: profile_scan::scan_safari() entered");
-    let running = is_process_running(&["Safari"]);
+    let running = crate::running_apps::any_running(&["com.apple.Safari"]);
     let mut profiles = Vec::new();
     let mut error = None;
     let mut needs_fda_access = crate::cross_app_consent::safari_fda_was_revoked();

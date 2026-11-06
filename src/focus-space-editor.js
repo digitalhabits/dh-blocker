@@ -453,7 +453,7 @@ let editorDiscardResolver = null;
 /**
  * The app's own "Discard changes?" dialog (not the OS one), so it looks like
  * the rest of the app. Resolves true for Discard, false for Keep editing,
- * Escape, a click outside, or Android back.
+ * Escape or a click outside.
  */
 export function showEditorDiscardConfirmModal() {
     const modal = document.getElementById('editor-discard-modal');

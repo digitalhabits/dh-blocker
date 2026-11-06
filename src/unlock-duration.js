@@ -15,7 +15,7 @@ export function rememberBreakMinutes(settings, minutes) {
     if (minutes > 0 && PAUSE_MINUTE_OPTIONS.includes(minutes)) settings.lastBreakMinutes = minutes;
 }
 
-/** 24 hours, the Android default. Also applied to spaces saved before this field existed. */
+/** 24 hours. Also applied to spaces saved before this field existed. */
 export const DEFAULT_UNLOCK_MINUTES = 1440;
 
 /** What a newly created focus space starts on after an early stop. */

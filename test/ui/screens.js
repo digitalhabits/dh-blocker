@@ -7,7 +7,7 @@
 // branch and falls through to `body.windows`, so an unstamped screenshot taken
 // in a container or CI silently claims to be a Windows one. It also decides
 // whether a screen exists at all: `handset-device` hides whole sections, so
-// asking for a week calendar on `android` or `iphone` is asking for a screen the
+// asking for a week calendar on `iphone` is asking for a screen the
 // app never renders. The driver fails such a screen rather than emitting a blank
 // PNG.
 //
@@ -22,7 +22,7 @@ import { fixtures } from './fixtures.js';
  * @typedef {object} Screen
  * @property {string}   name      output filename stem
  * @property {object}   fixture   appData to boot with
- * @property {string}   platform  'windows' | 'mac' | 'ipad' | 'iphone' | 'android'
+ * @property {string}   platform  'windows' | 'mac' | 'ipad' | 'iphone'
  * @property {string}  [theme]    'light' | 'dark'
  * @property {object}  [viewport] { width, height } — device size, not a crop
  * @property {string}  [clip]     selector to screenshot instead of the whole page
@@ -33,7 +33,7 @@ import { fixtures } from './fixtures.js';
 // screenshot — the handset layout rules are width-dependent as well as
 // class-dependent.
 const IPHONE = { width: 390, height: 844 };
-const ANDROID_PHONE = { width: 412, height: 915 };
+
 const IPAD = { width: 1024, height: 768 };
 const DESKTOP = { width: 1100, height: 900 };
 
@@ -185,12 +185,7 @@ export const screens = [
         platform: 'iphone',
         viewport: IPHONE,
     },
-    {
-        name: 'home-android',
-        fixture: fixtures.crowdedWeek,
-        platform: 'android',
-        viewport: ANDROID_PHONE,
-    },
+
     {
         name: 'home-windows-dark',
         fixture: fixtures.crowdedWeek,
