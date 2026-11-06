@@ -296,3 +296,105 @@ fn the_enforced_set_has_no_duplicates() {
     }
     assert_eq!(seen.len(), 5);
 }
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[test]
+fn scans_only_running_extension_browsers() {
+    use std::collections::HashSet;
+    let running = HashSet::from([BrowserKey::Chrome, BrowserKey::Firefox, BrowserKey::Brave]);
+    let extension = extension_browsers(&running, |key| {
+        assert!(
+            running.contains(&key),
+            "closed browsers need no method lookup"
+        );
+        matches!(key, BrowserKey::Chrome | BrowserKey::Brave)
+    });
+    assert_eq!(extension, HashSet::from([BrowserKey::Firefox]));
+    assert_eq!(extension_browsers(&running, |_| false), running);
+    assert!(extension_browsers(&running, |_| true).is_empty());
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[test]
+fn scan_selection_changes_on_the_next_snapshot() {
+    use std::cell::Cell;
+    use std::collections::HashSet;
+    let running = HashSet::from([BrowserKey::Firefox]);
+    let automation = Cell::new(true);
+    let selected = extension_browsers(&running, |_| automation.get());
+    automation.set(false);
+    assert!(!selected.contains(&BrowserKey::Firefox));
+    assert_eq!(extension_browsers(&running, |_| automation.get()), running);
+}
+
+/// Read-only local measurement of the work removed when every running
+/// browser uses UI Automation. Run with --ignored --nocapture; it reads real
+/// browser profiles, but never starts the enforcer or sends browser input.
+#[cfg(target_os = "windows")]
+#[test]
+#[ignore = "local performance probe; reads running browsers' profiles"]
+fn windows_automation_profile_scan_cost() {
+    use windows::Win32::Foundation::FILETIME;
+    use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+
+    fn cpu_ms() -> f64 {
+        let (mut created, mut exited, mut kernel, mut user) = (
+            FILETIME::default(),
+            FILETIME::default(),
+            FILETIME::default(),
+            FILETIME::default(),
+        );
+        unsafe {
+            GetProcessTimes(
+                GetCurrentProcess(),
+                &mut created,
+                &mut exited,
+                &mut kernel,
+                &mut user,
+            )
+            .expect("current process times");
+        }
+        let ticks = |t: FILETIME| ((t.dwHighDateTime as u64) << 32) | t.dwLowDateTime as u64;
+        (ticks(kernel) + ticks(user)) as f64 / 10_000.0
+    }
+
+    let running = running_browsers();
+    assert!(
+        !running.is_empty(),
+        "open a supported browser for the probe"
+    );
+    let extension = extension_browsers(&running, |_| true);
+    let scan = |selected: &std::collections::HashSet<BrowserKey>| {
+        std::hint::black_box(profile_scan::scan_filter(|label| {
+            selected.iter().any(|key| key.setting_key() == label)
+        }));
+    };
+    eprintln!("Running browsers: {running:?}; simulated method: all UI Automation");
+    for (label, selected) in [("before", &running), ("after", &extension)] {
+        scan(selected); // Warm filesystem caches before measuring.
+        let cpu = cpu_ms();
+        let wall = Instant::now();
+        for _ in 0..50 {
+            scan(selected);
+        }
+        eprintln!(
+            "{label}: 50 scan passes, CPU {:.3} ms, wall {:.3} ms",
+            cpu_ms() - cpu,
+            wall.elapsed().as_secs_f64() * 1000.0
+        );
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn only_extension_browsers_have_their_profile_read() {
+    assert!(judged_by_extension(false, false));
+    assert!(
+        !judged_by_extension(true, false),
+        "Automation is judged by its grant"
+    );
+    assert!(
+        !judged_by_extension(false, true),
+        "Firefox on Accessibility is judged by the grant, not its add-on"
+    );
+}

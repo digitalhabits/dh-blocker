@@ -99,10 +99,7 @@ impl AutomationIo for FakeIo {
         self.permissions.push((browser, state));
         let mut state_guard = shared.lock().expect("fake shared state");
         let runtime = state_guard.runtimes.entry(browser).or_default();
-        runtime.state = state;
-        if state == PermState::Denied {
-            runtime.next_attempt = now + denied_retry;
-        }
+        apply_permission(runtime, state, denied_retry, now);
     }
 }
 
@@ -830,4 +827,38 @@ fn read_tabs_script_runs_against_safari() {
     let out = run_osascript(&read_tabs_script(SupportedBrowser::Safari))
         .expect("read script compiles and runs against Safari's dictionary");
     assert!(parse_tab_rows(&out).is_empty());
+}
+
+#[test]
+fn a_successful_script_vouches_for_the_grant_only_briefly() {
+    let start = Instant::now();
+    let mut rt = BrowserRuntime::default();
+    apply_permission(&mut rt, PermState::Granted, DENIED_RETRY, start);
+    assert!(grant_is_fresh(
+        rt.granted_at,
+        start + BACKGROUND_BROWSER_TICK
+    ));
+    assert!(
+        !grant_is_fresh(rt.granted_at, start + GRANT_CONFIRMATION_TTL + TICK),
+        "a grant nobody has re-confirmed must not excuse the enforcer's probe"
+    );
+}
+
+#[test]
+fn a_denial_withdraws_the_confirmed_grant_at_once() {
+    // Revoking Automation must reach the enforcer on the next tick, not
+    // after the confirmation would have expired.
+    let start = Instant::now();
+    let mut rt = BrowserRuntime::default();
+    apply_permission(&mut rt, PermState::Granted, DENIED_RETRY, start);
+    apply_permission(&mut rt, PermState::Denied, DENIED_RETRY, start + TICK);
+    assert!(!grant_is_fresh(rt.granted_at, start + TICK));
+}
+
+#[test]
+fn an_unknown_answer_is_no_confirmation() {
+    let mut rt = BrowserRuntime::default();
+    assert!(!grant_is_fresh(rt.granted_at, Instant::now()));
+    apply_permission(&mut rt, PermState::Unknown, DENIED_RETRY, Instant::now());
+    assert!(!grant_is_fresh(rt.granted_at, Instant::now()));
 }
