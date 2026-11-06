@@ -213,7 +213,6 @@ all feature-gated code. In particular, system-test data isolation needs
 Clippy's platform jobs still use default features.
 
 Run `cargo clippy --lib --bins --tests -- -D warnings` locally before pushing
-Rust. A green lint run is not proof of no dead code or deprecations: ESLint's
-`no-unused-vars` is a warning, and the Rust crate currently allows deprecations.
+Rust. ESLint rejects unused bindings, and the Rust crate currently allows deprecations.
 Consult the lint configuration and workflows for the current exceptions rather
 than extending them to silence a new problem.

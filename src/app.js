@@ -1,45 +1,24 @@
 // Tauri API imports - proper ES modules from @tauri-apps/api
-import { invoke, convertFileSrc, Channel } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
-import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { ask, message, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
-import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import logoReddFocusUrl from './images/logo-reddfocus.svg';
 import logoReddShieldUrl from './images/logo-redd-shield.svg';
 import appleLogoUrl from './images/apple-logo.svg';
-import iconChromeUrl from './images/icon-chrome.svg';
-import iconBraveUrl from './images/icon-brave.svg';
-import iconEdgeUrl from './images/icon-edge.svg';
-import iconFirefoxUrl from './images/icon-firefox.svg';
-import iconSafariUrl from './images/icon-safari.svg';
-import snoozeIconUrl from './images/snooze.png';
 // Compatibility layer wrapping Tauri APIs — extracted to tauri-api.js
-import { tauriAPI, openUrl } from './tauri-api.js';
-import { state, appState } from './state.js';
+import { tauriAPI } from './tauri-api.js';
+import { state } from './state.js';
 import './dev-internals.js';
 import {
-    ALWAYS_ON_END_TIME,
-    PROTECTED_APP_NAMES,
-    PROTECTED_DOMAINS,
     isProtectedApp,
     isProtectedDomain,
-    isBlockAlwaysOn,
-    isScreenTimeSummaryEntry,
-    parseLegacyScreenTimeSummary,
     normalizeIOSScreenTimeSelection,
     cloneIOSScreenTimeSelection,
     isIOSSelectionNarrowing,
-    hasUsableIOSScreenTimeSelection,
     formatIOSScreenTimeSelectionLabel,
     getBlocklistIOSScreenTimeSelection,
-    getBlocklistModalLockedApps,
     mergeIOSScreenTimeSelectionAdditive,
     resolveIOSScreenTimeSelectionForSave,
-    blocklistNeedsIOSSelectionRefresh,
     ensureIOSBlocklistSelectionReady,
-    normalizeBlocklist,
-    collectActiveIOSManualBlockPayload,
     displayNameForBlockedApp,
 } from './blocklist-utils.js';
 import { openInstalledAppsPicker } from './apps-picker.js';
@@ -47,9 +26,9 @@ import { handlePopoverOutsideClick } from './time-inputs.js';
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
 import { applyEditorScheduleForBlocklist, applyFocusSpaceEditorLanguage, confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, isEditorInCreateModal, notifyEditorChanged, populateFocusSpaceEditor, setOpenEditorSection, setupFocusSpaceEditor } from './focus-space-editor.js';
 import { loadData, saveData, updateHostsFile } from './persistence.js';
-import { cleanDomainInput, isValidDomain, processWebsiteInput, setupWebsitesImportMenu, resetWebsitesImportMenuPosition } from './website-input.js';
-import { updateBlockedApps, acceptEula, appBlockingWarningSnoozedUntilMs, checkHelperStatus, checkScreentimeAuth, collectManualBlockedApps, collectScheduleBlockedApps, detectPlatform, ensureInstalledAppsCache, initializeIOSBlockingState, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility, openExternal, updateWindowHeight, isHelperInstallCancelled, isHelperConnectionError, joinAppListWithLimit, formatAppBlockingSnoozeStartsIn, APP_BLOCKING_SNOOZE_ICON_IMG_12 } from './blocking-platform.js';
-import { CURRENT_EULA_REVISION, applyEnforcementDescCopy, applyMacAutomationIntroCopy, ensureExtensionSetupOnboardingShown, getAcceptedEulaRevision, hasAcceptedEula, isFirstRunOnboardingInProgress, resetDevOnlyEulaAcceptance, returnToWelcomeFromEula, runDesktopOnboarding, runInitialOnboardingSequence, setupMacAutomationIntroModal, syncMigrationPostBackButtonVisibility, syncSetupBannerHeadline, welcomeFirefoxInstalled } from './onboarding.js';
+import { cleanDomainInput, isValidDomain, processWebsiteInput, setupWebsitesImportMenu } from './website-input.js';
+import { updateBlockedApps, acceptEula, checkHelperStatus, checkScreentimeAuth, detectPlatform, ensureInstalledAppsCache, initializeIOSBlockingState, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility } from './blocking-platform.js';
+import { applyEnforcementDescCopy, applyMacAutomationIntroCopy, ensureExtensionSetupOnboardingShown, hasAcceptedEula, resetDevOnlyEulaAcceptance, returnToWelcomeFromEula, runDesktopOnboarding, runInitialOnboardingSequence, setupMacAutomationIntroModal, syncMigrationPostBackButtonVisibility, syncSetupBannerHeadline, welcomeFirefoxInstalled } from './onboarding.js';
 import {
     ALL_BLOCKING_METHOD_KEYS,
     browserBlockingMethod,
@@ -67,7 +46,6 @@ import {
     syncBlockingMethodLabelIcons,
     syncMigrationMacHowto,
     syncMigrationPostHeader,
-    syncSafariFdaOnboardingGrantButton,
     updateAllEnforcementToggleLocks,
     updateGraceSettingLock,
     wireEnforcementToggle,
@@ -80,18 +58,17 @@ import {
     setupAllowEditsBetweenBlocksToggle,
 } from './schedule-editor.js';
 import {
-    SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE, applyScheduleStartOverlayPresentation,
-    getScheduleStartOverlayForWarningApps,
+    SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE,
     handleSchedulePanelOverlayOptionClick, isScheduleOverlayCustomiseModalOpen,
-    playAppBlockingLetsGoVoice, populateScheduleOverlayCustomiseSelector,
+    populateScheduleOverlayCustomiseSelector,
     setupScheduleOverlayCustomiseModal,
     syncScheduleOverlayCustomiseDirtyState,
     syncScheduleOverlayCustomiseEditorState, syncScheduleOverlayCustomiseTitle,
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
-import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, isEnterSchedulerModalOpen, openBlocklistModal, openOverrideModal, refreshSelectedBlocklistUi, updatePauseDialogDuration, initializeOverrideModalChallenge, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncColorSwatchInk, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
+import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, isEnterSchedulerModalOpen, openBlocklistModal, refreshSelectedBlocklistUi, updatePauseDialogDuration, initializeOverrideModalChallenge, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncColorSwatchInk, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
 import { enhanceNativeSelects } from './custom-select.js';
-import { expandBlocklistCard, renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, deleteBlocklist, isBlocklistEditFrictionRequired, pendingDelete, saveBlocklistOrderFromDOM, setUndoToastMessage } from './blocklists.js';
+import { expandBlocklistCard, renderBlocklists, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, isBlocklistEditFrictionRequired, pendingDelete, setUndoToastMessage } from './blocklists.js';
 import {
     getSelectedBlocklistModalMode,
     syncBlocklistCreateUi,
@@ -101,28 +78,28 @@ import {
     updateBlocklistModalModeLabels,
 } from './list-mode.js';
 import { countIOSScreenTimeSelectionItems } from './list-presentation.js';
-import { render, kickClockNow, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderScheduleAlwaysOnRow, renderScheduleVisibilityChips, renderWeekBlocks, renderBlocklistSelector, getCalendarSegmentLayout, layoutOverlappingBlocks } from './render.js';
-import { hasAnyEnforcedBlocks, isNonRepeatingSchedule, isOneOffBlockEnforced, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
-import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
+import { render, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderScheduleAlwaysOnRow, renderWeekBlocks, renderBlocklistSelector } from './render.js';
+import { syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
+import { dismissTopmostEscapeLayer, refreshOpenHelperUi } from './modal-manager.js';
 import {
     refreshUninstallButtonState,
     setupGraceSetting, setupMaxOverrideWordsSetting, syncMaxOverrideWordsSetting, setupHelpMenuLinks, setupHelperSettings, setupInAppUninstall,
     setupOverrideAll, setupSettingsHelpButtons, setupSettingsInfoTooltips, setupWindowsUninstallGuidance,
-    syncUninstallConfirmModal, updateCleanHostsBtnState, updateHelperStatusIndicator,
-    updateManageSectionVisibility, updateOverrideAllButtonVisibility,
+    syncUninstallConfirmModal,
+    updateOverrideAllButtonVisibility,
 } from './settings.js';
 import { getLastBreakMinutes, rememberBreakMinutes } from './unlock-duration.js';
 import { turnFocusSpaceOn } from './focus-space-switch.js';
-import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, getEffectiveViewportWidth, bindUiZoomLayoutObserver } from './theme.js';
-import { checkForAppUpdate, getLatestVersionPlatformKey, isVersionHigher, resolveMicrosoftStorePackage, updateBannerWhatsNewButtonHtml } from './update-banner.js';
+import { setupTheme, setupUiZoomShortcuts } from './theme.js';
+import { checkForAppUpdate, updateBannerWhatsNewButtonHtml } from './update-banner.js';
 import { updateDownloadInProgress } from './update-banner.js';
 import { setupUsagePingToggle, startUsagePing } from './usage-ping.js';
 import { applyStoreReviewPromptCopy, startStoreReviewPrompt } from './store-review-prompt.js';
 import { applyStartWarningsLanguage, setupStartWarningsOnboarding, setupStartWarningsToggle, syncIOSStartWarnings } from './ios-start-warnings.js';
 import { getChallengeController } from './challenge-controller.js';
-import { resolveActiveOverrideDifficulty, DEFAULT_OVERRIDE_WORDS, getMaxOverrideCountForType, getOverrideEstimatedMinutes, getTypingCharsPerMinuteForType, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
-import { escapeHtml, cleanUrlForDisplay, parseRgbFromColorString, rgbToHex, rgbToHsl, hslToRgb, getRelativeLuminance, getEnteringChipColor, getContrastTextColor } from './utils.js';
-import { SETTINGS_TRANSLATIONS, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List, tSettings, tSettingsFmt, LANGUAGE_FLAG_SVG, LANGUAGE_NATIVE_LABELS, languageNativeLabel, SUPPORTED_LANGUAGE_CODES } from './i18n.js';
+import { resolveActiveOverrideDifficulty, DEFAULT_OVERRIDE_WORDS, getMaxOverrideCountForType, getTypingCharsPerMinuteForType, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
+import { escapeHtml } from './utils.js';
+import { getSettingsLanguage, tSettings, tSettingsFmt, LANGUAGE_FLAG_SVG, languageNativeLabel, SUPPORTED_LANGUAGE_CODES } from './i18n.js';
 
 // Where the current pointer press began. A drag that starts in a field and
 // ends elsewhere fires its click on the common ancestor, so outside-click
@@ -138,9 +115,6 @@ export function pushModalUndo(type, undoFn) {
     state.blocklistModalUndoStack.push({ type, undo: undoFn });
 }
 
-/** Reference to the removed Custom Text option so it can be re-added (getElementById returns null after remove()). */
-/** Blocklist id to pass to helper when confirming single-block override (set when opening modal). */
-let draggedBlocklistId = null; // Track which blocklist is being dragged
 let startupInitializationPromise = null; // Prevent duplicate post-onboarding startup runs
 /** Max length for blocklist display name (add/edit modal + persisted saves). */
 export const BLOCKLIST_NAME_MAX_LENGTH = 60;
@@ -2332,7 +2306,6 @@ export function applyWelcomeOnboardingLanguage() {
     const demoCaption = document.getElementById('welcome-demo-video-caption');
     if (demoCaption) demoCaption.textContent = tSettings('welcomeDemoVideoCaption');
 
-    const demoPlayBtn = document.getElementById('welcome-demo-play-btn');
     syncWelcomeDemoPlayLabel();
 
     const closeLabel = document.getElementById('welcome-demo-close-label');

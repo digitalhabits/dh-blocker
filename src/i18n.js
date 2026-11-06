@@ -2791,7 +2791,7 @@ export function getSettingsLanguage() {
         if (browserLanguage.startsWith('zh')) return 'zh-CN';
         if (browserLanguage.startsWith('da')) return 'da';
         return 'en';
-    } catch (_) {
+    } catch {
         return 'en';
     }
 }

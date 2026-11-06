@@ -173,9 +173,6 @@ export function renderWeekBlocks() {
         !isBlockAlwaysOn(block) && block.endTime > now
     );
 
-    const hasSchedules = state.appData.schedules && state.appData.schedules.length > 0;
-    const hasAlwaysOnBlocks = state.appData.activeBlocks.some(b => isBlockAlwaysOn(b));
-
     // Hide the "No active blocks" overlay — empty calendar is self-explanatory.
     noBlocksMsg?.classList.add('hidden');
 

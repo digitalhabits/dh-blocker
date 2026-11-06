@@ -2,7 +2,7 @@
 // Extracted verbatim from app.js.
 import { state } from './state.js';
 import { message } from '@tauri-apps/plugin-dialog';
-import { tauriAPI, openUrl } from './tauri-api.js';
+import { tauriAPI } from './tauri-api.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
 import {
     resolveReleaseNotesForVersion,

@@ -52,7 +52,6 @@
     // Ending at 23:59 would exclude the final minute and make the suite clock-dependent.
     const {
         createMockDate,
-        createMockNow,
         createMockBlocklist,
         createMockBlock,
         createMockSchedule,
@@ -60,7 +59,6 @@
         createMockAppData,
         getBlockedDomains,
         getHardestChallenge,
-        compareDifficulties,
         hasAnyActiveBlocks,
         findHardestChallengeAtTime,
         simulateOverrideAll,

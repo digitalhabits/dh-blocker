@@ -36,13 +36,6 @@ export default [
         // Shared rule tuning. Kept in one block so the per-area configs below
         // only ever differ in globals and sourceType.
         rules: {
-            // 197 findings at time of writing, essentially all dead imports.
-            // Real cleanup (and a bundle-size win — Vite emits an asset for
-            // every `import url from './x.png'` at transform time, whether or
-            // not the binding is used), but a mechanical one that would bury
-            // the correctness findings above. Warn now, promote to error once
-            // the backlog is cleared.
-            'no-unused-vars': 'warn',
             // Both uses in this repo are intentional control-character
             // sanitisation — ANSI-escape stripping in the changelog renderer
             // and in the store-submission JSON writer.

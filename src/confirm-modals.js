@@ -4,12 +4,12 @@ import { state } from './state.js';
 import { getChallengeController } from './challenge-controller.js';
 import { tauriAPI } from './tauri-api.js';
 import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor, setSpaceTitle } from './utils.js';
-import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
+import { tSettings, tSettingsFmt } from './i18n.js';
 import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn, formatSpaceTitleLabel } from './blocklist-utils.js';
-import { DEFAULT_OVERRIDE_WORDS, generateOverrideChallengeText, getMaxOverrideCountForType, getMaxOverrideWords, getMinOverrideCountForType, getOverrideWordsSliderMax, getOverrideEstimatedMinutes, isMobileOverrideChallengePlatform, migrateOverrideDifficultyToWords, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType, sanitizeChallengeTargetText } from './override-challenge.js';
-import { isSchedulePausedNow, refreshDesktopHelperStatus, reportIOSScheduleSyncFailure, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
+import { DEFAULT_OVERRIDE_WORDS, getMaxOverrideCountForType, getMaxOverrideWords, getMinOverrideCountForType, getOverrideWordsSliderMax, getOverrideEstimatedMinutes, migrateOverrideDifficultyToWords, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
+import { refreshDesktopHelperStatus, reportIOSScheduleSyncFailure, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
-import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
+import { layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks } from './render.js';
 import { isBlocklistEditFrictionRequired,renderBlocklists, truncateBlocklistName } from './blocklists.js';
 import { areSegmentsEqual, getSelectedSchedule, canEditScheduleBetweenBlocks } from './schedule-editor.js';
 import { pad } from './time-inputs.js';
@@ -19,19 +19,17 @@ import { resetWebsitesImportMenuPosition } from './website-input.js';
 import { bindUiZoomLayoutObserver, scheduleUiZoomResponsiveLayout, usesStackSettingsPlacement } from './theme.js';
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
 import {
-    IOS_STOP_BTN_META_COLLAPSE_SLACK_PX, MINUTES_PER_DAY, MAX_SAME_DAY_END_MINUTES,
+    MINUTES_PER_DAY, MAX_SAME_DAY_END_MINUTES,
     clampSameDayMinutes, formatBlockTimeRemainingShort, formatConfirmModalOverrideTypingLine,
-    formatMinutesAsHHMM, formatTime, generateId,
+    formatMinutesAsHHMM, generateId,
     snapMinutesToInterval,
 } from './app.js';
 import { getLastBreakMinutes, PAUSE_MINUTE_OPTIONS, applyStopToTarget, timedStopLostOwnPause } from './unlock-duration.js';
 import { deriveWhenToBlockKind } from './when-to-block.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
 import {
-    setBlocklistModalMode,
     syncBlocklistCreateUi,
     setConfirmModalBlockingLabel,
-    isBlocklistAllowlistMode,
 } from './list-mode.js';
 
 export const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
@@ -293,7 +291,7 @@ export function bindPointerDragSession(element, { onStart, onMove, onEnd }) {
         const captureEl = e.currentTarget;
         try {
             captureEl.setPointerCapture?.(e.pointerId);
-        } catch (_) { /* ignore */ }
+        } catch { /* ignore */ }
 
         e.preventDefault();
 
@@ -312,7 +310,7 @@ export function bindPointerDragSession(element, { onStart, onMove, onEnd }) {
                 if (captureEl.hasPointerCapture?.(e.pointerId)) {
                     captureEl.releasePointerCapture(e.pointerId);
                 }
-            } catch (_) { /* ignore */ }
+            } catch { /* ignore */ }
             onEnd(endEvent);
         };
 
@@ -441,7 +439,6 @@ export function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
     let isResizing = false;
     let resizeHandle = null;
     let startX = 0;
-    let startY = 0;
     let startLeftPct = 0;
     let startWidthPct = 0;
     let startDayIndex = null;
@@ -574,7 +571,6 @@ export function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
             }
 
             startX = e.clientX;
-            startY = e.clientY;
             startLeftPct = parseFloat(previewEl.style.left) || 0;
             startWidthPct = parseFloat(previewEl.style.width) || 0;
             currentHoverTrack = track;
@@ -752,10 +748,6 @@ function getEnterSchedulerModal() {
 
 function getTimePickerHome() {
     return document.querySelector('#scheduler-section .scheduler-content');
-}
-
-function getEnterSchedulerScrollBody() {
-    return getEnterSchedulerModal()?.querySelector('.mobile-modal-scroll-body');
 }
 
 function syncEnterSchedulerModalTitle(blocklist) {

@@ -118,7 +118,7 @@ export function updateGraceSettingLock() {
     }
 }
 
-export function syncEnforcementToggleSectionVisual(_toggle) {
+export function syncEnforcementToggleSectionVisual() {
     const migrationToggle = document.getElementById('enforcement-toggle-input');
     const migrationSection = document.getElementById('enforcement-toggle-section');
     if (migrationSection && migrationToggle) {
@@ -142,7 +142,7 @@ export async function updateAllEnforcementToggleLocks() {
 export function syncAllEnforcementToggleInputs(checked) {
     for (const toggle of getEnforcementToggleInputs()) {
         toggle.checked = !!checked;
-        syncEnforcementToggleSectionVisual(toggle);
+        syncEnforcementToggleSectionVisual();
     }
 }
 
@@ -323,7 +323,7 @@ export async function syncSafariFdaOnboardingGrantButton() {
     let granted = false;
     try {
         granted = !!(await invoke('sync_safari_fda_access'));
-    } catch (_) { /* not granted */ }
+    } catch { /* not granted */ }
     grantBtn.textContent = granted
         ? tSettings('safariFdaOnboardingAlreadyGrantedBtn')
         : tSettings('safariFdaOnboardingGrantBtn');
@@ -379,7 +379,7 @@ export function showSafariFdaOnboardingOverlay() {
             let alreadyGranted = false;
             try {
                 alreadyGranted = !!(await invoke('sync_safari_fda_access'));
-            } catch (_) { /* fall through */ }
+            } catch { /* fall through */ }
             if (alreadyGranted) {
                 await finalizeSafariFdaOnboardingGrant(statusEl);
                 return;
@@ -406,7 +406,7 @@ export function showSafariFdaOnboardingOverlay() {
                         if (granted) {
                             await finalizeSafariFdaOnboardingGrant(statusEl);
                         }
-                    } catch (_) { /* transient */ }
+                    } catch { /* transient */ }
                 }, 1500);
             }
         };
@@ -462,7 +462,7 @@ export async function pollSafariFdaUntilGranted({ refreshSettings = false } = {}
         let granted = false;
         try {
             granted = !!(await invoke('sync_safari_fda_access'));
-        } catch (_) { /* retry */ }
+        } catch { /* retry */ }
         if (granted) {
             try {
                 await invoke('complete_safari_fda_onboarding');
@@ -488,11 +488,11 @@ export async function ensureSafariExtensionFdaBeforeSetup() {
     try {
         const probe = await invoke('check_safari_fda_access');
         granted = !!(probe && probe.granted);
-    } catch (_) { /* not granted */ }
+    } catch { /* not granted */ }
     if (granted) {
         try {
             await invoke('complete_safari_fda_onboarding');
-        } catch (_) { /* marker only */ }
+        } catch { /* marker only */ }
         return;
     }
     await showSafariFdaOnboardingOverlay();
@@ -516,7 +516,7 @@ export async function syncSafariFdaSettingsRow() {
     let granted = false;
     try {
         granted = !!(await invoke('sync_safari_fda_access'));
-    } catch (_) { /* not granted */ }
+    } catch { /* not granted */ }
     statusEl.textContent = granted
         ? tSettings('safariFdaSettingsGranted')
         : tSettings('safariFdaSettingsNotGranted');
@@ -552,7 +552,7 @@ export async function syncFirefoxAxSettingsRow() {
     if (trusted) {
         try {
             waiting = (await invoke('firefox_ax_status')) === 'waitingForEngine';
-        } catch (_) { /* status is advisory */ }
+        } catch { /* status is advisory */ }
     }
     statusEl.textContent = !trusted
         ? tSettings('firefoxAxSettingsNotGranted')
@@ -573,7 +573,7 @@ export async function pollAccessibilityUntilGranted() {
         let trusted = false;
         try {
             trusted = !!(await invoke('accessibility_trusted'));
-        } catch (_) { /* keep waiting */ }
+        } catch { /* keep waiting */ }
         if (trusted) break;
         await new Promise((resolve) => setTimeout(resolve, FIREFOX_AX_POLL_MS));
     }
@@ -658,7 +658,7 @@ export async function onBlockingMethodChange(key, select) {
             let trusted = false;
             try {
                 trusted = !!(await invoke('accessibility_trusted'));
-            } catch (_) { /* treat as not granted */ }
+            } catch { /* treat as not granted */ }
             if (!trusted) await requestAccessibilityGrant();
         }
     } catch (e) {
@@ -705,7 +705,7 @@ export async function updateEnforcementToggleLock(toggle) {
             tooltip.textContent = isLocked ? tSettings('settingsEnforcementLockedTooltip') : '';
             tooltip.classList.toggle('hidden', !isLocked);
         }
-    } catch (e) {
+    } catch {
         // Can't determine lock state — leave unlocked
         toggle.disabled = false;
         const label = toggle.closest('.enforcement-switch-with-tip');
@@ -1361,7 +1361,7 @@ export function scheduleAutomationVerificationPoll(browserKeyOrLabels = null) {
             lastOnboardingState = fresh;
             await updateBehaviourChangeBanner(fresh);
             await syncEnforcerClosedBannersWithCompliance(fresh);
-        } catch (_) { /* no-op */ }
+        } catch { /* no-op */ }
     };
     setTimeout(verify, 1200);
     setTimeout(verify, 3500);
@@ -1532,7 +1532,7 @@ export function buildAutomationBrowserRow(key, entry, browserScan) {
                 btn.textContent = tSettings('migrationGrantAutomationOpened');
             } catch (e) {
                 console.warn('[automation] request permission failed, opening settings:', e);
-                try { await tauriAPI.openAutomationSettings(); } catch (_) { /* no-op */ }
+                try { await tauriAPI.openAutomationSettings(); } catch { /* no-op */ }
                 btn.textContent = tSettings('migrationGrantAutomationOpened');
             }
             restore(label);
@@ -1829,7 +1829,7 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
                         await navigator.clipboard.writeText(entry.url);
                         installBtn.textContent = tSettings('migrationUrlCopied');
                         setTimeout(() => { installBtn.textContent = tSettings('migrationInstallButton'); }, 2000);
-                    } catch (e2) {
+                    } catch {
                         installBtn.textContent = tSettings('migrationFailed');
                         setTimeout(() => { installBtn.textContent = tSettings('migrationInstallButton'); }, 2000);
                     }
@@ -2054,7 +2054,7 @@ export async function pollMigrationCompliance({ launchProbe = false } = {}) {
         await refreshAutomationPermissionStatus({ force: true, launchProbe });
         const fresh = await invoke('onboarding_state');
         renderBrowserInstallButtons(fresh);
-    } catch (e) { /* no-op */ }
+    } catch { /* no-op */ }
 }
 
 export function startMigrationPolling() {
@@ -2147,7 +2147,7 @@ export async function updateBehaviourChangeBanner(state) {
     if (!state?.browsers) {
         try {
             state = await invoke('onboarding_state');
-        } catch (_) {
+        } catch {
             return;
         }
     }
@@ -2159,7 +2159,7 @@ export async function updateBehaviourChangeBanner(state) {
     let enforcementEnabled = false;
     try {
         enforcementEnabled = await invoke('get_enforcement_enabled');
-    } catch (_) { /* non-desktop or command not available */ }
+    } catch { /* non-desktop or command not available */ }
 
     // ---- Browser-side compliance ------------------------------------
     // `installed` means the browser app exists on disk (regardless of
@@ -2369,7 +2369,7 @@ export async function refreshBehaviourBannerIfStale({ force = false } = {}) {
         const fresh = await invoke('onboarding_state');
         await updateBehaviourChangeBanner(fresh);
         await syncEnforcerClosedBannersWithCompliance(fresh);
-    } catch (_) { /* no-op */ }
+    } catch { /* no-op */ }
 }
 
 // ---- Enforcer UI: dynamic per-browser action banners ---------------------
@@ -2415,7 +2415,7 @@ export async function syncEnforcerClosedBannersWithCompliance(state) {
     if (!state?.browsers) {
         try {
             state = await invoke('onboarding_state');
-        } catch (_) {
+        } catch {
             return;
         }
     }
@@ -2540,7 +2540,7 @@ export function setupWebAutomationUiAlerts() {
         // (where blocking silently no-ops and this is the user's only cue).
         try {
             if (await invoke('get_enforcement_enabled')) return;
-        } catch (_) { /* fall through and show the banner */ }
+        } catch { /* fall through and show the banner */ }
         webAutomationPendingBrowsers.set(String(label), true);
         renderWebAutomationPermissionBanner();
     }).catch((e) => {
@@ -3251,7 +3251,7 @@ export async function openEnforcerFix(payload) {
         if (payload.issue === 'missing' && key && BROWSER_STORE_LINKS[key]?.url) {
             try {
                 await invoke('open_url_in_browser', { browser: key, url: BROWSER_STORE_LINKS[key].url });
-            } catch (_) {
+            } catch {
                 await openUrl(BROWSER_STORE_LINKS[key].url);
             }
             return;
@@ -3751,7 +3751,7 @@ export function renderCombinedEnforcerActionBanner() {
 
 export function updateEnforcerActionBannerCountdown() {
     if (enforcerActionBannerStates.size === 0) return;
-    for (const [key, state] of enforcerActionBannerStates) {
+    for (const state of enforcerActionBannerStates.values()) {
         const remainingSecs = Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000));
         const payload = {
             ...state.payload,

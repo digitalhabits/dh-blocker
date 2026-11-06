@@ -1,14 +1,14 @@
 // Blocking platform: app-blocking "Let's go!" warning, iOS blocking
 // init, warning-overlay coordinator, window sizing, handset
 // modal screens, platform detection. Extracted verbatim from app.js.
-import { state, appState } from './state.js';
+import { state } from './state.js';
 
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import snoozeIconUrl from './images/snooze.png';
 import { tauriAPI, openUrl } from './tauri-api.js';
 import { escapeHtml } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
-import { applyIOSScreenTimeTokenRefreshResult, getBlocklistIOSScreenTimeSelection, hasUsableIOSScreenTimeSelection, displayNameForBlockedApp, isAllowlistBlocklist, isProtectedApp, normalizeBlockedAppKey, uniqueBlockedAppDisplayNames } from './blocklist-utils.js';
+import { applyIOSScreenTimeTokenRefreshResult, getBlocklistIOSScreenTimeSelection, hasUsableIOSScreenTimeSelection, isAllowlistBlocklist, isProtectedApp, normalizeBlockedAppKey, uniqueBlockedAppDisplayNames } from './blocklist-utils.js';
 import { isSchedulePausedNow, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 
@@ -1332,19 +1332,11 @@ export function detectPlatform() {
     updateManageSectionVisibility();
 }
 
-// Update window height to fit content
 export function updateWindowHeight() {
-    // Use requestAnimationFrame to ensure layout is complete
+    // Keep the content measurement on the next frame. Tauri handles sizing.
     requestAnimationFrame(() => {
         const appContainer = document.querySelector('.app-container');
-        if (appContainer) {
-            // Get the actual height needed for the content
-            const contentHeight = appContainer.scrollHeight;
-            // Add a small buffer for window chrome/borders
-            const targetHeight = Math.max(contentHeight + 20, 500);
-            // Window height adjustment handled by Tauri
-            // tauriAPI.setWindowHeight(targetHeight);
-        }
+        void appContainer?.scrollHeight;
     });
 }
 

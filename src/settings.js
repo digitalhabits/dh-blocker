@@ -2,15 +2,15 @@
 // period, override-all, and in-app uninstall flows. Extracted verbatim from app.js.
 import { state } from './state.js';
 import { getChallengeController } from './challenge-controller.js';
-import { startHelperUiRefreshLoop, stopHelperUiRefreshLoop, isModalVisible } from './modal-manager.js';
-import { saveData, updateHostsFile } from './persistence.js';
+import { startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
+import { saveData } from './persistence.js';
 import { render } from './render.js';
 import { cancelIOSRestart, handleBlocklistSelect, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
-import { updateBlockedApps, openExternal, isHelperInstallCancelled, checkHelperStatus, requestScreentimeAuth } from './blocking-platform.js';
+import { updateBlockedApps, openExternal, isHelperInstallCancelled, checkHelperStatus } from './blocking-platform.js';
 import { attachCopyChipHandlers, extensionsUrlChipHtml, restartOnboardingFromSettings, BROWSER_STORE_LINKS, MAC_BLOCKING_METHOD_KEYS, browserBlockingMethod, browserIconUrl, browserUsesAutomation, lastOnboardingState, openExtensionSetupOverlay, updateGraceSettingLock } from './enforcement.js';
 import { hasAnyBlockingStateToClear, hasAnyEnforcedBlocks, isOneOffBlockStillActive, refreshDesktopHelperStatus, scheduleCanStillBecomeActive, syncSchedulesToHelper } from './schedule-engine.js';
 import { tauriAPI, openUrl } from './tauri-api.js';
-import { tSettings, tSettingsFmt, getSettingsLanguage } from './i18n.js';
+import { tSettings, tSettingsFmt } from './i18n.js';
 import { invoke } from '@tauri-apps/api/core';
 import { ask, message } from '@tauri-apps/plugin-dialog';
 import logoReddFocusUrl from './images/logo-reddfocus.svg';
@@ -38,7 +38,6 @@ export function setupHelpMenuLinks() {
 // Setup Helper Settings in the settings modal
 export function setupHelperSettings() {
     if (state.isIOS) return;
-    const statusIndicator = document.getElementById('helper-status-indicator');
     const cleanHostsBtn = document.getElementById('clean-hosts-btn');
 
     // Update helper status when settings modal opens
@@ -250,7 +249,7 @@ export async function updateHelperStatusIndicator() {
             }
         }
 
-    } catch (e) {
+    } catch {
         statusIndicator.classList.remove('running', 'stopped');
         statusIndicator.classList.add('stopped');
         statusText.textContent = tSettings('helperStatusUnknown');
@@ -284,7 +283,7 @@ export function getPrettyPrintedDiagnosticsJson(rawText) {
     if (!rawText) return '(unavailable)';
     try {
         return JSON.stringify(JSON.parse(rawText), null, 2);
-    } catch (e) {
+    } catch {
         return rawText;
     }
 }
@@ -432,7 +431,7 @@ export async function refreshDiagnosticsModalContent({ showLoading = false, load
         ]);
         try {
             enforcementEnabled = !!(await invoke('get_enforcement_enabled'));
-        } catch (_) { /* non-desktop */ }
+        } catch { /* non-desktop */ }
         stopLoadingTimer();
         content.innerHTML = renderSystemDiagnostics(diag, { enforcementEnabled });
         updateDiagnosticsModalChrome(diag);
@@ -508,7 +507,6 @@ export function diagnosticsBrowserExtensionState(key, b) {
 }
 
 export function diagnosticsAutomationEntry(d, key) {
-    const label = BROWSER_STORE_LINKS[key]?.label || key;
     const list = d.automation?.browsers || [];
     const entry = list.find((b) => String(b.label || '').toLowerCase() === key);
     return entry?.state || 'unknown';
@@ -846,7 +844,7 @@ export async function openDiagnosticsModal() {
             stopHelperUiRefreshLoop();
         }
         modal.classList.remove('hidden');
-    } catch (_) {
+    } catch {
         if (settingsWasOpen) {
             settingsModal.classList.add('hidden');
             stopHelperUiRefreshLoop();
@@ -1277,7 +1275,7 @@ export function setupInAppUninstall() {
                     title: tSettings('uninstallFailedTitle'),
                     kind: 'error',
                 });
-            } catch (_) { /* swallow — best-effort error surface */ }
+            } catch { /* swallow — best-effort error surface */ }
         }
     });
 }
@@ -1335,7 +1333,7 @@ export function setupWindowsUninstallGuidance() {
                     title: tSettings('windowsUninstallOpenFailedTitle'),
                     kind: 'error',
                 });
-            } catch (_) { /* dialog dismissed */ }
+            } catch { /* dialog dismissed */ }
         }
     });
 }

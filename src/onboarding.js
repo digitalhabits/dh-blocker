@@ -388,14 +388,14 @@ async function finishExtensionSetup() {
     }
     await startWebAutomationWatcher();
     try { localStorage.setItem(EXT_ONBOARDING_DISMISSED_KEY, String(Date.now())); }
-    catch (_) { /* localStorage may be disabled; harmless */ }
+    catch { /* localStorage may be disabled; harmless */ }
     await persistOnboardingComplete();
     await persistMacAutomationIntroShown();
     if (epoch !== migrationSetupEpoch) return;
     try {
         const fresh = await invoke('onboarding_state');
         await updateBehaviourChangeBanner(fresh);
-    } catch (e) { /* no-op */ }
+    } catch { /* no-op */ }
 }
 
 // Document-level capture so Done/Skip keep working even if content wiring throws.

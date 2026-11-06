@@ -104,6 +104,7 @@ function buildResolvedOneShotSegments(schedule) {
 function buildPersistedSchedule(schedule) {
     if (!schedule || !Array.isArray(schedule.segments)) return schedule;
 
+    // eslint-disable-next-line no-unused-vars -- Exclude stale resolved segments from the persisted copy.
     const { resolvedSegments: _oldResolvedSegments, ...baseSchedule } = schedule;
     if (typeof baseSchedule.repeatDate === 'number') {
         // Rust expects a string. Keep the selected instant (and its local day).

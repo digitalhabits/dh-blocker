@@ -38,9 +38,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # js/recommended only. `no-unused-vars` is a warning for now (see
-      # eslint.config.mjs), so this fails on correctness findings —
-      # no-undef, no-dupe-keys and friends — not on the dead-import backlog.
+      # ESLint recommended rules with project-specific tuning in eslint.config.mjs.
       - run: pnpm lint
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:

@@ -11,7 +11,7 @@ import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { escapeHtml, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
 import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, healWwwWebsiteEntries, isAllowlistBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist } from './blocklist-utils.js';
-import { computeNextOneShotOccurrenceMs, computeNextRepeatingOccurrenceMs, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow, syncSchedulesToHelper } from './schedule-engine.js';
+import { computeNextOneShotOccurrenceMs, computeNextRepeatingOccurrenceMs, isNonRepeatingSchedule, isSchedulePausedNow, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render, renderScheduleVisibilityChips } from './render.js';
 import { isFocusSpaceOn, getFocusSpaceOffUntil, turnFocusSpaceOn, setFocusSpaceEnabled } from './focus-space-switch.js';
@@ -1009,7 +1009,6 @@ export function renderBlocklists() {
     // Add event listeners
     container.querySelectorAll('.blocklist-card').forEach(card => {
         const id = card.dataset.id;
-        const isActive = card.dataset.active === 'true';
 
         // Everywhere on the card except the switch selects the space, which
         // shows its editor: inline on desktop, as a full-screen sheet on phones and
