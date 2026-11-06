@@ -449,6 +449,15 @@ pub fn native_host_is_current(_browser: BrowserTarget) -> bool {
 /// hits a Reinstall hints button in the UI), use [`install_force`].
 // macOS Firefox setup is manual; native-host manifests are synced separately
 // for the Chromium browsers that explicitly use extension mode.
+//
+// A Windows dev build must not register its own exe. Chrome keeps that
+// process running, which locks the file the next build replaces and
+// takes the store app's host registration. MSIX still stages a copy
+// outside WindowsApps and registers that.
+fn dev_build_leaves_native_host_alone() -> bool {
+    cfg!(all(target_os = "windows", debug_assertions))
+}
+
 #[cfg(target_os = "macos")]
 pub fn install() -> std::io::Result<()> {
     log::info!("native_host_install::install() skipped on macOS — Firefox setup is manual");
@@ -457,6 +466,10 @@ pub fn install() -> std::io::Result<()> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn install() -> std::io::Result<()> {
+    if dev_build_leaves_native_host_alone() {
+        log::info!("native-host install skipped: dev build");
+        return Ok(());
+    }
     let binary =
         current_binary_path().ok_or_else(|| std::io::Error::other("cannot resolve current exe"))?;
 
@@ -501,6 +514,10 @@ pub fn install() -> std::io::Result<()> {
 /// Install the native-messaging manifest for one browser. Used when the
 /// user opts into extension mode on macOS Chromium.
 pub fn install_native_host_for(browser: BrowserTarget) -> std::io::Result<()> {
+    if dev_build_leaves_native_host_alone() {
+        log::info!("native-host install for {browser:?} skipped: dev build");
+        return Ok(());
+    }
     let binary = manifest_binary_path()?;
     install_one(browser, &binary)
 }
@@ -624,6 +641,10 @@ pub fn install_force() -> std::io::Result<()> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn install_force() -> std::io::Result<()> {
+    if dev_build_leaves_native_host_alone() {
+        log::info!("native-host install skipped: dev build");
+        return Ok(());
+    }
     let binary =
         current_binary_path().ok_or_else(|| std::io::Error::other("cannot resolve current exe"))?;
     log::info!("tcc-probe: native_host_install::install_force() entered, binary={binary}");
