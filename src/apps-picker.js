@@ -66,7 +66,13 @@ export async function openInstalledAppsPicker() {
     // Desktop only: an app the scan missed can still be named by hand. On iOS and
     // Android the list comes from the OS and a typed name would match nothing.
     const canTypeNames = !state.isAndroid && !state.isIOS;
+    const isWindows = document.body.classList.contains('windows');
     const typedApps = [];
+
+    function normaliseTypedName(value) {
+        const name = String(value || '').trim();
+        return isWindows ? name.replace(/\.exe$/i, '') : name;
+    }
 
     function sameAppPickerName(displayName, processName) {
         const normalize = (value) => String(value || '').trim().toLocaleLowerCase();
@@ -74,9 +80,10 @@ export async function openInstalledAppsPicker() {
     }
 
     function renderAppList(filter = '') {
-        const lowerFilter = filter.toLowerCase();
+        const typed = normaliseTypedName(filter);
+        const lowerFilter = (isWindows ? typed : filter).toLowerCase();
         const source = typedApps.length > 0 ? [...typedApps, ...apps] : apps;
-        const filtered = filter
+        const filtered = lowerFilter
             ? source.filter(a =>
                 a.display_name.toLowerCase().includes(lowerFilter) ||
                 a.process_name.toLowerCase().includes(lowerFilter))
@@ -84,14 +91,15 @@ export async function openInstalledAppsPicker() {
 
         if (filtered.length === 0) {
             if (filter && canTypeNames) {
-                const typed = filter.trim();
-                const safe = escapeHtml(typed);
-                listEl.innerHTML = `<div class="app-picker-empty">No installed app called "${safe}"</div>`
-                    + (canOfferTypedAppName(typed, apps)
+                const safe = escapeHtml(filter.trim());
+                const canOffer = canOfferTypedAppName(typed, apps);
+                const hint = isWindows && canOffer ? '. Enter its executable name, such as app.exe.' : '';
+                listEl.innerHTML = `<div class="app-picker-empty">No installed app called "${safe}"${hint}</div>`
+                    + (canOffer
                         ? `<button type="button" class="modal-btn cancel-btn app-picker-add-typed">Add "${safe}" anyway</button>`
                         : '');
                 listEl.querySelector('.app-picker-add-typed')
-                    ?.addEventListener('click', () => addTypedName(typed));
+                    ?.addEventListener('click', () => addTypedName(filter));
                 return;
             }
             listEl.innerHTML = filter
@@ -140,15 +148,20 @@ export async function openInstalledAppsPicker() {
     function selectAppName(rawName) {
         const name = String(rawName || '').trim();
         if (!name || isProtectedApp(name)) return;
-        const known = [...apps, ...typedApps].some(
-            (a) => sameAppPickerName(a.process_name, name) || sameAppPickerName(a.display_name, name),
-        );
+        // The native dialog returns a bundle stem on macOS and an executable
+        // stem on Windows. Windows shortcut labels may name different binaries.
+        const field = state.isMacOSDesktop ? 'display_name' : 'process_name';
+        const matches = apps.filter(a => sameAppPickerName(a[field], name));
+        const known = matches.length === 1 ? matches[0]
+            : typedApps.find(a => sameAppPickerName(a.process_name, name));
+        const processName = known?.process_name ?? name;
+        if (isProtectedApp(processName)) return;
         if (!known) typedApps.push({ display_name: name, process_name: name });
-        selectedProcessNames.add(name);
+        selectedProcessNames.add(processName);
     }
 
     function addTypedName(rawName) {
-        const name = String(rawName || '').trim();
+        const name = normaliseTypedName(rawName);
         if (!canOfferTypedAppName(name, apps)) return;
         selectAppName(name);
         searchInput.value = '';
