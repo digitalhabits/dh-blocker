@@ -5,6 +5,7 @@ import { tauriAPI } from './tauri-api.js';
 import { escapeHtml } from './utils.js';
 import { pushModalUndo } from './app.js';
 import { ensureInstalledAppsCache } from './blocking-platform.js';
+import { isProtectedApp } from './blocklist-utils.js';
 
 // The blocklist modal's selected-apps array lives inside setupModalListeners
 // (app.js) and is shared with this picker via `window.modalApps`. Keep a
@@ -40,6 +41,8 @@ export async function openInstalledAppsPicker() {
         return [];
     };
     const selectedProcessNames = new Set();
+    // Apps chosen through "Browse manually…" that the scan did not list.
+    const browsedApps = [];
 
     function sameAppPickerName(displayName, processName) {
         const normalize = (value) => String(value || '').trim().toLocaleLowerCase();
@@ -48,11 +51,12 @@ export async function openInstalledAppsPicker() {
 
     function renderAppList(filter = '') {
         const lowerFilter = filter.toLowerCase();
+        const source = browsedApps.length > 0 ? [...browsedApps, ...apps] : apps;
         const filtered = filter
-            ? apps.filter(a =>
+            ? source.filter(a =>
                 a.display_name.toLowerCase().includes(lowerFilter) ||
                 a.process_name.toLowerCase().includes(lowerFilter))
-            : apps;
+            : source;
 
         if (filtered.length === 0) {
             listEl.innerHTML = filter
@@ -95,6 +99,22 @@ export async function openInstalledAppsPicker() {
                 updateAddButton();
             });
         });
+    }
+
+    /** Tick `name` in the list, adding a row for it when the scan never found it. */
+    function selectAppName(rawName) {
+        const name = String(rawName || '').trim();
+        if (!name || isProtectedApp(name)) return;
+        // The native dialog returns a bundle stem on macOS and an executable
+        // stem on Windows. Windows shortcut labels may name different binaries.
+        const field = state.isMacOSDesktop ? 'display_name' : 'process_name';
+        const matches = apps.filter(a => sameAppPickerName(a[field], name));
+        const known = matches.length === 1 ? matches[0]
+            : browsedApps.find(a => sameAppPickerName(a.process_name, name));
+        const processName = known?.process_name ?? name;
+        if (isProtectedApp(processName)) return;
+        if (!known) browsedApps.push({ display_name: name, process_name: name });
+        selectedProcessNames.add(processName);
     }
 
     function updateAddButton() {
@@ -156,27 +176,15 @@ export async function openInstalledAppsPicker() {
     if (browseBtn) {
         browseBtn.classList.remove('hidden');
         browseBtn.onclick = async () => {
-            closePickerModal();
+            // Stay in the picker: closing it first threw away everything the user
+            // had already ticked, and wrote the browsed app past the selection
+            // straight into the editor.
             const appNames = await tauriAPI.openAppPicker();
             if (appNames && appNames.length > 0) {
-                const modalApps = getModalApps();
-                const toAdd = appNames.filter(n => !modalApps.includes(n));
-                if (toAdd.length > 0) {
-                    const toAddCopy = [...toAdd];
-                    pushModalUndo('app', () => {
-                        toAddCopy.forEach(a => {
-                            const i = modalApps.indexOf(a);
-                            if (i !== -1) modalApps.splice(i, 1);
-                        });
-                        window.renderModalTags();
-                    });
-                }
-                for (const appName of appNames) {
-                    if (!modalApps.includes(appName)) {
-                        modalApps.push(appName);
-                    }
-                }
-                window.renderModalTags();
+                appNames.forEach(selectAppName);
+                searchInput.value = '';
+                renderAppList('');
+                updateAddButton();
             }
         };
     }
