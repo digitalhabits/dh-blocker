@@ -1,8 +1,19 @@
+<img src="assets/icons/128x128.png" alt="Digital Habits: Blocker app icon" width="128" height="128">
+
 # Digital Habits: Blocker
 
 Make room for what matters by blocking distracting websites and apps. Choose when you want to focus and how much effort it should take to change your mind.
 
+**[Download Digital Habits: Blocker](https://digitalhabits.org/tools/blocker)** · [Read the manual & FAQ](https://digitalhabits.org/tools/blocker)
+
 Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and the University of Maastricht (Dr Konrad Kollnig), as part of the Centre for Digital Habits ([digitalhabits.org](https://digitalhabits.org)).
+
+## Get started
+
+1. **[Download the app for your device](https://digitalhabits.org/tools/blocker)** and install it.
+2. Open the app and follow the setup prompts for your device and browsers.
+3. Create a Focus Space, choose the websites or apps to block or allow, and set your stopping challenge.
+4. Start your Focus Space now, or set a daily or weekly schedule.
 
 ## Make your own Focus Spaces
 
@@ -13,14 +24,6 @@ A **Focus Space** is a set of websites or apps you want to block — or a set yo
 - **Make stopping a block deliberate.** Set a typing challenge, using random words or your own text, to help you resist switching a block off on impulse.
 - **See your week at a glance**, with your Focus Spaces together on a weekly calendar.
 - **Close the window and carry on.** Blocking continues in the background.
-
-## Get started
-
-1. Open Digital Habits: Blocker and follow the setup prompts for your device and browsers.
-2. Create a Focus Space and choose the websites or apps to block or allow.
-3. Choose your stopping challenge, then start the Focus Space or give it a schedule.
-
-Visit [Digital Habits](https://digitalhabits.org) to learn more about the project.
 
 ## Devices and setup
 
@@ -48,6 +51,8 @@ For Firefox on Mac, install [Digital Habits: Focus from the Firefox Add-ons stor
 **Upgrading from an older version?** If you previously used Fristed or ReDD Block 1.x, the app handles the clean-up on first launch. On Mac, this may ask for your password once.
 
 ## Help and feedback
+
+For setup instructions and answers to common questions, see the [manual & FAQ](https://digitalhabits.org/tools/blocker).
 
 If something is not working, check that you have completed the setup prompts and enabled the required permissions or browser extension.
 
