@@ -398,6 +398,23 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
         return;
     }
 
+    // Resolve each running browser's method once for both scanning and
+    // compliance. Reading it again in `compliance_issue` could see a change
+    // made mid-tick and judge an unscanned (empty) profile as a failing
+    // extension, starting a grace timer and revealing the window for a
+    // browser that is fine. The next tick picks up the change.
+    #[cfg(target_os = "macos")]
+    let extension_browsers = running
+        .iter()
+        .copied()
+        .filter(|key| {
+            judged_by_extension(
+                key.uses_automation_on_macos(app),
+                key.uses_accessibility_on_macos(app),
+            )
+        })
+        .collect::<std::collections::HashSet<_>>();
+
     // Only scan browsers we actually judge by the extension. On macOS
     // that's Firefox alone — scanning a Chromium/Safari profile dir
     // triggers Sequoia's per-app data-access TCC prompt, and we don't
@@ -417,17 +434,7 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
         }
         #[cfg(target_os = "macos")]
         {
-            if key.uses_automation_on_macos(app) {
-                return matches!(key, BrowserKey::Firefox);
-            }
-            matches!(
-                key,
-                BrowserKey::Firefox
-                    | BrowserKey::Chrome
-                    | BrowserKey::Brave
-                    | BrowserKey::Edge
-                    | BrowserKey::Safari
-            )
+            extension_browsers.contains(&key)
         }
         #[cfg(not(target_os = "macos"))]
         {
@@ -455,7 +462,14 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
 
         // None = compliant (extension OK, or Automation granted) → clear
         // any timer and move on. Some(issue) = act on it.
-        let issue = match compliance_issue(app, key, &scan_result, is_running) {
+        let issue = match compliance_issue(
+            app,
+            key,
+            &scan_result,
+            is_running,
+            #[cfg(target_os = "macos")]
+            extension_browsers.contains(&key),
+        ) {
             None => {
                 cancel_timer(app, state, key, true);
                 continue;
@@ -829,6 +843,7 @@ fn compliance_issue(
     key: BrowserKey,
     scan: &profile_scan::ScanResult,
     is_running: bool,
+    #[cfg(target_os = "macos")] uses_extension: bool,
 ) -> Option<ExtensionIssue> {
     #[cfg(target_os = "macos")]
     {
@@ -850,6 +865,12 @@ fn compliance_issue(
         }
         if key.uses_automation_on_macos(app) {
             if let Some(browser) = key.to_web_automation() {
+                // The watcher scripted it moments ago, which is the grant
+                // working; an osascript probe of our own every tick would
+                // only repeat that.
+                if watcher_confirmed_grant(app, browser) {
+                    return None;
+                }
                 let cached = watcher_automation_cache(app, browser);
                 if crate::web_automation::automation_denied_for_enforcement(
                     browser, cached, is_running,
@@ -857,6 +878,14 @@ fn compliance_issue(
                     return Some(ExtensionIssue::Automation);
                 }
             }
+            return None;
+        }
+        // The tick's snapshot put this browser on a grant-based method, so
+        // its profile was not scanned, but the live read above no longer
+        // agrees: the method changed mid-tick. Judging the empty scan would
+        // fail an extension nobody has had a chance to read, so this falls
+        // towards compliant for one tick; the next tick scans it.
+        if !uses_extension {
             return None;
         }
     }
@@ -874,6 +903,23 @@ fn compliance_issue(
     } else {
         Some(diagnose_issue(b))
     }
+}
+
+#[cfg(target_os = "macos")]
+fn watcher_confirmed_grant(
+    app: &AppHandle,
+    browser: crate::web_automation::SupportedBrowser,
+) -> bool {
+    let Some(state) = app.try_state::<crate::commands::web_automation::WebAutomationState>() else {
+        return false;
+    };
+    let Ok(guard) = state.0.lock() else {
+        return false;
+    };
+    guard
+        .as_ref()
+        .map(|handle| handle.grant_recently_confirmed(browser))
+        .unwrap_or(false)
 }
 
 #[cfg(target_os = "macos")]
@@ -916,8 +962,31 @@ fn log_non_compliant_summary(
     log_non_compliant(key, key.for_status(scan));
 }
 
+/// Whether a browser's compliance comes from the extension, and so needs its
+/// profile read. Automation and Accessibility are judged by their grant in
+/// `compliance_issue`; reading the profile of a browser on either was disk
+/// work, every tick of a block, whose result nothing looked at.
+#[cfg(target_os = "macos")]
+fn judged_by_extension(uses_automation: bool, uses_accessibility: bool) -> bool {
+    !uses_automation && !uses_accessibility
+}
+
 // ---- Process detection + quit -----------------------------------------
 
+#[cfg(target_os = "macos")]
+fn running_browsers() -> std::collections::HashSet<BrowserKey> {
+    // Launch Services, not a process-table scan, every tick of a block.
+    BrowserKey::enforced()
+        .iter()
+        .copied()
+        .filter(|key| match key.to_web_automation() {
+            Some(browser) => crate::running_apps::any_running(&[browser.bundle_id()]),
+            None => crate::running_apps::any_running(crate::running_apps::FIREFOX),
+        })
+        .collect()
+}
+
+#[cfg(not(target_os = "macos"))]
 fn running_browsers() -> std::collections::HashSet<BrowserKey> {
     use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
     let mut sys = System::new();

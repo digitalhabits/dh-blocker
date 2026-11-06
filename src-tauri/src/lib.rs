@@ -157,6 +157,8 @@ pub mod accessibility;
 #[cfg(target_os = "macos")]
 pub mod firefox_ax;
 #[cfg(target_os = "macos")]
+pub mod running_apps;
+#[cfg(target_os = "macos")]
 pub mod safari_services;
 #[cfg(target_os = "windows")]
 pub mod uia_web_automation;
