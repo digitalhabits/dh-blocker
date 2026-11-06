@@ -93,26 +93,6 @@ export const tauriAPI = {
     screentimeRequestNotificationPermission: () => invoke('plugin:screentime|request_notification_permission'),
     screentimeOpenNotificationSettings: () => invoke('plugin:screentime|open_notification_settings'),
 
-    // Android blocking API (Android only - provided by tauri-plugin-android-blocker).
-    // All blocking logic runs in Kotlin (AccessibilityService + WorkManager);
-    // these just marshal to it. See tauri-plugin-android-blocker/src/commands.rs.
-    androidCheckPermissions: () => invoke('plugin:android-blocker|check_blocker_permissions'),
-    androidOpenAccessibilitySettings: () => invoke('plugin:android-blocker|open_accessibility_settings'),
-    androidSetSchedules: (schedules, defaultPauseMinutes = null) =>
-        invoke('plugin:android-blocker|set_schedules', { schedules, defaultPauseMinutes }),
-    androidStartManualBlock: (id, endTimestampMs) =>
-        invoke('plugin:android-blocker|start_manual_block', { id, endTimestampMs }),
-    androidStopManualBlock: (id) => invoke('plugin:android-blocker|stop_manual_block', { id }),
-    androidReadNativeSchedules: () => invoke('plugin:android-blocker|read_native_schedules'),
-    androidGetScheduleStates: () => invoke('plugin:android-blocker|get_schedule_states'),
-    // Android keeps the most recently scanned launcher labels in
-    // device-protected preferences. Reading that cache is cheap enough for
-    // post-startup display-name hydration; refreshing it is reserved for the
-    // app picker, where an up-to-date list is actually needed.
-    androidGetCachedInstalledApps: () => invoke('plugin:android-blocker|get_cached_installed_apps'),
-    androidRefreshInstalledApps: () => invoke('plugin:android-blocker|get_installed_apps'),
-    androidSetEventHandler: (handler) => invoke('plugin:android-blocker|set_event_handler', { handler }),
-
     // Event listening
     onBlocksUpdated: (callback) => listen('blocks-updated', callback),
     onMenuZoomIn: (callback) => listen('menu-zoom-in', callback),

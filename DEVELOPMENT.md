@@ -3,6 +3,8 @@
 For an introduction to the app and setup guidance, see the [README](README.md).
 For implementation details, see [architecture.md](architecture.md); Part I describes the current architecture.
 
+Android is maintained in [digitalhabits/dh-blocker-android](https://github.com/digitalhabits/dh-blocker-android). Follow that repository for Android builds.
+
 ## Local Development
 
 ### Prerequisites
@@ -19,11 +21,6 @@ For implementation details, see [architecture.md](architecture.md); Part I descr
 - An Apple Developer account
 - A physical iOS device (Screen Time APIs don't work in the simulator)
 
-**Android additional requirements:**
-- Android Studio with Android SDK, platform-tools, and NDK installed
-- A configured emulator or physical Android device (`adb devices` should show it)
-- Tauri Android prerequisites installed for the Rust targets used by your device/emulator
-
 ### Getting Started
 
 ```bash
@@ -39,15 +36,9 @@ pnpm dev
 
 # Run on iOS device (opens Xcode, then press ⌘R to build)
 pnpm dev:ios
-
-# Run on Android emulator/device
-pnpm dev:android
 ```
 
 The app will open automatically. Hot-reloading is enabled for both frontend (Vite) and backend (Tauri).
-
-On Android, enable ReDD Block in Android Settings -> Accessibility after the
-first install.
 
 ### Building
 
@@ -70,14 +61,7 @@ pnpm build:win-store
 
 # iOS: Build IPA for App Store upload (via Transporter)
 pnpm build:ios
-
-# Android: Build through Tauri/Gradle (release; unsigned)
-pnpm build:android
 ```
-
-For Android — required environment variables (`ANDROID_HOME`/`NDK_HOME`/`JAVA_HOME`,
-not set by `pnpm install`), debug-APK builds, single-ABI targeting, and the
-install/`adb logcat` loop — see [docs/android-build.md](docs/android-build.md).
 
 For Store builds, set `WINDOWS_IDENTITY_NAME` and `WINDOWS_PUBLISHER` in `.env` (Partner Center → Product identity). Release tags submit the MSIX to Partner Center from CI (What’s new from `changelog.md` via `scripts/changelog-to-store-whats-new.js` — write entries per [`changelog-style.md`](changelog-style.md); see [docs/microsoft-store-ci.md](docs/microsoft-store-ci.md)). Manual upload still works from `for-distribution/<target>/`. Run `node scripts/generate-icons-from-svg.js` first if `assets/icons/1024x1024.png` is missing.
 
@@ -94,6 +78,7 @@ Built artifacts are copied to `for-distribution/` for upload or direct distribut
 ### Testing
 
 See [testing.md](testing.md) for test commands, coverage limits and visual checks,
+the [iOS testing protocol](docs/ios-testing.md) for Simulator and connected-device checks,
 and the [manual checklist](scripts/manual-test-checklist.md) for real browser enforcement.
 
 ## Version management
@@ -118,10 +103,3 @@ other accounts, so do not delete them as obsolete installation debris. On macOS,
 in-app uninstall removes autostart entries and native-messaging manifests;
 user data is retained unless the user chooses deletion (`delete_user_data` in
 `src-tauri/src/commands/uninstall.rs`).
-
-## Building from Android Studio
-
-You can open `src-tauri/gen/android/` in Android Studio to inspect, run, and build the generated project. Android Studio is still building the Tauri Android app: the Gradle project invokes the Tauri/Rust build steps and packages the shared frontend assets together with the native Android plugin. Two things are required for builds from Android Studio to work:
-
-1. **Keep the Tauri CLI running** in a terminal while you build: `pnpm tauri android dev --open`. The Gradle Rust task calls back into this process to fetch its build options; without it the build fails with a "failed to read CLI options" panic.
-2. **`node`/`pnpm` and `cargo` must be on Gradle's PATH.** Android Studio launched from the Dock doesn't inherit your shell PATH, so `buildSrc/.../BuildTask.kt` is patched to prepend the nvm, cargo, and Homebrew bin directories. Note that re-running `tauri android init` regenerates that file and drops the patch — alternatively, launch Android Studio from a terminal (`open -a "Android Studio"`), which inherits your shell PATH.

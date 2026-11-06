@@ -36,8 +36,8 @@ import {
     syncSchedulePanelOverlayControls,
 } from './schedule-overlay.js';
 import { deleteBlocklist, duplicateBlocklist, isBlocklistEditFrictionRequired } from './blocklists.js';
-import { getOverrideEstimatedMinutes, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
-import { UNLOCK_MINUTE_OPTIONS, normalizeUnlockMinutes } from './unlock-duration.js';
+import { normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
+import { PAUSE_MINUTE_OPTIONS, normalizeUnlockMinutes } from './unlock-duration.js';
 import { getSelectedBlocklistModalMode, setBlocklistModalMode } from './list-mode.js';
 import { isFocusSpaceOn } from './focus-space-switch.js';
 import { handleTimeChange, populateBlocklistFormFields, resetBlocklistFormState, syncBlocklistEditFrictionUi } from './confirm-modals.js';
@@ -280,7 +280,6 @@ function serializeEditor() {
             count: document.getElementById('override-count')?.value || '',
             customText: document.getElementById('custom-override-text')?.value || '',
         },
-        unlock: document.getElementById('unlock-duration-select')?.value || '',
         emoji: selectedEmojiValue(),
         color: selectedColorValue(),
         showItemDetails: !!document.getElementById('show-item-details-checkbox')?.checked,
@@ -454,7 +453,7 @@ let editorDiscardResolver = null;
 /**
  * The app's own "Discard changes?" dialog (not the OS one), so it looks like
  * the rest of the app. Resolves true for Discard, false for Keep editing,
- * Escape, a click outside, or Android back.
+ * Escape or a click outside.
  */
 export function showEditorDiscardConfirmModal() {
     const modal = document.getElementById('editor-discard-modal');
@@ -502,23 +501,12 @@ export function formatUnlockDurationLabel(minutes) {
     return tSettings(`unlock_${normalizeUnlockMinutes(minutes)}`);
 }
 
-// "Type 15 words · back on after 24 hours" / "… · stays off", like
-// Android's stop_early_summary.
+// The editor describes the challenge; duration is chosen only when pausing.
 function formatStopEarlySummary() {
     const type = normalizeOverrideType(document.getElementById('override-type')?.value);
-    const unlockMinutes = normalizeUnlockMinutes(document.getElementById('unlock-duration-select')?.value);
-    const duration = formatUnlockDurationLabel(unlockMinutes);
-    const never = unlockMinutes === 0;
-    if (type === 'custom') {
-        return never ? tSettings('stopEarlySummaryCustomNever') : tSettingsFmt('stopEarlySummaryCustomFmt', { duration });
-    }
+    if (type === 'custom') return tSettings('pauseSummaryCustom');
     const count = normalizeOverrideCount(document.getElementById('override-count')?.value, 'random-words');
-    const minutes = getOverrideEstimatedMinutes(type, count, '');
-    return tSettingsFmt(never ? 'stopEarlySummaryWordsNeverFmt' : 'stopEarlySummaryWordsFmt', {
-        count: String(count),
-        minutes: String(minutes),
-        duration,
-    });
+    return tSettingsFmt('pauseSummaryWords', { count: String(count) });
 }
 
 function setSummary(key, text) {
@@ -646,8 +634,8 @@ export function applyFocusSpaceEditorLanguage() {
     setText('until-date', tSettings('untilDate'));
     setText('editor-pending-label', tSettings('pendingChangesLabel'));
     setText('unlock-duration-label', tSettings('unlockDuration'));
-    setText('unlock-duration-hint', tSettings('unlockDurationDesc'));
-    UNLOCK_MINUTE_OPTIONS.forEach((minutes) => setText(`unlock-option-${minutes}`, tSettings(`unlock_${minutes}`)));
+    setText('pause-never-warning', tSettings('pauseNeverWarning'));
+    PAUSE_MINUTE_OPTIONS.forEach((minutes) => setText(`unlock-option-${minutes}`, tSettings(minutes === 0 ? 'pauseNever' : `unlock_${minutes}`)));
     ['editor-duplicate-btn', 'editor-delete-btn'].forEach((id, i) => {
         const el = document.getElementById(id);
         if (!el) return;

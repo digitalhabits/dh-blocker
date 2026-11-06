@@ -6,6 +6,9 @@
 // Module-private state stays as plain `let` inside its own module.
 // Leaf module: must not import from any other app module.
 export const state = {
+    pendingPauseSpaceId: null,
+    pauseChallengeSnapshot: null,
+    pauseSubmitting: false,
     appData: {
         blocklists: [],
         activeBlocks: [],
@@ -23,7 +26,6 @@ export const state = {
     suppressBlocklistSelectChange: false,
     helperAvailable: false, // Track if the privileged helper daemon is running
     isIOS: false, // Track if running on iOS
-    isAndroid: false, // Track if running on Android
     // True on macOS desktop (i.e. Mac platform AND not the iOS Tauri
     // runtime). Set in `detectPlatform`. Used to gate macOS-only Tauri
     // commands and onboarding copy.
@@ -35,22 +37,12 @@ export const state = {
     screentimeAuthorized: false, // Track if Screen Time is authorized (iOS)
     /// False until the first authorization check answers. The grant screen
     /// waits for it, so a cold start does not flash the prompt while the
-    /// authorization centre is still resolving (Android does the same with a
-    /// null androidPermissionsGranted).
+    /// authorization centre is still resolving.
     screentimeAuthChecked: false,
     /** iOS notification permission for start warnings: 'notDetermined', 'denied', 'authorized', … or null before the first check. */
     notificationPermission: null,
     /** True from a Screen Time grant until the start-warnings screen is answered. Not saved: every grant shows it. */
     iosNotificationOnboardingPending: false,
-    // null = not checked yet. Avoid showing the Android Accessibility
-    // onboarding screen during startup before the native permission check
-    // has had a chance to answer.
-    androidPermissionsGranted: null,
-    // The returning Android UI is rendered optimistically from persisted data
-    // before the asynchronous Accessibility IPC completes. If that check says
-    // access was revoked, updateOnboardingVisibility immediately replaces it
-    // with the native-permissions gate.
-    androidFirstFrameCommitted: false,
     installedAppsCache: null, // Cache the installed-apps list so we don't re-scan every open
     /** Focus-space editor: Daily / Weekly / Manual choice shown in the form. */
     editorKind: 'manual',

@@ -223,7 +223,7 @@
         console.log('🔧 Setting up Tier 2 integration suite...');
         const appData = getAppData();
         assertOrThrow(appData, 'App internals not available. Ensure app.js loaded.');
-        
+
         // Take a complete snapshot of the user's state to ensure we restore it exactly
         originalAppDataBackup = JSON.parse(JSON.stringify(appData));
         await callSaveData();
@@ -234,7 +234,7 @@
         console.log('🧹 Cleaning up Tier 2 integration suite...');
         try {
             const tauriAPI = getTauriAPI();
-            
+
             // Restore structural state from snapshot
             if (originalAppDataBackup) {
                 const appData = getAppData();
@@ -245,7 +245,7 @@
             } else {
                 removeTestDataFromAppState();
             }
-            
+
             await callSaveData();
 
             // Sync the precisely restored state to the daemon (handles both hosts and apps)
@@ -255,7 +255,7 @@
                     await callUpdateHostsFile(false);
                 }
             }
-            
+
             callRender();
             console.log('   ✅ Cleanup complete');
             return true;
@@ -1019,7 +1019,7 @@
     }
 
     // ========================================
-    // Testing Group I: Modal workflows and Android back boundary
+    // Testing Group I: Modal workflows
     // ========================================
 
     async function testI1_stopAllCancelRestoresSettings() {
@@ -1111,38 +1111,6 @@
                 !(getAppData().activeBlocks || []).find((candidate) => candidate.id === block.id)?.isPaused,
                 'I3: cancelling stop changed the active block state',
             );
-            hideAllIntegrationModals();
-            return { passed: true };
-        });
-    }
-
-    async function testI4_androidBackClosesTopmostModal() {
-        return runIsolatedIntegrationTest('I4', async () => {
-            hideAllIntegrationModals();
-            const internals = getInternals();
-            assertOrThrow(
-                typeof internals?.setupAndroidBackButtonHandling === 'function',
-                'I4: Android back setup hook unavailable',
-            );
-
-            // The native WryActivity maps hardware/gesture back to webView.goBack(),
-            // which reaches this exact popstate callback. Toggle classes after setup
-            // so MutationObserver arms the trap even when the app started on desktop.
-            internals.setupAndroidBackButtonHandling();
-            const settingsModal = document.getElementById('settings-modal');
-            const overrideAllModal = document.getElementById('override-all-modal');
-            assertOrThrow(settingsModal && overrideAllModal, 'I4: modal fixtures missing');
-            settingsModal.classList.remove('hidden');
-            overrideAllModal.classList.remove('hidden');
-            await shortWait(0);
-
-            window.dispatchEvent(new PopStateEvent('popstate', { state: { androidModalTrap: true } }));
-            await waitForIntegrationCondition(
-                () => !isVisible('override-all-modal') && isVisible('settings-modal'),
-                'I4 first back closes topmost modal',
-            );
-            window.dispatchEvent(new PopStateEvent('popstate', { state: { androidModalTrap: true } }));
-            await waitForIntegrationCondition(() => !isVisible('settings-modal'), 'I4 second back closes settings');
             hideAllIntegrationModals();
             return { passed: true };
         });
@@ -1337,7 +1305,7 @@
             { group: 'I', name: 'I1: Stop-all cancel restores Settings', fn: testI1_stopAllCancelRestoresSettings },
             { group: 'I', name: 'I2: Stop-all success restores Settings', fn: testI2_stopAllSuccessRestoresSettings },
             { group: 'I', name: 'I3: Stop cancel keeps the block', fn: testI3_stopCancelWorkflow },
-            { group: 'I', name: 'I4: Android back closes topmost modal', fn: testI4_androidBackClosesTopmostModal },
+
             { group: 'I', name: 'I5: Card switch stop unlocks editor', fn: testI5_switchStopUnlocksEditor },
             { group: 'I', name: 'I6: Let\'s go acknowledges before shell reconcile', fn: testI6_letsGoAcknowledgesBeforeShellReconcile },
             { group: 'I', name: 'I7: Running allow mode removes down to one', fn: testI7_runningAllowModeRemovesDownToOne },

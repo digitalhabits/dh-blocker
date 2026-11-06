@@ -26,6 +26,7 @@
  *   pnpm ui:shoot                          all screens
  *   pnpm ui:shoot --screen=week-crowded    one screen
  *   pnpm ui:shoot --out=/tmp/shots         somewhere other than artifacts/ui
+ *   pnpm ui:shoot --profile=ios --measure  iPhone/iPad fixtures and geometry checks
  *   pnpm ui:shoot --measure                also print measured lane geometry
  *
  * Screens live in test/ui/screens.js and fixtures in test/ui/fixtures.js. Adding
@@ -47,13 +48,15 @@ const BOOT_TIMEOUT_MS = 60_000;
 function log(...a) { console.log('[ui:shoot]', ...a); }
 
 function parseArgs(argv) {
-    const args = { screen: null, out: path.join(REPO_ROOT, 'artifacts', 'ui'), measure: false };
+    const args = { screen: null, profile: null, out: path.join(REPO_ROOT, 'artifacts', 'ui'), measure: false };
     for (const arg of argv) {
         if (arg.startsWith('--screen=')) args.screen = arg.slice('--screen='.length);
+        else if (arg === '--profile=ios') args.profile = 'ios';
         else if (arg.startsWith('--out=')) args.out = path.resolve(arg.slice('--out='.length));
         else if (arg === '--measure') args.measure = true;
         else throw new Error(`unknown argument: ${arg}`);
     }
+    if (args.screen && args.profile) throw new Error('Choose --screen or --profile.');
     return args;
 }
 
@@ -150,7 +153,6 @@ const PLATFORM_BODY_CLASSES = {
     mac: ['mac'],
     ipad: ['ios'],
     iphone: ['ios', 'ios-phone', 'mobile-phone-home', 'handset-device'],
-    android: ['android', 'mobile-phone-home', 'handset-device'],
 };
 
 /**
@@ -224,23 +226,22 @@ async function openScreen(browser, screen, eulaRevision) {
         // an unstamped screenshot taken on Linux silently claims to be Windows.
         // Restate the platform explicitly for every shot.
         document.body.classList.remove(
-            'windows', 'mac', 'ios', 'ios-phone', 'android', 'mobile-phone-home', 'handset-device',
+            'windows', 'mac', 'ios', 'ios-phone', 'mobile-phone-home', 'handset-device',
         );
         bodyClasses.forEach(c => document.body.classList.add(c));
         const { state } = await import('/state.js');
         state.isWindowsDesktop = bodyClasses.includes('windows');
         state.isMacOSDesktop = bodyClasses.includes('mac');
         state.isIOS = bodyClasses.includes('ios');
-        state.isAndroid = bodyClasses.includes('android');
 
         // detectPlatform does not only add classes — it hides desktop chrome on
-        // its mac/iOS/Android branches. Having already run its Windows branch on
+        // its mac/iOS branches. Having already run its Windows branch on
         // Linux, it left the Windows title bar and window controls *visible*, so
-        // restamping classes alone puts a Windows close button on an Android
+        // restamping classes alone puts a Windows close button on an iOS
         // screenshot and squeezes the layout beneath it. Mirror the DOM side
         // effects of the branch this platform would really have taken.
         const showsWindowChrome = bodyClasses.includes('windows');
-        const isMobile = bodyClasses.includes('ios') || bodyClasses.includes('android');
+        const isMobile = bodyClasses.includes('ios');
         document.getElementById('window-controls')?.classList.toggle('hidden', !showsWindowChrome);
         document.querySelector('.title-bar')?.classList.toggle('hidden', isMobile);
         document.getElementById('helper-settings-section')?.classList.toggle('hidden', isMobile);
@@ -299,9 +300,28 @@ function measureLanes(page) {
     })));
 }
 
+async function checkIOSGeometry(page, screen) {
+    const geometry = await page.evaluate(selector => {
+        const viewport = document.documentElement.clientWidth;
+        const subject = selector ? document.querySelector(selector).getBoundingClientRect() : null;
+        return {
+            viewport,
+            page: document.documentElement.scrollWidth,
+            subject: subject && { left: Math.round(subject.left), right: Math.round(subject.right) },
+        };
+    }, screen.clip);
+    log(`  viewport ${geometry.viewport}px, page ${geometry.page}px` +
+        (geometry.subject ? `, subject ${geometry.subject.left}–${geometry.subject.right}px` : ''));
+    if (geometry.page > geometry.viewport + 1 ||
+        (geometry.subject && (geometry.subject.left < -1 || geometry.subject.right > geometry.viewport + 1))) {
+        throw new Error(`screen "${screen.name}" overflows the viewport horizontally`);
+    }
+}
+
 async function main() {
     const args = parseArgs(process.argv.slice(2));
-    const selected = args.screen ? screens.filter(s => s.name === args.screen) : screens;
+    const selected = screens.filter(screen => (!args.screen || screen.name === args.screen)
+        && (!args.profile || ['iphone', 'ipad'].includes(screen.platform)));
     if (selected.length === 0) {
         throw new Error(`no screen named "${args.screen}". Known: ${screens.map(s => s.name).join(', ')}`);
     }
@@ -309,7 +329,7 @@ async function main() {
     // Only a full run may clear the directory. Clearing it on a single-screen
     // run would delete the other screenshots — which is exactly what you are
     // comparing against while iterating on one screen.
-    if (!args.screen) await rm(args.out, { recursive: true, force: true });
+    if (!args.screen && !args.profile) await rm(args.out, { recursive: true, force: true });
     await mkdir(args.out, { recursive: true });
 
     let stopServer = () => {};
@@ -341,6 +361,7 @@ async function main() {
                 : page.screenshot({ path: file, fullPage: true }));
             log(`${screen.name} → ${path.relative(REPO_ROOT, file)}`);
 
+            if (args.profile === 'ios') await checkIOSGeometry(page, screen);
             if (args.measure) {
                 for (const day of await measureLanes(page)) {
                     if (day.blocks.length === 0) continue;

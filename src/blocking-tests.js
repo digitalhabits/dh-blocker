@@ -48,6 +48,8 @@
         return;
     }
 
+    // All-day fixtures use equal start/end times, matching production semantics.
+    // Ending at 23:59 would exclude the final minute and make the suite clock-dependent.
     const {
         createMockDate,
         createMockNow,
@@ -266,7 +268,7 @@
         // T9c: Paused schedule is excluded from enforcement
         (function T9c() {
             const blocklist = createMockBlocklist({ websites: ['paused-schedule.com'] });
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const now = Date.now();
             const schedule = createMockSchedule(blocklist.id, [segment], {
                 isPaused: true,
@@ -306,7 +308,7 @@
         (function T9e() {
             const blocklist = createMockBlocklist({ websites: ['dual-pause.com'] });
             const now = Date.now();
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const schedule = createMockSchedule(blocklist.id, [segment]);
             const block = createMockBlock(blocklist.id, now - 60000, now + 60000, {
                 isPaused: true,
@@ -358,7 +360,7 @@
             const now = Date.now();
             const block = createMockBlock(blocklist1.id, now - 60000, now + 60000);
 
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]); // All day every day
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]); // All day every day
             const schedule = createMockSchedule(blocklist2.id, [segment]);
 
             const appData = createMockAppData({
@@ -380,7 +382,7 @@
             const now = Date.now();
             const block = createMockBlock(blocklist.id, now - 60000, now + 60000);
 
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const schedule = createMockSchedule(blocklist.id, [segment]);
 
             const appData = createMockAppData({
@@ -400,7 +402,7 @@
             const blocklist2 = createMockBlocklist({ websites: ['site2.com'] });
             const blocklist3 = createMockBlocklist({ websites: ['site3.com'] });
 
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const schedule1 = createMockSchedule(blocklist1.id, [segment]);
             const schedule2 = createMockSchedule(blocklist2.id, [segment]);
             const schedule3 = createMockSchedule(blocklist3.id, [segment]);
@@ -425,7 +427,7 @@
             const block = createMockBlock(blocklist1.id, now - 120000, now - 60000);
 
             // Schedule still active
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const schedule = createMockSchedule(blocklist2.id, [segment]);
 
             const appData = createMockAppData({
@@ -504,7 +506,7 @@
             const block = createMockBlock(blocklist.id, now - 120000, now - 60000);
 
             // Schedule still active
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const schedule = createMockSchedule(blocklist.id, [segment]);
 
             const appData = createMockAppData({
@@ -554,7 +556,7 @@
             const now = Date.now();
             // One-off was overridden (removed)
 
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const schedule = createMockSchedule(blocklist2.id, [segment]);
 
             const appData = createMockAppData({
@@ -667,7 +669,7 @@
         // T27: Override All with schedule only
         (function T27() {
             const blocklist = createMockBlocklist({ websites: ['youtube.com'] });
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
 
             let appData = createMockAppData({
                 blocklists: [blocklist],
@@ -688,7 +690,7 @@
         (function T28() {
             const blocklist1 = createMockBlocklist({ websites: ['facebook.com'] });
             const blocklist2 = createMockBlocklist({ websites: ['youtube.com'] });
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const now = Date.now();
 
             let appData = createMockAppData({
@@ -862,7 +864,7 @@
         // T35: Active schedule on correct day/time
         (function T35() {
             const blocklist = createMockBlocklist({ websites: ['youtube.com'] });
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]); // All days
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]); // All days
             const schedule = createMockSchedule(blocklist.id, [segment]);
             const now = Date.now();
             const appData = createMockAppData({
@@ -895,7 +897,7 @@
             const now = Date.now();
             const schedule = createMockSchedule(
                 blocklist.id,
-                [createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6])],
+                [createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6])],
                 { isPaused: true, pauseEndTime: now + 60000 }
             );
             const appData = createMockAppData({
@@ -939,7 +941,7 @@
             const blocklist = createMockBlocklist({
                 overrideDifficulty: { type: 'random-words', count: 80 }
             });
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const schedule = createMockSchedule(blocklist.id, [segment]);
             const now = Date.now();
             const appData = createMockAppData({
@@ -1072,7 +1074,7 @@
                 activeBlocks: [createMockBlock(activeBlocklist.id, now - 60000, now + 60000)],
                 schedules: [createMockSchedule(
                     pausedBlocklist.id,
-                    [createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6])],
+                    [createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6])],
                     { isPaused: true, pauseEndTime: now + 60000 }
                 )]
             });
@@ -1094,7 +1096,7 @@
         (function T39() {
             const blocklist1 = createMockBlocklist({ websites: ['facebook.com'] });
             const blocklist2 = createMockBlocklist({ websites: ['youtube.com'] });
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const now = Date.now();
 
             const appData = createMockAppData({
@@ -1137,7 +1139,7 @@
         // T41: Only schedules → after override, every schedule is off but kept
         (function T41() {
             const bl = createMockBlocklist({ websites: ['youtube.com'] });
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
 
             const appData = createMockAppData({
                 blocklists: [bl],
@@ -1161,7 +1163,7 @@
             const appData = createMockAppData({
                 blocklists: [bl1, bl2],
                 activeBlocks: [createMockBlock(bl1.id, now - 60000, now + 60000)],
-                schedules: [createMockSchedule(bl2.id, [createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6])])]
+                schedules: [createMockSchedule(bl2.id, [createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6])])]
             });
 
             simulateOverrideAll(appData);
@@ -1583,113 +1585,6 @@
     }
 
     // ========================================
-    // CATEGORY 18: ANDROID PAYLOAD (T143-T152)
-    // ========================================
-
-    // Android's Kotlin side has no notion of allow mode at any layer, so
-    // blockedApps is always treated as a denylist. Sending an allow-mode focus
-    // space would block precisely the apps it is meant to permit, so the payload
-    // builder omits those spaces entirely.
-    function runAndroidPayloadTests() {
-        console.log('\n🤖 Category 18: Android Payload');
-        console.log('-------------------------------');
-
-        const {
-            buildAndroidScheduleEntries: build,
-            isAndroidAllowlistUnsupported: unsupported,
-        } = window.__REDDBLOCK_INTERNALS__;
-        const saved = window.__REDDBLOCK_INTERNALS__.appData;
-
-        const seg = { startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, days: [] };
-        const withData = (blocklists, { schedules = [], activeBlocks = [] } = {}) => {
-            window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({ blocklists, schedules, activeBlocks });
-        };
-
-        try {
-            (function T142() {
-                const allowMode = createMockBlocklist({ mode: 'allowlist', apps: ['com.allowed'] });
-                const blockMode = createMockBlocklist({ mode: 'blocklist', apps: ['com.blocked'] });
-                assert(unsupported(allowMode, true), 'T142: Android rejects allow-mode starts');
-                assert(!unsupported(blockMode, true), 'T142: Android still permits block-mode starts');
-                assert(!unsupported(allowMode, false), 'T142: allow mode remains supported on non-Android platforms');
-            })();
-
-            (function T143() {
-                const bl = createMockBlocklist({ mode: 'blocklist', apps: ['com.x'], websites: ['x.com'] });
-                withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
-                const entries = build();
-                assertEqual(entries.length, 1, 'T143: a block-mode schedule produces an entry');
-                assertEqual(entries[0].blockedApps, ['com.x'], 'T143: and carries its apps');
-            })();
-
-            (function T144() {
-                const bl = createMockBlocklist({ mode: 'allowlist', apps: ['com.x'], websites: ['x.com'] });
-                withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
-                assertEqual(build().length, 0, 'T144: an allow-mode schedule is omitted entirely');
-            })();
-
-            (function T145() {
-                // The dangerous case: without the skip, com.keepme would be sent as
-                // blockedApps and Kotlin would block the one app meant to stay open.
-                const bl = createMockBlocklist({ mode: 'allowlist', apps: ['com.keepme'], websites: [] });
-                withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
-                const allApps = build().flatMap(e => e.blockedApps || []);
-                assert(!allApps.includes('com.keepme'), 'T145: an allowed app never reaches the payload as a blocked app');
-            })();
-
-            (function T146() {
-                const bl = createMockBlocklist({ mode: 'allowlist', apps: ['com.x'] });
-                withData([bl], { activeBlocks: [createMockBlock(bl.id, Date.now() - 1000, Date.now() + 60000)] });
-                assertEqual(build().length, 0, 'T146: an allow-mode one-off block is omitted too');
-            })();
-
-            (function T147() {
-                const blockMode = createMockBlocklist({ mode: 'blocklist', apps: ['com.blocked'] });
-                const allowMode = createMockBlocklist({ mode: 'allowlist', apps: ['com.allowed'] });
-                withData([blockMode, allowMode], {
-                    schedules: [createMockSchedule(blockMode.id, [seg]), createMockSchedule(allowMode.id, [seg])],
-                });
-                const entries = build();
-                assertEqual(entries.length, 1, 'T147: only the block-mode space survives a mixed set');
-                assertEqual(entries[0].blockedApps, ['com.blocked'], 'T147: and it is the right one');
-            })();
-
-            (function T148() {
-                // Absent mode must behave as a blocklist — most saved data predates
-                // the field entirely.
-                const bl = createMockBlocklist({ apps: ['com.x'] });
-                delete bl.mode;
-                withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
-                assertEqual(build().length, 1, 'T148: a blocklist with no mode field is still enforced');
-            })();
-
-            (function T149() {
-                const bl = createMockBlocklist({ mode: 'blocklist', apps: ['com.x'] });
-                withData([bl], {
-                    schedules: [createMockSchedule(bl.id, [seg, { ...seg, startHour: 19, endHour: 20 }])],
-                });
-                assertEqual(build().length, 2, 'T149: each segment still becomes its own entry');
-            })();
-
-            (function T150() {
-                // An allow-mode space must not suppress an unrelated block-mode one
-                // that happens to share a segment shape.
-                const allowMode = createMockBlocklist({ mode: 'allowlist', apps: ['com.allowed'] });
-                const blockMode = createMockBlocklist({ mode: 'blocklist', apps: ['com.blocked'] });
-                withData([allowMode, blockMode], {
-                    schedules: [createMockSchedule(allowMode.id, [seg])],
-                    activeBlocks: [createMockBlock(blockMode.id, Date.now() - 1000, Date.now() + 60000)],
-                });
-                const entries = build();
-                assertEqual(entries.length, 1, 'T150: the block-mode one-off still syncs alongside a skipped allow space');
-                assertEqual(entries[0].type, 'MANUAL', 'T150: and keeps its MANUAL type');
-            })();
-        } finally {
-            window.__REDDBLOCK_INTERNALS__.appData = saved;
-        }
-    }
-
-    // ========================================
     // CATEGORY: DESKTOP APP WATCHER PAYLOAD (T208-T212)
     // ========================================
 
@@ -1705,7 +1600,7 @@
         const saved = internals.appData;
         const realSet = api.setBlockedAppsViaHelper;
         const now = Date.now();
-        const allDay = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+        const allDay = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
         const live = (id) => createMockBlock(id, now - 1000, now + 60000);
         let sent = null;
         api.setBlockedAppsViaHelper = (apps, newlyAdded, opts) => {
@@ -1797,7 +1692,7 @@
         } = internals;
         const saved = internals.appData;
         const now = Date.now();
-        const allDay = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+        const allDay = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
         const sites = (prefix, n) => Array.from({ length: n }, (_, i) => `${prefix}${i}.com`);
         const allow = (websites) => createMockBlocklist({ mode: 'allowlist', websites, apps: [] });
 
@@ -1878,7 +1773,7 @@
         const saved = internals.appData;
         const realSet = api.setBlockedAppsViaHelper;
         const now = Date.now();
-        const allDay = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+        const allDay = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
         const live = (id) => createMockBlock(id, now - 1000, now + 60000);
         api.setBlockedAppsViaHelper = () => Promise.resolve({ success: true });
         // Sync the state before the start, then the state after it.
@@ -2122,7 +2017,7 @@
                     createMockSchedule(blockMode.id, [seg]),
                 ]);
                 const entries = build();
-                assertEqual(entries.length, 2, 'T157: mixed modes both sync (unlike Android, which skips allow mode)');
+                assertEqual(entries.length, 2, 'T157: mixed modes both sync');
                 const byMode = Object.fromEntries(entries.map(e => [e.mode ?? 'null', e.domains[0]]));
                 assertEqual(byMode.allowlist, 'allowed.com', 'T157: the allow entry carries the allowed domain');
                 assertEqual(byMode.null, 'blocked.com', 'T157: the block entry carries the blocked domain');
@@ -2236,7 +2131,7 @@
         const HOUR = 60 * 60 * 1000;
         // Covers the whole day in both directions so the segment is active
         // whenever the suite happens to run.
-        const allDaySeg = { startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, days: [0, 1, 2, 3, 4, 5, 6] };
+        const allDaySeg = { startHour: 0, startMinute: 0, endHour: 0, endMinute: 0, days: [0, 1, 2, 3, 4, 5, 6] };
         const withData = (blocklists, { schedules = [], activeBlocks = [] } = {}) => {
             window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({ blocklists, schedules, activeBlocks });
         };
@@ -2351,7 +2246,7 @@
         const savedAppData = internals.appData;
         const now = Date.now();
         const allDays = [0, 1, 2, 3, 4, 5, 6];
-        const seg = createMockSegment(0, 0, 23, 59, allDays);
+        const seg = createMockSegment(0, 0, 0, 0, allDays);
 
         try {
             // T63: a Manual block stopped with a 10-minute unlock is paused, still present, and the switch reads off
@@ -2473,7 +2368,7 @@
         const api = internals.tauriAPI;
         const methodNames = ['saveData', 'screentimeSetResumePayload', 'screentimeRegisterOneOffActivity', 'screentimeCancelResume',
             'screentimeStartBlock', 'screentimeClearBlock', 'screentimeClearManualBlock',
-            'setSchedulesPlugin', 'checkHelperStatus', 'setBlockedAppsViaHelper', 'androidSetSchedules'];
+            'setSchedulesPlugin', 'checkHelperStatus', 'setBlockedAppsViaHelper'];
         const savedMethods = Object.fromEntries(methodNames.map(name => [name, api[name]]));
         const savedAppData = internals.appData;
         const savedLastBlockedDomains = internals.lastBlockedDomains;
@@ -2484,7 +2379,7 @@
         const makeBlock = (extra = {}) => createMockBlock(blocklist.id, Date.now() - 1000, forever, { isAlwaysOn: true, ...extra });
         const scheduleBlocklist = createMockBlocklist({ id: 'bl-ios-resume-schedule', unlockMinutes: 10, websites: ['schedule-resume.invalid'] });
         const overlapBlocklist = createMockBlocklist({ id: 'bl-ios-resume-overlap', unlockMinutes: 10, websites: ['overlap-resume.invalid'] });
-        const allDay = { startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, days: [0, 1, 2, 3, 4, 5, 6] };
+        const allDay = { startHour: 0, startMinute: 0, endHour: 0, endMinute: 0, days: [0, 1, 2, 3, 4, 5, 6] };
         let events = [], currentTarget = null, registrationDelay = false, registrationThrows = false;
         let registrationResult = { success: true };
         let scheduleSyncResults = null;
@@ -2513,7 +2408,6 @@
                 return scheduleSyncResults?.length ? scheduleSyncResults.shift() : { success: true };
             };
             api.setBlockedAppsViaHelper = async () => { events.push('desktop-app-sync'); return { success: true }; };
-            api.androidSetSchedules = async () => { events.push('android-schedule-sync'); return { success: true }; };
 
             const setBlock = (block) => {
                 currentTarget = block;
@@ -2650,7 +2544,7 @@
             const neverBlock = createMockBlock(neverBlocklist.id, Date.now() - 1000, forever, { isAlwaysOn: true });
             internals.appData = createMockAppData({ blocklists: [neverBlocklist], activeBlocks: [neverBlock], schedules: [] });
             events = [];
-            const never = await internals.stopFocusSpaceTarget({ block: neverBlock });
+            const never = await internals.stopFocusSpaceTarget({ block: neverBlock, minutes: 0 });
             assert(never?.kind === 'removed', 'T72: Never keeps the existing removal semantics');
 
             // A Manual space's restart is booked with iOS and re-applies its saved apps
@@ -3386,7 +3280,7 @@
         }
         const body = document.body;
         if (body.classList.contains('mobile-phone-home') || body.classList.contains('handset-device')
-            || body.classList.contains('ios') || body.classList.contains('android')) {
+            || body.classList.contains('ios')) {
             console.warn('   ⏭️ Compact card tap tests skipped: desktop-only layout path');
             return;
         }
@@ -3484,7 +3378,7 @@
             const schedOff = createMockBlocklist({ id: 'bl-sw-sched-off', name: 'Scheduled off' });
             const schedTimed = createMockBlocklist({ id: 'bl-sw-sched-timed', name: 'Scheduled timed' });
             const idle = createMockBlocklist({ id: 'bl-sw-idle', name: 'Idle' });
-            const seg = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const seg = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             internals.appData = createMockAppData({
                 blocklists: [manual, pausedManual, sched, schedOff, schedTimed, idle],
                 activeBlocks: [
@@ -3623,7 +3517,7 @@
             // An allow-only space starts on Never, and a block space opened after it is back on 10.
             internals.openBlocklistModal(null, { mode: 'allowlist' });
             try {
-                assertEqual(document.getElementById('unlock-duration-select')?.value, '0', 'T183: a new allow-only space starts on Never');
+                assertEqual(document.getElementById('unlock-duration-select')?.value, '10', 'T183: creating an allow-only space does not change the pause preference');
             } finally {
                 internals.closeBlocklistModal();
             }
@@ -3920,11 +3814,11 @@
             });
             const settle = (p) => p?.catch?.(() => {});
             settle(internals.restopForNewStrictness(never.id));
-            assert(!internals.appData.activeBlocks.some((b) => b.blocklistId === never.id),
-                'T232: switching a stopped space to Never cancels its pending restart');
+            assertEqual(internals.appData.activeBlocks.find((b) => b.blocklistId === never.id)?.pauseEndTime, pending.pauseEndTime,
+                'T232: legacy editor strictness cannot cancel a confirmed pause');
             settle(internals.restopForNewStrictness(five.id));
             const fiveEnd = internals.appData.activeBlocks.find((b) => b.blocklistId === five.id)?.pauseEndTime;
-            assert(Math.abs(fiveEnd - (now + 5 * 60000)) < 60000, `T233: switching it to 5 min restarts it 5 min from now (got ${fiveEnd - now} ms)`);
+            assertEqual(fiveEnd, pending.pauseEndTime, 'T233: editing settings cannot move a confirmed pause deadline');
             settle(internals.restopForNewStrictness(running.id));
             const runningBlock = internals.appData.activeBlocks.find((b) => b.blocklistId === running.id);
             assert(!!runningBlock && !runningBlock.isPaused, 'T234: a running space is not stopped by a strictness change');
@@ -4268,7 +4162,7 @@
             runSelfBlockPreventionTests();
             runProtectedDomainTests();
             runIOSAllowlistPolicyTests();
-            runAndroidPayloadTests();
+
             runDesktopAppPayloadTests();
             runIOSAllowLimitTests();
             runWarningAttributionTests();
@@ -4311,7 +4205,7 @@
         runSelfBlockPreventionTests,
         runProtectedDomainTests,
         runIOSAllowlistPolicyTests,
-        runAndroidPayloadTests,
+
         runDesktopAppPayloadTests,
         runIOSSchedulePayloadTests,
         runEditFrictionGateTests,

@@ -6,6 +6,7 @@ import changelogMarkdown from '../changelog.md?raw';
  * @typedef {{ summary: ReleaseNoteItem | null, groups: ReleaseNoteGroup[] }} ParsedReleaseNotes
  */
 
+// Recognize retired Android tags so historical notes remain scoped correctly.
 const PLATFORM_TAG_RE = /^\[(desktop|macos|windows|ios|android)\]\s*/i;
 
 /**
