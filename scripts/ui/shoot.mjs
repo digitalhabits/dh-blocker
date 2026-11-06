@@ -153,7 +153,6 @@ const PLATFORM_BODY_CLASSES = {
     mac: ['mac'],
     ipad: ['ios'],
     iphone: ['ios', 'ios-phone', 'mobile-phone-home', 'handset-device'],
-    android: ['android', 'mobile-phone-home', 'handset-device'],
 };
 
 /**
@@ -227,23 +226,22 @@ async function openScreen(browser, screen, eulaRevision) {
         // an unstamped screenshot taken on Linux silently claims to be Windows.
         // Restate the platform explicitly for every shot.
         document.body.classList.remove(
-            'windows', 'mac', 'ios', 'ios-phone', 'android', 'mobile-phone-home', 'handset-device',
+            'windows', 'mac', 'ios', 'ios-phone', 'mobile-phone-home', 'handset-device',
         );
         bodyClasses.forEach(c => document.body.classList.add(c));
         const { state } = await import('/state.js');
         state.isWindowsDesktop = bodyClasses.includes('windows');
         state.isMacOSDesktop = bodyClasses.includes('mac');
         state.isIOS = bodyClasses.includes('ios');
-        state.isAndroid = bodyClasses.includes('android');
 
         // detectPlatform does not only add classes — it hides desktop chrome on
-        // its mac/iOS/Android branches. Having already run its Windows branch on
+        // its mac/iOS branches. Having already run its Windows branch on
         // Linux, it left the Windows title bar and window controls *visible*, so
-        // restamping classes alone puts a Windows close button on an Android
+        // restamping classes alone puts a Windows close button on an iOS
         // screenshot and squeezes the layout beneath it. Mirror the DOM side
         // effects of the branch this platform would really have taken.
         const showsWindowChrome = bodyClasses.includes('windows');
-        const isMobile = bodyClasses.includes('ios') || bodyClasses.includes('android');
+        const isMobile = bodyClasses.includes('ios');
         document.getElementById('window-controls')?.classList.toggle('hidden', !showsWindowChrome);
         document.querySelector('.title-bar')?.classList.toggle('hidden', isMobile);
         document.getElementById('helper-settings-section')?.classList.toggle('hidden', isMobile);

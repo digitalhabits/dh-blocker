@@ -280,8 +280,7 @@ body.ios {
     text-size-adjust: 100%;
 }
 
-body.ios,
-body.android {
+body.ios {
     padding-top: env(safe-area-inset-top, 20px);
     --app-footer-pad-top: 10px;
     --app-footer-pad-bottom: 10px;
@@ -294,8 +293,7 @@ body.android {
     );
 }
 
-body.ios .main-content,
-body.android .main-content {
+body.ios .main-content {
     margin-top: 0;
     overflow-y: auto;
     overflow-x: hidden;
@@ -307,9 +305,8 @@ body.android .main-content {
     padding-bottom: var(--app-footer-height);
 }
 
-/* iPhone / Android phone */
-body.ios .app-container,
-body.android .app-container {
+/* iPhone */
+body.ios .app-container {
     /* 100vw can exceed the visible width (scrollbars / WebKit); % tracks the body box. */
     width: 100%;
     max-width: 100%;
@@ -317,10 +314,6 @@ body.android .app-container {
     padding-bottom: var(--app-footer-height);
     overflow: hidden;
     box-sizing: border-box;
-}
-
-body.android {
-    padding-top: 0;
 }
 
 /* WKWebView treats long-pressing ordinary app chrome as text selection. The
@@ -340,11 +333,6 @@ body.ios :is(input, textarea, [contenteditable]:not([contenteditable="false"]), 
     user-select: text;
 }
 
-body.android .app-container {
-    height: 100vh;
-    padding-bottom: 30px;
-}
-
 /* iPad: WKWebView "desktop" content mode ignores CSS zoom and pageZoom for text/emoji sizing.
    Scale the app shell so typography and icons grow/shrink like iPhone CSS zoom. */
 body.ios:not(.ios-phone) .app-container{
@@ -356,7 +344,7 @@ body.ios:not(.ios-phone) .app-container{
     padding-bottom: calc(var(--app-footer-height) / var(--ui-zoom, 1));
 }
 
-/* Phone/Android: pin the document so the webview cannot leave a stuck scroll
+/* Phone: pin the document so the webview cannot leave a stuck scroll
    offset after keyboard / modal dismiss. Internal panes still scroll. */
 html.handset-webview-lock{
     position: fixed;
@@ -370,8 +358,7 @@ html.handset-webview-lock body{
     overflow: hidden;
     box-sizing: border-box;
 }
-html.handset-webview-lock body.ios-phone .app-container,
-html.handset-webview-lock body.android .app-container{
+html.handset-webview-lock body.ios-phone .app-container{
     height: 100%;
 }
 
@@ -382,9 +369,7 @@ body.ios .grid-top-row {
 }
 
 body.ios .scheduler-section,
-body.ios .blocklists-section,
-body.android .scheduler-section,
-body.android .blocklists-section {
+body.ios .blocklists-section {
     min-width: 0;
     max-width: 100%;
 }
@@ -419,7 +404,6 @@ body.handset-device #settings-modal .language-picker-trigger .language-picker-co
    block duration row). Wrapping these is a broader safety net beyond
    any single component fix — new unwrapped rows are easy to add by
    accident in a codebase this size. */
-
 
 /* App Container */
 .app-container{
@@ -1987,21 +1971,16 @@ body.dark-mode .app-blocking-closedown-banner{
         grid-template-columns: minmax(0, min(400px, 50%)) minmax(0, 1fr);
         gap: 18px;
     }
-    
 
     body.ios:not(.ios-phone) .grid-top-row--blocklist-selected .blocklist-card{
         max-width: none;
     }
-    
 
     body.ios:not(.ios-phone) .scheduler-section > .section-header.scheduler-header-compact{
         margin-bottom: 2px;
     }
-    
 
     /* Portrait stack: show Now/Schedule text unless JS detects overlap (ui-zoom-sched-tabs-icons). */
-    
-    
 
     /* -------------------------------------------------------------------------
        Portrait iPad: scale main-content UI (blocklists, scheduler, week calendar).
@@ -2018,8 +1997,6 @@ body.dark-mode .app-blocking-closedown-banner{
         --app-settings-top: calc((var(--app-header-row-height) - var(--app-settings-size)) / 2);
         --app-settings-right: 28px;
     }
-
-    
 
     body.ios:not(.ios-phone) .main-content .section-header{
         gap: 14px;
@@ -2070,37 +2047,12 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
         height: 24px;
     }
 
-
     body.ios:not(.ios-phone) .main-content .time-picker-container{
         gap: 18px;
         margin-bottom: 12px;
         border-radius: 14px;
         padding: 16px 20px 20px;
     }
-
-    
-
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-
-    
-
-    
-
-    
 
     body.ios:not(.ios-phone) .main-content .now-btn{
         padding: 10px 18px;
@@ -2115,7 +2067,6 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
         min-width: 58px;
     }
 
-
     body.ios:not(.ios-phone) .main-content .next-day-badge{
         padding: 5px 10px;
         font-size: 12px;
@@ -2126,20 +2077,6 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
         font-size: 16px;
         min-width: 52px;
     }
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
 
     body.ios:not(.ios-phone) .main-content .schedule-segments{
         --schedule-segments-gap: 10px;
@@ -2153,11 +2090,9 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
         font-size: 17px;
     }
 
-
     body.ios:not(.ios-phone) .main-content .segment-days{
         gap: 6px;
     }
-
 
     body.ios:not(.ios-phone) .main-content .when-times .segment-days{
         min-height: 36px;
@@ -2271,10 +2206,6 @@ body.ios:not(.ios-phone) .main-content .schedule-pending-save{
         --blocklist-actions-slot: 60px;
         --blocklist-menu-anchor-offset: var(--blocklist-action-btn-size);
     }
-
-    
-
-    
 
     body.ios:not(.ios-phone) .main-content .week-calendar-section{
         margin-top: 16px;
@@ -2394,7 +2325,6 @@ body.ios:not(.ios-phone) .main-content .always-on-chip svg{
         max-width: calc(500px * var(--ipad-s));
     }
 
-
     body.ios:not(.ios-phone) #override-modal .modal-content,
 body.ios:not(.ios-phone) #start-block-confirm-modal .modal-content,
 body.ios:not(.ios-phone) #override-all-modal .modal-content{
@@ -2472,8 +2402,6 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
     body.ios:not(.ios-phone) .modal-overlay .form-input.small{
         width: calc(80px * var(--ipad-s));
     }
-
-    
 
     body.ios:not(.ios-phone) .modal-overlay .input-with-suffix{
         gap: calc(8px * var(--ipad-s));
@@ -2600,11 +2528,6 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         min-width: calc(140px * var(--ipad-s));
     }
 
-
-    
-
-    
-
     body.ios:not(.ios-phone) .modal-overlay .exit-difficulty-time-estimate{
         font-size: calc(13px * var(--ipad-s));
     }
@@ -2699,8 +2622,6 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         padding-top: calc(12px * var(--ipad-s));
     }
 
-    
-
     body.ios:not(.ios-phone) .modal-overlay .schedule-summary-header{
         font-size: calc(15px * var(--ipad-s));
         margin-bottom: calc(8px * var(--ipad-s));
@@ -2736,7 +2657,6 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
     body.ios:not(.ios-phone) .modal-overlay .override-info-box p{
         font-size: calc(15px * var(--ipad-s));
     }
-
 
     body.ios:not(.ios-phone) .modal-overlay .next-day-badge{
         padding: calc(4px * var(--ipad-s)) calc(8px * var(--ipad-s));
@@ -3014,13 +2934,6 @@ body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-feedback-foote
         max-width: 100%;
     }
 
-    
-
-    
-
-    
-
-    
 }
 
 /* UI zoom: phones use CSS `html { zoom }`; iPad uses `.app-container { transform: scale() }`.
@@ -3042,7 +2955,6 @@ body.ios.ui-zoom-tier-cramped .blocklist-card{
 }
 
 /* Wider iOS viewports: size tabs to label content instead of equal-flex in 250px bar. */
-
 
 body.ios.ui-zoom-tier-stack .grid-top-row{
     grid-template-columns: 1fr;
@@ -3372,7 +3284,6 @@ body:not(.ios) #settings-toolbar-scheduler{
     display: flex !important;
 }
 
-
 .blocklists-section > .section-header.blocklists-section-header .settings-top-btn{
     width: 30px;
     height: 30px;
@@ -3400,54 +3311,6 @@ body:not(.ios) #settings-toolbar-scheduler{
     flex-shrink: 0;
     /* Match .blocklists-container horizontal inset so edges align with cards. */
     padding: 0 4px 8px;
-}
-
-/* Android has no allow-mode enforcement: the schedule payload carries no `mode`
-   field, so Kotlin treats every list as a denylist and an allow-mode space would
-   block exactly the apps it is meant to permit. Hide the two entry points that
-   can create one until Schedule.kt/Schedules.kt learn about mode; existing
-   Existing allow-mode spaces remain editable so users can switch them back to
-   block mode, but starting one is rejected with an explanation. */
-body.android #allow-only-blocklist-btn{
-    display: none;
-}
-
-/* Android: the create action floats bottom-right as a FAB.
- *
- * Only one button survives the rule above on Android, which is what makes this
- * possible — a two-button row cannot be a floating action button. The button
- * keeps its own styling (dark fill, boxed "+", "Block" label); only the shape
- * and elevation change, so this is an extended FAB rather than the icon-only
- * kind. Dropping the label would cost the one thing that says what the button
- * creates, and this is the primary action on the screen. */
-body.android .blocklists-create-actions{
-    grid-template-columns: 1fr;
-    position: fixed;
-    right: 16px;
-    left: auto;
-    /* Gesture-navigation bar overlaps the viewport bottom on modern Android. */
-    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-    width: auto;
-    max-width: calc(100vw - 32px);
-    padding: 0;
-    /* Above page content (≤110), below .modal-overlay (200). A FAB floating over
-       a modal is a live tap target for a screen the user is not looking at. */
-    z-index: 150;
-}
-
-body.android .blocklists-create-btn--primary{
-    /* Pill rather than the 12px card radius the inline row uses. */
-    border-radius: 26px;
-    padding: 8px 20px 8px 8px;
-    /* Detached from the page, so it needs more elevation than a card. */
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
-}
-
-/* Leave room to scroll the last focus space clear of the button. Without this
-   the FAB permanently covers part of the final card, which is the one a user
-   just created and is most likely to want. */
-body.android #blocklists-container{
-    padding-bottom: 76px;
 }
 
 .blocklists-create-btn{
@@ -4302,16 +4165,13 @@ body.dark-mode .no-active-blocks.clickable:hover{
 
 /* Time Pickers Row */
 
-
 /* Long duration / schedule prompts read better in sentence case than all-caps. */
 #quick-select-label{
     text-transform: none;
     letter-spacing: normal;
 }
 
-
 /* Keep Duration and End labels aligned in one-off timed controls */
-
 
 .now-btn{
     padding: 8px 16px;
@@ -4368,7 +4228,6 @@ body.dark-mode .no-active-blocks.clickable:hover{
     box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
 }
 
-
 .time-input{
     padding: 8px 10px;
     font-size: 15px;
@@ -4418,7 +4277,6 @@ body.dark-mode .next-day-badge{
 }
 
 /* Custom time display */
-
 
 /* Compact instant end HH:MM — same footprint as legacy buttons; editable + opens list on click. */
 
@@ -4562,7 +4420,6 @@ matching the canonical brand
    strand space between emoji and title. */
 
 /* Keep the action icon at a stable size when label + blocklist name wrap. */
-
 
 /* Schedule Block Panel */
 .when-times{
@@ -4817,7 +4674,6 @@ body.dark-mode .add-segment-btn{
         min-width: 0;
     }
 
-
 }
 
 .when-times .segment-days{
@@ -4856,9 +4712,7 @@ body.dark-mode .add-segment-btn{
     transition: all 0.15s ease;
 }
 
-
-body.ios .segment-day-toggle,
-body.android .segment-day-toggle{
+body.ios .segment-day-toggle{
     width: 36px;
     height: 36px;
     font-size: 14px;
@@ -5294,8 +5148,7 @@ body.dark-mode .schedule-panel-overlay-group .repeat-label.repeat-label-disabled
     transition: all 0.15s ease;
 }
 
-body.ios .day-toggle,
-body.android .day-toggle {
+body.ios .day-toggle {
     width: 44px;
     height: 44px;
     padding: 0;
@@ -5513,7 +5366,6 @@ body.android .day-toggle {
     display: none;
 }
 
-
 .schedule-pending-label{
     color: var(--text-color);
     font-weight: 500;
@@ -5679,8 +5531,7 @@ body.dark-mode .schedule-pending-discard:hover{
 }
 
 /* iOS/touch: reliable swipe scroll and momentum */
-body.ios .blocklists-container,
-body.android .blocklists-container {
+body.ios .blocklists-container {
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
 }
@@ -5769,7 +5620,6 @@ body.android .blocklists-container {
 
 /* Selected blocklist card (when preparing to start a block) */
 /* Box-shadow is applied inline via JS using the blocklist's color */
-
 
 .grid-top-row:not(.grid-top-row--blocklist-selected) .scheduler-content{
     min-height: 0;
@@ -5874,8 +5724,7 @@ body.android .blocklists-container {
     font-weight: 500;
 }
 
-body.ios .blocklist-status-line,
-body.android .blocklist-status-line{
+body.ios .blocklist-status-line{
     font-size: 14px;
 }
 
@@ -6119,22 +5968,20 @@ body.mobile-phone-home .blocklist-actions{
     flex-shrink: 0;
 }
 
-body.ios .blocklist-card,
-body.android .blocklist-card{
+body.ios .blocklist-card{
     --blocklist-action-btn-size: 38px;
     --blocklist-actions-gap: 0px;
     --blocklist-actions-slot: 56px;
     --blocklist-menu-anchor-offset: var(--blocklist-action-btn-size);
 }
 
-body.ios .blocklist-actions,
-body.android .blocklist-actions {
+body.ios .blocklist-actions {
     gap: var(--blocklist-actions-gap);
 }
 
 /* Enter-sheet cards carry only the overflow button, so reserve one slot and
    right-align the menu under it. `body` prefix keeps this above the
-   ios/android two-slot defaults above. */
+   iOS two-slot defaults above. */
 
 /* Phones only: the card body is not a tap target there, so no hover lift.
    The single-column desktop sheet keeps the default .blocklist-card:hover —
@@ -7230,8 +7077,7 @@ body.dark-mode .eula-back-btn:hover{
 
 /* Footer credit link — no underline (EULA / privacy links in the card keep theirs). */
 #eula-project-blurb .legal-onboarding-link,
-#ios-screentime-onboarding-note .legal-onboarding-link,
-#android-permissions-onboarding-note .legal-onboarding-link {
+#ios-screentime-onboarding-note .legal-onboarding-link {
     text-decoration: none;
 }
 
@@ -9797,15 +9643,13 @@ body.ios #focus-space-editor .tags-input-container {
     align-items: stretch;
 }
 
-body.ios #focus-space-editor .tags-input-container > .tags-container,
-body.android #focus-space-editor .tags-input-container > .tags-container {
+body.ios #focus-space-editor .tags-input-container > .tags-container {
     flex: 1 1 100%;
     width: 100%;
 }
 
 /* Empty chip wells still participate in flex gap — removes the extra space above the apps/websites row until tags exist. */
-body.ios #focus-space-editor .tags-input-container > .tags-container:empty,
-body.android #focus-space-editor .tags-input-container > .tags-container:empty {
+body.ios #focus-space-editor .tags-input-container > .tags-container:empty {
     display: none;
 }
 
@@ -9857,7 +9701,7 @@ body.handset-device #focus-space-editor .tags-input-stacked .browse-btn{
     gap: 6px;
 }
 
-/* iPhone and Android: app input is hidden — picker button spans the full row. */
+/* iPhone: app input is hidden — picker button spans the full row. */
 body.ios #focus-space-editor .tags-input-stacked .apps-picker-only .browse-btn{
     width: 100%;
 }
@@ -10004,8 +9848,7 @@ body.ios #focus-space-editor .tags-input-container .browse-btn-caption {
 
 /* Phones and tablets have no title bar, so the scrim covers the whole screen;
    the 30px offset above left the top strip of the app undimmed on iPad. */
-body.ios .modal-overlay,
-body.android .modal-overlay{
+body.ios .modal-overlay{
     top: 0;
 }
 
@@ -10244,7 +10087,7 @@ body.desktop-compact-layout .mobile-fullscreen-modal .mobile-modal-title-source{
 /* The desktop edit sheet has no header bar: the back chevron and title sit in
    the card's own title row, as in the two-column panel. Out-specifies the
    ≤718px :is(...) header rule below, which sets display: grid. */
-body.enter-scheduler-modal-open:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header{
+body.enter-scheduler-modal-open:not(.handset-device):not(.ios) #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header{
     display: none;
 }
 
@@ -10307,7 +10150,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
    JS body class). Covers create/edit focus space, settings, and the override
    when the window is ≤718px. */
 @media (max-width: 718px) {
-    body:not(.handset-device):not(.ios):not(.android) :is(
+    body:not(.handset-device):not(.ios) :is(
         #enter-scheduler-modal,
         #blocklist-modal,
         #settings-modal,
@@ -10329,7 +10172,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         overflow: hidden;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) :is(
+    body:not(.handset-device):not(.ios) :is(
         #enter-scheduler-modal,
         #blocklist-modal,
         #settings-modal,
@@ -10351,7 +10194,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         overflow: hidden;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) :is(
+    body:not(.handset-device):not(.ios) :is(
         #enter-scheduler-modal,
         #blocklist-modal,
         #settings-modal,
@@ -10377,7 +10220,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
 
     /* Start/Stop move their title and space chip into the sheet header, so it
        needs the same treatment the phone sheet gives it (13444). */
-    body:not(.handset-device):not(.ios):not(.android) :is(
+    body:not(.handset-device):not(.ios) :is(
         #start-block-confirm-modal,
         #override-modal
     ) .start-confirm-header-room{
@@ -10388,7 +10231,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         gap: 8px 10px;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) :is(
+    body:not(.handset-device):not(.ios) :is(
         #start-block-confirm-modal,
         #override-modal
     ) .start-confirm-header-room h3{
@@ -10401,7 +10244,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         color: var(--text-primary);
     }
 
-    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal .mobile-modal-back-btn{
+    body:not(.handset-device):not(.ios) .mobile-fullscreen-modal .mobile-modal-back-btn{
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -10415,16 +10258,16 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         cursor: pointer;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal .mobile-modal-back-btn:hover{
+    body:not(.handset-device):not(.ios) .mobile-fullscreen-modal .mobile-modal-back-btn:hover{
         background: var(--element-bg);
     }
 
-    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal .mobile-modal-back-btn svg{
+    body:not(.handset-device):not(.ios) .mobile-fullscreen-modal .mobile-modal-back-btn svg{
         width: 20px;
         height: 20px;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal .mobile-modal-header-title{
+    body:not(.handset-device):not(.ios) .mobile-fullscreen-modal .mobile-modal-header-title{
         font-family: var(--font-heading);
         font-size: 1.25rem;
         font-weight: 700;
@@ -10436,11 +10279,11 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         white-space: nowrap;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal .mobile-modal-title-source{
+    body:not(.handset-device):not(.ios) .mobile-fullscreen-modal .mobile-modal-title-source{
         display: none;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) :is(
+    body:not(.handset-device):not(.ios) :is(
         #enter-scheduler-modal,
         #blocklist-modal,
         #settings-modal,
@@ -10459,7 +10302,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
         padding: 18px 20px 20px !important;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) :is(
+    body:not(.handset-device):not(.ios) :is(
         #blocklist-modal,
         #settings-modal,
         #schedule-overlay-customise-modal,
@@ -10475,7 +10318,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
     }
 
     /* Cancel reads as a button against the cream footer, not a hole in it. */
-    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal
+    body:not(.handset-device):not(.ios) .mobile-fullscreen-modal
         :is(.modal-buttons, .schedule-overlay-customise-footer) .modal-btn.cancel-btn{
         background: var(--popover-bg);
     }
@@ -10483,13 +10326,13 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
     /* The alert editor's footer stacks at narrow widths (12271), which put Delete
        on its own row and left the sticky footer top-heavy. In the sheet it stays
        one row: Delete left, Cancel and Save right, all vertically centred. */
-    body:not(.handset-device):not(.ios):not(.android) #schedule-overlay-customise-modal.mobile-fullscreen-modal .schedule-overlay-customise-footer{
+    body:not(.handset-device):not(.ios) #schedule-overlay-customise-modal.mobile-fullscreen-modal .schedule-overlay-customise-footer{
         flex-direction: row;
         align-items: center;
         justify-content: space-between;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) #schedule-overlay-customise-modal.mobile-fullscreen-modal .schedule-overlay-customise-footer-left{
+    body:not(.handset-device):not(.ios) #schedule-overlay-customise-modal.mobile-fullscreen-modal .schedule-overlay-customise-footer-left{
         width: auto;
     }
 
@@ -10497,11 +10340,11 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
        footer drifted up and down as sections expanded. Make the editor fill the
        sheet and push the footer down, so it sits on the bottom edge either way. */
 
-    body:not(.handset-device):not(.ios):not(.android) #settings-modal .settings-modal-header{
+    body:not(.handset-device):not(.ios) #settings-modal .settings-modal-header{
         display: none;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .modal-buttons{
+    body:not(.handset-device):not(.ios) #enter-scheduler-modal.mobile-fullscreen-modal .modal-buttons{
         display: none;
     }
 
@@ -10510,20 +10353,20 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
        Mirrors the handset sheet (header 10720, title 10781, panel row 16722 /
        16727, card reset 10687). The header rule repeats the display:none
        selector at 10360 verbatim so source order wins it back. */
-    body.enter-scheduler-modal-open:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header{
+    body.enter-scheduler-modal-open:not(.handset-device):not(.ios) #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header{
         display: grid;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal .editor-panel-header{
+    body:not(.handset-device):not(.ios) #enter-scheduler-modal .editor-panel-header{
         justify-content: flex-end;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal .editor-panel-title,
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal .editor-panel-back-btn{
+    body:not(.handset-device):not(.ios) #enter-scheduler-modal .editor-panel-title,
+body:not(.handset-device):not(.ios) #enter-scheduler-modal .editor-panel-back-btn{
         display: none;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .time-picker-container{
+    body:not(.handset-device):not(.ios) #enter-scheduler-modal.mobile-fullscreen-modal .time-picker-container{
         background: transparent;
         box-shadow: none;
         border-radius: 0;
@@ -10533,11 +10376,11 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
 
     /* The alert editor's title is a sentence, not a name — let it wrap rather
        than truncate, and keep it centred against the back chevron. */
-    body:not(.handset-device):not(.ios):not(.android) #schedule-overlay-customise-modal.mobile-fullscreen-modal .mobile-modal-header{
+    body:not(.handset-device):not(.ios) #schedule-overlay-customise-modal.mobile-fullscreen-modal .mobile-modal-header{
         align-items: center;
     }
 
-    body:not(.handset-device):not(.ios):not(.android) #schedule-overlay-customise-modal.mobile-fullscreen-modal .mobile-modal-header-title{
+    body:not(.handset-device):not(.ios) #schedule-overlay-customise-modal.mobile-fullscreen-modal .mobile-modal-header-title{
         white-space: normal;
         overflow: visible;
         text-overflow: clip;
@@ -10671,7 +10514,6 @@ body.mobile-phone-home #enter-scheduler-modal.mobile-fullscreen-modal .time-pick
 
 /* Enter sheet schedule segments: two rows (time, then days); touch-sized natural-width day pills. */
 
-
 body.mobile-phone-home #enter-scheduler-modal .segment-days{
     gap: 4px;
     align-items: center;
@@ -10780,7 +10622,7 @@ body:not(.handset-device):not(.desktop-compact-layout) #blocklist-modal .modal-c
 }
 
 @media (max-width: 718px) {
-    body:not(.handset-device):not(.ios):not(.android) #blocklist-modal.mobile-fullscreen-modal .modal-content{
+    body:not(.handset-device):not(.ios) #blocklist-modal.mobile-fullscreen-modal .modal-content{
         max-width: 100%;
     }
 }
@@ -11124,8 +10966,6 @@ body:not(.handset-device) .start-confirm-modal{
     color: var(--redd-navy);
 }
 
-
-
 .start-confirm-summary-card{
     /* Rows are subgrids, so the label column fits the longest label. */
     display: grid;
@@ -11383,14 +11223,6 @@ body:not(.handset-device) .start-confirm-modal{
     line-height: 1.25;
     color: var(--redd-navy);
 }
-
-
-
-
-
-
-
-
 
 .start-confirm-warning .override-info-header{
     align-items: flex-start;
@@ -12270,7 +12102,6 @@ body.dark-mode .modal-btn.black-btn:hover{
     color: var(--text-secondary);
 }
 
-
 /* #override-all-modal's content lacks .start-confirm-modal, so without the
    second selector it alone fell through to the 16px in the shared block below —
    an accidental divergence, not a deliberate one. */
@@ -12488,11 +12319,8 @@ body.dark-mode .settings-top-btn{
 /* Hide desktop-only settings sections on iOS (#settings-modal .settings-section
    sets display:flex and would otherwise win over .desktop-only). */
 body.ios #settings-enforcement-panel,
-body.android #settings-enforcement-panel,
 body.ios #settings-modal .settings-section.desktop-only,
-body.android #settings-modal .settings-section.desktop-only,
-body.ios #settings-modal .settings-help-section,
-body.android #settings-modal .settings-help-section {
+body.ios #settings-modal .settings-help-section {
     display: none;
 }
 
@@ -13367,9 +13195,7 @@ body.dark-mode #settings-modal .settings-feedback-footer{
     white-space: nowrap;
 }
 
-body.android #current-app-version,
-body.ios #settings-latest-version-wrap,
-body.android #settings-latest-version-wrap {
+body.ios #settings-latest-version-wrap {
     display: none;
 }
 
@@ -14668,12 +14494,10 @@ body.handset-device .schedule-segments:has(.schedule-segment:nth-child(5))::-web
 
 /* Non-mobile-phone handsets: larger schedule/time controls; compact day pills fill row when stacked below time. */
 
-
 body.handset-device .main-content .segment-days{
     gap: 4px;
     align-items: center;
 }
-
 
 body.handset-device .main-content .when-times .segment-days{
     min-height: 34px;
@@ -14728,7 +14552,6 @@ body.handset-device .main-content .repeat-date-overlay{
     font-size: 16px;
 }
 
-
 body.handset-device .main-content .now-btn{
     padding: 10px 18px;
     font-size: 16px;
@@ -14736,7 +14559,6 @@ body.handset-device .main-content .now-btn{
     border-radius: 10px;
     box-sizing: border-box;
 }
-
 
 body.handset-device .main-content .popover-option{
     padding: 10px 14px;
@@ -14769,7 +14591,6 @@ body.handset-device .main-content .repeat-option{
     font-size: 16px;
     min-height: 44px;
 }
-
 
 body.handset-device .modal-overlay .websites-import-menu{
     min-width: 220px;
@@ -15147,8 +14968,7 @@ body.ios-phone #blocklist-modal .custom-swatch .custom-icon{
     animation: slideUp 0.3s ease;
 }
 
-body.ios .undo-toast,
-body.android .undo-toast {
+body.ios .undo-toast {
     bottom: calc(20px + env(safe-area-inset-bottom, 20px));
 }
 
@@ -15251,8 +15071,7 @@ body.dark-mode .undo-btn:hover{
     animation: zoomToastIn 0.18s ease;
 }
 
-body.ios .zoom-toast,
-body.android .zoom-toast {
+body.ios .zoom-toast {
     top: calc(20px + env(safe-area-inset-top, 20px));
 }
 
@@ -16976,7 +16795,7 @@ body:not(.handset-device) #enter-scheduler-modal .mobile-modal-header--with-acti
    shorthand, which carries one to defeat the popup scrollbar hack, and to
    out-specify its :is(...) form inside the ≤718px query. */
 #enter-scheduler-modal .mobile-modal-header--with-actions + .mobile-modal-scroll-body,
-body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header--with-actions + .mobile-modal-scroll-body{
+body:not(.handset-device):not(.ios) #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header--with-actions + .mobile-modal-scroll-body{
     padding-top: 14px !important;
 }
 

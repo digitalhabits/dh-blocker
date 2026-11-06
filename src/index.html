@@ -634,21 +634,6 @@
             </div>
         </div>
 
-        <div id="android-permissions-onboarding" class="onboarding-screen hidden">
-            <div class="onboarding-content android-permissions-onboarding-content">
-                <div class="onboarding-icon">
-                    <img id="android-permissions-onboarding-app-icon" src="/reddblock-icon.svg" alt="" class="onboarding-app-icon">
-                </div>
-                <h1 id="android-permissions-onboarding-title"></h1>
-                <div class="onboarding-focus-card">
-                    <p id="android-permissions-onboarding-body" class="onboarding-primary-copy"></p>
-                    <button id="android-accessibility-grant-btn" class="modal-btn primary-btn onboarding-primary-btn" type="button"></button>
-                    <p id="android-accessibility-status" class="subtle hidden"></p>
-                </div>
-                <p id="android-permissions-onboarding-note" class="subtle"></p>
-            </div>
-        </div>
-
         <!-- Main Content - Grid Layout (hidden until JS clears onboarding gate; avoids flash before EULA on iOS). -->
         <div id="main-content" class="main-content hidden">
             <!-- Top Row: Scheduler + Blocklists -->
@@ -885,7 +870,7 @@
     <button type="button" class="editor-section-header" id="editor-section-advanced-header" aria-expanded="false" aria-controls="editor-section-advanced-body">
         <span class="editor-section-copy">
             <span class="editor-section-title" id="editor-section-advanced-title">Advanced options</span>
-            
+
         </span>
         <span class="editor-section-icon" aria-hidden="true"></span>
     </button>
@@ -1140,7 +1125,6 @@
             </div>
         </div>
 
-
         <!-- Enter scheduler (iPhone always; desktop when single-column ≤768px) -->
         <div id="enter-scheduler-modal" class="modal-overlay hidden">
             <div class="modal-content enter-scheduler-modal-content">
@@ -1280,7 +1264,6 @@
                 </div>
             </div>
         </div>
-
 
         <!-- Start focus space confirmation: what is about to be blocked, the
              way out (typing challenge) and what turning it off does (unlock duration). -->
@@ -1925,7 +1908,6 @@
                         </div>
                         </div>
                     </section>
-
 
                     <section id="settings-help-section" class="settings-section settings-help-section desktop-only" aria-labelledby="settings-help-label">
                         <h4 id="settings-help-label" class="settings-section-heading">Something not working?</h4>

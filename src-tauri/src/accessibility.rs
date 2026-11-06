@@ -12,9 +12,7 @@
 //! the document's real URL — scheme intact, untrimmed, in punycode — where
 //! the omnibox string is a *display* form. Firefox hides `https://` and may
 //! trim `www.`, shows a placeholder when empty, and renders IDN for humans.
-//! The Android side carries a whole fixture suite
-//! (`BrowserUrlParserTest`) because it has to parse that display form;
-//! reading `AXURL` means we never do.
+//! Reading the document URL avoids the address-bar display-format pitfalls.
 //!
 //! Three properties of the API shape this module:
 //!
