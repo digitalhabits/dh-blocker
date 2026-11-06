@@ -539,11 +539,13 @@ Recommended stance:
 
 ## iOS and testing tiers
 
+See [the repeatable iOS testing protocol](docs/ios-testing.md) for build, Simulator and connected-device commands and evidence.
+
 iOS enforcement uses the Screen Time plugin (`tauri-plugin-screentime`).
 
 - **Tier 1 (logic):** Runs in the app; safe on iOS. Same blocking/schedule/override logic applies. **Category 14 (T55–T62)** covers the iOS allowlist effective-policy resolvers — run it on the desktop dev build; the resolvers are shared JS and encode iOS-only constraints (Apple's 50-exception cap, `specific-block` vs `all-except`, category-token exclusion).
 - **Tier 2 (integration):** Desktop-oriented; helper-dependent paths always see the shim as “ready” but do not exercise Screen Time. **Manual checklist is the primary way to validate iOS.**
-- **Enforcement layer:** cannot be automated — FamilyControls authorization and shields do not work meaningfully in the simulator, and `ManagedSettingsStore` state cannot be read back. See `architecture.md` §12.3 for device-validation findings and known carve-outs.
+- **Enforcement layer:** requires a physical device. The connected-device runner automates launch and capture; interpreting restrictions and changing rules remain assisted. FamilyControls authorisation and shields do not work meaningfully in the simulator, so Simulator UI checks cannot replace device cases. See `architecture.md` §12.3 for device-validation findings and known carve-outs.
 
 For release, run the **manual test checklist** (section **14. iOS-Specific**, including the **14.1 iOS allowlist matrix**) on a physical iPhone.
 
