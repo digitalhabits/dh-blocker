@@ -67,16 +67,29 @@ final class Driver: XCTestCase {
         try assertSafari(target, restricted: false, phase: "01 baseline target", attempts: 3)
         try assertSafari(control, restricted: false, phase: "02 baseline control", attempts: 3)
         blocker.activate()
-        guard !web.staticTexts[name].exists else { throw DriverFailure.expected("a new, unique fixture name") }
+        guard !web.staticTexts[name].exists, !web.buttons["Resume now"].exists else {
+            throw DriverFailure.expected("a unique fixture name and no existing timed pause")
+        }
         let previousSwitches = focusSpaceSwitches()
-        try createSchedule(name: name, start: start, end: end, fiveMinutePause: true)
+        try createSchedule(name: name, start: start, end: end, pauseChallenge: true)
         try enableSchedule(name: name, start: start, end: end)
         try verifyScheduleAfterRelaunch(name)
 
         try assertSafari(target, restricted: true, phase: "03 target restricted", attempts: 3, before: end)
         try assertSafari(control, restricted: false, phase: "04 control allowed", before: end)
         blocker.activate()
-        let first = try pauseForFiveMinutes(name, before: end)
+        guard end.timeIntervalSinceNow > 6 * 60 else {
+            throw DriverFailure.expected("enough time for the first pause to end during the schedule")
+        }
+        let duration = try openOwnedPause(name)
+        let baseline = try XCTUnwrap(selectedTimedDuration(), "The initial remembered duration must be timed")
+        journal("BREAK_BASELINE \(baseline)")
+        let word = try enterFixtureChallenge()
+        try chooseDuration("5 minutes", in: duration)
+        XCTAssertEqual(challengeField().value as? String, word, "Selecting a duration preserves the typed challenge")
+        try observe(blocker, name: "05 five-minute choice with the completed challenge", includeTree: false)
+        journal("BREAK_CHANGE_REQUESTED")
+        let first = try confirmTimedPause(name, duration: "5 minutes")
         try assertSafari(target, restricted: false, phase: "06 target allowed during pause", attempts: 3, before: first.earliestExpiry)
         try assertSafari(control, restricted: false, phase: "07 control allowed during pause", before: first.earliestExpiry)
 
@@ -90,8 +103,12 @@ final class Driver: XCTestCase {
         try assertSafari(target, restricted: true, phase: "08 target reblocked before Blocker opens", attempts: 3, before: end)
         try assertSafari(control, restricted: false, phase: "09 control still allowed", before: end)
 
+        blocker.terminate()
         blocker.activate()
-        let second = try pauseForFiveMinutes(name, before: end, needsFullWindow: false)
+        _ = try openOwnedPause(name)
+        XCTAssertEqual(selectedTimedDuration(), "5 minutes", "The confirmed duration persists across relaunch")
+        _ = try enterFixtureChallenge()
+        let second = try confirmTimedPause(name, duration: "5 minutes")
         // Test durable pause state on a separate attempt so a foreground
         // reload cannot re-register the first attempt's DeviceActivity event.
         blocker.terminate()
@@ -102,13 +119,20 @@ final class Driver: XCTestCase {
             before: second.earliestExpiry)
 
         blocker.activate()
-        try enableSchedule(name: name, start: start, end: end)
+        try resumeOwned(name)
         try assertSafari(target, restricted: true, phase: "12 early resume reblocks target", attempts: 3,
             before: min(second.earliestExpiry, end))
         try assertSafari(control, restricted: false, phase: "13 control allowed after early resume", before: end)
 
         blocker.activate()
-        let cleanup = try pauseForFiveMinutes(name, before: end, needsFullWindow: false)
+        let afterResume = try openOwnedPause(name)
+        try confirmNever(name, in: afterResume, challenge: true)
+        try assertSafari(target, restricted: false, phase: "14 Never turns off the owned fixture", attempts: 3, before: end)
+        blocker.activate()
+        try enableSchedule(name: name, start: start, end: end)
+        let afterNever = try openOwnedPause(name)
+        XCTAssertEqual(selectedTimedDuration(), "5 minutes", "Never preserves the last timed duration")
+        try restoreDuration(baseline, name: name, in: afterNever)
         try deleteOffFixture(name)
         blocker.terminate()
         blocker.activate()
@@ -117,8 +141,7 @@ final class Driver: XCTestCase {
               focusSpaceSwitches() == previousSwitches else {
             throw DriverFailure.expected("the owned fixture absent after relaunch and the previous switches unchanged")
         }
-        try assertSafari(target, restricted: false, phase: "14 target allowed after owned fixture deletion", attempts: 3,
-            before: min(cleanup.earliestExpiry, end))
+        try observe(blocker, name: "15 owned fixture removed and initial duration restored", includeTree: false)
     }
 
     private func verifyScheduleAfterRelaunch(_ name: String) throws {
@@ -157,35 +180,138 @@ final class Driver: XCTestCase {
         throw DriverFailure.expected("\(name) to close after confirmation")
     }
 
-    private func pauseForFiveMinutes(_ name: String, before end: Date, needsFullWindow: Bool = true) throws
-        -> (earliestExpiry: Date, latestExpiry: Date) {
-        guard end.timeIntervalSinceNow > (needsFullWindow ? 6 * 60 : 60) else {
-            throw DriverFailure.expected("enough time remaining in the owned schedule to observe the pause")
-        }
+    private func ownedPauseTitle(_ name: String) -> XCUIElement {
+        web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH[c] %@ AND label CONTAINS[c] %@",
+            "Pause ", name)).firstMatch
+    }
+
+    private func openOwnedPause(_ name: String) throws -> XCUIElement {
         try tap(web.switches["Turn off \(name)"], named: "Turn off \(name)")
-        let title = web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH[c] %@ AND label CONTAINS[c] %@ AND label CONTAINS[c] %@",
-            "Stop ", name, "for 5 minutes")).firstMatch
-        try require(title, "the exact owned space's five-minute Stop confirmation")
-        try enterFixtureChallenge()
+        try require(ownedPauseTitle(name), "the owned fixture's pause dialog")
+        return try pauseDurationControl()
+    }
+
+    private func pauseDurationControl() throws -> XCUIElement {
+        let durationLabel = web.staticTexts["Turn back on after"]
+        try require(durationLabel, "the pause duration label")
+        // iPad WKWebView exposes the styled listbox trigger as an Other
+        // alongside another Other containing the text label.
+        let controls = web.otherElements.matching(identifier: "Turn back on after")
+            .allElementsBoundByIndex.filter { $0.frame.minX > durationLabel.frame.maxX }
+        guard controls.count == 1, let duration = controls.first else {
+            try observe(blocker, name: "Pause duration controls")
+            throw DriverFailure.expected("one pause duration control to the right of its label")
+        }
+        return duration
+    }
+
+    private func selectedTimedDuration() -> String? {
+        let confirm = button(prefix: "Pause for ")
+        return confirm.exists ? String(confirm.label.dropFirst("Pause for ".count)) : nil
+    }
+
+    private func chooseDuration(_ choice: String, in duration: XCUIElement) throws {
+        try tap(duration, named: "pause duration picker")
+        let option = blocker.descendants(matching: .any).matching(NSPredicate(format: "label == %@", choice)).firstMatch
+        try require(option, "pause duration \(choice)")
+        try tap(option, named: choice)
+        if !choice.hasPrefix("Never") {
+            XCTAssertEqual(selectedTimedDuration(), choice, "The duration picker selected the requested option")
+        }
+    }
+
+    private func journal(_ event: String) {
+        FileHandle.standardOutput.write(Data("REDD_IOS_\(event)\n".utf8))
+    }
+
+    private func confirmTimedPause(_ name: String, duration: String) throws
+        -> (earliestExpiry: Date, latestExpiry: Date) {
         let started = Date()
-        try tap(web.buttons["Stop"], named: "Stop the owned fixture for five minutes")
-        try requireClosed(title, named: "Owned Stop confirmation")
+        try submitOwnedPause(name, buttonLabel: "Pause for \(duration)")
         try requireVisibleSwitch("Turn on \(name)")
-        try requireNoAlert()
+        _ = try ownedResume(name)
         let acknowledged = Date()
         guard acknowledged.timeIntervalSince(started) < 25 else { throw DriverFailure.expected("a prompt pause acknowledgement") }
+        // Only the two five-minute checks consume this timing bracket. A
+        // preference-restoring pause uses only the confirmation result.
         let earliest = started.addingTimeInterval(5 * 60)
         let latest = acknowledged.addingTimeInterval(5 * 60)
-        print("REDD_IOS_PAUSE_ACK \(ISO8601DateFormatter().string(from: acknowledged)) expiry-by \(ISO8601DateFormatter().string(from: latest))")
-        try observe(blocker, name: "05 five-minute stop confirmed without an alert", includeTree: false)
+        if duration == "5 minutes" {
+            print("REDD_IOS_PAUSE_ACK \(ISO8601DateFormatter().string(from: acknowledged)) expiry-by \(ISO8601DateFormatter().string(from: latest))")
+        }
+        try observe(blocker, name: "Timed pause confirmed without an alert", includeTree: false)
         return (earliest, latest)
+    }
+
+    private func submitOwnedPause(_ name: String, buttonLabel: String) throws {
+        let title = ownedPauseTitle(name)
+        try require(title, "the exact owned pause dialog")
+        let confirm = web.buttons[buttonLabel]
+        try require(confirm, buttonLabel)
+        guard confirm.isEnabled, confirm.isHittable else { throw DriverFailure.expected("a hittable \(buttonLabel) button") }
+        confirm.tap()
+        if !title.waitForNonExistence(timeout: 5) {
+            try requireNoAlert()
+            // WKWebView can consume the first tap when focus returns from the
+            // custom duration menu. Retry only the still-active owned dialog.
+            if web.switches["Turn off \(name)"].exists, confirm.isEnabled, confirm.isHittable {
+                confirm.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            }
+        }
+        try requireClosed(title, named: "Owned pause dialog")
+    }
+
+    private func ownedResume(_ name: String) throws -> XCUIElement {
+        let toggle = web.switches["Turn on \(name)"]
+        try requireVisibleSwitch("Turn on \(name)")
+        let resumes = web.buttons.matching(identifier: "Resume now")
+        try require(resumes.firstMatch, "Resume now on the paused fixture")
+        // The resume control is below its card's switch. Reject an ambiguous
+        // button or another card's button rather than resuming an existing rule.
+        let resume = resumes.firstMatch
+        let precedingSwitches = web.switches.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@",
+            "Turn on ", "Turn off ")).allElementsBoundByIndex.filter { $0.frame.minY <= resume.frame.minY }
+        guard resumes.count == 1, resume.isHittable,
+              precedingSwitches.max(by: { $0.frame.minY < $1.frame.minY })?.label == toggle.label else {
+            throw DriverFailure.expected("one visible Resume now control on the exact owned fixture")
+        }
+        return resume
+    }
+
+    private func resumeOwned(_ name: String) throws {
+        try tap(ownedResume(name), named: "Resume now on the owned fixture")
+        try requireVisibleSwitch("Turn off \(name)")
+    }
+
+    private func confirmNever(_ name: String, in duration: XCUIElement, challenge: Bool) throws {
+        try chooseDuration("Never — keep turned off", in: duration)
+        try require(web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@",
+            "This space will stay off until you turn it on again.")).firstMatch, "the Never explanation")
+        if challenge { _ = try enterFixtureChallenge() }
+        try submitOwnedPause(name, buttonLabel: "Turn off \(name)")
+        try requireVisibleSwitch("Turn on \(name)")
+        XCTAssertFalse(web.buttons["Resume now"].exists, "Never leaves no timed restart on the fixture")
+    }
+
+    private func restoreDuration(_ baseline: String, name: String, in duration: XCUIElement) throws {
+        var selection = duration
+        if selectedTimedDuration() != baseline {
+            try chooseDuration(baseline, in: duration)
+            if challengeField().exists { _ = try enterFixtureChallenge() }
+            _ = try confirmTimedPause(name, duration: baseline)
+            try resumeOwned(name)
+            selection = try openOwnedPause(name)
+            XCTAssertEqual(selectedTimedDuration(), baseline, "The initial timed duration has been restored")
+        }
+        journal("BREAK_RESTORED \(baseline)")
+        try confirmNever(name, in: selection, challenge: challengeField().exists)
     }
 
     private func challengeField() -> XCUIElement {
         web.textFields.matching(NSPredicate(format: "placeholderValue == %@", "Type current word...")).firstMatch
     }
 
-    private func enterFixtureChallenge() throws {
+    private func enterFixtureChallenge() throws -> String {
         let field = challengeField()
         try require(field, "the one-word override challenge")
         let frame = field.frame
@@ -201,6 +327,7 @@ final class Driver: XCTestCase {
         }
         try enterWebKeys(word, into: field, named: "current challenge word")
         XCTAssertEqual(field.value as? String, word, "The actual WKWebView challenge field contains the current word")
+        return word
     }
 
     func testRecoverOwnedFixture() throws {
@@ -221,7 +348,15 @@ final class Driver: XCTestCase {
             try tap(web.buttons["Cancel"], named: "Cancel the owned fixture's start confirmation")
             try requireClosed(startTitle, named: "Owned start confirmation")
         }
+        let pauseTitle = ownedPauseTitle(name)
+        if pauseTitle.exists {
+            try tap(web.buttons["Cancel"], named: "Cancel the owned fixture's pause dialog")
+            try requireClosed(pauseTitle, named: "Owned pause dialog")
+        }
         try require(web.buttons["Block"], "Blocker focus space list")
+        if let baseline = ProcessInfo.processInfo.environment["REDD_IOS_BREAK_TO_RESTORE"] {
+            try recoverDuration(baseline, name: name, end: end)
+        }
         if web.switches["Turn on \(name)"].exists {
             // An already off or paused fixture can be removed immediately.
             try deleteOffFixture(name)
@@ -231,6 +366,25 @@ final class Driver: XCTestCase {
             try removeOwnedFixture(name: name, after: end)
         }
         try observe(blocker, name: "Owned fixture absent")
+    }
+
+    private func recoverDuration(_ baseline: String, name: String, end: Date) throws {
+        if web.switches["Turn on \(name)"].exists {
+            if web.buttons["Resume now"].exists {
+                try resumeOwned(name)
+            } else {
+                let start = max(Calendar.current.startOfDay(for: end), end.addingTimeInterval(-30 * 60))
+                try enableSchedule(name: name, start: start, end: end, recovering: true)
+            }
+        }
+        let duration = try openOwnedPause(name)
+        let current = selectedTimedDuration()
+        guard current == baseline || current == "5 minutes" else {
+            try tap(web.buttons["Cancel"], named: "Cancel without altering the new duration choice")
+            journal("BREAK_EXTERNAL_CHOICE")
+            return
+        }
+        try restoreDuration(baseline, name: name, in: duration)
     }
 
     private func focusSpaceSwitches() -> [String] {
@@ -249,7 +403,7 @@ final class Driver: XCTestCase {
         return (name, end)
     }
 
-    private func createSchedule(name: String, start: Date, end: Date, fiveMinutePause: Bool = false) throws {
+    private func createSchedule(name: String, start: Date, end: Date, pauseChallenge: Bool = false) throws {
         guard !newSpaceTitle.exists else {
             throw DriverFailure.expected("Blocker home without an existing unsaved editor")
         }
@@ -284,8 +438,6 @@ final class Driver: XCTestCase {
             throw DriverFailure.expected("the intended window \(startValue)–\(endValue)")
         }
 
-        if fiveMinutePause { try configureFiveMinuteStop() }
-
         // The app lets a Flexible space be stopped without a challenge
         // between its windows. Only the new fixture gets this setting.
         try tap(button(prefix: "Advanced options"), named: "Advanced options")
@@ -297,6 +449,7 @@ final class Driver: XCTestCase {
         try tap(editingOptions, named: "schedule editing options")
         try tap(button(prefix: "Any change"), named: "allow editing outside the fixture window")
         try require(web.buttons["Any change"], "fixture editing choice")
+        if pauseChallenge { try configureOneWordChallenge() }
         guard Date() < end.addingTimeInterval(-60) else { throw DriverFailure.expected("at least a minute remaining before Save") }
         try observe(blocker, name: "Owned schedule configuration", includeTree: false)
         print("REDD_IOS_FIXTURE_SAVE_REQUESTED \(name)")
@@ -306,7 +459,7 @@ final class Driver: XCTestCase {
         print("REDD_IOS_FIXTURE_SAVED \(name)")
     }
 
-    private func configureFiveMinuteStop() throws {
+    private func configureOneWordChallenge() throws {
         try tap(button(prefix: "To stop early"), named: "To stop early")
         let slider = web.sliders["How many words"]
         try require(slider, "the fixture's word count slider")
@@ -315,11 +468,6 @@ final class Driver: XCTestCase {
         slider.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5)).tap()
         try require(web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "1 ·")).firstMatch,
             "the owned fixture has a one-word challenge")
-        let duration = web.otherElements["10 minutes"]
-        try tap(duration, named: "the owned fixture's initial unlock duration")
-        let choice = web.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "5 minutes")).firstMatch
-        try tap(choice, named: "Five-minute automatic restart")
-        try require(button(prefix: "To stop early Type 1 words · back on after 5 minutes"), "the selected five-minute unlock duration")
     }
 
     private func ownedStartTitle(_ name: String) -> XCUIElement {
@@ -327,8 +475,8 @@ final class Driver: XCTestCase {
             "Start ", name)).firstMatch
     }
 
-    private func enableSchedule(name: String, start: Date, end: Date) throws {
-        guard Date() < end.addingTimeInterval(-45) else { throw DriverFailure.expected("at least 45 seconds before the fixture ends") }
+    private func enableSchedule(name: String, start: Date, end: Date, recovering: Bool = false) throws {
+        guard recovering || Date() < end.addingTimeInterval(-45) else { throw DriverFailure.expected("at least 45 seconds before the fixture ends") }
         try tap(web.switches["Turn on \(name)"], named: "Turn on \(name)")
         let title = ownedStartTitle(name)
         try require(title, "the owned fixture's start confirmation")
@@ -464,20 +612,7 @@ final class Driver: XCTestCase {
                 throw DriverFailure.expected("the fixture to be outside its blocking window")
             }
             if usesPauseDialog {
-                // Use the real duration control; Never leaves the user's
-                // remembered timed choice unchanged and books no new restart.
-                let label = web.staticTexts["Turn back on after"]
-                try require(label, "the pause duration label")
-                let controls = web.otherElements.matching(identifier: "Turn back on after")
-                    .allElementsBoundByIndex.filter { $0.frame.minX > label.frame.maxX }
-                guard controls.count == 1, let duration = controls.first else {
-                    throw DriverFailure.expected("one owned pause duration control")
-                }
-                try tap(duration, named: "pause duration picker")
-                let never = blocker.descendants(matching: .any).matching(NSPredicate(
-                    format: "label == %@", "Never — keep turned off")).firstMatch
-                try tap(never, named: "Never")
-                try tap(web.buttons["Turn off \(name)"], named: "Turn off owned fixture")
+                try confirmNever(name, in: pauseDurationControl(), challenge: false)
             } else {
                 try tap(web.buttons["Stop"], named: "Stop owned fixture")
             }

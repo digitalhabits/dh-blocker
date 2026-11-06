@@ -103,13 +103,13 @@ On the first run, Xcode may need to provision the driver's app ID. With an authe
 
 ### Scheduled pause
 
-The pause profile creates a separate Daily focus space with a one-word challenge and a five-minute **Turn back on after** setting. The fixture has a window of up to 30 minutes ending today, with about 16 minutes remaining when XCTest starts. Run before the last 20 minutes of the device's local day.
+The pause profile requires the current **Pause** dialog and **Resume now** control. Start with no active timed pause on another space. The runner creates a separate Daily space with a one-word challenge. Its schedule lasts up to 30 minutes and ends today, with about 16 minutes remaining when XCTest starts. Run before the last 20 minutes of the device's local day.
 
 1. Check both sites load. Start the fixture, relaunch Blocker and verify the enabled state persisted. Confirm Safari restricts the target and loads the control.
-2. Turn off the exact fixture, type the word shown by the challenge and confirm **Stop**. Require the confirmation to close without a Blocker alert and the fixture's switch to show it is off. Verify both sites load during the pause.
+2. Open the fixture’s pause dialog and record the initial timed choice. Complete the challenge, select **5 minutes**, and check that the typed word remains. Confirm **Pause for 5 minutes**, require the dialog to close without an alert, and verify both Safari sites load.
 3. Keep Blocker backgrounded through the real five-minute pause. Observe Safari restrict the target again while the control loads, before opening Blocker or reaching the fixture's scheduled end.
-4. Pause the same fixture again and relaunch Blocker. Verify the pause survived relaunch and Safari allows the target. Turn the fixture back on using its switch, confirm **Start** and observe the restriction return before the second pause would have ended.
-5. Pause the owned space once more so it can be deleted. After deletion, relaunch to verify the fixture is gone and the other spaces' switches are as before. Check that Safari allows the target before the cleanup pause or schedule would have expired.
+4. Relaunch Blocker and check that it remembers five minutes. Pause the same fixture again, relaunch, and verify the pause and Safari access persist. Use the fixture’s **Resume now** button and observe the restriction return before the second pause would have ended.
+5. Choose **Never** for the fixture and verify it stays off, with Safari access and no **Resume now** button. Turn the fixture on again to check that **Never** preserved the five-minute choice. Restore the initial timed choice through the fixture, then turn it off and delete it. After relaunch, verify that it is absent and the other spaces’ switches match the start of the run.
 
 ### Recovery
 
@@ -119,14 +119,14 @@ After an interruption, rerun cleanup against the original report. If the fixture
 node scripts/ios-test/run.mjs device-full --device "$DEVICE" --report "$RUN_REPORT" --recover
 ```
 
-Recovery closes a matching unsaved draft or removes the exact named fixture once it is off, paused or outside its schedule window. It keeps the original test verdict. Open the `.xcresult` to inspect failures and observations. Other physical scenarios retain their own checklist case status.
+Recovery closes a matching unsaved draft or removes the exact named fixture once it is off, paused or outside its schedule window. If a pause run may have changed the remembered duration, recovery uses the recorded initial choice and the same fixture to restore it. If recovery finds a duration different from both the initial and test choices, it keeps that duration. It keeps the original test verdict. Open the `.xcresult` to inspect failures and observations. Other physical scenarios retain their own checklist case status.
 
 ## Remaining physical cases
 
 - **§14.0 `14.0-picker`**. Use an owned block-mode fixture and a harmless app outside Always Allowed. Verify native picker edits preserve the enforced selection floor, and observe the app shield and subsequent return.
 - **§14.1 `14.1-allowlist`**. Use the dedicated-device lane for the allowlist, overlap, Stop all and legacy-data matrix.
 - **§14.2 `14.2-availability` / `14.2-token-refresh`**. On older iOS verify startup and a genuine schedule transition. Use a dedicated iOS/iPadOS 26.5+ device for token refresh and corruption/reselection.
-- **§14.3 `14.3-pause-resume` / `14.3-long-failure`**. Run the automated pause profile for the five-minute scheduled Safari case. Use run-owned fixtures for the timed Manual, other scheduled variants and indefinite-stop checks. Use the dedicated lane for next-day, midnight, sleep-window and registration-failure cases.
+- **§14.3 `14.3-pause-resume` / `14.3-long-failure`**. Run the automated pause profile for the five-minute scheduled Safari case. Use run-owned fixtures for the timed Manual and other scheduled variants. Use the dedicated lane for next-day, midnight, sleep-window and registration-failure cases.
 - **§14.4 `14.4-schedule-boundaries` / `14.4-notifications` / `14.4-persistence`**. Use a future run-owned schedule with a window of at least 15 minutes. Verify both enforcement boundaries in Safari while Blocker is closed and record expected and actual times. Use the dedicated lane for notification permissions and timing, overlapping cases, reboot and time zone.
 
 Keep dedicated-device observations alongside the checklist and identify the OS, artifact and case. Never uninstall, clear data, revoke permissions, change the clock/time zone, use Stop all or weaken an existing rule on a personal device. Keep profile expiry in view when leaving a development build installed. If returning to the Store build, use a supported same-ID update path and verify rule continuity before making any device changes.
