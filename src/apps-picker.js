@@ -113,11 +113,16 @@ export async function openInstalledAppsPicker() {
     function selectAppName(rawName) {
         const name = String(rawName || '').trim();
         if (!name || isProtectedApp(name)) return;
-        const known = [...apps, ...browsedApps].some(
-            (a) => sameAppPickerName(a.process_name, name) || sameAppPickerName(a.display_name, name),
-        );
+        // The native dialog returns a bundle stem on macOS and an executable
+        // stem on Windows. Windows shortcut labels may name different binaries.
+        const field = state.isMacOSDesktop ? 'display_name' : 'process_name';
+        const matches = apps.filter(a => sameAppPickerName(a[field], name));
+        const known = matches.length === 1 ? matches[0]
+            : browsedApps.find(a => sameAppPickerName(a.process_name, name));
+        const processName = known?.process_name ?? name;
+        if (isProtectedApp(processName)) return;
         if (!known) browsedApps.push({ display_name: name, process_name: name });
-        selectedProcessNames.add(name);
+        selectedProcessNames.add(processName);
     }
 
     function updateAddButton() {

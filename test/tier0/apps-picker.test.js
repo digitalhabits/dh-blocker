@@ -23,6 +23,7 @@ beforeEach(() => {
             <button id="app-picker-add-btn"></button>
         </div>`;
     state.isAndroid = false;
+    state.isMacOSDesktop = false;
     state.installedAppsCache = [
         { display_name: 'Google Chrome', process_name: 'Google Chrome' },
         { display_name: 'Slack', process_name: 'Slack' },
@@ -61,4 +62,38 @@ test('browsing manually cannot select the blocker itself', async () => {
 
     expect(row('Digital Habits Blocker')).toBeNull();
     expect(document.getElementById('app-picker-add-btn').disabled).toBe(true);
+});
+
+test('a browsed macOS bundle ticks its installed executable exactly once', async () => {
+    state.isMacOSDesktop = true;
+    state.installedAppsCache.push({ display_name: 'Visual Studio Code', process_name: 'Code' });
+    await openInstalledAppsPicker();
+    row('Slack').click();
+
+    tauriAPI.openAppPicker.mockResolvedValue(['Visual Studio Code', 'visual studio code']);
+    await document.getElementById('app-picker-browse-btn').onclick();
+
+    expect(row('Code').checked).toBe(true);
+    expect(document.getElementById('app-picker-add-btn').textContent).toBe('Add Selected (2)');
+    expect(window.modalApps).toEqual([]);
+    document.getElementById('app-picker-add-btn').click();
+    expect(window.modalApps).toEqual(['Slack', 'Code']);
+    expect(pushModalUndo).toHaveBeenCalledTimes(1);
+    pushModalUndo.mock.calls[0][1]();
+    expect(window.modalApps).toEqual([]);
+});
+
+test('browsing matches Windows executable stems, even when a shortcut has the same label', async () => {
+    state.installedAppsCache.push({ display_name: 'Contoso', process_name: 'ContosoLauncher' });
+    await openInstalledAppsPicker();
+
+    tauriAPI.openAppPicker.mockResolvedValue(['Contoso', 'CONTOSO', 'contosolauncher']);
+    await document.getElementById('app-picker-browse-btn').onclick();
+
+    expect(row('Contoso')?.checked).toBe(true);
+    expect(row('ContosoLauncher').checked).toBe(true);
+    expect(document.getElementById('app-picker-add-btn').textContent).toBe('Add Selected (2)');
+    document.getElementById('app-picker-cancel-btn').click();
+    expect(window.modalApps).toEqual([]);
+    expect(pushModalUndo).not.toHaveBeenCalled();
 });
