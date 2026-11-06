@@ -27,8 +27,6 @@ export default [
             'src-tauri/target/**',
             'src-tauri/gen/**',
             'browser-ext-migration/**',
-            // Gradle output — the Kotlin unit-test run drops an HTML report
-            // with its own bundled JS in here. Git ignores it too.
         ],
     },
 

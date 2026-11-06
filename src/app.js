@@ -2146,6 +2146,8 @@ export function applyEulaOnboardingLanguage() {
     const agreeInner = document.getElementById('eula-agree-line-inner');
     if (agreeInner) agreeInner.innerHTML = tSettings('eulaAgreeLineHtml');
 
+    const privacyTitle = document.getElementById('eula-privacy-title');
+    if (privacyTitle) privacyTitle.textContent = tSettings('eulaPrivacyTitle');
     const privacyLead = document.getElementById('eula-privacy-lead');
     if (privacyLead) privacyLead.textContent = tSettings('eulaPrivacyLead');
     const howWeCountSummary = document.getElementById('eula-how-we-count-summary');
