@@ -1,6 +1,6 @@
-<img src="assets/icons/128x128.png" alt="Digital Habits: Blocker app icon" width="128" height="128">
-
 # Digital Habits: Blocker
+
+<img src="assets/icons/128x128.png" alt="Digital Habits: Blocker app icon" width="128" height="128">
 
 Make room for what matters by blocking distracting websites and apps. Choose when you want to focus and how much effort it should take to change your mind.
 
