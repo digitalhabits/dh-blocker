@@ -150,8 +150,9 @@ nothing in the code will remind you of:
 - The focus-space editor (`src/focus-space-editor.js`) is **one DOM node,
   `#focus-space-editor`, moved between two hosts**: the create modal borrows it
   from the scheduler panel in `openBlocklistModal` and `closeBlocklistModal`
-  returns it. Every id inside it is looked up globally by the listeners in
-  `setupModalListeners`, so never clone it or give either host its own copy —
+  returns it. The listeners in `focus-space-tags.js` and
+  `focus-space-editor-fields.js` look up its ids globally, so never clone it or
+  give either host its own copy —
   duplicate ids would silently bind the wrong form. `handleBlocklistSelect`
   repopulates it for the selected space, except when the id is unchanged
   (then only the lock state is resynced, so a pause or stop does not discard
