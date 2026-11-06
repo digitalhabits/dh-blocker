@@ -7,6 +7,20 @@ import { pushModalUndo } from './app.js';
 import { ensureInstalledAppsCache } from './blocking-platform.js';
 import { isProtectedApp } from './blocklist-utils.js';
 
+/** Should the picker offer to add `filter` as a typed name? Only when the search
+ *  found nothing, and never for the blocker itself — blocking it would take
+ *  enforcement down with it. Separate from the DOM so it can be tested. */
+export function canOfferTypedAppName(filter, installedApps = []) {
+    const name = String(filter || '').trim();
+    if (!name) return false;
+    if (isProtectedApp(name)) return false;
+    const lower = name.toLocaleLowerCase();
+    return !installedApps.some((a) => (
+        String(a?.display_name || '').toLocaleLowerCase() === lower
+        || String(a?.process_name || '').toLocaleLowerCase() === lower
+    ));
+}
+
 // The blocklist modal's selected-apps array lives inside setupModalListeners
 // (app.js) and is shared with this picker via `window.modalApps`. Keep a
 // fallback to `window.getModalApps()` so the picker still works if only the
@@ -41,8 +55,17 @@ export async function openInstalledAppsPicker() {
         return [];
     };
     const selectedProcessNames = new Set();
-    // Apps chosen through "Browse manually…" that the scan did not list.
+    // Desktop only: an app the scan missed can still be named by hand. On iOS and
+    // Android the list comes from the OS and a typed name would match nothing.
+    const canTypeNames = !state.isAndroid && !state.isIOS;
+    const isWindows = document.body.classList.contains('windows');
+    // Apps chosen through browsing or typing that the scan did not list.
     const browsedApps = [];
+
+    function normaliseTypedName(value) {
+        const name = String(value || '').trim();
+        return isWindows ? name.replace(/\.exe$/i, '') : name;
+    }
 
     function sameAppPickerName(displayName, processName) {
         const normalize = (value) => String(value || '').trim().toLocaleLowerCase();
@@ -50,15 +73,28 @@ export async function openInstalledAppsPicker() {
     }
 
     function renderAppList(filter = '') {
-        const lowerFilter = filter.toLowerCase();
+        const typed = normaliseTypedName(filter);
+        const lowerFilter = (isWindows ? typed : filter).toLowerCase();
         const source = browsedApps.length > 0 ? [...browsedApps, ...apps] : apps;
-        const filtered = filter
+        const filtered = lowerFilter
             ? source.filter(a =>
                 a.display_name.toLowerCase().includes(lowerFilter) ||
                 a.process_name.toLowerCase().includes(lowerFilter))
             : source;
 
         if (filtered.length === 0) {
+            if (filter && canTypeNames) {
+                const safe = escapeHtml(filter.trim());
+                const canOffer = canOfferTypedAppName(typed, apps);
+                const hint = isWindows && canOffer ? '. Enter its executable name, such as app.exe.' : '';
+                listEl.innerHTML = `<div class="app-picker-empty">No installed app called "${safe}"${hint}</div>`
+                    + (canOffer
+                        ? `<button type="button" class="modal-btn cancel-btn app-picker-add-typed">Add "${safe}" anyway</button>`
+                        : '');
+                listEl.querySelector('.app-picker-add-typed')
+                    ?.addEventListener('click', () => addTypedName(filter));
+                return;
+            }
             listEl.innerHTML = filter
                 ? '<div class="app-picker-empty">No apps match your search</div>'
                 : '<div class="app-picker-empty">No installed apps found</div>';
@@ -117,6 +153,15 @@ export async function openInstalledAppsPicker() {
         selectedProcessNames.add(processName);
     }
 
+    function addTypedName(rawName) {
+        const name = normaliseTypedName(rawName);
+        if (!canOfferTypedAppName(name, apps)) return;
+        selectAppName(name);
+        searchInput.value = '';
+        renderAppList('');
+        updateAddButton();
+    }
+
     function updateAddButton() {
         const newCount = [...selectedProcessNames].filter(
             p => !getModalApps().some(a => a.toLowerCase() === p.toLowerCase())
@@ -132,10 +177,19 @@ export async function openInstalledAppsPicker() {
     const onSearch = () => renderAppList(searchInput.value);
     searchInput.addEventListener('input', onSearch);
 
+    // Enter adds the typed name, the same as the button.
+    const onSearchKeydown = (e) => {
+        if (e.key !== 'Enter' || !canTypeNames) return;
+        e.preventDefault();
+        if (listEl.querySelector('.app-picker-add-typed')) addTypedName(searchInput.value);
+    };
+    searchInput.addEventListener('keydown', onSearchKeydown);
+
     // Clean up and close
     function closePickerModal() {
         modal.classList.add('hidden');
         searchInput.removeEventListener('input', onSearch);
+        searchInput.removeEventListener('keydown', onSearchKeydown);
         modal.removeEventListener('click', onOverlayClick);
     }
 
