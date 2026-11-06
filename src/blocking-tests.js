@@ -48,6 +48,8 @@
         return;
     }
 
+    // All-day fixtures use equal start/end times, matching production semantics.
+    // Ending at 23:59 would exclude the final minute and make the suite clock-dependent.
     const {
         createMockDate,
         createMockNow,
@@ -266,7 +268,7 @@
         // T9c: Paused schedule is excluded from enforcement
         (function T9c() {
             const blocklist = createMockBlocklist({ websites: ['paused-schedule.com'] });
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const now = Date.now();
             const schedule = createMockSchedule(blocklist.id, [segment], {
                 isPaused: true,
@@ -306,7 +308,7 @@
         (function T9e() {
             const blocklist = createMockBlocklist({ websites: ['dual-pause.com'] });
             const now = Date.now();
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const schedule = createMockSchedule(blocklist.id, [segment]);
             const block = createMockBlock(blocklist.id, now - 60000, now + 60000, {
                 isPaused: true,
@@ -358,7 +360,7 @@
             const now = Date.now();
             const block = createMockBlock(blocklist1.id, now - 60000, now + 60000);
 
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]); // All day every day
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]); // All day every day
             const schedule = createMockSchedule(blocklist2.id, [segment]);
 
             const appData = createMockAppData({
@@ -380,7 +382,7 @@
             const now = Date.now();
             const block = createMockBlock(blocklist.id, now - 60000, now + 60000);
 
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const schedule = createMockSchedule(blocklist.id, [segment]);
 
             const appData = createMockAppData({
@@ -400,7 +402,7 @@
             const blocklist2 = createMockBlocklist({ websites: ['site2.com'] });
             const blocklist3 = createMockBlocklist({ websites: ['site3.com'] });
 
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const schedule1 = createMockSchedule(blocklist1.id, [segment]);
             const schedule2 = createMockSchedule(blocklist2.id, [segment]);
             const schedule3 = createMockSchedule(blocklist3.id, [segment]);
@@ -425,7 +427,7 @@
             const block = createMockBlock(blocklist1.id, now - 120000, now - 60000);
 
             // Schedule still active
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const schedule = createMockSchedule(blocklist2.id, [segment]);
 
             const appData = createMockAppData({
@@ -504,7 +506,7 @@
             const block = createMockBlock(blocklist.id, now - 120000, now - 60000);
 
             // Schedule still active
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const schedule = createMockSchedule(blocklist.id, [segment]);
 
             const appData = createMockAppData({
@@ -554,7 +556,7 @@
             const now = Date.now();
             // One-off was overridden (removed)
 
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const schedule = createMockSchedule(blocklist2.id, [segment]);
 
             const appData = createMockAppData({
@@ -667,7 +669,7 @@
         // T27: Override All with schedule only
         (function T27() {
             const blocklist = createMockBlocklist({ websites: ['youtube.com'] });
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
 
             let appData = createMockAppData({
                 blocklists: [blocklist],
@@ -688,7 +690,7 @@
         (function T28() {
             const blocklist1 = createMockBlocklist({ websites: ['facebook.com'] });
             const blocklist2 = createMockBlocklist({ websites: ['youtube.com'] });
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const now = Date.now();
 
             let appData = createMockAppData({
@@ -862,7 +864,7 @@
         // T35: Active schedule on correct day/time
         (function T35() {
             const blocklist = createMockBlocklist({ websites: ['youtube.com'] });
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]); // All days
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]); // All days
             const schedule = createMockSchedule(blocklist.id, [segment]);
             const now = Date.now();
             const appData = createMockAppData({
@@ -895,7 +897,7 @@
             const now = Date.now();
             const schedule = createMockSchedule(
                 blocklist.id,
-                [createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6])],
+                [createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6])],
                 { isPaused: true, pauseEndTime: now + 60000 }
             );
             const appData = createMockAppData({
@@ -939,7 +941,7 @@
             const blocklist = createMockBlocklist({
                 overrideDifficulty: { type: 'random-words', count: 80 }
             });
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const schedule = createMockSchedule(blocklist.id, [segment]);
             const now = Date.now();
             const appData = createMockAppData({
@@ -1072,7 +1074,7 @@
                 activeBlocks: [createMockBlock(activeBlocklist.id, now - 60000, now + 60000)],
                 schedules: [createMockSchedule(
                     pausedBlocklist.id,
-                    [createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6])],
+                    [createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6])],
                     { isPaused: true, pauseEndTime: now + 60000 }
                 )]
             });
@@ -1094,7 +1096,7 @@
         (function T39() {
             const blocklist1 = createMockBlocklist({ websites: ['facebook.com'] });
             const blocklist2 = createMockBlocklist({ websites: ['youtube.com'] });
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             const now = Date.now();
 
             const appData = createMockAppData({
@@ -1137,7 +1139,7 @@
         // T41: Only schedules → after override, every schedule is off but kept
         (function T41() {
             const bl = createMockBlocklist({ websites: ['youtube.com'] });
-            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const segment = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
 
             const appData = createMockAppData({
                 blocklists: [bl],
@@ -1161,7 +1163,7 @@
             const appData = createMockAppData({
                 blocklists: [bl1, bl2],
                 activeBlocks: [createMockBlock(bl1.id, now - 60000, now + 60000)],
-                schedules: [createMockSchedule(bl2.id, [createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6])])]
+                schedules: [createMockSchedule(bl2.id, [createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6])])]
             });
 
             simulateOverrideAll(appData);
@@ -1598,7 +1600,7 @@
         const saved = internals.appData;
         const realSet = api.setBlockedAppsViaHelper;
         const now = Date.now();
-        const allDay = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+        const allDay = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
         const live = (id) => createMockBlock(id, now - 1000, now + 60000);
         let sent = null;
         api.setBlockedAppsViaHelper = (apps, newlyAdded, opts) => {
@@ -1690,7 +1692,7 @@
         } = internals;
         const saved = internals.appData;
         const now = Date.now();
-        const allDay = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+        const allDay = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
         const sites = (prefix, n) => Array.from({ length: n }, (_, i) => `${prefix}${i}.com`);
         const allow = (websites) => createMockBlocklist({ mode: 'allowlist', websites, apps: [] });
 
@@ -1771,7 +1773,7 @@
         const saved = internals.appData;
         const realSet = api.setBlockedAppsViaHelper;
         const now = Date.now();
-        const allDay = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+        const allDay = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
         const live = (id) => createMockBlock(id, now - 1000, now + 60000);
         api.setBlockedAppsViaHelper = () => Promise.resolve({ success: true });
         // Sync the state before the start, then the state after it.
@@ -2129,7 +2131,7 @@
         const HOUR = 60 * 60 * 1000;
         // Covers the whole day in both directions so the segment is active
         // whenever the suite happens to run.
-        const allDaySeg = { startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, days: [0, 1, 2, 3, 4, 5, 6] };
+        const allDaySeg = { startHour: 0, startMinute: 0, endHour: 0, endMinute: 0, days: [0, 1, 2, 3, 4, 5, 6] };
         const withData = (blocklists, { schedules = [], activeBlocks = [] } = {}) => {
             window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({ blocklists, schedules, activeBlocks });
         };
@@ -2244,7 +2246,7 @@
         const savedAppData = internals.appData;
         const now = Date.now();
         const allDays = [0, 1, 2, 3, 4, 5, 6];
-        const seg = createMockSegment(0, 0, 23, 59, allDays);
+        const seg = createMockSegment(0, 0, 0, 0, allDays);
 
         try {
             // T63: a Manual block stopped with a 10-minute unlock is paused, still present, and the switch reads off
@@ -2377,7 +2379,7 @@
         const makeBlock = (extra = {}) => createMockBlock(blocklist.id, Date.now() - 1000, forever, { isAlwaysOn: true, ...extra });
         const scheduleBlocklist = createMockBlocklist({ id: 'bl-ios-resume-schedule', unlockMinutes: 10, websites: ['schedule-resume.invalid'] });
         const overlapBlocklist = createMockBlocklist({ id: 'bl-ios-resume-overlap', unlockMinutes: 10, websites: ['overlap-resume.invalid'] });
-        const allDay = { startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, days: [0, 1, 2, 3, 4, 5, 6] };
+        const allDay = { startHour: 0, startMinute: 0, endHour: 0, endMinute: 0, days: [0, 1, 2, 3, 4, 5, 6] };
         let events = [], currentTarget = null, registrationDelay = false, registrationThrows = false;
         let registrationResult = { success: true };
         let scheduleSyncResults = null;
@@ -3376,7 +3378,7 @@
             const schedOff = createMockBlocklist({ id: 'bl-sw-sched-off', name: 'Scheduled off' });
             const schedTimed = createMockBlocklist({ id: 'bl-sw-sched-timed', name: 'Scheduled timed' });
             const idle = createMockBlocklist({ id: 'bl-sw-idle', name: 'Idle' });
-            const seg = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const seg = createMockSegment(0, 0, 0, 0, [0, 1, 2, 3, 4, 5, 6]);
             internals.appData = createMockAppData({
                 blocklists: [manual, pausedManual, sched, schedOff, schedTimed, idle],
                 activeBlocks: [
