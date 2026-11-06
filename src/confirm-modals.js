@@ -1570,6 +1570,7 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
     const unlockMinutes = minutes ?? getLastBreakMinutes(state.appData.settings);
     const stageIOSPause = state.isIOS && unlockMinutes > 0 && !!(block || schedule);
     const stagedTarget = stageIOSPause ? { ...(schedule || block) } : null;
+    const previousSchedule = state.isIOS && schedule && !stageIOSPause ? { ...schedule } : null;
     const outcome = applyStopToTarget(
         state.appData,
         { block: stageIOSPause ? (block ? stagedTarget : null) : block, schedule: stageIOSPause ? (schedule ? stagedTarget : null) : schedule },
@@ -1675,17 +1676,25 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
         return outcome;
     }
 
-    if (outcome.kind === 'off' && state.isIOS) {
-        // Only a schedule reaches 'off', and it stays in the data as paused, so
-        // setSchedules sees nothing removed and will not clear the store itself.
-        // Clear the schedule store alone: clearing both would drop every other
-        // space's shields too, and leave them down if the re-apply below never
-        // lands. syncSchedulesToHelper re-applies the rest in the same call.
+    const turnsOffIOSSchedule = outcome.kind === 'off' && state.isIOS;
+    try {
+        await saveData();
+    } catch (error) {
+        if (turnsOffIOSSchedule) {
+            for (const key of ['isPaused', 'pauseEndTime']) {
+                if (Object.hasOwn(previousSchedule, key)) schedule[key] = previousSchedule[key];
+                else delete schedule[key];
+            }
+        }
+        throw error;
+    }
+
+    if (turnsOffIOSSchedule) {
+        // A saved indefinite pause retains its schedule ID. Clear the schedule
+        // store only after saving succeeds, then reapply the other schedules.
         await tauriAPI.screentimeClearScheduleBlock();
         state.lastBlockedDomains = new Set();
     }
-
-    await saveData();
     if (block) await syncActiveBlocksToHelper();
     const scheduleSync = state.isIOS && outcome.kind === 'unlocked'
         ? await syncSchedulesToHelper({ reportFailure: false })
