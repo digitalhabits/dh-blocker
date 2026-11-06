@@ -1,4 +1,4 @@
-// Installed-apps picker modal (desktop + Android app lists).
+// Installed-apps picker modal for desktop.
 // Extracted verbatim from app.js.
 import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
@@ -20,20 +20,12 @@ export async function openInstalledAppsPicker() {
 
     if (!modal || !listEl) return;
 
-    // No OS-level "browse for an app bundle" concept on Android —
-    // installed apps are only reachable via PackageManager (already
-    // covered by the list above).
-    browseBtn?.classList.toggle('hidden', state.isAndroid);
-
     // Show modal with loading state
     modal.classList.remove('hidden');
     searchInput.value = '';
     listEl.innerHTML = '<div class="app-picker-loading">Scanning installed apps...</div>';
 
-    // Opening this picker is the explicit freshness boundary for Android.
-    // Refresh PackageManager here (rather than at app start) and persist the
-    // resulting labels for the next launch.
-    await ensureInstalledAppsCache({ refresh: state.isAndroid });
+    await ensureInstalledAppsCache();
     if (!state.installedAppsCache) {
         listEl.innerHTML = '<div class="app-picker-empty">Could not scan installed apps. Use "Browse manually..." below.</div>';
     }
@@ -161,7 +153,7 @@ export async function openInstalledAppsPicker() {
     };
 
     // Browse manually — fall back to the OS file picker (desktop only)
-    if (browseBtn && !state.isAndroid) {
+    if (browseBtn) {
         browseBtn.classList.remove('hidden');
         browseBtn.onclick = async () => {
             closePickerModal();
@@ -187,8 +179,6 @@ export async function openInstalledAppsPicker() {
                 window.renderModalTags();
             }
         };
-    } else if (browseBtn) {
-        browseBtn.classList.add('hidden');
     }
 
     // Focus search input

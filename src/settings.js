@@ -37,7 +37,7 @@ export function setupHelpMenuLinks() {
 
 // Setup Helper Settings in the settings modal
 export function setupHelperSettings() {
-    if (state.isIOS || state.isAndroid) return;
+    if (state.isIOS) return;
     const statusIndicator = document.getElementById('helper-status-indicator');
     const cleanHostsBtn = document.getElementById('clean-hosts-btn');
 
@@ -150,7 +150,6 @@ export function logHelperRemovalFallback(result) {
     }
 }
 
-
 export async function confirmHelperRemoved() {
     const status = await refreshDesktopHelperStatus();
     const removed = !(status?.installed || status?.running);
@@ -196,7 +195,7 @@ export async function uninstallHelperAndConfirmRemoved() {
 }
 
 export function isDesktopBlockingEnforcedNow() {
-    if (state.isIOS || state.isAndroid) return false;
+    if (state.isIOS) return false;
     return hasAnyEnforcedBlocks();
 }
 
@@ -728,7 +727,7 @@ export function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) 
     html += '<div class="diagnostics-section">';
     html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsEnforcementSection'))}</div>`;
     html += '<div class="diagnostics-card">';
-    if (!state.isIOS && !state.isAndroid) {
+    if (!state.isIOS) {
         const forceLabel = enforcementEnabled
             ? tSettings('diagnosticsForceCloseEnabled')
             : tSettings('diagnosticsForceCloseDisabled');
@@ -938,7 +937,6 @@ export function updateOverrideAllButtonVisibility() {
 
 // Show challenge for removing helper when blocks are active
 
-
 // Setup the configurable browser-extension grace period.
 // Backend reads `settings.extensionGraceSeconds` from the data file
 // on every grace-start (no app restart needed). Backend rejects
@@ -947,7 +945,6 @@ export function updateOverrideAllButtonVisibility() {
 // Shows a searchable list of installed apps (scanned from Start Menu on
 // Windows, /Applications on macOS) so users don't have to navigate the
 // OS file picker to find executables.
-
 
 // Setup the configurable browser-extension grace period.
 export function setupGraceSetting() {
@@ -1112,8 +1109,7 @@ export function setupOverrideAll() {
 /**
  * Close the stop-all dialog and hand the user back to settings, where they came
  * from. Previously inlined at three call sites which had drifted — the success
- * path forgot to restore the settings modal — and absent from
- * ANDROID_MODAL_CLOSE_FNS entirely, so Android back left it half-reset.
+ * path forgot to restore the settings modal. Keep every close path in sync.
  */
 export function closeOverrideAllModal() {
     document.getElementById('override-all-modal')?.classList.add('hidden');
@@ -1318,7 +1314,7 @@ export function refreshUninstallButtonState() {
 }
 
 export function setupWindowsUninstallGuidance() {
-    if (state.isIOS || state.isAndroid) return;
+    if (state.isIOS) return;
     const btn = document.getElementById('windows-uninstall-open-settings-btn');
     if (!btn) return;
 
@@ -1343,7 +1339,6 @@ export function setupWindowsUninstallGuidance() {
         }
     });
 }
-
 
 // Find the hardest challenge among all block/schedule state that could still resume later.
 export function findHardestChallenge() {
@@ -1443,9 +1438,6 @@ export function setupSettingsInfoTooltips() {
 // Perform the actual override-all operation
 export async function performOverrideAll() {
     try {
-        const androidManualBlockIds = state.isAndroid
-            ? state.appData.activeBlocks.map((block) => block.id).filter(Boolean)
-            : [];
         const clearedBlocks = state.appData.activeBlocks;
 
         // Clear all active blocks
@@ -1464,14 +1456,6 @@ export async function performOverrideAll() {
         if (state.isIOS) {
             for (const block of clearedBlocks) await cancelIOSRestart(block);
             await tauriAPI.screentimeClearBlock();
-        } else if (state.isAndroid) {
-            for (const id of androidManualBlockIds) {
-                try {
-                    await tauriAPI.androidStopManualBlock(id);
-                } catch (e) {
-                    console.warn('Failed to clear Android manual block:', e);
-                }
-            }
         } else {
             const status = await refreshDesktopHelperStatus();
             if (status.helperReady) {

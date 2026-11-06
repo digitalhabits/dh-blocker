@@ -32,7 +32,7 @@ async function setUpMacDesktop() {
     const { CURRENT_EULA_REVISION } = await import('../../src/onboarding.js');
     const enforcement = await import('../../src/enforcement.js');
     state.isIOS = false;
-    state.isAndroid = false;
+
     state.isMacOSDesktop = true;
     state.startupInitializationComplete = true;
     state.migrationOnboardingActive = false;

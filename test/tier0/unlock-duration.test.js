@@ -24,7 +24,7 @@ describe('new focus spaces', () => {
 });
 
 describe('normalizeUnlockMinutes', () => {
-    test('the option set matches the Android app (0 = Never … 24 hours)', () => {
+    test('the option set spans Never through 24 hours', () => {
         expect([...UNLOCK_MINUTE_OPTIONS]).toEqual([0, 5, 10, 15, 30, 60, 120, 240, 480, 1440]);
         expect(DEFAULT_UNLOCK_MINUTES).toBe(1440);
     });

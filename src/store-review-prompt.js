@@ -35,7 +35,6 @@ function card(show) {
 
 /** iOS App Store, or the Windows MSIX package. Direct Windows installs do not ask. */
 async function reviewUrl() {
-    if (__ANDROID_BUILD__ || state.isAndroid) return null;
     if (state.isIOS) return IOS_URL;
     if (navigator.platform.toUpperCase().includes('MAC')) return null;
     return (await resolveMicrosoftStorePackage()) ? WIN_URL : null;
@@ -88,7 +87,6 @@ async function onUiShown() {
 }
 
 export function startStoreReviewPrompt() {
-    if (__ANDROID_BUILD__ || state.isAndroid) return;
     if (!booted) {
         booted = true;
         void (async () => {

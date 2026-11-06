@@ -1,11 +1,10 @@
 # Run the Rust unit tests (`src-tauri/src/**/#[cfg(test)]`) on PRs that touch
 # the backend, and on the resulting commits on main. Kept out of ci.yml so
-# frontend-only PRs do not pay for a macOS runner, mirroring how android-ci.yml
-# isolates the Android toolchain.
+# frontend-only PRs do not pay for a macOS runner.
 #
 # macOS is the only host that compiles every tested module: `web_automation`,
 # `window_inventory` and `workspace_events` are `#[cfg(target_os = "macos")]`,
-# and the `cfg(not(ios|android))` modules pull macOS/Windows-only dependencies
+# and the `cfg(not(ios))` modules pull macOS/Windows-only dependencies
 # (sysinfo, tauri-plugin-notification), so a Linux runner cannot build the lib
 # at all. The Windows-only UI Automation tests run in the Windows desktop job.
 name: Rust CI
@@ -79,12 +78,6 @@ jobs:
         working-directory: src-tauri
         run: cargo test --lib --features system-test --locked
 
-  # Static analysis for the desktop enforcement engine. The Android job's
-  # clippy run compiles out everything gated `cfg(not(any(ios, android)))` —
-  # app_watcher, enforcer, native_host, profile_scan — plus every macOS- and
-  # Windows-only module, so roughly 60% of src-tauri/src had no lint coverage
-  # at all until this job existed.
-  #
   # Both hosts, because the two see genuinely different code: most of the
   # dead-code and cfg-dispatch findings here are live on one platform and dead
   # on the other, and a macOS-only gate would demand deleting Windows code.

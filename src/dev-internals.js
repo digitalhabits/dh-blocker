@@ -8,7 +8,7 @@ import { state } from './state.js';
 import { addScheduleSegment, canEnableAllowEditsBetweenBlocks } from './schedule-editor.js';
 import { tauriAPI } from './tauri-api.js';
 import { PROTECTED_APP_NAMES, PROTECTED_DOMAINS, isAllowlistBlocklist, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
-import { buildAndroidScheduleEntries, buildIOSScheduleEntries, hasAnyBlockingStateToClear, isAndroidAllowlistUnsupported, isSchedulePausedNow } from './schedule-engine.js';
+import { buildIOSScheduleEntries, hasAnyBlockingStateToClear, isSchedulePausedNow } from './schedule-engine.js';
 import { buildStartWarningsPayload } from './ios-start-warnings.js';
 import { isFocusSpaceOn, setFocusSpaceEnabled, turnFocusSpaceOn } from './focus-space-switch.js';
 import {
@@ -23,16 +23,7 @@ import {
 } from './override-challenge.js';
 import { createChallengeController } from './challenge-controller.js';
 import { saveData, updateHostsFile } from './persistence.js';
-import {
-    acceptEula,
-    appBlockingWarningRows,
-    findResponsibleBlocklistsForWarningApps,
-    isAppBlockingWarningScheduleEligible,
-    newWarningRow,
-    renderAppBlockingWarningOverlay,
-    setupAndroidBackButtonHandling,
-    updateBlockedApps,
-} from './blocking-platform.js';
+import { acceptEula, appBlockingWarningRows, findResponsibleBlocklistsForWarningApps, isAppBlockingWarningScheduleEligible, newWarningRow, renderAppBlockingWarningOverlay, updateBlockedApps } from './blocking-platform.js';
 import { CURRENT_EULA_REVISION } from './onboarding.js';
 import { render, isClockTickRunning } from './render.js';
 import { commitDelete, deleteBlocklist, duplicateBlocklist, getNextCopyName, isBlocklistEditFrictionRequired } from './blocklists.js';
@@ -79,8 +70,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     getNextCopyName,
     getMaxOverrideCountForType,
     getMaxOverrideWords,
-    buildAndroidScheduleEntries,
-    isAndroidAllowlistUnsupported,
+
     buildIOSScheduleEntries,
     buildStartWarningsPayload,
     isSchedulePausedNow,
@@ -115,11 +105,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     // The e2e harness calls this rather than hand-patching settings, which
     // leaves the app sitting behind the gate with a doctored in-memory value.
     acceptEula,
-    // Tier 2 drives the same popstate path that Android's WryActivity invokes
-    // after hardware/gesture back. The native Activity is not present in the
-    // desktop WebDriver binary, so expose the setup hook for that boundary
-    // test rather than duplicating modal-close logic in the harness.
-    setupAndroidBackButtonHandling,
+
     appBlockingWarningRows,
     findResponsibleBlocklistsForWarningApps,
     isAppBlockingWarningScheduleEligible,
