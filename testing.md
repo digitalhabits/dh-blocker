@@ -526,7 +526,8 @@ Run these before merging changes to `web_automation.rs`, `native_host.rs`,
 - **Tier 2 (integration)**: moderate breadth, Tauri command paths with the `current_blocking` enforcement snapshot as read-back.
 - **Rust unit tests**: enforcement decision logic (URL matching, allowlist composition, payload derivation).
 - **UI shots**: appearance and layout geometry, from fixtures, in a real browser. Renders; does not assert.
-- **Manual checklist**: required for website enforcement, permissions, enforcer behaviour, and visual UX on real devices.
+- **Connected iOS device profiles**: external XCTest observes Safari restriction, expiry, timed pause and early resume with owned schedules.
+- **Manual checklist**: covers desktop website enforcement, remaining iOS scenarios, permissions, enforcer behaviour and visual UX on real devices.
 
 Recommended stance:
 
@@ -544,11 +545,11 @@ See [the repeatable iOS testing protocol](docs/ios-testing.md) for build, Simula
 iOS enforcement uses the Screen Time plugin (`tauri-plugin-screentime`).
 
 - **Tier 1 (logic):** Runs in the app; safe on iOS. Same blocking/schedule/override logic applies. **Category 14 (T55–T62)** covers the iOS allowlist effective-policy resolvers — run it on the desktop dev build; the resolvers are shared JS and encode iOS-only constraints (Apple's 50-exception cap, `specific-block` vs `all-except`, category-token exclusion).
-- **Tier 2 (integration):** Desktop-oriented; helper-dependent paths always see the shim as “ready” but do not exercise Screen Time. Use the connected-device runner for its automated iOS cases and the physical-device checklist for remaining coverage.
-- **Connected-device enforcement:** the `website` profile creates a temporary date-limited rule through the app UI, verifies Safari blocking and the allowed control, observes natural expiry with Blocker backgrounded, and removes its own fixture. It uses external XCTest and CoreDevice, requires no manual test-data entry, and records assertions and evidence. Device unlock, signing and Apple's UI Automation approval can require initial user action. This profile has been verified on an iPad; physical iPhone verification remains outstanding.
-- **Remaining device coverage:** authorisation, native picker/app shielding, allowlist combinations, pause/resume and long-duration or recovery scenarios remain separate checklist cases in this version of the runner. A passing website profile does not imply these passed. FamilyControls authorisation and shields do not work meaningfully in the simulator, so Simulator UI checks cannot replace device cases. See `architecture.md` §12.3 for device-validation findings and known carve-outs.
+- **Tier 2 (integration):** Tier 2 does not validate iOS Screen Time enforcement. Use the connected-device runner for its automated iOS cases and the physical-device checklist for remaining coverage.
+- **Connected-device enforcement:** the `website` profile creates a temporary date-limited rule through the app UI, verifies Safari blocking and the allowed control, observes natural expiry with Blocker backgrounded, and removes its own fixture. The `pause` profile completes the real stop challenge, checks a five-minute scheduled pause in Safari, observes native reblocking before foregrounding Blocker, and checks persistence and early resume on a second pause. Both profiles use external XCTest and CoreDevice, require no manual test-data entry, and record assertions and evidence. Device unlock, signing and Apple's UI Automation approval can require initial user action. Physical iPhone verification remains outstanding.
+- **Remaining device coverage:** authorisation, native picker/app shielding, allowlist combinations, timed Manual, indefinite-stop and long-duration or recovery scenarios remain separate checklist cases. FamilyControls authorisation and shields do not work meaningfully in the simulator, so Simulator UI checks cannot replace device cases. See `architecture.md` §12.3 for device-validation findings and known carve-outs.
 
-For release, run the automated physical-device profile and complete the remaining applicable cases in **section 14. iOS-Specific**, including the **14.1 iOS allowlist matrix**. Record device/OS and any cases not run; iPad evidence does not establish iPhone-specific layout or interaction coverage.
+For release, run the automated physical-device profiles and complete the remaining applicable cases in **section 14. iOS-Specific**, including the **14.1 iOS allowlist matrix**. Record device/OS and any cases not run; iPad evidence does not establish iPhone-specific layout or interaction coverage.
 
 ---
 
@@ -557,7 +558,7 @@ For release, run the automated physical-device profile and complete the remainin
 1. Run Tier 1 during active feature work for fast feedback.
 2. Run Tier 2 before merging changes that touch save/sync/shim/app-blocking command paths (Group H when touching allowlist derivation or sync).
 3. Run `cargo test --lib` before merging changes to Rust enforcement code.
-4. Run the connected-device iOS profile for its automated website lifecycle. Complete remaining website, permission, enforcer and release checks using the manual checklist — section 15 for desktop allowlist, section 14/14.1 for iOS.
+4. Run the connected-device iOS profiles for the automated website and scheduled pause lifecycles. Complete remaining website, permission, enforcer and release checks using the manual checklist — section 15 for desktop allowlist, section 14/14.1 for iOS.
 
 ---
 

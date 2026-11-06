@@ -49,12 +49,16 @@ test('a replaced installation invalidates an ongoing run despite a matching vers
     assert.equal(sameInstalledApp(install, null), false);
 });
 
-test('the website profile accepts only a real XCTest pass', () => {
+test('automated profiles accept only a real XCTest pass', () => {
     const report = { lane: 'device-full', profile: 'website', cases: {
         'upgrade-continuity': { status: 'PASS' }, relaunch: { status: 'PASS' },
     } };
     assert.deepEqual(pendingCases(report), ['fresh-website']);
     assert.throws(() => assertObservation(report, 'fresh-website', 'PASS', 'manual', ['evidence.png']), /only accepts XCTest/);
+    const pause = { ...report, profile: 'pause' };
+    assert.deepEqual(pendingCases(pause), ['scheduled-pause']);
+    assert.throws(() => assertObservation(pause, 'scheduled-pause', 'PASS', 'manual', ['evidence.png']), /only accepts XCTest/);
+    assert.throws(() => assertObservation({ ...report, profile: 'default' }, 'scheduled-pause', 'PASS', 'manual', ['evidence.png']), /only accepts XCTest/);
     assert.equal(passedOneTest({ totalTestCount: 1, passedTests: 1, failedTests: 0, skippedTests: 0 }), true);
     assert.equal(passedOneTest({ totalTestCount: 1, passedTests: 0, failedTests: 0, skippedTests: 1 }), false);
     assert.equal(passedOneTest({ totalTestCount: 2, passedTests: 1, failedTests: 1, skippedTests: 0 }), false);
@@ -78,6 +82,8 @@ test('UI Automation approval and failed behavioural assertions have different ve
         testIdentifierString: 'Driver-Runner encountered an error' }), 'BLOCKED');
     assert.equal(verdict({ failureText: 'Expected target to be restricted.',
         testIdentifierString: 'Driver/testFreshWebsiteLifecycle()' }), 'FAIL');
+    assert.equal(verdict({ failureText: 'Expected no Blocker alert.',
+        testIdentifierString: 'Driver/testScheduledPauseLifecycle()' }), 'FAIL');
 });
 
 test('Safari navigation accepts only the current token and exact fixed HTTPS URLs', () => {

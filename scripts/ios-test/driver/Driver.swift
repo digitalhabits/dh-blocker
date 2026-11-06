@@ -30,14 +30,15 @@ final class Driver: XCTestCase {
             throw DriverFailure.expected("a 20-minute schedule ending today, away from midnight")
         }
 
-        try assertSafari(target, restricted: false, phase: "01 baseline target")
-        try assertSafari(control, restricted: false, phase: "02 baseline control")
+        try assertSafari(target, restricted: false, phase: "01 baseline target", attempts: 3)
+        try assertSafari(control, restricted: false, phase: "02 baseline control", attempts: 3)
         blocker.activate()
         guard !web.staticTexts[name].exists else { throw DriverFailure.expected("a new, unique fixture name") }
         let previousSwitches = focusSpaceSwitches()
         try createSchedule(name: name, start: start, end: end)
         try enableSchedule(name: name, start: start, end: end)
-        try observe(blocker, name: "03 owned schedule saved", includeTree: false)
+        try verifyScheduleAfterRelaunch(name)
+        try observe(blocker, name: "03 owned schedule persisted across relaunch", includeTree: false)
 
         try assertSafari(target, restricted: true, phase: "04 target restricted", attempts: 3, before: end)
         try assertSafari(control, restricted: false, phase: "05 control still loads")
@@ -55,6 +56,153 @@ final class Driver: XCTestCase {
         try observe(blocker, name: "08 owned fixture removed", includeTree: false)
     }
 
+    func testScheduledPauseLifecycle() throws {
+        let (name, end) = try configuration()
+        let calendar = Calendar.current
+        let start = max(calendar.startOfDay(for: end), end.addingTimeInterval(-30 * 60))
+        guard calendar.isDateInToday(end), start < Date(), end.timeIntervalSince(start) >= 15 * 60 else {
+            throw DriverFailure.expected("an active fixture window of at least 15 minutes ending today")
+        }
+
+        try assertSafari(target, restricted: false, phase: "01 baseline target", attempts: 3)
+        try assertSafari(control, restricted: false, phase: "02 baseline control", attempts: 3)
+        blocker.activate()
+        guard !web.staticTexts[name].exists else { throw DriverFailure.expected("a new, unique fixture name") }
+        let previousSwitches = focusSpaceSwitches()
+        try createSchedule(name: name, start: start, end: end, fiveMinutePause: true)
+        try enableSchedule(name: name, start: start, end: end)
+        try verifyScheduleAfterRelaunch(name)
+
+        try assertSafari(target, restricted: true, phase: "03 target restricted", attempts: 3, before: end)
+        try assertSafari(control, restricted: false, phase: "04 control allowed", before: end)
+        blocker.activate()
+        let first = try pauseForFiveMinutes(name, before: end)
+        try assertSafari(target, restricted: false, phase: "06 target allowed during pause", attempts: 3, before: first.earliestExpiry)
+        try assertSafari(control, restricted: false, phase: "07 control allowed during pause", before: first.earliestExpiry)
+
+        // Keep Safari foregrounded throughout the first pause. The app's
+        // foreground reconciliation must not cause the restriction to return.
+        try waitForExpiry(first.latestExpiry)
+        guard blocker.state == .runningBackground || blocker.state == .runningBackgroundSuspended
+                || blocker.state == .notRunning else {
+            throw DriverFailure.expected("Blocker still out of the foreground at the native deadline")
+        }
+        try assertSafari(target, restricted: true, phase: "08 target reblocked before Blocker opens", attempts: 3, before: end)
+        try assertSafari(control, restricted: false, phase: "09 control still allowed", before: end)
+
+        blocker.activate()
+        let second = try pauseForFiveMinutes(name, before: end, needsFullWindow: false)
+        // Test durable pause state on a separate attempt so a foreground
+        // reload cannot re-register the first attempt's DeviceActivity event.
+        blocker.terminate()
+        blocker.activate()
+        try requireVisibleSwitch("Turn on \(name)")
+        try observe(blocker, name: "10 paused fixture persisted across relaunch", includeTree: false)
+        try assertSafari(target, restricted: false, phase: "11 second pause allows target after relaunch", attempts: 3,
+            before: second.earliestExpiry)
+
+        blocker.activate()
+        try enableSchedule(name: name, start: start, end: end)
+        try assertSafari(target, restricted: true, phase: "12 early resume reblocks target", attempts: 3,
+            before: min(second.earliestExpiry, end))
+        try assertSafari(control, restricted: false, phase: "13 control allowed after early resume", before: end)
+
+        blocker.activate()
+        let cleanup = try pauseForFiveMinutes(name, before: end, needsFullWindow: false)
+        try deleteOffFixture(name)
+        blocker.terminate()
+        blocker.activate()
+        try require(web.buttons["Block"], "Blocker focus space list after relaunch")
+        guard !web.switches["Turn on \(name)"].exists, !web.switches["Turn off \(name)"].exists,
+              focusSpaceSwitches() == previousSwitches else {
+            throw DriverFailure.expected("the owned fixture absent after relaunch and the previous switches unchanged")
+        }
+        try assertSafari(target, restricted: false, phase: "14 target allowed after owned fixture deletion", attempts: 3,
+            before: min(cleanup.earliestExpiry, end))
+    }
+
+    private func verifyScheduleAfterRelaunch(_ name: String) throws {
+        // A Screen Time rule can outlive unsaved WebView state. Load the app
+        // again before accepting the schedule as saved.
+        blocker.terminate()
+        blocker.activate()
+        try requireVisibleSwitch("Turn off \(name)")
+    }
+
+    private func requireVisibleSwitch(_ label: String) throws {
+        try requireNoAlert()
+        let toggle = web.switches[label]
+        try require(toggle, label)
+        try requireNoAlert()
+        guard toggle.isHittable else { throw DriverFailure.expected("a visible \(label) switch") }
+    }
+
+    private func requireNoAlert() throws {
+        let alert = blocker.alerts.firstMatch
+        if alert.exists {
+            let text = alert.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: " | ")
+            try observe(blocker, name: "Unexpected Blocker alert", includeTree: false)
+            throw DriverFailure.expected("no Blocker alert (observed: \(text))")
+        }
+    }
+
+    private func requireClosed(_ element: XCUIElement, named name: String) throws {
+        let deadline = Date().addingTimeInterval(15)
+        repeat {
+            try requireNoAlert()
+            if !element.exists { return }
+            Thread.sleep(forTimeInterval: 0.25)
+        } while Date() < deadline
+        try observe(blocker, name: "\(name) still open", includeTree: false)
+        throw DriverFailure.expected("\(name) to close after confirmation")
+    }
+
+    private func pauseForFiveMinutes(_ name: String, before end: Date, needsFullWindow: Bool = true) throws
+        -> (earliestExpiry: Date, latestExpiry: Date) {
+        guard end.timeIntervalSinceNow > (needsFullWindow ? 6 * 60 : 60) else {
+            throw DriverFailure.expected("enough time remaining in the owned schedule to observe the pause")
+        }
+        try tap(web.switches["Turn off \(name)"], named: "Turn off \(name)")
+        let title = web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH[c] %@ AND label CONTAINS[c] %@ AND label CONTAINS[c] %@",
+            "Stop ", name, "for 5 minutes")).firstMatch
+        try require(title, "the exact owned space's five-minute Stop confirmation")
+        try enterFixtureChallenge()
+        let started = Date()
+        try tap(web.buttons["Stop"], named: "Stop the owned fixture for five minutes")
+        try requireClosed(title, named: "Owned Stop confirmation")
+        try requireVisibleSwitch("Turn on \(name)")
+        try requireNoAlert()
+        let acknowledged = Date()
+        guard acknowledged.timeIntervalSince(started) < 25 else { throw DriverFailure.expected("a prompt pause acknowledgement") }
+        let earliest = started.addingTimeInterval(5 * 60)
+        let latest = acknowledged.addingTimeInterval(5 * 60)
+        print("REDD_IOS_PAUSE_ACK \(ISO8601DateFormatter().string(from: acknowledged)) expiry-by \(ISO8601DateFormatter().string(from: latest))")
+        try observe(blocker, name: "05 five-minute stop confirmed without an alert", includeTree: false)
+        return (earliest, latest)
+    }
+
+    private func challengeField() -> XCUIElement {
+        web.textFields.matching(NSPredicate(format: "placeholderValue == %@", "Type current word...")).firstMatch
+    }
+
+    private func enterFixtureChallenge() throws {
+        let field = challengeField()
+        try require(field, "the one-word override challenge")
+        let frame = field.frame
+        let words = web.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[a-z]{5}"))
+            .allElementsBoundByIndex.filter {
+                let word = $0.frame
+                return word.maxY <= frame.minY + 2 && frame.minY - word.maxY < 80
+                    && word.midX >= frame.minX && word.midX <= frame.maxX
+            }
+        guard words.count == 1, let word = words.first?.label else {
+            try observe(blocker, name: "Could not locate exact visible challenge word")
+            throw DriverFailure.expected("one visible five-letter challenge word immediately above the field")
+        }
+        try enterWebKeys(word, into: field, named: "current challenge word")
+        XCTAssertEqual(field.value as? String, word, "The actual WKWebView challenge field contains the current word")
+    }
+
     func testRecoverOwnedFixture() throws {
         let (name, end) = try configuration()
         blocker.activate()
@@ -67,8 +215,17 @@ final class Driver: XCTestCase {
                 throw DriverFailure.expected("the owned draft to close")
             }
         }
+        try requireNoAlert()
+        let startTitle = ownedStartTitle(name)
+        if startTitle.exists {
+            try tap(web.buttons["Cancel"], named: "Cancel the owned fixture's start confirmation")
+            try requireClosed(startTitle, named: "Owned start confirmation")
+        }
         try require(web.buttons["Block"], "Blocker focus space list")
-        if web.switches["Turn on \(name)"].exists || web.switches["Turn off \(name)"].exists {
+        if web.switches["Turn on \(name)"].exists {
+            // An already off or paused fixture can be removed immediately.
+            try deleteOffFixture(name)
+        } else if web.switches["Turn off \(name)"].exists {
             guard Date() >= end else { throw DriverFailure.expected("the owned fixture's scheduled window to end") }
             try assertSafari(target, restricted: false, phase: "Recovery verifies expiry")
             try removeOwnedFixture(name: name, after: end)
@@ -92,7 +249,7 @@ final class Driver: XCTestCase {
         return (name, end)
     }
 
-    private func createSchedule(name: String, start: Date, end: Date) throws {
+    private func createSchedule(name: String, start: Date, end: Date, fiveMinutePause: Bool = false) throws {
         guard !newSpaceTitle.exists else {
             throw DriverFailure.expected("Blocker home without an existing unsaved editor")
         }
@@ -124,8 +281,10 @@ final class Driver: XCTestCase {
         try tap(web.switches["Date"], named: "Date")
         try setToday(end)
         guard startField.value as? String == startValue, endField.value as? String == endValue else {
-            throw DriverFailure.expected("the intended 20-minute window \(startValue)–\(endValue)")
+            throw DriverFailure.expected("the intended window \(startValue)–\(endValue)")
         }
+
+        if fiveMinutePause { try configureFiveMinuteStop() }
 
         // The app lets a Flexible space be stopped without a challenge
         // between its windows. Only the new fixture gets this setting.
@@ -142,15 +301,37 @@ final class Driver: XCTestCase {
         try observe(blocker, name: "Owned schedule configuration", includeTree: false)
         print("REDD_IOS_FIXTURE_SAVE_REQUESTED \(name)")
         try tap(web.buttons["Save"], named: "Save")
+        try requireClosed(newSpaceTitle, named: "Owned fixture editor")
         try require(web.staticTexts[name], name)
         print("REDD_IOS_FIXTURE_SAVED \(name)")
+    }
+
+    private func configureFiveMinuteStop() throws {
+        try tap(button(prefix: "To stop early"), named: "To stop early")
+        let slider = web.sliders["How many words"]
+        try require(slider, "the fixture's word count slider")
+        // WKWebView's HTML slider has no usable native scrubber endpoints.
+        guard slider.isHittable else { throw DriverFailure.expected("the visible fixture slider") }
+        slider.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5)).tap()
+        try require(web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "1 ·")).firstMatch,
+            "the owned fixture has a one-word challenge")
+        let duration = web.otherElements["10 minutes"]
+        try tap(duration, named: "the owned fixture's initial unlock duration")
+        let choice = web.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "5 minutes")).firstMatch
+        try tap(choice, named: "Five-minute automatic restart")
+        try require(button(prefix: "To stop early Type 1 words · back on after 5 minutes"), "the selected five-minute unlock duration")
+    }
+
+    private func ownedStartTitle(_ name: String) -> XCUIElement {
+        web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH[c] %@ AND label CONTAINS[c] %@",
+            "Start ", name)).firstMatch
     }
 
     private func enableSchedule(name: String, start: Date, end: Date) throws {
         guard Date() < end.addingTimeInterval(-45) else { throw DriverFailure.expected("at least 45 seconds before the fixture ends") }
         try tap(web.switches["Turn on \(name)"], named: "Turn on \(name)")
-        try require(web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH[c] %@ AND label CONTAINS[c] %@",
-            "Start ", name)).firstMatch, "the owned fixture's start confirmation")
+        let title = ownedStartTitle(name)
+        try require(title, "the owned fixture's start confirmation")
         try require(web.staticTexts[target], "the confirmation contains the fixture's target")
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -160,7 +341,8 @@ final class Driver: XCTestCase {
         try require(web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@",
             startValue, endValue)).firstMatch, "the intended schedule in the start confirmation")
         try tap(web.buttons["Start"], named: "Start owned fixture")
-        try require(web.switches["Turn off \(name)"], "the owned fixture is switched on")
+        try requireClosed(title, named: "Owned start confirmation")
+        try requireVisibleSwitch("Turn off \(name)")
     }
 
     private func setToday(_ date: Date) throws {
@@ -200,7 +382,10 @@ final class Driver: XCTestCase {
     private func assertSafari(_ host: String, restricted: Bool, phase: String, attempts: Int = 1, before deadline: Date? = nil) throws {
         for attempt in 1...attempts {
             if let deadline, Date() >= deadline { throw DriverFailure.expected("a restriction before the fixture ends") }
-            if try probeSafari(host, restricted: restricted, phase: phase, finalAttempt: attempt == attempts) { return }
+            if try probeSafari(host, restricted: restricted, phase: phase, finalAttempt: attempt == attempts) {
+                if let deadline, Date() >= deadline { throw DriverFailure.expected("the Safari observation before its deadline") }
+                return
+            }
             Thread.sleep(forTimeInterval: 2)
         }
     }
@@ -269,11 +454,16 @@ final class Driver: XCTestCase {
             try tap(turnOff, named: "Turn off \(name)")
             try require(web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@",
                 "Stop ", name)).firstMatch, "stop confirmation for the owned fixture")
-            guard !web.textViews["Type here..."].exists else {
+            guard !web.textViews["Type here..."].exists, !challengeField().exists else {
                 throw DriverFailure.expected("the fixture to be outside its blocking window")
             }
             try tap(web.buttons["Stop"], named: "Stop owned fixture")
         }
+        try deleteOffFixture(name)
+    }
+
+    private func deleteOffFixture(_ name: String) throws {
+        try requireNoAlert()
         let offSwitch = web.switches["Turn on \(name)"]
         try require(offSwitch, "the owned fixture is off")
         // Calendar previews also expose the label, but only the list card

@@ -3,11 +3,18 @@ import { basename, dirname, isAbsolute, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { appId, check, outputRoot, readJson, record, sha256, writeJson } from './common.mjs';
 import { connectedDevice, deviceCommand, installedApp, verifySignedApp } from './apple.mjs';
-import { runWebsiteDriver } from './xctest.mjs';
+import { runDeviceDriver } from './xctest.mjs';
+
+const automatedCases = { website: 'fresh-website', pause: 'scheduled-pause' };
+
+export function isAutomatedProfile(profile) {
+    return Object.hasOwn(automatedCases, profile);
+}
 
 const cases = {
     'upgrade-continuity': ['smoke', 'Compare prior and current focus spaces, settings and one already-restricted/allowed Safari pair.'],
     'relaunch': ['smoke', 'Background and re-open, then swipe away and re-open. Verify Blocker launches and state is present.'],
+    'scheduled-pause': ['automated', 'Run the pause profile to verify a saved scheduled pause, background reblocking and early resume.'],
     'fresh-website': ['automated', 'Run the website profile for a fresh Safari restriction and real expiry.'],
     '14.0-picker': ['full', 'Run picker protection and owned app shielding/removal in manual checklist §14.0.'],
     '14.1-allowlist': ['dedicated', 'Run the allowlist matrix in §14.1 on a dedicated configuration.'],
@@ -36,7 +43,7 @@ function launch(device, bundle, url) {
 }
 
 export function requiredCases(lane, profile) {
-    if (profile === 'website') return ['fresh-website'];
+    if (isAutomatedProfile(profile)) return [automatedCases[profile]];
     return Object.keys(cases).filter(id => cases[id][0] === 'smoke' || (lane === 'device-full' && cases[id][0] === 'full'));
 }
 
@@ -87,7 +94,7 @@ function install(run, buildReport, baseline) {
     const { receipt, app } = openBuild(buildReport);
     if (receipt.device?.udid !== run.report.device.udid) throw new Error('Build preflight selected a different device.');
     if (!run.report.installedBefore) throw new Error('In-place smoke requires an existing installation. Use a dedicated test device for a fresh install.');
-    if (!baseline && run.report.profile !== 'website') throw new Error('An in-place update requires --baseline with the prior UI/rules/control observations.');
+    if (!baseline && !isAutomatedProfile(run.report.profile)) throw new Error('An in-place update requires --baseline with the prior UI/rules/control observations.');
     const result = check(run, 'in-place-install', 'Verified the local signature and installed the same bundle ID in place', log => {
         const bundles = verifySignedApp(app, log);
         if (JSON.stringify(bundles) !== JSON.stringify(receipt.artifact.bundles)) {
@@ -108,7 +115,9 @@ function install(run, buildReport, baseline) {
 export function assertObservation(report, id, status, note, evidence) {
     if (!cases[id] || report.cases[id]?.status === 'NOT_APPLICABLE') throw new Error('Unknown or inapplicable assisted case.');
     if (cases[id][0] === 'dedicated') throw new Error('Record this dedicated-device case separately using the manual checklist.');
-    if (report.profile === 'website' || id === 'fresh-website') throw new Error('The automated website case only accepts XCTest results.');
+    if (isAutomatedProfile(report.profile) || cases[id][0] === 'automated') {
+        throw new Error('The automated profile only accepts XCTest results.');
+    }
     if (report.lane !== 'device-full' && cases[id][0] !== 'smoke') throw new Error('Use device-full for this case.');
     if (!finalStatuses.includes(status) || !note?.trim()) throw new Error('Supply --status PASS|FAIL|BLOCKED|NOT_RUN and a specific --note.');
     if (status !== 'PASS') return;
@@ -126,13 +135,13 @@ function attachEvidence(run, paths) {
     });
 }
 
-async function automatedWebsite(run, args, resume) {
+async function automatedDevice(run, args, resume) {
     if (args.case || args.capture) {
-        throw new Error('The website profile drives the app and records observations automatically.');
+        throw new Error('The automated profile drives the app and records observations automatically.');
     }
     if (resume) {
         if (!args.recover || !run.report.fixture?.deadline || run.report.fixture.cleanup !== 'pending') {
-            throw new Error('Use --recover with a website report that has pending fixture cleanup.');
+            throw new Error('Use --recover with an automated report that has pending fixture cleanup.');
         }
     } else {
         run.report.fixture = {
@@ -143,7 +152,7 @@ async function automatedWebsite(run, args, resume) {
         writeJson(run.file, run.report);
         console.log(`Owned fixture: ${run.report.fixture.name}`);
     }
-    const ok = await runWebsiteDriver(run, { provision: args['provision-driver'], recover: args.recover });
+    const ok = await runDeviceDriver(run, { provision: args['provision-driver'], recover: args.recover });
     run.report.installedCurrent = installedApp(run.report.device);
     if (!sameInstalledApp(run.report.installedAfter || run.report.installedBefore, run.report.installedCurrent)) {
         throw new Error('Installed app inventory changed during this run.');
@@ -165,7 +174,7 @@ export async function deviceRun(run, args, resume) {
         writeJson(run.file, run.report);
         if (args.build && !install(run, args.build, args.baseline)) return false;
         if (!args.build && !run.report.installedBefore) throw new Error('Blocker is not installed on this device.');
-        if (run.report.profile === 'website') return automatedWebsite(run, args, false);
+        if (isAutomatedProfile(run.report.profile)) return automatedDevice(run, args, false);
         const launchCheck = check(run, 'launch', 'CoreDevice accepted foreground launch', () => {
             launch(selected, appId);
         }, 'BLOCKED');
@@ -181,8 +190,8 @@ export async function deviceRun(run, args, resume) {
         }
     }
 
-    if (run.report.profile === 'website') return automatedWebsite(run, args, true);
-    if (args.recover || args['provision-driver']) throw new Error('Use these options with the automated website profile.');
+    if (isAutomatedProfile(run.report.profile)) return automatedDevice(run, args, true);
+    if (args.recover || args['provision-driver']) throw new Error('Use these options with an automated website or pause profile.');
     if (args.capture) console.log(`Captured: ${capture(run, 'assisted')}`);
     if (args.case) {
         assertObservation(run.report, args.case, args.status, args.note, args.evidence);

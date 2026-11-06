@@ -105,6 +105,11 @@ function buildPersistedSchedule(schedule) {
     if (!schedule || !Array.isArray(schedule.segments)) return schedule;
 
     const { resolvedSegments: _oldResolvedSegments, ...baseSchedule } = schedule;
+    if (typeof baseSchedule.repeatDate === 'number') {
+        // Rust expects a string. Keep the selected instant (and its local day).
+        // Invalid dates fail the save so an existing cutoff is preserved.
+        baseSchedule.repeatDate = new Date(baseSchedule.repeatDate).toISOString();
+    }
     if (!isNonRepeatingSchedule(schedule)) {
         return baseSchedule;
     }
