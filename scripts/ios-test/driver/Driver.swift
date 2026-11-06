@@ -267,12 +267,39 @@ final class Driver: XCTestCase {
         let turnOff = web.switches["Turn off \(name)"]
         if turnOff.exists {
             try tap(turnOff, named: "Turn off \(name)")
-            try require(web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@",
-                "Stop ", name)).firstMatch, "stop confirmation for the owned fixture")
-            guard !web.textViews["Type here..."].exists else {
+            let pauseTitle = web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH[c] %@ AND label CONTAINS[c] %@",
+                "Pause ", name)).firstMatch
+            let stopTitle = web.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@",
+                "Stop ", name)).firstMatch
+            let usesPauseDialog = pauseTitle.waitForExistence(timeout: 3)
+            let title = usesPauseDialog ? pauseTitle : stopTitle
+            try require(title, "confirmation for the owned fixture")
+            guard !web.textViews["Type here..."].exists,
+                  !web.textFields.matching(NSPredicate(format: "placeholderValue == %@", "Type current word...")).firstMatch.exists else {
                 throw DriverFailure.expected("the fixture to be outside its blocking window")
             }
-            try tap(web.buttons["Stop"], named: "Stop owned fixture")
+            if usesPauseDialog {
+                // Use the real duration control; Never leaves the user's
+                // remembered timed choice unchanged and books no new restart.
+                let label = web.staticTexts["Turn back on after"]
+                try require(label, "the pause duration label")
+                let controls = web.otherElements.matching(identifier: "Turn back on after")
+                    .allElementsBoundByIndex.filter { $0.frame.minX > label.frame.maxX }
+                guard controls.count == 1, let duration = controls.first else {
+                    throw DriverFailure.expected("one owned pause duration control")
+                }
+                try tap(duration, named: "pause duration picker")
+                let never = blocker.descendants(matching: .any).matching(NSPredicate(
+                    format: "label == %@", "Never — keep turned off")).firstMatch
+                try tap(never, named: "Never")
+                try tap(web.buttons["Turn off \(name)"], named: "Turn off owned fixture")
+            } else {
+                try tap(web.buttons["Stop"], named: "Stop owned fixture")
+            }
+            guard title.waitForNonExistence(timeout: 15), !blocker.alerts.firstMatch.exists else {
+                try observe(blocker, name: "Owned fixture stop failed", includeTree: false)
+                throw DriverFailure.expected("the owned confirmation to close without an error")
+            }
         }
         let offSwitch = web.switches["Turn on \(name)"]
         try require(offSwitch, "the owned fixture is off")

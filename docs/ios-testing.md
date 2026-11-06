@@ -98,7 +98,7 @@ On the first run, Xcode may need to provision the driver's app ID. With an authe
 2. Create a uniquely named block-mode focus space for only `example.org`. Set a 20-minute window already in progress, limited to today. Verify the times and date before saving.
 3. Verify Safari shows the system restriction for the target, while the control still loads.
 4. Keep Safari in the foreground through the real schedule boundary. Verify both sites load after expiry.
-5. Return to Blocker, switch off the run-owned Flexible schedule outside its blocking window, and delete only the exact named fixture. Save the XCTest result and its screenshots in the report directory.
+5. Return to Blocker, switch off the run-owned Flexible schedule outside its blocking window, and delete only the exact named fixture. The Pause dialog uses Never so cleanup does not change the remembered timed choice or book another restart; older Stop dialogs remain supported. Save the XCTest result and its screenshots in the report directory.
 
 After an interruption, leave any test fixture to expire and rerun cleanup against the original report:
 
