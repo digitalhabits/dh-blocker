@@ -504,8 +504,9 @@ run outside the app:
 cd src-tauri && cargo test --lib
 ```
 
-(Use `--lib`; bare `cargo test` currently fails compiling a stale
-`test_watcher` example binary.)
+Use `--lib` to run the backend unit tests. To compile the standalone desktop
+watcher example, run `cd src-tauri && cargo build --example test_watcher`.
+Running the example starts the real watcher, which can terminate matching apps.
 
 Coverage relevant to blocking behavior:
 

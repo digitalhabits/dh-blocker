@@ -187,7 +187,7 @@ jobs:
       # the release gets the backend suite here rather than in `checks`.
       # `tauri_build::build()` validates that ../dist exists, so the frontend
       # has to be built once before the lib compiles; build:mac-all rebuilds it
-      # anyway. `--lib` skips the stale test_watcher example (see testing.md).
+      # anyway.
       - name: Rust unit tests
         run: |
           pnpm vite:build

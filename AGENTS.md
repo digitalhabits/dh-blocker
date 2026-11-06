@@ -86,8 +86,8 @@ for a failure that silently allowed blocked sites.
 - **Version bumps span app, system-test and generated iOS files** — use
   `./scripts/bump-version.sh <version>`; its implementation owns the file list.
   Hand-editing only the main config leaves inconsistent versions.
-- **Use `cargo test --lib`**, not bare `cargo test` — the latter still tries to
-  build a stale `test_watcher` example.
+- Use `cargo test --lib` for the backend unit tests. See [testing.md](testing.md#rust-unit-tests)
+  for the standalone watcher example.
 - Run `pnpm lint` from the repository root and `cargo fmt --all --check` in
   `src-tauri`; the latter also covers the Screen Time plugin.
 
@@ -214,6 +214,6 @@ all feature-gated code. In particular, system-test data isolation needs
 Clippy's platform jobs still use default features.
 
 Run `cargo clippy --lib --bins --tests -- -D warnings` locally before pushing
-Rust. ESLint rejects unused bindings, and the Rust crate currently allows deprecations.
+Rust. ESLint rejects unused bindings; macOS Cocoa FFI has local deprecation allowances.
 Consult the lint configuration and workflows for the current exceptions rather
 than extending them to silence a new problem.

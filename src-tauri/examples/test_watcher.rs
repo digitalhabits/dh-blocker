@@ -1,15 +1,11 @@
 // Standalone exerciser for the in-process app watcher.
 // Run with: cargo run --example test_watcher -- Calculator
 //
-// Spawns the watcher and feeds it the names from argv. The watcher
-// follows the desktop state machine: one graceful quit
-// (`NSRunningApplication.terminate` / `taskkill` without `/F`), a short
-// grace period (`QUIT_TO_WARNING_GRACE`), then (with a real `AppHandle`)
-// an in-app warning countdown. This binary passes `None`, so warning
-// events have no frontend listener — useful only for smoke-testing
-// process-name matching and polite quit behaviour on your machine.
-//
-// To exercise the warning UI, run the full app with an app block.
+// Starts the real watcher with the supplied names as newly blocked apps.
+// Existing matches found on the first policy sweep wait for acknowledgement,
+// which this example cannot provide because it has no frontend. A match first
+// seen on a later sweep can be terminated. To exercise the warning UI, run
+// the full app with an app block.
 
 fn main() {
     let names: Vec<String> = std::env::args().skip(1).collect();
