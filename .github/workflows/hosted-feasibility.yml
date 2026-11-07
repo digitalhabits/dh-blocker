@@ -1,0 +1,55 @@
+name: Hosted recovery feasibility
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/hosted-recovery-feasibility]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-feasibility-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  recovery:
+    name: Native app recovery (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target
+      HOSTED_ARTIFACTS_DIR: ${{ github.workspace }}/artifacts/hosted-feasibility
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+          key: hosted-recovery-${{ matrix.os }}
+      - run: pnpm install --frozen-lockfile
+      - name: Test runner safety helpers
+        run: node --test e2e/hosted-feasibility/helpers.test.js
+      # Same ordinary debug embedded-WebDriver build as the existing Tier 2
+      # workflow. No system-test feature, signing identity or TCC bypass.
+      - name: Build debug app under test
+        run: pnpm build:e2e-app
+      - name: Run native GUI and recovery probe
+        run: node e2e/hosted-feasibility/run.js
+      - name: Upload every attempt's evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hosted-recovery-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/hosted-feasibility/
+          if-no-files-found: warn
+          retention-days: 14
