@@ -55,6 +55,17 @@ async function selectVisibleOption(id, value) {
     await pointerClick('#' + id + '-menu [data-value="' + value + '"]');
     assert.equal(await $('#' + id).getValue(), value, 'Visible menu choice was not applied');
 }
+function legacyUpgradeDuration() {
+    return report.upgrade?.packages.baseline.version === '3.10.1' && process.env.HOSTED_PHASE === 'before-restart';
+}
+async function verifyLegacyDuration(selector, minutes) {
+    const saved = await browser.execute((sel) => {
+        const id = document.querySelector(sel)?.dataset.id;
+        return window.__REDDBLOCK_INTERNALS__.appData.blocklists.find((b) => b.id === id)?.unlockMinutes;
+    }, selector);
+    assert.equal(Number(saved), Number(minutes), 'Old-version stop duration must be configured before activation');
+    event('legacy-stop-duration-verified', { selector, minutes: Number(minutes) });
+}
 async function warningRows() {
     return browser.execute(() => [...(window.__REDDBLOCK_INTERNALS__?.appBlockingWarningRows || [])]
         .map(([pid, row]) => ({ pid, name: row.name, ackedDeadlineMs: row.ackedDeadlineMs })));
@@ -109,7 +120,7 @@ async function setup() {
     }
     await $('#add-blocklist-btn').waitForDisplayed({ timeout: 30_000 });
 }
-async function createAndStart(name, startNow = true, schedule = null) {
+async function createAndStart(name, startNow = true, schedule = null, legacyMinutes = '10') {
     const before = await browser.execute(() => window.__REDDBLOCK_INTERNALS__.appData.blocklists.map((b) => b.id));
     await click('#add-blocklist-btn');
     await fill('#blocklist-name', `Hosted recovery ${report.runId}`);
@@ -141,6 +152,9 @@ async function createAndStart(name, startNow = true, schedule = null) {
         }
     }
     await click('#editor-section-stop-header');
+    if (legacyUpgradeDuration() && await $('#unlock-duration-select').getValue() !== legacyMinutes) {
+        await selectVisibleOption('unlock-duration-select', legacyMinutes);
+    }
     // Exercise the ordinary factory challenge. The embedded driver's synthetic
     // Home key does not implement the browser's native range-input default.
     assert.equal(await $('#override-type').getValue(), 'random-words');
@@ -154,6 +168,7 @@ async function createAndStart(name, startNow = true, schedule = null) {
         assert.deepEqual(configured.apps, [name], 'Only the exact owned fixture may be selected');
         assert.deepEqual(configured.websites, []);
         assert.equal(configured.mode || 'blocklist', 'blocklist');
+        if (legacyUpgradeDuration()) assert.equal(Number(configured.unlockMinutes), Number(legacyMinutes));
     }
     const selector = `.blocklist-switch[data-id="${id}"]`;
     await $(selector).waitForDisplayed();
@@ -167,7 +182,8 @@ async function createAndStart(name, startNow = true, schedule = null) {
 async function pauseThroughChallenge(selector = '.blocklist-switch', minutes = '5') {
     await click(selector);
     await $('#challenge-input').waitForDisplayed();
-    await selectVisibleOption('unlock-duration-select', minutes);
+    if (legacyUpgradeDuration()) await verifyLegacyDuration(selector, minutes);
+    else await selectVisibleOption('unlock-duration-select', minutes);
     const challenge = await $('#challenge-text').getText();
     assert.equal(challenge.trim().split(/\s+/).length, 15, 'Expected the configured 15-word challenge');
     assert.equal(await $('#challenge-input').getValue(), '', 'Challenge must begin empty');
@@ -194,7 +210,8 @@ async function pauseThroughChallenge(selector = '.blocklist-switch', minutes = '
 async function preparePermanentStop(selector) {
     await click(selector);
     await $('#challenge-input').waitForDisplayed();
-    await selectVisibleOption('unlock-duration-select', '0');
+    if (legacyUpgradeDuration()) await verifyLegacyDuration(selector, '0');
+    else await selectVisibleOption('unlock-duration-select', '0');
     const text = await $('#challenge-text').getText();
     assert.equal(text.trim().split(/\s+/).length, 15);
     await click('#challenge-input');
@@ -347,7 +364,7 @@ async function lifecycleScenario(kind) {
             await recordInteraction(reopened, 'natural-expiry-release');
             await observeReleased([reopened], control, 'natural-expiry');
         } else if (kind === 'restart') {
-            const stopped = await createAndStart(report.fixtures.secondary.name, true);
+            const stopped = await createAndStart(report.fixtures.secondary.name, true, null, '0');
             await permanentStop(stopped);
             await pauseThroughChallenge(a, report.upgrade ? '10' : '5');
             report.lifecycle = {};
