@@ -124,8 +124,14 @@ async function createAndStart(name, startNow = true, schedule = null) {
     if (schedule) {
         await click('#when-kind-daily');
         for (const edge of ['start', 'end']) {
-            await fill(`.segment-time-field[data-edge="${edge}"]`, schedule[edge]);
-            await browser.keys('Tab');
+            await pointerClick(`.segment-time-field[data-edge="${edge}"]`);
+            const [hour, minute] = schedule[edge].split(':').map(Number);
+            for (const [part, index] of [['hour', hour], ['minute', minute / 5]]) {
+                const option = `.schedule-time-popover [data-part="${part}"] .popover-option:nth-child(${index + 1})`;
+                await $(option).scrollIntoView({ block: 'nearest' });
+                await pointerClick(option);
+            }
+            assert.equal(await $(`.segment-time-field[data-edge="${edge}"]`).getValue(), schedule[edge], 'Picker did not apply expected time');
         }
     }
     await click('#editor-section-stop-header');
@@ -255,8 +261,8 @@ async function lifecycleScenario(kind) {
         let schedule = null;
         if (kind === 'expiry') {
             const now = new Date();
-            const end = new Date(now); end.setMinutes(end.getMinutes() + 10, 0, 0);
-            const begin = new Date(now); begin.setMinutes(begin.getMinutes() - 1);
+            const end = new Date(Math.ceil((now.getTime() + 10 * 60_000) / 300_000) * 300_000);
+            const begin = new Date(Math.floor(now.getTime() / 300_000) * 300_000);
             assert.equal(begin.getDate(), end.getDate(), 'Midnight boundary requires a separate scenario');
             const time = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
             schedule = { start: time(begin), end: time(end) };
