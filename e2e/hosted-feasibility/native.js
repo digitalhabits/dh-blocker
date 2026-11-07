@@ -79,11 +79,29 @@ export async function ready(handle) {
         return read(handle.directory, 'ready') === String(handle.pid);
     }, 15_000, `No native window readiness: ${handle.name}`);
 }
-export async function heartbeat(handle) {
+export async function heartbeat(handle, { writeRequest = writeFileSync } = {}) {
     assert(alive(handle), `Fixture no longer alive: ${handle.name}`);
     const nonce = randomUUID();
-    writeFileSync(path.join(handle.directory, 'request'), nonce);
-    await until(() => alive(handle) && read(handle.directory, 'response') === nonce, 4_000, `Event-loop nonce failed: ${handle.name}`);
+    let published = false;
+    let writeAttempts = 0;
+    await until(() => {
+        assert(alive(handle), `Fixture no longer alive: ${handle.name}`);
+        if (!published) {
+            try {
+                writeAttempts++;
+                writeRequest(path.join(handle.directory, 'request'), nonce);
+                published = true;
+            } catch (error) {
+                // WinForms briefly holds a read handle without write sharing.
+                // Retry only that collision, with the same nonce and within the
+                // original 4 s response budget. Never retry GUI activation here.
+                if (error.code !== 'EBUSY') throw error;
+                appendFileSync(path.join(handle.directory, 'heartbeat-retries.jsonl'), JSON.stringify({ nonce, writeAttempts, code: error.code, wallTime: new Date().toISOString() }) + '\n');
+                return false;
+            }
+        }
+        return read(handle.directory, 'response') === nonce;
+    }, 4_000, `Event-loop nonce failed: ${handle.name}`);
     return nonce;
 }
 export async function interact(handle, root, label) {

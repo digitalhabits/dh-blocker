@@ -61,3 +61,20 @@ the original failure tree is in `local-1f0ed810202c4823ad04086bcf53e8c9/`.
 Earlier diagnostic development failures are retained beside these. No local
 Blocker or blocking test was launched. Four safety-helper tests, scoped ESLint,
 and native compilation with `/W4 /WX` passed. Hosted validation is pending.
+
+Hosted attempt [42372743180](https://github.com/digitalhabits/dh-blocker/actions/runs/42372743180)
+on `dee5e0c6` confirmed native InvokePattern and fresh saved nonces for both Windows
+baseline fixtures. The run then failed during the termination observation on
+`EBUSY` writing the control heartbeat request while WinForms held a read handle.
+Capability and cleanup were PASS, behaviour FAIL; post-release GUI activation
+was not reached. This failed attempt is retained under
+`artifacts/hosted-feasibility/evidence/42372743180/windows/` and is not counted as
+a full recovery pass.
+
+The follow-up retries only EBUSY publication of the same nonce within the existing
+four-second heartbeat deadline, recording collisions in `heartbeat-retries.jsonl`.
+It does not retry GUI activation or extend release/termination budgets. A test
+with the write seam added to the original algorithm reproduced the sharing error;
+all six helper/protocol tests passed after the fix, including permanent-error and
+stale-response rejection. The retry is shared by desktop probes; no production
+frontend or enforcement code changes are involved.

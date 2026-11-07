@@ -83,7 +83,7 @@ one feasibility pass is not a release gate.
 Pure safety-helper tests can run locally without launching any native process:
 
 ```sh
-node --test e2e/hosted-feasibility/helpers.test.js
+node --test e2e/hosted-feasibility/helpers.test.js e2e/hosted-feasibility/native.test.js
 node_modules/.bin/eslint e2e/hosted-feasibility
 ```
 

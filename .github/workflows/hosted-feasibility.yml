@@ -41,7 +41,7 @@ jobs:
           cache-on-failure: true
       - run: pnpm install --frozen-lockfile
       - name: Test runner safety helpers
-        run: node --test e2e/hosted-feasibility/helpers.test.js
+        run: node --test e2e/hosted-feasibility/helpers.test.js e2e/hosted-feasibility/native.test.js
       # Same ordinary debug embedded-WebDriver build as the existing Tier 2
       # workflow. No system-test feature, signing identity or TCC bypass.
       - name: Build debug app under test
