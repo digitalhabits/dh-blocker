@@ -27,7 +27,7 @@ for (const [role, cwd] of [['baseline', baseline], ['candidate', repo]]) {
     const target = path.join(cwd, 'src-tauri', 'target');
     const overlay = path.join(root, role + '.json');
     writeFileSync(overlay, JSON.stringify({ build: { beforeBuildCommand: 'pnpm vite:build:e2e' },
-        bundle: process.platform === 'darwin' ? { macOS: { signingIdentity: '-' } } : { windows: { nsis: { installMode: 'currentUser' } } } }));
+        bundle: process.platform === 'darwin' ? { macOS: { signingIdentity: '-' } } : { windows: { signCommand: null, nsis: { installMode: 'currentUser' } } } }));
     const env = { CARGO_TARGET_DIR: target, BUILD_MAC_TARGET: '' };
     run(process.execPath, ['scripts/ensure-dev-icons.js'], cwd, env);
     run(process.execPath, ['node_modules/@tauri-apps/cli/tauri.js', 'build', '--debug', '--features', 'e2e-webdriver', '--bundles', process.platform === 'darwin' ? 'app' : 'nsis', '--config', overlay], cwd, env);

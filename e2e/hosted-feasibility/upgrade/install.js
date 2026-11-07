@@ -71,10 +71,14 @@ export function prepareUpgrade(repo) {
             command(entry.installer, ['/S', `/D=${installedDirectory}`], { log, timeout: 180_000 });
         }
         assert.equal(hash(binary), entry.executableSHA256, 'Installed executable differs from packaged build');
-        // The production macOS postinstall launches the GUI. Stop only the
+        // Both production postinstall hooks launch the GUI. Stop only the
         // run-owned, hash-verified installed path before WDIO takes ownership.
         // No process names, parent trees or unrelated apps are used for cleanup.
-        if (process.platform === 'darwin') {
+        if (process.platform === 'win32') {
+            process.env.HOSTED_INSTALLED_BINARY = binary;
+            assert.equal(hash(binary), entry.executableSHA256);
+            command('powershell.exe', ['-NoProfile', '-Command', '$ErrorActionPreference = "Stop"; Get-Process | Where-Object { $_.Path -eq $env:HOSTED_INSTALLED_BINARY } | ForEach-Object { $_.Kill(); if (-not $_.WaitForExit(10000)) { throw "Owned installed app did not exit" } }'], { log });
+        } else {
             const rows = command('/bin/ps', ['-axo', 'pid=,comm=']).split('\n').map((r) => r.trim().match(/^(\d+)\s+(.+)$/));
             for (const row of rows.filter((r) => r && r[2] === binary)) {
                 assert.equal(hash(binary), entry.executableSHA256);

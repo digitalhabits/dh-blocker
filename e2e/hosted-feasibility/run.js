@@ -107,11 +107,17 @@ try {
     if (sentinel) {
         try {
             await sentinelCheck('sentinel-final');
+        } catch (error) {
+            report.capability = 'FAIL';
+            report.sentinelError = { message: error.message, stack: error.stack };
+            report.verdict = 'FAIL';
+        }
+        try {
             await cleanupFixture(sentinel, root);
             cpSync(sentinel.directory, path.join(artifacts, sentinel.name), { recursive: true });
         } catch (error) {
             report.cleanup = 'FAIL';
-            report.error = { message: error.message, stack: error.stack };
+            report.sentinelCleanupError = { message: error.message, stack: error.stack };
             report.verdict = 'FAIL';
         }
     }
