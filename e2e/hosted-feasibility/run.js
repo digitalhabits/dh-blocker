@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, cpSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -52,6 +52,14 @@ try {
         report.verdict = verdict(report.behaviour, report.capability, report.cleanup);
         if (status !== 0 && report.verdict === 'PASS') report.verdict = 'FAIL';
         persist();
+        if (phases.length > 1) {
+            const evidence = path.join(artifacts, 'phases', phase);
+            mkdirSync(evidence, { recursive: true });
+            copyFileSync(reportFile, path.join(evidence, 'report.json'));
+            for (const name of ['wdio-logs', ...Object.values(fixtures).map((f) => f.name)]) {
+                if (existsSync(path.join(artifacts, name))) cpSync(path.join(artifacts, name), path.join(evidence, name), { recursive: true });
+            }
+        }
         if (status !== 0 || report.verdict !== 'PASS') break;
         if (phase === 'before-restart') {
             report.behaviour = 'NOT_RUN';
