@@ -5,6 +5,7 @@ import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
 import { alive, cleanupFixture, command, heartbeat, interact, launchFixture, ready, savedMarker } from './native.js';
 import { requireHosted, until, verdict } from './helpers.js';
+import { assertPolicyPreserved } from './upgrade/install.js';
 
 requireHosted();
 const reportFile = process.env.HOSTED_REPORT_FILE;
@@ -279,14 +280,13 @@ async function lifecycleScenario(kind) {
         await browser.waitUntil(() => browser.execute(() => !!window.__REDDBLOCK_INTERNALS__?.appData), { timeout: 120_000 });
         await $('#add-blocklist-btn').waitForDisplayed({ timeout: 120_000 });
         const policy = await browser.execute(() => window.__REDDBLOCK_INTERNALS__.appData);
+        const expectedPolicy = report.upgrade ? report.upgrade.policyBeforeCandidate : report.lifecycle.policy;
         assert.notEqual(appPid, report.lifecycle.appPid, 'Restart reused the previous Blocker process');
-        assert.deepEqual(policy.blocklists, report.lifecycle.policy.blocklists, 'Restart changed configured rules');
         if (report.upgrade) {
-            assert.deepEqual(policy.activeBlocks, report.lifecycle.policy.activeBlocks, 'Upgrade changed active or paused intent');
-            assert.deepEqual(policy.schedules, report.lifecycle.policy.schedules, 'Upgrade changed schedules');
-        }
+            assertPolicyPreserved(expectedPolicy, policy);
+        } else assert.deepEqual(policy.blocklists, expectedPolicy.blocklists, 'Restart changed configured rules');
         if (kind === 'restart') {
-            assert.deepEqual(policy.activeBlocks, report.lifecycle.policy.activeBlocks, 'Restart changed paused/stopped intent');
+            assert.deepEqual(policy.activeBlocks, expectedPolicy.activeBlocks, 'Restart changed paused/stopped intent');
             assert(Date.now() < report.lifecycle.pauseDeadline - 80_000, 'Pause too near expiry for restart observation');
         } else if (kind === 'expiry') {
             assert(Date.now() >= report.lifecycle.endAt, 'Cold start preceded schedule expiry');

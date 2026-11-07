@@ -3,7 +3,29 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { hash, verifyPackage, verifyUpgradeVersions } from './install.js';
+import { assertPolicyPreserved, hash, verifyPackage, verifyUpgradeVersions } from './install.js';
+
+test('durable policy comparison rejects changed targets, pause state and schedule boundaries', () => {
+    const saved = {
+        blocklists: [{ id: 'rule', apps: ['Target'], mode: 'blocklist' }],
+        activeBlocks: [{ blocklistId: 'rule', isPaused: true, pauseEndTime: 900, endTime: 1000 }],
+        schedules: [{ id: 'schedule', repeatType: 'date', repeatDate: '2026-11-07', segments: [{ endHour: 21, endMinute: 5 }] }],
+    };
+    assertPolicyPreserved(saved, structuredClone(saved));
+    for (const mutate of [
+        (p) => { p.blocklists[0].apps = ['Control']; },
+        (p) => { p.blocklists[0].mode = 'allowlist'; },
+        (p) => { p.activeBlocks[0].isPaused = false; },
+        (p) => { delete p.activeBlocks[0].pauseEndTime; },
+        (p) => { p.activeBlocks[0].endTime = 2000; },
+        (p) => { p.schedules[0].segments[0].endMinute = 10; },
+        (p) => { delete p.schedules[0].repeatDate; },
+    ]) {
+        const changed = structuredClone(saved);
+        mutate(changed);
+        assert.throws(() => assertPolicyPreserved(saved, changed), /changed saved/);
+    }
+});
 
 test('upgrade versions require an actual forward version transition', () => {
     verifyUpgradeVersions('3.10.1', '3.11.0');

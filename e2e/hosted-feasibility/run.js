@@ -95,6 +95,10 @@ try {
             persist();
             if (upgrade) {
                 await sentinelCheck('sentinel-before-candidate-install');
+                // The saved old-version record is authoritative. A live editor
+                // can contain UI-only nulls that serde omits even before upgrade.
+                report.upgrade.policyBeforeCandidate = JSON.parse(readFileSync(report.profile.file, 'utf8'));
+                persist();
                 await upgrade.install('candidate', report.profile, artifacts);
                 report.build.sha256 = upgrade.manifest.packages.candidate.executableSHA256;
                 report.upgrade.installs = upgrade.installs;

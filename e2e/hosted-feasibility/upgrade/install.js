@@ -24,6 +24,12 @@ export function verifyUpgradeVersions(before, after) {
     const changed = b.findIndex((n, i) => n !== a[i]);
     assert(changed >= 0 && b[changed] > a[changed], 'Candidate must be newer than baseline');
 }
+export function assertPolicyPreserved(before, after) {
+    assert(before && after, 'Missing durable policy snapshot');
+    for (const key of ['blocklists', 'activeBlocks', 'schedules']) {
+        assert.deepEqual(after[key], before[key], `Installed upgrade changed saved ${key}`);
+    }
+}
 export function prepareUpgrade(repo) {
     requireHosted();
     const root = path.join(repo, 'artifacts', 'upgrade-packages');
@@ -64,6 +70,7 @@ export function prepareUpgrade(repo) {
         verifyPackage(root, entry);
         const before = existsSync(profile.file) ? readFileSync(profile.file) : null;
         if (role === 'candidate') assert(before, 'Missing baseline policy before upgrade');
+        if (before) writeFileSync(path.join(evidence, `policy-before-${role}.json`), before);
         const log = path.join(evidence, `install-${role}.jsonl`);
         if (process.platform === 'darwin') {
             command('/usr/bin/sudo', ['/usr/bin/env', `USER=${os.userInfo().username}`, '/usr/sbin/installer', '-pkg', entry.installer, '-target', '/'], { log, timeout: 180_000 });
@@ -93,11 +100,8 @@ export function prepareUpgrade(repo) {
         }
         if (before) {
             const after = readFileSync(profile.file);
-            writeFileSync(path.join(evidence, `policy-before-${role}.json`), before);
             writeFileSync(path.join(evidence, `policy-after-${role}.json`), after);
-            for (const key of ['blocklists', 'activeBlocks', 'schedules']) {
-                assert.deepEqual(JSON.parse(after)[key], JSON.parse(before)[key], `Installer changed existing ${key}`);
-            }
+            assertPolicyPreserved(JSON.parse(before), JSON.parse(after));
         }
         installs.push({ role, version: entry.version, binary, executableSHA256: hash(binary), installerSHA256: entry.installerSHA256, completedAt: new Date().toISOString() });
     } };
