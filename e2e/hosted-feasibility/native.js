@@ -16,6 +16,9 @@ export function command(program, args, { log, timeout = 120_000 } = {}) {
 }
 export function buildFixtures(root, suffix) {
     requireHosted();
+    if (process.platform === 'win32') {
+        command('powershell.exe', ['-NoProfile', '-File', path.join(fixtures, 'build-native-uia.ps1'), '-OutputDirectory', root], { log: path.join(root, 'native-commands.jsonl') });
+    }
     const entries = {};
     for (const role of ['Target', 'Control']) {
         const name = `DHProbe${role}_${suffix}`;
@@ -38,6 +41,7 @@ export function buildFixtures(root, suffix) {
             name, binary, directory, sha256: createHash('sha256').update(readFileSync(binary)).digest('hex'),
             ...(process.platform === 'win32' ? {
                 accessibilityProfile: 'net48-modern',
+                adapterSha256: createHash('sha256').update(readFileSync(path.join(root, 'native-uia.exe'))).digest('hex'),
                 runtimeConfigSha256: createHash('sha256').update(readFileSync(binary + '.config')).digest('hex'),
             } : {}),
         };
@@ -90,11 +94,13 @@ export async function interact(handle, root, label) {
             const source = `tell application "System Events"\nset p to first application process whose unix id is ${handle.pid}\ntell p\nset frontmost to true\nclick button "Save marker" of window "${handle.title}"\nend tell\nend tell`;
             command('/usr/bin/osascript', ['-e', source], { log: path.join(root, 'external-gui.jsonl'), timeout: 12_000 });
         } else {
-            const output = command('powershell.exe', ['-NoProfile', '-MTA', '-File', path.join(fixtures, 'invoke-button.ps1'), '-FixturePid', String(handle.pid), '-WindowTitle', handle.title], { log: path.join(root, 'external-gui.jsonl'), timeout: 12_000 });
+            assertOwned(handle, root);
+            command('powershell.exe', ['-NoProfile', '-MTA', '-File', path.join(fixtures, 'inspect-window.ps1'), '-FixturePid', String(handle.pid)], { log: path.join(root, 'external-gui.jsonl'), timeout: 12_000 });
+            const output = command(path.join(root, 'native-uia.exe'), [String(handle.pid), handle.title], { log: path.join(root, 'external-gui.jsonl'), timeout: 12_000 });
             method = JSON.parse(output.trim()).method;
         }
     } catch (error) {
-        const unavailable = /not (?:allowed|authori[sz]ed)|assistive access|access(?:ibility)? (?:denied|not enabled)|No UIAutomation window|not exposed to UIAutomation|-1743|-1719|-25211|Access is denied|interactive (?:window|desktop)|Native button focus unavailable/i.test(error.message);
+        const unavailable = /not (?:allowed|authori[sz]ed)|assistive access|access(?:ibility)? (?:denied|not enabled)|No UIAutomation window|not exposed to UIAutomation|-1743|-1719|-25211|Access is denied|interactive (?:window|desktop)|Native button focus unavailable|Native UIAutomation unavailable/i.test(error.message);
         return { label, verdict: unavailable ? 'BLOCKED' : 'FAIL', pid: handle.pid, message: error.message };
     }
     try {

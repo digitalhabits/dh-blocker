@@ -11,7 +11,7 @@ const repo = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const artifacts = path.resolve(process.env.HOSTED_ARTIFACTS_DIR || path.join(repo, 'artifacts', 'hosted-feasibility'));
 mkdirSync(artifacts, { recursive: true });
 const id = randomUUID();
-const root = path.join(os.tmpdir(), `dh-hosted-${id}`);
+const root = path.join(artifacts, `run-${id}`);
 const report = {
     schema: 1, runId: id, sourceSHA: process.env.GITHUB_SHA || null,
     startedAt: new Date().toISOString(), platform: process.platform, osRelease: os.release(), arch: os.arch(),

@@ -37,3 +37,27 @@ Hosted runners are demonstrably usable for the core debug app-block/recovery seq
 The probe uses an embedded-WebDriver debug build. It does not qualify signed-release external control of Blocker, real browser enforcement, consumer Windows variants, reboot/sleep, overlaps, pending-quit cancellation, fault injection or physical iOS. Repeated macOS feasibility successes are not the complete safety-plan qualification matrix.
 
 Actions artefacts contain the JSON, native command logs, fixture state and screenshots, with 14-day retention. Copies of the final and MTA-only evidence were preserved locally under ignored `artifacts/hosted-feasibility/evidence/42369161685/` and `42368980258/`. No native blocking test was run against local personal applications. Automatic follow-up is stopped after recording this result; future platform experiments should be bounded and hypothesis-driven.
+
+## Native Windows UIA investigation — 7 November 2026
+
+Local fixture-only diagnostics reproduced the managed-wrapper failure: the exact
+owned `WindowsForms10.BUTTON` HWND was reported as `ControlType.Pane`, with a
+numeric automation ID, no patterns and `IsKeyboardFocusable=false`. Native HWND
+inspection found only that button, ruling out selection of a same-named child.
+Client and fixtures were in session 1, integrity RID 8192 (medium). Foreground
+ownership differed on failed keyboard attempts; no input was sent to that PID.
+
+Against the unchanged .NET 4.8 fixture, native `CUIAutomation` exposed the same
+HWND as Button (50000), ID `save-marker`, with Invoke (10000) and LegacyIAccessible
+(10018), using Microsoft's unmanaged MSAA proxy. Six fresh-nonce invocations
+passed, with no foreground acquisition. This isolates the observed discrepancy
+to the managed/native client-provider paths; it does not establish the precise
+internal reason the managed proxy path failed.
+
+The final bounded local diagnostic also passed heartbeat-only and wrong-title
+negative cases and exact-child cleanup. Evidence remains under ignored
+`artifacts/hosted-feasibility/local-1edddcdc90694934922bb152a92ec365/`;
+the original failure tree is in `local-1f0ed810202c4823ad04086bcf53e8c9/`.
+Earlier diagnostic development failures are retained beside these. No local
+Blocker or blocking test was launched. Four safety-helper tests, scoped ESLint,
+and native compilation with `/W4 /WX` passed. Hosted validation is pending.
