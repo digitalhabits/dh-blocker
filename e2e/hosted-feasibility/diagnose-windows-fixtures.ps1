@@ -1,5 +1,5 @@
 # Explicit local entry point: compiles/starts only disposable fixtures, never Blocker.
-param([switch]$ManagedBaseline)
+param([switch]$ManagedBaseline, [switch]$StressHeartbeat)
 $ErrorActionPreference = 'Stop'
 $root = Join-Path (Resolve-Path "$PSScriptRoot/../..").Path ('artifacts/hosted-feasibility/local-' + [guid]::NewGuid().ToString('N'))
 [void](New-Item -ItemType Directory -Path $root)
@@ -33,6 +33,19 @@ try {
     }
     foreach ($child in $children) {
         $directory = Split-Path $child.Path
+        if ($StressHeartbeat) {
+            # Hold a writer open across timer ticks to reproduce the reader side
+            # of the hosted file-sharing race deterministically.
+            $locked = [IO.File]::Open("$directory/request", [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None)
+            try { Start-Sleep -Milliseconds 650 } finally { $locked.Dispose() }
+            $deadline = (Get-Date).AddSeconds(10)
+            while ((Get-Date) -lt $deadline -and !$child.HasExited) {
+                try { [IO.File]::WriteAllText("$directory/request", [guid]::NewGuid().ToString()) }
+                catch [IO.IOException] { $_ | Out-String | Add-Content "$directory/stress-write-errors.txt" }
+                Start-Sleep -Milliseconds 1
+            }
+            if ($child.HasExited) { throw "Fixture exited during file-sharing stress; see $directory/fixture-error.txt" }
+        }
         $status = Run-Adapter powershell.exe @('-NoProfile', '-MTA', '-File', "$PSScriptRoot/fixtures/inspect-window.ps1", '-FixturePid', $child.Id) "$directory/inspection"
         if ($status -ne 0) { throw 'Inspection failed; see retained logs' }
         # A live timer alone must not save a marker; wrong identity must not invoke.

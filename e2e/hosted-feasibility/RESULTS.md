@@ -78,3 +78,28 @@ with the write seam added to the original algorithm reproduced the sharing error
 all six helper/protocol tests passed after the fix, including permanent-error and
 stale-response rejection. The retry is shared by desktop probes; no production
 frontend or enforcement code changes are involved.
+
+Hosted attempt [42373629549](https://github.com/digitalhabits/dh-blocker/actions/runs/42373629549)
+on `38fbe34f` passed macOS completely. Windows behaviour and cleanup passed,
+including saved-state persistence and native target activation after pause and
+75 seconds, but control activation failed twice with `0x80040200`
+(`UIA_E_ELEMENTNOTENABLED`). The managed snapshots confirm the control's actual
+window and button had become disabled. Overall Windows remained BLOCKED, not a
+pass. Both platforms' full artifacts are retained under
+`artifacts/hosted-feasibility/evidence/42373629549/`.
+
+A deterministic local fixture-only test then held the request file exclusively
+across timer ticks. With fail-fast exception logging added, the original timer
+failed on `System.IO.IOException` in `File.InternalReadAllText`, reproducing the
+reader-side sharing collision. Evidence: `local-73abfb80ed794d45a47bd216252746c1`.
+This supports a WinForms exception-dialog explanation for the disabled hosted
+control, though that attempt did not capture the dialog text itself.
+
+The fixture now logs and defers only sharing/lock violations to the next 200 ms
+tick; all other UI-thread exceptions log and exit rather than presenting a modal
+dialog with a still-pumping timer. Native disabled-element failures are classified
+FAIL rather than missing capability, and diagnostics include every owned top-level
+window and native enabled state. The deterministic lock plus ten-second write
+stress passed for both fixtures, followed by six real saved-nonce activations and
+cleanup (`local-ffe259c803714edd8e1436aaf41b492e`). Windows CI now runs that explicit
+fixture-only regression before the full recovery scenario. Full ESLint passed.

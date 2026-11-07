@@ -24,12 +24,14 @@ std::string property(IUIAutomationElement* e, PROPERTYID id) {
     VariantClear(&v); return result;
 }
 std::string describe(IUIAutomationElement* e) {
-    int pid=0, type=0; UIA_HWND hwnd=nullptr; BOOL focusable=FALSE;
+    int pid=0, type=0; UIA_HWND hwnd=nullptr; BOOL focusable=FALSE, enabled=FALSE;
     check(e->get_CurrentProcessId(&pid)); check(e->get_CurrentControlType(&type));
     check(e->get_CurrentNativeWindowHandle(&hwnd)); check(e->get_CurrentIsKeyboardFocusable(&focusable));
+    check(e->get_CurrentIsEnabled(&enabled));
     std::ostringstream o;
     o << "{\"pid\":" << pid << ",\"hwnd\":" << reinterpret_cast<UINT_PTR>(hwnd)
       << ",\"controlType\":" << type << ",\"focusable\":" << (focusable ? "true" : "false")
+      << ",\"enabled\":" << (enabled ? "true" : "false")
       << ",\"name\":" << property(e, UIA_NamePropertyId)
       << ",\"automationId\":" << property(e, UIA_AutomationIdPropertyId)
       << ",\"class\":" << property(e, UIA_ClassNamePropertyId)
@@ -88,6 +90,10 @@ int wmain(int argc, wchar_t** argv) {
         check(invoke->Invoke());
         std::cout << "{\"method\":\"Native IUIAutomation InvokePattern\",\"pid\":" << s.pid << ",\"tree\":" << tree.str() << "}" << std::endl;
         return 0;
-    } catch(HRESULT hr) { std::cerr << "Native UIAutomation unavailable: HRESULT 0x" << std::hex << static_cast<unsigned long>(hr) << std::endl; return 1; }
+    } catch(HRESULT hr) {
+        std::cerr << (hr==static_cast<HRESULT>(UIA_E_ELEMENTNOTENABLED) ? "Native fixture control disabled: HRESULT 0x" : "Native UIAutomation unavailable: HRESULT 0x")
+                  << std::hex << static_cast<unsigned long>(hr) << std::endl;
+        return 1;
+    }
 }
 

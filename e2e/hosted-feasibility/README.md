@@ -109,6 +109,8 @@ For local investigation, run the explicit fixture-only entry point:
 powershell.exe -NoProfile -File e2e/hosted-feasibility/diagnose-windows-fixtures.ps1
 # Reproduce the old managed adapter without changing the hosted path:
 powershell.exe -NoProfile -File e2e/hosted-feasibility/diagnose-windows-fixtures.ps1 -ManagedBaseline
+# Exercise both sides of the heartbeat file-sharing race (also runs in Windows CI):
+powershell.exe -NoProfile -File e2e/hosted-feasibility/diagnose-windows-fixtures.ps1 -StressHeartbeat
 ```
 
 This builds and opens only the two disposable fixtures, checks heartbeat-only
@@ -117,6 +119,12 @@ and cleans up its exact children. Adapter processes have a 12-second deadline.
 It never launches Blocker or touches its profile; hosted-only guards are unchanged.
 Logs and binaries remain under `artifacts/hosted-feasibility/local-*`. A failed
 attempt remains preserved and nonzero. Visual C++ and .NET Framework are required.
+The stress variant holds the request file exclusively across multiple timer ticks,
+then checks responsiveness and real GUI activation. Timer sharing/lock violations
+are logged and deferred to the next tick; other UI-thread exceptions persist an
+error and terminate the fixture instead of opening a disabling WinForms dialog.
+Client-side EBUSY writes retry the same nonce within the original four-second
+budget. Neither side fabricates a response or retries a GUI invocation.
 
 The current Windows fixture explicitly targets .NET Framework 4.8 and opts into
 its modern accessibility behaviour through its executable configuration. The

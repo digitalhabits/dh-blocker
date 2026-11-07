@@ -40,6 +40,9 @@ function Describe($element) {
     @{ name=$c.Name; automationId=$c.AutomationId; type=$c.ControlType.ProgrammaticName; class=$c.ClassName; framework=$c.FrameworkId; pid=$c.ProcessId; hwnd=$c.NativeWindowHandle; enabled=$c.IsEnabled; focusable=$c.IsKeyboardFocusable; patterns=@($element.GetSupportedPatterns() | ForEach-Object { $_.ProgrammaticName }) }
 }
 $process = Get-Process -Id $FixturePid
+$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $FixturePid)
+$ownedWindows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
+$topLevel = @(foreach ($ownedWindow in $ownedWindows) { Describe $ownedWindow })
 $window = [System.Windows.Automation.AutomationElement]::FromHandle($process.MainWindowHandle)
 $tree = @((Describe $window))
 $elements = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
@@ -52,5 +55,5 @@ $native = @(foreach ($h in [FixtureInspection]::Children($process.MainWindowHand
 [uint32]$foregroundPid = 0
 $foreground = [FixtureInspection]::GetForegroundWindow()
 [void][FixtureInspection]::GetWindowThreadProcessId($foreground, [ref]$foregroundPid)
-@{ pid=$FixturePid; session=$process.SessionId; integrity=[FixtureInspection]::Integrity($FixturePid); clientPid=$PID; clientSession=(Get-Process -Id $PID).SessionId; clientIntegrity=[FixtureInspection]::Integrity($PID); foregroundHwnd=$foreground.ToInt64(); foregroundPid=$foregroundPid; tree=$tree; nativeChildren=$native } | ConvertTo-Json -Depth 8
+@{ pid=$FixturePid; session=$process.SessionId; integrity=[FixtureInspection]::Integrity($FixturePid); clientPid=$PID; clientSession=(Get-Process -Id $PID).SessionId; clientIntegrity=[FixtureInspection]::Integrity($PID); foregroundHwnd=$foreground.ToInt64(); foregroundPid=$foregroundPid; topLevelWindows=$topLevel; tree=$tree; nativeChildren=$native } | ConvertTo-Json -Depth 8
 
