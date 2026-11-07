@@ -110,6 +110,7 @@ async function setup() {
     await $('#add-blocklist-btn').waitForDisplayed({ timeout: 30_000 });
 }
 async function createAndStart(name) {
+    const before = await browser.execute(() => window.__REDDBLOCK_INTERNALS__.appData.blocklists.map((b) => b.id));
     await click('#add-blocklist-btn');
     await fill('#blocklist-name', `Hosted recovery ${report.runId}`);
     if (!await $('#modal-browse-apps-btn').isDisplayed()) await click('#editor-section-what-header');
@@ -127,11 +128,15 @@ async function createAndStart(name) {
     assert.equal(await $('#override-count').getValue(), '15', 'Expected the ordinary 15-word challenge');
     await screenshot('configured-focus-space');
     await click('#save-blocklist-btn');
-    await $('.blocklist-switch').waitForDisplayed();
-    assert.equal(await $('.blocklist-switch').getAttribute('aria-checked'), 'false');
-    await click('.blocklist-switch');
+    const id = await browser.execute((old) => window.__REDDBLOCK_INTERNALS__.appData.blocklists.find((b) => !old.includes(b.id))?.id, before);
+    assert(id, 'New rule identity missing');
+    const selector = `.blocklist-switch[data-id="${id}"]`;
+    await $(selector).waitForDisplayed();
+    assert.equal(await $(selector).getAttribute('aria-checked'), 'false');
+    await click(selector);
     await click('#proceed-start-confirm-btn');
     event('block-started-through-ui', { name, challengeWords: 15, ruleKind: 'Manual', finite: false, expected: 'warning then 30 s acknowledged pre-quit + 10 s grace' });
+    return selector;
 }
 async function pauseThroughChallenge() {
     await click('.blocklist-switch');
@@ -160,10 +165,119 @@ async function pauseThroughChallenge() {
     return requestedAt;
 }
 
+async function preparePermanentStop(selector) {
+    await click(selector);
+    await $('#challenge-input').waitForDisplayed();
+    await selectVisibleOption('unlock-duration-select', '0');
+    const text = await $('#challenge-text').getText();
+    assert.equal(text.trim().split(/\s+/).length, 15);
+    await click('#challenge-input');
+    await browser.keys(text);
+    assert.equal(await $('#challenge-input').getValue(), text);
+    await $('#confirm-override-btn').waitForEnabled();
+    event('permanent-stop-challenge-prepared', { selector, words: 15 });
+}
+async function permanentStop(selector) {
+    await preparePermanentStop(selector);
+    await click('#confirm-override-btn');
+    await browser.waitUntil(async () => await $(selector).getAttribute('aria-checked') === 'false', { timeout: 10_000 });
+    event('permanent-stop-confirmed', { selector });
+}
+async function waitForWarning(handle) {
+    await $('#app-blocking-lets-go-btn').waitForDisplayed({ timeout: 20_000 });
+    const rows = await warningRows();
+    assert(rows.some((r) => Number(r.pid) === handle.pid && !r.ackedDeadlineMs), 'Exact fixture must await acknowledgement');
+    await heartbeat(handle);
+    event('exact-fixture-awaiting-ack', { pid: handle.pid, rows });
+}
+async function safetyScenario(kind) {
+    report.scenario = kind;
+    // All rules refer only to binaries this run builds. Keep the third fixture
+    // unlaunched until the first target has earned release.
+    const a = await createAndStart(report.fixtures.target.name);
+    const b = kind === 'overlap' ? await createAndStart(report.fixtures.target.name) : null;
+    await createAndStart(report.fixtures.secondary.name);
+    const control = launchFixture(report.fixtures.control, root, 'control'); handles.push(control);
+    await ready(control);
+    await recordInteraction(control, 'safety-control-baseline');
+    if (b) {
+        await permanentStop(a);
+        assert.equal(await $(b).getAttribute('aria-checked'), 'true', 'Other source must remain on');
+    } else {
+        // Complete the actual challenge before the short native countdown starts.
+        await preparePermanentStop(a);
+        await browser.execute(() => {
+            window.__HOSTED_CONFIRM_OBSERVATION__ = null;
+            document.getElementById('confirm-override-btn').addEventListener('click', (e) => {
+                window.__HOSTED_CONFIRM_OBSERVATION__ = { trusted: e.isTrusted, now: Date.now(), rows: [...window.__REDDBLOCK_INTERNALS__.appBlockingWarningRows].map(([pid, r]) => ({ pid, deadline: r.ackedDeadlineMs })) };
+            }, { capture: true, once: true });
+        });
+    }
+    let target = launchFixture(report.fixtures.target, root, 'safety'); handles.push(target);
+    await ready(target);
+    await waitForWarning(target);
+    if (b) {
+        let ack;
+        await click('#app-blocking-lets-go-btn', () => { ack = performance.now(); });
+        await until(async () => { await heartbeat(control); return !alive(target); }, 45_000, 'Remaining overlap source did not enforce');
+        assert(performance.now() - ack >= 29_000, 'Overlap target quit too early');
+        assert(existsSync(path.join(target.directory, 'polite-quit')));
+        event('overlap-remaining-source-enforced', { stopped: a, remaining: b, pid: target.pid });
+        await permanentStop(b);
+        target = launchFixture(report.fixtures.target, root, 'overlap-released'); handles.push(target);
+        await ready(target);
+    } else {
+        // Both clicks are real WebDriver input. Element origins are resolved by
+        // the driver after acknowledgement restores the window geometry.
+        const ack = await $('#app-blocking-lets-go-btn');
+        const confirm = await $('#confirm-override-btn');
+        await browser.action('pointer').move({ origin: ack }).down().up().pause(2000)
+            .move({ origin: confirm }).down().up().perform();
+        const observed = await browser.execute(() => window.__HOSTED_CONFIRM_OBSERVATION__);
+        event('pending-confirm-phase-observation', { observed, pid: target.pid });
+        assert(observed?.trusted, 'Stop must use trusted pointer input');
+        const row = observed.rows.find((r) => Number(r.pid) === target.pid);
+        assert(row?.deadline > observed.now && row.deadline - observed.now < 30_000, 'Stop missed acknowledged pre-quit phase');
+        await browser.waitUntil(async () => await $(a).getAttribute('aria-checked') === 'false', { timeout: 10_000 });
+        assert(alive(target), 'Pending cancellation must preserve original PID');
+        assert(!existsSync(path.join(target.directory, 'polite-quit')), 'Cancellation already sent polite quit');
+        event('pending-prequit-cancelled', { pid: target.pid, remainingMs: row.deadline - observed.now });
+    }
+    await recordInteraction(target, 'safety-target-released');
+    // A later genuine acknowledgement must not re-enrol the released target.
+    const secondary = launchFixture(report.fixtures.secondary, root, 'later-ack'); handles.push(secondary);
+    await ready(secondary);
+    await waitForWarning(secondary);
+    let secondAck;
+    await click('#app-blocking-lets-go-btn', () => { secondAck = performance.now(); });
+    const end = performance.now() + 75_000;
+    while (performance.now() < end) {
+        await heartbeat(target);
+        await heartbeat(control);
+        assert(!(await warningRows()).some((r) => Number(r.pid) === target.pid || r.name === target.name), 'Released target re-enrolled after later acknowledgement');
+        event('safety-release-sample', { targetPid: target.pid, controlPid: control.pid, secondaryAlive: alive(secondary) });
+        if (alive(secondary)) assert(performance.now() - secondAck <= 45_000, 'Secondary survived enforcement deadline');
+        await delay(1000);
+    }
+    assert(!alive(secondary), 'Later acknowledgement must actually terminate second target');
+    assert(existsSync(path.join(secondary.directory, 'polite-quit')));
+    await assertNoTargetWarnings(target);
+    await recordInteraction(target, 'safety-target-after-later-ack-75s');
+    await recordInteraction(control, 'safety-control-after-later-ack-75s');
+    await screenshot(kind + '-complete');
+    report.behaviour = 'PASS';
+    event('safety-scenario-complete', { kind, targetPid: target.pid, minimumObservationMs: 75_000 });
+}
+
 describe('Hosted native app recovery feasibility', () => {
     it('enforces and legitimately pauses a real target while its control remains usable', async () => {
         try {
             await setup();
+            if (process.env.HOSTED_SCENARIO && process.env.HOSTED_SCENARIO !== 'recovery') {
+                assert(['pending', 'overlap'].includes(process.env.HOSTED_SCENARIO));
+                await safetyScenario(process.env.HOSTED_SCENARIO);
+                return;
+            }
             const target = launchFixture(report.fixtures.target, root, 'initial'); handles.push(target);
             const control = launchFixture(report.fixtures.control, root, 'control'); handles.push(control);
             await Promise.all([ready(target), ready(control)]);

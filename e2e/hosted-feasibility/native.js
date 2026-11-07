@@ -20,7 +20,7 @@ export function buildFixtures(root, suffix) {
         command('powershell.exe', ['-NoProfile', '-File', path.join(fixtures, 'build-native-uia.ps1'), '-OutputDirectory', root], { log: path.join(root, 'native-commands.jsonl') });
     }
     const entries = {};
-    for (const role of ['Target', 'Control']) {
+    for (const role of ['Target', 'Control', 'Secondary']) {
         const name = `DHProbe${role}_${suffix}`;
         const directory = path.join(root, 'fixtures', name);
         mkdirSync(directory, { recursive: true });

@@ -8,5 +8,5 @@ export const config = {
     specs: [fileURLToPath(new URL('./recovery.e2e.js', import.meta.url))],
     outputDir: path.join(path.dirname(process.env.HOSTED_REPORT_FILE), 'wdio-logs'),
     connectionRetryCount: 0,
-    mochaOpts: { ...base.mochaOpts, timeout: 900_000 },
+    mochaOpts: { ...base.mochaOpts, timeout: 1_800_000 },
 };

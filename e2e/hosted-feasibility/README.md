@@ -133,3 +133,26 @@ This follows [Microsoft’s accessibility configuration](https://learn.microsoft
 Prior legacy-provider focus failures remain evidence for that fixture profile;
 a modern-profile pass must not be presented as proof of generic foreground
 control or all legacy application providers.
+
+## Pending cancellation and overlap scenarios
+
+The workflow now runs `recovery`, `pending` and `overlap` in separate fresh hosted
+VMs on each OS. The pending case creates run-owned rules before launching targets,
+prepares the real 15-word permanent-stop challenge, then acknowledges and confirms
+with trusted pointer actions. A read-only click observer records the exact target's
+acknowledged deadline at confirmation; missing the 30-second phase fails the case.
+The original PID must survive without a polite-quit marker.
+
+The overlap case starts two Manual sources for one target, completes the real
+challenge to stop the first, and proves the remaining source actually terminates
+the target. It then completes the second challenge and relaunches the target.
+Both cases subsequently launch and acknowledge a separately blocked secondary
+fixture. That process must terminate, while the released target and unrelated
+control survive and answer GUI nonce probes through at least 75 seconds after
+that acknowledgement. Every rule is confined to unique run-owned fixture names.
+Permanent stops avoid automatic five-minute resumption during this longer case.
+
+These cases do not yet cover cancellation during post-quit force-kill grace,
+injected stale callbacks, or qualification through three fresh passes. Scenario
+transport timeout is 30 minutes; native 30/45-second enforcement limits and the
+75-second observation requirement are unchanged. No local blocking run is used.
