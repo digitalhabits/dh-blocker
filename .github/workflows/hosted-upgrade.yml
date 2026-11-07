@@ -11,13 +11,14 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: hosted-upgrade-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   upgrade:
     name: Installed upgrade ${{ matrix.scenario }} (${{ matrix.os }})
+    # Every job gets a fresh VM. Serialize each row across pushes without
+    # holding corrected Windows jobs behind an unrelated macOS runner queue.
+    concurrency:
+      group: installed-upgrade-${{ github.ref }}-${{ matrix.os }}-${{ matrix.scenario }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
