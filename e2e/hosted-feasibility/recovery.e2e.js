@@ -109,7 +109,7 @@ async function setup() {
     }
     await $('#add-blocklist-btn').waitForDisplayed({ timeout: 30_000 });
 }
-async function createAndStart(name) {
+async function createAndStart(name, startNow = true) {
     const before = await browser.execute(() => window.__REDDBLOCK_INTERNALS__.appData.blocklists.map((b) => b.id));
     await click('#add-blocklist-btn');
     await fill('#blocklist-name', `Hosted recovery ${report.runId}`);
@@ -133,6 +133,7 @@ async function createAndStart(name) {
     const selector = `.blocklist-switch[data-id="${id}"]`;
     await $(selector).waitForDisplayed();
     assert.equal(await $(selector).getAttribute('aria-checked'), 'false');
+    if (!startNow) return selector;
     await click(selector);
     await click('#proceed-start-confirm-btn');
     event('block-started-through-ui', { name, challengeWords: 15, ruleKind: 'Manual', finite: false, expected: 'warning then 30 s acknowledged pre-quit + 10 s grace' });
@@ -190,49 +191,57 @@ async function waitForWarning(handle) {
     await heartbeat(handle);
     event('exact-fixture-awaiting-ack', { pid: handle.pid, rows });
 }
+async function startRule(selector) {
+    await click(selector);
+    await click('#proceed-start-confirm-btn');
+}
 async function safetyScenario(kind) {
     report.scenario = kind;
-    // All rules refer only to binaries this run builds. Keep the third fixture
-    // unlaunched until the first target has earned release.
-    const a = await createAndStart(report.fixtures.target.name);
-    const b = kind === 'overlap' ? await createAndStart(report.fixtures.target.name) : null;
-    await createAndStart(report.fixtures.secondary.name);
+    const a = await createAndStart(report.fixtures.target.name, false);
+    const b = kind === 'overlap' ? await createAndStart(report.fixtures.target.name, false) : null;
+    const c = await createAndStart(report.fixtures.secondary.name, false);
     const control = launchFixture(report.fixtures.control, root, 'control'); handles.push(control);
-    await ready(control);
+    let target = launchFixture(report.fixtures.target, root, 'safety'); handles.push(target);
+    await Promise.all([ready(target), ready(control)]);
+    await recordInteraction(target, 'safety-target-baseline');
     await recordInteraction(control, 'safety-control-baseline');
+    // Cache element references before the native 30-second countdown starts.
+    const switchElement = await $(a);
+    const confirm = await $('#confirm-override-btn');
+    const input = await $('#challenge-input');
+    await startRule(a);
+    await waitForWarning(target);
     if (b) {
+        let ack;
+        await click('#app-blocking-lets-go-btn', () => { ack = performance.now(); });
+        await until(async () => { await heartbeat(control); return !alive(target); }, 45_000, 'Initial overlap source did not enforce');
+        assert(performance.now() - ack >= 29_000);
+        await startRule(b);
         await permanentStop(a);
-        assert.equal(await $(b).getAttribute('aria-checked'), 'true', 'Other source must remain on');
+        assert.equal(await $(b).getAttribute('aria-checked'), 'true');
+        target = launchFixture(report.fixtures.target, root, 'overlap-still-blocked'); handles.push(target);
+        // Mid-block launches intentionally receive immediate close, without an ack.
+        await until(async () => { await heartbeat(control); return !alive(target); }, 15_000, 'Remaining overlap source allowed relaunch');
+        event('overlap-remaining-source-enforced', { stopped: a, remaining: b, pid: target.pid });
+        await permanentStop(b);
+        target = launchFixture(report.fixtures.target, root, 'overlap-released'); handles.push(target);
+        await ready(target);
     } else {
-        // Complete the actual challenge before the short native countdown starts.
-        await preparePermanentStop(a);
         await browser.execute(() => {
             window.__HOSTED_CONFIRM_OBSERVATION__ = null;
             document.getElementById('confirm-override-btn').addEventListener('click', (e) => {
                 window.__HOSTED_CONFIRM_OBSERVATION__ = { trusted: e.isTrusted, now: Date.now(), rows: [...window.__REDDBLOCK_INTERNALS__.appBlockingWarningRows].map(([pid, r]) => ({ pid, deadline: r.ackedDeadlineMs })) };
             }, { capture: true, once: true });
         });
-    }
-    let target = launchFixture(report.fixtures.target, root, 'safety'); handles.push(target);
-    await ready(target);
-    await waitForWarning(target);
-    if (b) {
-        let ack;
-        await click('#app-blocking-lets-go-btn', () => { ack = performance.now(); });
-        await until(async () => { await heartbeat(control); return !alive(target); }, 45_000, 'Remaining overlap source did not enforce');
-        assert(performance.now() - ack >= 29_000, 'Overlap target quit too early');
-        assert(existsSync(path.join(target.directory, 'polite-quit')));
-        event('overlap-remaining-source-enforced', { stopped: a, remaining: b, pid: target.pid });
-        await permanentStop(b);
-        target = launchFixture(report.fixtures.target, root, 'overlap-released'); handles.push(target);
-        await ready(target);
-    } else {
-        // Both clicks are real WebDriver input. Element origins are resolved by
-        // the driver after acknowledgement restores the window geometry.
         const ack = await $('#app-blocking-lets-go-btn');
-        const confirm = await $('#confirm-override-btn');
-        await browser.action('pointer').move({ origin: ack }).down().up().pause(2000)
-            .move({ origin: confirm }).down().up().perform();
+        await browser.action('pointer').move({ origin: ack }).down().up().pause(500)
+            .move({ origin: switchElement }).down().up().pause(500)
+            .move({ origin: input }).down().up().perform();
+        const challenge = await browser.execute(() => ({ text: document.getElementById('challenge-text').textContent, duration: document.getElementById('unlock-duration-select').value }));
+        assert.equal(challenge.text.trim().split(/\s+/).length, 15);
+        assert.equal(challenge.duration, '10', 'Expected ordinary initial ten-minute pause');
+        await browser.keys(challenge.text);
+        await browser.action('pointer').move({ origin: confirm }).down().up().perform();
         const observed = await browser.execute(() => window.__HOSTED_CONFIRM_OBSERVATION__);
         event('pending-confirm-phase-observation', { observed, pid: target.pid });
         assert(observed?.trusted, 'Stop must use trusted pointer input');
@@ -241,12 +250,12 @@ async function safetyScenario(kind) {
         await browser.waitUntil(async () => await $(a).getAttribute('aria-checked') === 'false', { timeout: 10_000 });
         assert(alive(target), 'Pending cancellation must preserve original PID');
         assert(!existsSync(path.join(target.directory, 'polite-quit')), 'Cancellation already sent polite quit');
-        event('pending-prequit-cancelled', { pid: target.pid, remainingMs: row.deadline - observed.now });
+        event('pending-prequit-cancelled', { pid: target.pid, pauseMinutes: 10, remainingMs: row.deadline - observed.now });
     }
     await recordInteraction(target, 'safety-target-released');
-    // A later genuine acknowledgement must not re-enrol the released target.
     const secondary = launchFixture(report.fixtures.secondary, root, 'later-ack'); handles.push(secondary);
     await ready(secondary);
+    await startRule(c);
     await waitForWarning(secondary);
     let secondAck;
     await click('#app-blocking-lets-go-btn', () => { secondAck = performance.now(); });
@@ -259,7 +268,7 @@ async function safetyScenario(kind) {
         if (alive(secondary)) assert(performance.now() - secondAck <= 45_000, 'Secondary survived enforcement deadline');
         await delay(1000);
     }
-    assert(!alive(secondary), 'Later acknowledgement must actually terminate second target');
+    assert(!alive(secondary));
     assert(existsSync(path.join(secondary.directory, 'polite-quit')));
     await assertNoTargetWarnings(target);
     await recordInteraction(target, 'safety-target-after-later-ack-75s');
@@ -268,7 +277,6 @@ async function safetyScenario(kind) {
     report.behaviour = 'PASS';
     event('safety-scenario-complete', { kind, targetPid: target.pid, minimumObservationMs: 75_000 });
 }
-
 describe('Hosted native app recovery feasibility', () => {
     it('enforces and legitimately pauses a real target while its control remains usable', async () => {
         try {

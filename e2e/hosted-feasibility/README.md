@@ -136,23 +136,27 @@ control or all legacy application providers.
 
 ## Pending cancellation and overlap scenarios
 
-The workflow now runs `recovery`, `pending` and `overlap` in separate fresh hosted
-VMs on each OS. The pending case creates run-owned rules before launching targets,
-prepares the real 15-word permanent-stop challenge, then acknowledges and confirms
-with trusted pointer actions. A read-only click observer records the exact target's
-acknowledged deadline at confirmation; missing the 30-second phase fails the case.
-The original PID must survive without a polite-quit marker.
+The workflow runs `recovery`, `pending` and `overlap` in separate fresh hosted VMs
+on each OS. Rules are created inactive, fixtures launched, then rules started
+through their visible switches. Launching into an already-active rule intentionally
+uses immediate close instead of the block-start warning; the first attempt
+incorrectly assumed otherwise and remains preserved in Actions history.
 
-The overlap case starts two Manual sources for one target, completes the real
-challenge to stop the first, and proves the remaining source actually terminates
-the target. It then completes the second challenge and relaunches the target.
-Both cases subsequently launch and acknowledge a separately blocked secondary
-fixture. That process must terminate, while the released target and unrelated
-control survive and answer GUI nonce probes through at least 75 seconds after
-that acknowledgement. Every rule is confined to unique run-owned fixture names.
-Permanent stops avoid automatic five-minute resumption during this longer case.
+Pending cancellation acknowledges the warning, opens the stop dialog, types the
+actual 15-word challenge and confirms the ordinary ten-minute pause through real
+WebDriver pointer/key input. A read-only click observer records the exact PID's
+acknowledged deadline at confirmation. Missing the 30-second phase fails the case;
+the original PID must survive without a polite-quit marker. No timer is extended.
 
-These cases do not yet cover cancellation during post-quit force-kill grace,
-injected stale callbacks, or qualification through three fresh passes. Scenario
-transport timeout is 30 minutes; native 30/45-second enforcement limits and the
-75-second observation requirement are unchanged. No local blocking run is used.
+Overlap starts source A and proves acknowledged termination. It then starts B,
+stops A through the real challenge, and verifies relaunch is still closed by B.
+After completing B's challenge it relaunches the released target. Both overlap
+stops use Never to prevent automatic resumption during the longer scenario.
+
+Both cases subsequently launch a separate secondary fixture, start its rule and
+acknowledge its warning. That process must actually terminate while the released
+target and unrelated control survive for at least 75 seconds, with fresh GUI-saved
+nonces afterward. All names and children are run-owned. Native deadlines and
+cleanup rules are unchanged. The scenario transport timeout is 30 minutes.
+Post-quit grace cancellation, injected stale callbacks and three-pass qualification
+remain separate coverage. No local blocking run is used.
