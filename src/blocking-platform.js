@@ -2,6 +2,7 @@
 // init, warning-overlay coordinator, window sizing, handset
 // modal screens, platform detection. Extracted verbatim from app.js.
 import { state } from './state.js';
+import { createWarningDelivery } from './warning-delivery.js';
 
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import snoozeIconUrl from './images/snooze.png';
@@ -377,6 +378,25 @@ export function setupAppBlockingWarningOverlay() {
         appBlockingWarningUiAttached = false;
     };
 
+    const delivery = createWarningDelivery(
+        () => tauriAPI.listPendingBlockingWarnings(),
+        (pending) => {
+            for (const row of pending) {
+                const pid = Number(row?.pid);
+                if (!Number.isFinite(pid) || appBlockingWarningRows.has(pid)) continue;
+                appBlockingWarningRows.set(pid, newWarningRow(pid, row.name, row.origin, row.process));
+            }
+            renderAppBlockingWarningOverlay();
+            renderAppBlockingClosedownBanner();
+        },
+    );
+    const refreshPending = () => delivery.refresh().catch((error) => {
+        // Preserve already-visible warnings on read failure, but never create
+        // an unverified row from a potentially stale event. Native enforcement
+        // is unchanged; a pending native acknowledgement is not auto-accepted.
+        console.warn('[app-blocking-ui] pending warning verification failed:', error);
+    });
+
     // The new flow has just two events: warning-show (user-ack required)
     // and warning-hide (the PID exited or got SIGKILLed). The old
     // warning-update countdown stream is gone — there's no number to tick.
@@ -384,55 +404,27 @@ export function setupAppBlockingWarningOverlay() {
         const p = event?.payload || {};
         const pid = Number(p.pid);
         if (!Number.isFinite(pid)) return;
-        appBlockingWarningRows.set(pid, newWarningRow(pid, p.name, p.origin, p.process));
-        renderAppBlockingWarningOverlay();
-        renderAppBlockingClosedownBanner();
+        void refreshPending();
     }).catch(onFail('warning-show'));
 
     tauriAPI.onAppBlockingWarningHide((event) => {
         const p = event?.payload || {};
         const pid = Number(p.pid);
         if (!Number.isFinite(pid)) return;
+        delivery.invalidate();
         appBlockingWarningRows.delete(pid);
         if (appBlockingWarningRows.size === 0) {
             resetAppBlockingWarningSnoozeState();
         }
         renderAppBlockingWarningOverlay();
         renderAppBlockingClosedownBanner();
+        void refreshPending();
     }).catch(onFail('warning-hide'));
 
     // Cold-start race: the watcher can emit warning-show (and expand the
     // shell) before these listeners attach. Tauri events are not queued,
     // so replay any still-awaiting PIDs from Rust, then reconcile chrome.
-    void tauriAPI
-        .listPendingBlockingWarnings()
-        .then((pending) => {
-            if (!Array.isArray(pending) || pending.length === 0) {
-                return reconcileBlockingWarningShell();
-            }
-            let seeded = false;
-            for (const row of pending) {
-                const pid = Number(row?.pid);
-                if (!Number.isFinite(pid)) continue;
-                if (appBlockingWarningRows.has(pid)) continue;
-                appBlockingWarningRows.set(pid, newWarningRow(pid, row?.name, row?.origin, row?.process));
-                seeded = true;
-            }
-            if (seeded) {
-                console.log(
-                    '[app-blocking-ui] replayed',
-                    appBlockingWarningRows.size,
-                    'pending warning(s) missed before listeners attached',
-                );
-                renderAppBlockingWarningOverlay();
-                renderAppBlockingClosedownBanner();
-            }
-            return reconcileBlockingWarningShell();
-        })
-        .catch((e) => {
-            console.warn('[app-blocking-ui] pending warning replay failed:', e);
-            void reconcileBlockingWarningShell();
-        });
+    void refreshPending().finally(() => reconcileBlockingWarningShell());
 
     const snoozeBtn = document.getElementById('app-blocking-snooze-btn');
     snoozeBtn?.addEventListener('click', () => {
@@ -460,6 +452,7 @@ export function setupAppBlockingWarningOverlay() {
     // have to wrap up.
     const letsGoBtn = document.getElementById('app-blocking-lets-go-btn');
     letsGoBtn?.addEventListener('click', () => {
+        delivery.invalidate();
         resetAppBlockingWarningSnoozeState();
         void playAppBlockingLetsGoVoice();
         const ackedDeadlineMs = Date.now() + APP_BLOCKING_CLOSEDOWN_PREQUIT_MS;
@@ -477,6 +470,7 @@ export function setupAppBlockingWarningOverlay() {
         renderAppBlockingClosedownBanner();
         tauriAPI
             .letsGoAcknowledge()
+            .then(() => refreshPending())
             .catch((e) => console.warn('[app-blocking-ui] lets-go ack:', e));
     });
 }
