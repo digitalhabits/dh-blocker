@@ -1,5 +1,69 @@
 # Hosted feasibility results — 7 November 2026
 
+## Pending cancellation and overlapping rules: PASS
+
+[Actions run 42382988169](https://github.com/digitalhabits/dh-blocker/actions/runs/42382988169)
+validated source `d12141b94b611d2614d881669cfb17d524fdbd29` on 7 November 2026.
+All six fresh-VM jobs passed: recovery, pending and overlap on both Windows Server
+2025 x64 and macOS 15. Every report records behaviour, external GUI capability and
+exact-child cleanup PASS. Full artifacts are preserved under ignored
+`artifacts/hosted-feasibility/evidence/42382988169/all/` and in Actions for 14 days.
+
+- Pending: the actual 15-word challenge confirmed a ten-minute pause while the
+  original target was in its acknowledged countdown. The click-time observation
+  recorded 28,594 ms remaining on Windows and 28,362 ms on macOS. The original
+  PID survived, with no polite-quit marker, through a later real acknowledgement
+  and termination of a separately blocked secondary fixture. Target and unrelated
+  control remained usable for at least 75 seconds after that acknowledgement.
+- Overlap: A first enforced acknowledged termination. With A and B active for
+  the same target, stopping A through the challenge left B on; B actually closed
+  a relaunch. Completing B's challenge allowed relaunch. That released target
+  survived the later secondary acknowledgement and 75-second observation.
+- Each new case passed five independent GUI saved-nonce checks. Final target and
+  control marker files were independently compared with report nonces after
+  artifact download. Pending target polite-quit markers were confirmed absent.
+  Both unchanged recovery cases passed their six GUI checks as well.
+
+The embedded debug WebDriver reports its pointer events as `isTrusted=false`.
+Input uses WebDriver actions/keys, never JS click or a stop/pause internal. The
+read-only confirmation observer preserves that trust value and the countdown
+snapshot. This is debug-WebDriver coverage; native external AX/UIA activates the
+fixtures independently. It does not establish signed-release external Blocker UI
+control. The subsequent metadata-only report update removes the old blanket
+limitation saying pending/second-target cases are absent; downloaded reports are
+preserved verbatim and their scenario events identify the exercised coverage.
+
+### Every attempted comparison
+
+| Run | Recovery, both OSes | Pending, both OSes | Overlap, both OSes |
+| --- | --- | --- | --- |
+| 42378613933 (`713065df`) | PASS | FAIL | FAIL |
+| 42379815532 (`59e007d8`) | PASS | FAIL | PASS |
+| 42381177273 (`8691074e`) | PASS | FAIL | PASS |
+| 42382988169 (`d12141b9`) | PASS | PASS | PASS |
+
+All 24 job cleanups passed. The first new cases assumed that launching into an
+already-active rule would show a warning; the watcher intentionally closes such
+launches immediately. Rules now start with the target already running. The next
+pending failures exposed detached switch elements after card rerender. The third
+reached confirmation during the countdown but failed an unsupported event-trust
+assertion. That assertion was removed while preserving the observed trust value,
+real challenge, phase, survival and GUI-marker requirements. Artifacts for all
+failed attempts are retained under their run IDs; none counts as a passing case.
+
+Six runner/protocol tests and full ESLint passed locally. No native blocking tests
+ran locally; no production enforcement/frontend code, data or security settings
+changed, and nothing was merged. The generic fixture builder adds one disposable
+secondary app; macOS and Windows both exercised it. iOS was not run and its
+production paths are unaffected.
+
+This is one complete passing pending run per OS. Three consecutive fresh core
+matrix qualifications, post-quit grace cancellation, later cancellation points,
+explicit stale-callback injection, signed/installed releases, browser enforcement
+and physical iOS remain outstanding. The overlap case covers removal of one of
+two Manual blocklist sources, not every scheduled/allowlist overlap combination.
+
+## Earlier Windows GUI activation result
 ## Current result: both hosted platforms PASS
 
 [Actions run 42375075526](https://github.com/digitalhabits/dh-blocker/actions/runs/42375075526)
@@ -145,4 +209,3 @@ window and native enabled state. The deterministic lock plus ten-second write
 stress passed for both fixtures, followed by six real saved-nonce activations and
 cleanup (`local-ffe259c803714edd8e1436aaf41b492e`). Windows CI now runs that explicit
 fixture-only regression before the full recovery scenario. Full ESLint passed.
-
