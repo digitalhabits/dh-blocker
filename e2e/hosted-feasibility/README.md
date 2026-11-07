@@ -7,8 +7,8 @@ It changes no enforcement policy. `run.js` refuses native runs unless
 all present. Do not set those variables to run this on a personal machine.
 
 The workflow initially runs on pushes to `codex/hosted-recovery-feasibility` and
-supports `workflow_dispatch`. A new workflow needs its first branch push before
-it is available on the default branch for normal dispatch discovery. Each OS
+supports `workflow_dispatch`. The branch push starts this initial experiment; normal manual-dispatch discovery
+requires the workflow file to exist on the default branch. Each OS
 runs independently, with a 40-minute job deadline and evidence uploaded even on
 failure. There are no automatic scenario retries.
 

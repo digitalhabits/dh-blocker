@@ -59,10 +59,18 @@ async function setup() {
     if (await $('#welcome-onboarding-continue-btn').isDisplayed()) await click('#welcome-onboarding-continue-btn');
     if (await $('#rebrand-onboarding-continue-btn').isDisplayed()) await click('#rebrand-onboarding-continue-btn');
     await $('#eula-continue-btn').waitForDisplayed({ timeout: 30_000 });
-    await browser.executeAsync((done) => {
+    await browser.execute(() => {
+        window.__HOSTED_EULA_RESULT__ = { status: 'pending' };
         Promise.resolve(window.__REDDBLOCK_INTERNALS__.acceptEula())
-            .then(() => done(null)).catch((error) => done(String(error)));
-    }).then((error) => { if (error) throw new Error(error); });
+            .then(() => { window.__HOSTED_EULA_RESULT__ = { status: 'done' }; })
+            .catch((error) => { window.__HOSTED_EULA_RESULT__ = { status: 'error', error: String(error) }; });
+    });
+    await browser.waitUntil(
+        () => browser.execute(() => window.__HOSTED_EULA_RESULT__?.status !== 'pending'),
+        { timeout: 120_000, timeoutMsg: 'App EULA acceptance did not settle' },
+    );
+    const acceptance = await browser.execute(() => window.__HOSTED_EULA_RESULT__);
+    assert.equal(acceptance?.status, 'done', acceptance?.error || 'EULA acceptance did not complete');
     event('setup-eula-accepted', { method: 'existing acceptEula setup seam; no policy mutation' });
     await $('#add-blocklist-btn').waitForDisplayed({ timeout: 30_000 });
 }

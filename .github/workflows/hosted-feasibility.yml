@@ -36,6 +36,9 @@ jobs:
         with:
           workspaces: src-tauri
           key: hosted-recovery-${{ matrix.os }}
+          # Keep compiled dependencies when the capability probe deliberately
+          # reports BLOCKED or exposes a harness error.
+          cache-on-failure: true
       - run: pnpm install --frozen-lockfile
       - name: Test runner safety helpers
         run: node --test e2e/hosted-feasibility/helpers.test.js
