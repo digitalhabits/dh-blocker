@@ -68,5 +68,6 @@ jobs:
           path: |
             artifacts/hosted-upgrade/
             artifacts/upgrade-packages/
+            !artifacts/upgrade-packages/*-payload/**
           if-no-files-found: warn
           retention-days: 14

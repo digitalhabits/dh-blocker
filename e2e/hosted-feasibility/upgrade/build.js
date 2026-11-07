@@ -16,6 +16,12 @@ function run(program, args, cwd, env = {}) {
     assert(!result.error && result.status === 0, `${program} failed: ${result.error || result.status}`);
 }
 function hash(file) { return createHash('sha256').update(readFileSync(file)).digest('hex'); }
+function executableEntries(directory) {
+    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+        const file = path.join(directory, entry.name);
+        return entry.isDirectory() ? executableEntries(file) : entry.isFile() && entry.name.toLowerCase() === 'redd-block.exe' ? [file] : [];
+    });
+}
 const manifest = { schema: 1, platform: process.platform, baselineSource: baselineSHA, candidateSource: process.env.GITHUB_SHA,
     lane: 'reconstructed debug installers; embedded WebDriver; no release credentials', packages: {} };
 for (const [role, cwd] of [['baseline', baseline], ['candidate', repo]]) {
@@ -38,7 +44,7 @@ for (const [role, cwd] of [['baseline', baseline], ['candidate', repo]]) {
     }
     args.push('--', '--locked');
     run(process.execPath, args, cwd, env);
-    let installer, executable;
+    let installer, executable, rawExecutableSHA256;
     if (process.platform === 'darwin') {
         run('/bin/bash', ['scripts/build-mac-pkg.sh'], cwd, env);
         installer = path.join(target, 'debug/bundle/pkg', `Digital-Habits-Blocker-${version}.pkg`);
@@ -48,12 +54,21 @@ for (const [role, cwd] of [['baseline', baseline], ['candidate', repo]]) {
         const files = readdirSync(nsis).filter((f) => f.endsWith('-setup.exe'));
         assert.equal(files.length, 1, 'Expected exactly one NSIS installer');
         installer = path.join(nsis, files[0]);
-        executable = path.join(target, 'debug/redd-block.exe');
+        rawExecutableSHA256 = hash(path.join(target, 'debug/redd-block.exe'));
+        // Tauri embeds the bundle kind in the packaged image and restores the
+        // Cargo output afterward. Anchor identity to the actual NSIS payload.
+        const sevenZip = path.join(process.env.ProgramFiles, '7-Zip', '7z.exe');
+        assert(existsSync(sevenZip), 'Hosted 7-Zip is required to verify the NSIS payload');
+        const extracted = path.join(root, role + '-payload');
+        run(sevenZip, ['x', installer, '-o' + extracted, '-y'], cwd);
+        const payloads = executableEntries(extracted);
+        assert.equal(payloads.length, 1, 'Expected exactly one main executable in the NSIS payload');
+        executable = payloads[0];
     }
     assert(existsSync(installer) && existsSync(executable));
     const copy = path.join(root, role + path.extname(installer));
     cpSync(installer, copy);
-    manifest.packages[role] = { version, buildArgs: args, installer: copy, installerSHA256: hash(copy), executableSHA256: hash(executable) };
+    manifest.packages[role] = { version, buildArgs: args, installer: copy, installerSHA256: hash(copy), executableSHA256: hash(executable), rawExecutableSHA256 };
 }
 assert.notEqual(manifest.packages.baseline.version, manifest.packages.candidate.version);
 writeFileSync(path.join(root, 'manifest.json'), JSON.stringify(manifest, null, 2));
