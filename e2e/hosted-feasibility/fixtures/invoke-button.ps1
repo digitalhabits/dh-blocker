@@ -18,10 +18,12 @@ $window = $null
 foreach ($candidate in $windows) { if ($candidate.Current.Name -eq $WindowTitle) { $window = $candidate; break } }
 if ($null -eq $window) { throw "No UIAutomation window for exact PID $FixturePid and title $WindowTitle" }
 $nameCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Save marker')
-$typeCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
-$buttonCondition = New-Object System.Windows.Automation.AndCondition($nameCondition, $typeCondition)
-$button = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $buttonCondition)
+# Legacy WinForms providers can expose a custom control type. The exact
+# owned window/PID and unique label identify the control; a fresh persisted
+# nonce, not the advertised type, proves the button handler actually ran.
+$button = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $nameCondition)
 if ($null -eq $button) { throw 'Save marker button not exposed to UIAutomation' }
+if ($button.Current.ProcessId -ne $FixturePid) { throw 'Accessibility control belongs to another process' }
 $patterns = @($button.GetSupportedPatterns() | ForEach-Object { $_.ProgrammaticName })
 $pattern = $null
 if ($button.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) {

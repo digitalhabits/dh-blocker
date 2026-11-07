@@ -139,10 +139,18 @@ async function pauseThroughChallenge() {
     await selectVisibleOption('unlock-duration-select', '5');
     const challenge = await $('#challenge-text').getText();
     assert.equal(challenge.trim().split(/\s+/).length, 15, 'Expected the configured 15-word challenge');
-    assert.equal(await $('#confirm-override-btn').isEnabled(), false, 'Challenge must initially prevent confirmation');
+    assert.equal(await $('#challenge-input').getValue(), '', 'Challenge must begin empty');
+    // Desktop character-mode deliberately allows a click, then rejects a
+    // mismatch. Prove the behaviour rather than assuming a disabled button.
+    await click('#confirm-override-btn');
+    assert(await $('#override-modal').isDisplayed(), 'Empty challenge dismissed the pause dialog');
+    assert.equal(await $('.blocklist-switch').getAttribute('aria-checked'), 'true', 'Empty challenge paused the space');
+    assert.equal(await $('#challenge-input').getValue(), '', 'Empty confirmation unexpectedly filled the challenge');
+    event('empty-challenge-rejected-through-ui');
     await click('#challenge-input');
     // Send actual WebDriver key events, never call confirm/stop internals.
     await browser.keys(challenge);
+    assert.equal(await $('#challenge-input').getValue(), challenge, 'WebDriver typing did not reproduce the displayed challenge');
     await $('#confirm-override-btn').waitForEnabled();
     await screenshot('completed-pause-challenge');
     let requestedAt;
