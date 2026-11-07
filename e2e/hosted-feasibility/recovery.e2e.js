@@ -315,11 +315,25 @@ async function safetyScenario(kind) {
         await heartbeat(control);
         assert(!(await warningRows()).some((r) => Number(r.pid) === target.pid || r.name === target.name), 'Released target re-enrolled after later acknowledgement');
         event('safety-release-sample', { targetPid: target.pid, controlPid: control.pid, secondaryAlive: alive(secondary) });
-        if (alive(secondary)) assert(performance.now() - secondAck <= 45_000, 'Secondary survived enforcement deadline');
+        if (alive(secondary)) {
+            if (postquit) {
+                const marker = path.join(secondary.directory, 'polite-quit');
+                assert(performance.now() - secondAck <= 55_000, 'Stubborn secondary survived total enforcement observation budget');
+                if (existsSync(marker)) assert(Date.now() - statSync(marker).mtimeMs <= 15_000, 'Stubborn secondary survived post-quit force-kill observation budget');
+            } else {
+                assert(performance.now() - secondAck <= 45_000, 'Secondary survived enforcement deadline');
+            }
+        }
         await delay(1000);
     }
     assert(!alive(secondary));
     assert(existsSync(path.join(secondary.directory, 'polite-quit')));
+    if (postquit) {
+        assert(!existsSync(path.join(secondary.directory, 'fixture-error.txt')), 'Secondary exited through a fixture exception');
+        const closeToExitMs = secondary.exitObservation?.wallTime - statSync(path.join(secondary.directory, 'polite-quit')).mtimeMs;
+        assert(closeToExitMs >= 9_000 && closeToExitMs <= 15_000, 'Stubborn secondary did not survive its normal grace before termination');
+        event('stubborn-secondary-termination-observed', { pid: secondary.pid, closeToExitMs, exit: secondary.exitObservation });
+    }
     await assertNoTargetWarnings(target);
     await recordInteraction(target, 'safety-target-after-later-ack-75s');
     await recordInteraction(control, 'safety-control-after-later-ack-75s');

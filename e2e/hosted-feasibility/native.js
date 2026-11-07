@@ -57,6 +57,7 @@ export function launchFixture(entry, root, generation, stubborn = false) {
     const title = `${entry.name}-${generation}`;
     const child = spawn(entry.binary, [directory, title, stubborn ? 'stubborn' : 'normal'], { stdio: ['ignore', 'pipe', 'pipe'] });
     const handle = { ...entry, directory, title, child, pid: child.pid, readyBefore };
+    child.on('exit', (code, signal) => { handle.exitObservation = { code, signal, wallTime: Date.now() }; });
     assertOwned(handle, root);
     const log = path.join(root, `${entry.name}-${generation}.log`);
     child.stdout.on('data', (chunk) => appendFileSync(log, chunk));

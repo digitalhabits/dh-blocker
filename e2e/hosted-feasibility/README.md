@@ -183,3 +183,12 @@ endpoint or app-code hook is added. Failures stay non-green and retained.
 
 Fixture-only Windows stubborn-close diagnostics can run without Blocker:
 `powershell.exe -NoProfile -File e2e/hosted-feasibility/diagnose-windows-fixtures.ps1 -Stubborn`.
+
+The stubborn secondary's positive-control observation has a separate 55-second
+total bound from the pre-click driver call and a 15-second observation bound from
+its close marker (ten-second native grace plus sampling/dispatch allowance).
+Its actual exit callback must be 9–15 seconds after that marker; fixture exceptions
+cannot satisfy it. The normal fixture's 45-second polite-termination budget and
+the primary target's exact ten-second cancellation phase are unchanged. The first
+macOS attempt using the normal 45-second budget for this distinct force-kill case
+is retained as a failure, not retrospectively converted to PASS.
