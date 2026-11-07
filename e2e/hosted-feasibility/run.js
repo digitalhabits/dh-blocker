@@ -17,7 +17,7 @@ const report = {
     startedAt: new Date().toISOString(), platform: process.platform, osRelease: os.release(), arch: os.arch(),
     runner: { environment: process.env.RUNNER_ENVIRONMENT, imageOS: process.env.ImageOS, imageVersion: process.env.ImageVersion, runnerOS: process.env.RUNNER_OS },
     build: { profile: 'debug', feature: 'e2e-webdriver', signedRelease: false },
-    limitations: ['Blocker UI uses embedded WebDriver in a debug build; not a signed release external UI/TCC qualification.', 'No physical device or iOS coverage.', 'One fresh attempt is feasibility, not three-run safety qualification.', 'Scenario-specific coverage is recorded in events. No injected callback faults or post-quit grace cancellation coverage yet.'],
+    limitations: ['Blocker UI uses embedded WebDriver in a debug build; not a signed release external UI/TCC qualification.', 'No physical device or iOS coverage.', 'One fresh attempt is feasibility, not three-run safety qualification.', 'Scenario-specific coverage is recorded in events. The stale scenario replays a frontend warning callback; native stale PID, schedule and persistence callbacks are not injected.'],
     behaviour: 'NOT_RUN', capability: 'NOT_RUN', cleanup: 'NOT_RUN', verdict: 'BLOCKED', events: [], capabilities: [],
 };
 const reportFile = path.join(artifacts, 'report.json');

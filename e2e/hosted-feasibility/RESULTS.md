@@ -1,5 +1,80 @@
 # Hosted feasibility results — 7 November 2026
 
+## Post-quit grace: PASS; stale warning callback: FAIL
+
+[Final comparison 42392538195](https://github.com/digitalhabits/dh-blocker/actions/runs/42392538195)
+validated `92cf6308` on hosted Windows Server 2025 x64 and macOS 15. Overall the
+workflow remains **FAIL**: recovery, pre-quit cancellation, overlap and post-quit
+cancellation pass on both platforms; stale-callback injection fails on both.
+All ten GUI-capability verdicts and exact-child cleanups pass. The failing gate
+is intentional evidence retention, not a skipped or quarantined case.
+
+### Post-quit proof
+
+Both targets recorded and declined the watcher's actual polite-close request.
+The real 15-word challenge confirmed a ten-minute pause 139 ms after that marker
+on macOS and 146 ms on Windows, within the unchanged ten-second native grace.
+The original target PIDs survived the later secondary acknowledgement and at
+least 75 seconds of observation. All five GUI saved-nonce checks per case passed;
+the final target/control marker files were independently checked after download.
+No fixture exception file was present.
+
+The separately blocked stubborn secondary received its own real acknowledgement
+and polite-close request, declined it and then exited 10.30 seconds later on
+macOS (`SIGKILL`) and 10.12 seconds later on Windows (exit code 1). No cleanup
+termination counts as this result. The exit callback was recorded before cleanup.
+This positive control demonstrates the normal grace-to-force-kill path while the
+released target remains usable.
+
+### Reproduced stale warning regression
+
+After a genuine warning callback was captured and normally delivered, the UI
+completed the actual pause challenge and the target passed external AX/UIA
+activation. Replaying the retained callback and original payload then re-added
+an unacknowledged warning row for that released PID on both OSes. The test fails
+at `assertNoTargetWarnings`; it never converts a heartbeat or GUI pass into a
+behaviour pass. Screenshots, exact payloads and injection times are retained.
+
+This is a **frontend warning-callback replay regression**, not proof of renewed
+native enforcement or a killed released app: the failing scenario stops at the
+renewed warning, before sustained post-injection observation. It does not cover
+native stale PID entries, stale policy writes, schedules or arbitrary callback
+interleavings. The owning warning-show listener in `src/blocking-platform.js`
+unconditionally installs the received row; this test change does not repair or
+change production policy. A targeted fix should reconcile delayed warnings with
+current authoritative state and retain this failing regression as its oracle.
+
+### Attempts and limits
+
+| Attempt | Existing three cases, both OSes | Post-quit, both OSes | Stale callback, both OSes |
+| --- | --- | --- | --- |
+| [42391230840](https://github.com/digitalhabits/dh-blocker/actions/runs/42391230840), `98c901af` | PASS | FAIL | FAIL |
+| [42392538195](https://github.com/digitalhabits/dh-blocker/actions/runs/42392538195), `92cf6308` | PASS | PASS | FAIL |
+
+The first post-quit targets earned cancellation, but the secondary positive
+controls exceeded the reused 45-second normal-quit budget. This was measured from
+the pre-click WebDriver call, about five seconds before the real acknowledgement,
+while stubborn fixtures must also survive ten seconds of post-quit grace. Those
+failures remain preserved. The follow-up declares a distinct 55-second total
+observation bound and 15 seconds from the actual close marker, and additionally
+requires the exit callback 9–15 seconds after that marker, with no fixture error.
+The primary cancellation phase remains strictly under ten seconds from the close
+marker; ordinary 45-second termination tests and all production timers are unchanged.
+
+All 20 attempted job cleanups passed. Complete evidence is retained under ignored
+`artifacts/hosted-feasibility/evidence/42391230840/all/` and
+`artifacts/hosted-feasibility/evidence/42392538195/all/`, plus Actions artifacts
+with 14-day retention. Local fixture-only stubborn-close diagnostics passed
+(`local-53508e3c2a6741eeaee81f62ab6244bf`), as did six safety/protocol tests and
+full ESLint. No local blocking test was run.
+
+No production frontend/enforcement code or security settings changed. Fault
+injection exists only in the external hosted harness and operates the debug
+WebDriver runtime; there is no new production endpoint. The report-limitation
+text was subsequently updated as metadata only to identify the new scenario;
+these downloaded reports remain verbatim. This is one passing post-quit attempt
+per OS and an unresolved failing stale case, not three-run qualification or
+signed-release, browser, consumer-Windows or physical-iOS coverage. Nothing merged.
 ## Pending cancellation and overlapping rules: PASS
 
 [Actions run 42382988169](https://github.com/digitalhabits/dh-blocker/actions/runs/42382988169)
