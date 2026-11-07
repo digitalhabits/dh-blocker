@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildFixtures, cleanupFixture, emptyProfile, heartbeat, interact, launchFixture, ready } from './native.js';
 import { prepareUpgrade } from './upgrade/install.js';
+import { registerFixtures } from './upgrade/fixtures.js';
 import { BlockedError, requireHosted, verdict } from './helpers.js';
 
 const repo = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
@@ -24,6 +25,7 @@ const report = {
 const reportFile = path.join(artifacts, 'report.json');
 function persist() { writeFileSync(reportFile, JSON.stringify(report, null, 2)); }
 let sentinel;
+let fixtureRegistration;
 async function sentinelCheck(label) {
     if (!sentinel) return;
     await heartbeat(sentinel);
@@ -46,6 +48,8 @@ try {
     report.fixtures = fixtures;
     if (upgrade) {
         report.upgrade = { ...upgrade.manifest, installs: upgrade.installs };
+        fixtureRegistration = registerFixtures(fixtures, root, id);
+        report.upgrade.fixtureRegistrations = fixtureRegistration.registrations;
         report.limitations.push('Installed upgrade uses rebuilt unsigned/ad-hoc debug packages, not signed release installers; no MSIX/ARM64, browser, reboot or iOS upgrade coverage.');
         sentinel = launchFixture(fixtures.sentinel, root, 'whole-upgrade');
         await ready(sentinel);
@@ -118,6 +122,14 @@ try {
         } catch (error) {
             report.cleanup = 'FAIL';
             report.sentinelCleanupError = { message: error.message, stack: error.stack };
+            report.verdict = 'FAIL';
+        }
+    }
+    if (fixtureRegistration) {
+        try { fixtureRegistration.cleanup(); }
+        catch (error) {
+            report.cleanup = 'FAIL';
+            report.registrationCleanupError = { message: error.message, stack: error.stack };
             report.verdict = 'FAIL';
         }
     }

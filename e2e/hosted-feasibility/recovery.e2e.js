@@ -116,8 +116,14 @@ async function createAndStart(name, startNow = true, schedule = null) {
     if (!await $('#modal-browse-apps-btn').isDisplayed()) await click('#editor-section-what-header');
     await click('#modal-browse-apps-btn');
     await fill('#app-picker-search', name);
-    // The public typed-name affordance enrols run-owned, uninstalled fixtures.
-    await click('.app-picker-add-typed');
+    if (report.upgrade) {
+        // v3.10.1 predates typed-name enrollment. Use its actual installed-app
+        // checkbox, backed only by this run's fixture registration.
+        await pointerClick(`#app-picker-list label:has(input[data-process="${name}"])`);
+    } else {
+        // The public typed-name affordance enrols run-owned, uninstalled fixtures.
+        await click('.app-picker-add-typed');
+    }
     await click('#app-picker-add-btn');
     await click('#editor-section-when-header');
     await click('#when-kind-manual');
@@ -143,6 +149,12 @@ async function createAndStart(name, startNow = true, schedule = null) {
     await click('#save-blocklist-btn');
     const id = await browser.execute((old) => window.__REDDBLOCK_INTERNALS__.appData.blocklists.find((b) => !old.includes(b.id))?.id, before);
     assert(id, 'New rule identity missing');
+    if (report.upgrade) {
+        const configured = await browser.execute((ruleId) => window.__REDDBLOCK_INTERNALS__.appData.blocklists.find((b) => b.id === ruleId), id);
+        assert.deepEqual(configured.apps, [name], 'Only the exact owned fixture may be selected');
+        assert.deepEqual(configured.websites, []);
+        assert.equal(configured.mode || 'blocklist', 'blocklist');
+    }
     const selector = `.blocklist-switch[data-id="${id}"]`;
     await $(selector).waitForDisplayed();
     assert.equal(await $(selector).getAttribute('aria-checked'), 'false');
