@@ -35,7 +35,8 @@ failure. There are no automatic scenario retries.
    Relaunch the target, check saved state and a fresh event-loop response within
    the proposed ten-second release budget, and independently press its button.
 7. For at least 75 further seconds, sample target warnings and both nonce
-   responses approximately once a second. Press both GUI buttons again and
+   responses periodically with a one-second minimum delay. The report timestamps
+   expose the actual cadence, including WebDriver transport overhead. Press both GUI buttons again and
    preserve screenshots before exact-child cleanup.
 
 The existing `acceptEula()` seam is used for setup only. All rule creation,
@@ -91,3 +92,9 @@ the probe completes the full default challenge, and menus use pointer actions
 after a visible hit-test. No policy or challenge-completion internal is called.
 The 15-minute scenario timeout accommodates this slow transport; native release,
 pre-quit and sustained-observation bounds remain unchanged.
+
+Windows legacy accessibility providers may expose the button as a custom control
+and reject both InvokePattern and SetFocus. In that case the probe verifies the
+exact foreground PID and uses native Tab/Space on the fixture’s sole tabbable
+control. A fresh GUI-saved nonce remains mandatory; a heartbeat does not pass it.
+The reported method and original focus error preserve this distinction.

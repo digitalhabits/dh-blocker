@@ -26,6 +26,7 @@ if ($null -eq $button) { throw 'Save marker button not exposed to UIAutomation' 
 if ($button.Current.ProcessId -ne $FixturePid) { throw 'Accessibility control belongs to another process' }
 $patterns = @($button.GetSupportedPatterns() | ForEach-Object { $_.ProgrammaticName })
 $pattern = $null
+$focusError = $null
 if ($button.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) {
     $pattern.Invoke()
     $method = 'UIAutomation InvokePattern'
@@ -34,15 +35,22 @@ if ($button.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Patt
     # the visible button with real keyboard input, without sending BM_CLICK or
     # calling a fixture method. Verify the foreground PID before sending Space.
     [void][HostedProbeWindow]::SetForegroundWindow([IntPtr]$window.Current.NativeWindowHandle)
-    $button.SetFocus()
+    try { $button.SetFocus() } catch { $focusError = $_.Exception.Message }
     Start-Sleep -Milliseconds 150
     [uint32]$foregroundPid = 0
     [void][HostedProbeWindow]::GetWindowThreadProcessId([HostedProbeWindow]::GetForegroundWindow(), [ref]$foregroundPid)
-    $focused = [System.Windows.Automation.AutomationElement]::FocusedElement
-    if ($foregroundPid -ne $FixturePid -or $null -eq $focused -or $focused.Current.Name -ne 'Save marker' -or $focused.Current.ProcessId -ne $FixturePid) {
-        throw "Native button focus unavailable for exact PID $FixturePid; patterns: $($patterns -join ', ')"
+    if ($foregroundPid -ne $FixturePid) {
+        throw "Native button focus unavailable for exact PID $FixturePid; foreground PID: $foregroundPid"
     }
+    if ($null -ne $focusError) {
+        # The owned fixture has exactly one tabbable control. Use actual
+        # keyboard navigation when its legacy provider cannot SetFocus.
+        # No fixture method, BM_CLICK, or saved-marker write is performed here.
+        [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
+    }
+    [void][HostedProbeWindow]::GetWindowThreadProcessId([HostedProbeWindow]::GetForegroundWindow(), [ref]$foregroundPid)
+    if ($foregroundPid -ne $FixturePid) { throw 'Native button focus unavailable before Space' }
     [System.Windows.Forms.SendKeys]::SendWait(' ')
-    $method = 'UIAutomation SetFocus + native Space key'
+    $method = if ($null -eq $focusError) { 'UIAutomation SetFocus + native Space key' } else { 'UIAutomation window identity + native Tab/Space' }
 }
-@{ method = $method; pid = $FixturePid; title = $WindowTitle; patterns = $patterns; controlType = $button.Current.ControlType.ProgrammaticName } | ConvertTo-Json -Compress
+@{ method = $method; pid = $FixturePid; title = $WindowTitle; patterns = $patterns; focusError = $focusError; controlType = $button.Current.ControlType.ProgrammaticName } | ConvertTo-Json -Compress
