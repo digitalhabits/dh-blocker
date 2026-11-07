@@ -3,7 +3,7 @@ import { cpSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync 
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
-import { alive, cleanupFixture, heartbeat, interact, launchFixture, ready, savedMarker } from './native.js';
+import { alive, cleanupFixture, command, heartbeat, interact, launchFixture, ready, savedMarker } from './native.js';
 import { requireHosted, until, verdict } from './helpers.js';
 
 requireHosted();
@@ -218,6 +218,13 @@ async function observeReleased(targets, control, label) {
 async function lifecycleScenario(kind) {
     report.scenario = kind;
     const afterRestart = process.env.HOSTED_PHASE === 'after-restart';
+    const appPids = process.platform === 'win32'
+        ? JSON.parse(command('powershell.exe', ['-NoProfile', '-Command', 'ConvertTo-Json -InputObject @(Get-Process | Where-Object { $_.Path -eq $env:E2E_APP_BINARY } | Select-Object -ExpandProperty Id) -Compress']))
+        : command('/bin/ps', ['-axo', 'pid=,comm=']).split('\n').map((line) => line.trim().match(/^(\d+)\s+(.+)$/))
+            .filter((m) => m && m[2] === report.build.binary).map((m) => Number(m[1]));
+    assert.equal(appPids.length, 1, 'Exactly one process may own the tested app binary');
+    const appPid = appPids[0];
+    event('blocker-process-observed', { phase: process.env.HOSTED_PHASE, appPid, binary: report.build.binary });
     const control = launchFixture(report.fixtures.control, root, 'lifecycle-control'); handles.push(control);
     await ready(control);
     await recordInteraction(control, 'lifecycle-control-baseline');
@@ -225,6 +232,7 @@ async function lifecycleScenario(kind) {
         await browser.waitUntil(() => browser.execute(() => !!window.__REDDBLOCK_INTERNALS__?.appData), { timeout: 120_000 });
         await $('#add-blocklist-btn').waitForDisplayed({ timeout: 120_000 });
         const policy = await browser.execute(() => window.__REDDBLOCK_INTERNALS__.appData);
+        assert.notEqual(appPid, report.lifecycle.appPid, 'Restart reused the previous Blocker process');
         assert.deepEqual(policy.blocklists, report.lifecycle.policy.blocklists, 'Restart changed configured rules');
         if (kind === 'restart') {
             assert.deepEqual(policy.activeBlocks, report.lifecycle.policy.activeBlocks, 'Restart changed paused/stopped intent');
@@ -256,6 +264,15 @@ async function lifecycleScenario(kind) {
         }
         const a = await createAndStart(target.name, false, schedule);
         await startRule(a);
+        if (schedule) {
+            const saved = await browser.execute(() => window.__REDDBLOCK_INTERNALS__.appData.schedules);
+            assert.equal(saved.length, 1);
+            const segment = saved[0].segments[0];
+            const time = (hour, minute) => `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+            assert.equal(time(segment.startHour, segment.startMinute), schedule.start);
+            assert.equal(time(segment.endHour, segment.endMinute), schedule.end);
+            event('finite-schedule-verified', { saved });
+        }
         await waitForWarning(target);
         await click('#app-blocking-lets-go-btn');
         await until(async () => { await heartbeat(control); return !alive(target); }, 45_000, 'Lifecycle positive control did not block target');
@@ -280,6 +297,7 @@ async function lifecycleScenario(kind) {
             report.lifecycle = {};
         }
         report.lifecycle.policy = await browser.execute(() => window.__REDDBLOCK_INTERNALS__.appData);
+        report.lifecycle.appPid = appPid;
         if (kind === 'restart') {
             const paused = report.lifecycle.policy.activeBlocks.find((b) => b.isPaused);
             assert(paused, 'Pause missing from pre-restart state');
