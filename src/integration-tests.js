@@ -974,8 +974,8 @@
     async function testI5_switchStopUnlocksEditor() {
         return runIsolatedIntegrationTest('I5', async () => {
             hideAllIntegrationModals();
-            // The default unlock duration (24 h) makes switching off a timed pause,
-            // which is what unlocks the editor without losing the block.
+            // A timed pause unlocks the editor without losing the block. Select
+            // its duration explicitly instead of relying on a remembered preference.
             const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'I5 Modal' });
             const block = addActiveBlock(bl.id, { durationMs: 5 * 60 * 1000 });
             await callSaveData();
@@ -1014,6 +1014,13 @@
                 'I5: a running Manual block must keep the challenge',
             );
 
+            const pauseMinutes = 30;
+            const durationSelect = document.getElementById('unlock-duration-select');
+            assertOrThrow(durationSelect, 'I5: pause duration selector missing');
+            durationSelect.value = String(pauseMinutes);
+            durationSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            const earliestPauseEnd = nowMs() + pauseMinutes * 60_000;
+
             await completeIntegrationChallenge('I5', {
                 modalId: 'override-modal',
                 textId: 'challenge-text',
@@ -1030,10 +1037,12 @@
                 'I5 stop unlocks editor',
             );
             const stopped = getAppData().activeBlocks.find(candidate => candidate.id === block.id);
-            assertOrThrow(stopped, 'I5: the block must be paused, not removed, with a 24 h unlock');
+            assertOrThrow(stopped, 'I5: the block must be paused, not removed, with a timed pause');
             assertOrThrow(
-                typeof stopped.pauseEndTime === 'number' && stopped.pauseEndTime > Date.now() + 23 * 60 * 60 * 1000,
-                'I5: the pause should end about 24 hours from now',
+                typeof stopped.pauseEndTime === 'number'
+                    && stopped.pauseEndTime >= earliestPauseEnd
+                    && stopped.pauseEndTime <= nowMs() + pauseMinutes * 60_000,
+                'I5: the pause should end after the selected 30 minutes',
             );
             assertOrThrow(!document.getElementById('override-type')?.disabled, 'I5: override settings stayed locked after stopping');
             assertOrThrow(!document.getElementById('unlock-duration-select')?.disabled, 'I5: unlock duration stayed locked after stopping');
