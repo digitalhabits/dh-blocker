@@ -342,7 +342,7 @@ export function generateOverrideChallengeText(type, count, customText = '') {
 }
 
 /** Clamp a word count to [1, max words]; anything unparseable is the default. */
-// eslint-disable-next-line no-unused-vars -- Keep maxWords in the third argument slot for existing callers.
+// eslint-disable-next-line no-unused-vars -- Retain the unused type parameter so maxWords stays in the third argument slot.
 export function normalizeOverrideCount(value, type = 'random-words', maxWords = getMaxOverrideWords()) {
     const parsed = parseInt(value, 10);
     if (!Number.isFinite(parsed)) return DEFAULT_OVERRIDE_WORDS;

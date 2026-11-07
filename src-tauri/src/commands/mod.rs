@@ -19,7 +19,6 @@ pub mod enforcement_toggle;
 #[cfg(not(target_os = "ios"))]
 pub mod grace;
 #[cfg(not(target_os = "ios"))]
-#[cfg(not(target_os = "ios"))]
 pub mod migration;
 #[cfg(not(target_os = "ios"))]
 mod overlay_assets;
@@ -60,7 +59,6 @@ pub use enforcement::*;
 pub use enforcement_toggle::*;
 #[cfg(not(target_os = "ios"))]
 pub use grace::*;
-#[cfg(not(target_os = "ios"))]
 #[cfg(not(target_os = "ios"))]
 pub use migration::*;
 #[cfg(not(target_os = "ios"))]

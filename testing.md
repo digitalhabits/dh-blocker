@@ -369,7 +369,7 @@ that surface is manual checklist section 15.
 1. Setup snapshots the current `appData` so the suite can restore the user's state when it finishes.
 2. Tests run sequentially by selected profile.
 3. Some full-only pause/schedule cases use per-test reset/setup-cleanup boundaries.
-4. Teardown restores the saved snapshot, saves it, and re-syncs via legacy shim commands.
+4. Teardown restores the saved snapshot, saves it, and calls `syncBlockingState()` and `updateBlockedApps()` to restore enforcement.
 5. When profile is `full` and at least one test fails, output includes a bottom **Group failure summary** for groups `A`–`H`.
 
 ### What differentiates Tier 2
@@ -536,7 +536,7 @@ Recommended stance:
 
 - Run Tier 0 and Tier 1 during feature work.
 - Visually inspect UI changes, using relevant `pnpm ui:shoot` screens or a direct UI check. For substantive layout fixes, also check measured geometry; see [Choosing regression coverage](#choosing-regression-coverage).
-- Run Tier 2 for data/sync/shim regressions; do not treat passing Tier 2 as proof of website blocking.
+- Run Tier 2 for data and synchronisation regressions; do not treat passing Tier 2 as proof of website blocking.
 - Before every release, run the relevant automated system/device tests and complete the remaining applicable manual checklist cases.
 
 ---
@@ -559,7 +559,7 @@ For release, run the automated physical-device profiles and complete the remaini
 ## Typical contributor workflow
 
 1. Run Tier 1 during active feature work for fast feedback.
-2. Run Tier 2 before merging changes that touch save/sync/shim/app-blocking command paths (Group H when touching allowlist derivation or sync).
+2. Run Tier 2 before merging changes that touch persistence, synchronisation or app-blocking command paths (Group H when touching allowlist derivation or sync).
 3. Run `cargo test --lib` before merging changes to Rust enforcement code.
 4. Run the connected-device iOS profiles for the automated website and scheduled pause lifecycles. Complete remaining website, permission, enforcer and release checks using the manual checklist — section 15 for desktop allowlist, section 14/14.1 for iOS.
 
