@@ -2,14 +2,45 @@ param([Parameter(Mandatory=$true)][int]$FixturePid, [Parameter(Mandatory=$true)]
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class HostedProbeWindow {
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+}
+'@
 $condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $FixturePid)
 $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
 $window = $null
 foreach ($candidate in $windows) { if ($candidate.Current.Name -eq $WindowTitle) { $window = $candidate; break } }
 if ($null -eq $window) { throw "No UIAutomation window for exact PID $FixturePid and title $WindowTitle" }
-$buttonCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Save marker')
+$nameCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Save marker')
+$typeCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
+$buttonCondition = New-Object System.Windows.Automation.AndCondition($nameCondition, $typeCondition)
 $button = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $buttonCondition)
 if ($null -eq $button) { throw 'Save marker button not exposed to UIAutomation' }
-$invoke = $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-$invoke.Invoke()
-Write-Output "UIAutomation InvokePattern invoked PID=$FixturePid title=$WindowTitle"
+$patterns = @($button.GetSupportedPatterns() | ForEach-Object { $_.ProgrammaticName })
+$pattern = $null
+if ($button.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) {
+    $pattern.Invoke()
+    $method = 'UIAutomation InvokePattern'
+} else {
+    # Older WinForms accessibility providers may lack InvokePattern. Exercise
+    # the visible button with real keyboard input, without sending BM_CLICK or
+    # calling a fixture method. Verify the foreground PID before sending Space.
+    [void][HostedProbeWindow]::SetForegroundWindow([IntPtr]$window.Current.NativeWindowHandle)
+    $button.SetFocus()
+    Start-Sleep -Milliseconds 150
+    [uint32]$foregroundPid = 0
+    [void][HostedProbeWindow]::GetWindowThreadProcessId([HostedProbeWindow]::GetForegroundWindow(), [ref]$foregroundPid)
+    $focused = [System.Windows.Automation.AutomationElement]::FocusedElement
+    if ($foregroundPid -ne $FixturePid -or $null -eq $focused -or $focused.Current.Name -ne 'Save marker' -or $focused.Current.ProcessId -ne $FixturePid) {
+        throw "Native button focus unavailable for exact PID $FixturePid; patterns: $($patterns -join ', ')"
+    }
+    [System.Windows.Forms.SendKeys]::SendWait(' ')
+    $method = 'UIAutomation SetFocus + native Space key'
+}
+@{ method = $method; pid = $FixturePid; title = $WindowTitle; patterns = $patterns; controlType = $button.Current.ControlType.ProgrammaticName } | ConvertTo-Json -Compress

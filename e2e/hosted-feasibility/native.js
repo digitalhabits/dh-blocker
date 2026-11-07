@@ -77,20 +77,22 @@ export async function heartbeat(handle) {
 }
 export async function interact(handle, root, label) {
     const nonce = await heartbeat(handle);
+    let method = 'System Events AX button click';
     try {
         if (process.platform === 'darwin') {
             const source = `tell application "System Events"\nset p to first application process whose unix id is ${handle.pid}\ntell p\nset frontmost to true\nclick button "Save marker" of window "${handle.title}"\nend tell\nend tell`;
             command('/usr/bin/osascript', ['-e', source], { log: path.join(root, 'external-gui.jsonl'), timeout: 12_000 });
         } else {
-            command('powershell.exe', ['-NoProfile', '-File', path.join(fixtures, 'invoke-button.ps1'), '-FixturePid', String(handle.pid), '-WindowTitle', handle.title], { log: path.join(root, 'external-gui.jsonl'), timeout: 12_000 });
+            const output = command('powershell.exe', ['-NoProfile', '-File', path.join(fixtures, 'invoke-button.ps1'), '-FixturePid', String(handle.pid), '-WindowTitle', handle.title], { log: path.join(root, 'external-gui.jsonl'), timeout: 12_000 });
+            method = JSON.parse(output.trim()).method;
         }
     } catch (error) {
-        const unavailable = /not (?:allowed|authori[sz]ed)|assistive access|access(?:ibility)? (?:denied|not enabled)|No UIAutomation window|not exposed to UIAutomation|-1743|-1719|-25211|Access is denied|interactive (?:window|desktop)/i.test(error.message);
+        const unavailable = /not (?:allowed|authori[sz]ed)|assistive access|access(?:ibility)? (?:denied|not enabled)|No UIAutomation window|not exposed to UIAutomation|-1743|-1719|-25211|Access is denied|interactive (?:window|desktop)|Native button focus unavailable/i.test(error.message);
         return { label, verdict: unavailable ? 'BLOCKED' : 'FAIL', pid: handle.pid, message: error.message };
     }
     try {
         await until(() => read(handle.directory, 'gui-response') === nonce && read(handle.directory, 'saved-marker') === nonce, 5_000, `GUI click did not persist marker: ${handle.name}`);
-        return { label, verdict: 'PASS', pid: handle.pid, nonce, method: process.platform === 'darwin' ? 'System Events AX button click' : 'UIAutomation InvokePattern' };
+        return { label, verdict: 'PASS', pid: handle.pid, nonce, method };
     } catch (error) {
         return { label, verdict: 'FAIL', pid: handle.pid, message: error.message };
     }

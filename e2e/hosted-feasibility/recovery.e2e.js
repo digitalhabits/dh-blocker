@@ -19,15 +19,41 @@ function event(action, detail = {}) {
     save();
 }
 async function screenshot(label) { await browser.saveScreenshot(path.join(artifacts, `${label}.png`)); }
-async function click(selector) {
+async function click(selector, beforeClick = () => {}) {
+    const started = performance.now();
     const element = await $(selector);
     await element.waitForClickable({ timeout: 20_000 });
+    beforeClick();
     await element.click();
+    event('ui-click', { selector, transportMs: performance.now() - started });
 }
 async function fill(selector, value) {
     const element = await $(selector);
     await element.waitForDisplayed();
     await element.setValue(value);
+}
+// Pointer actions avoid the embedded driver's element-click scroll after a
+// dropdown opens. Only geometry is read here; choices use the visible menu.
+async function pointerClick(selector) {
+    await browser.waitUntil(() => browser.execute((sel) => {
+        const element = document.querySelector(sel);
+        if (!element) return false;
+        const r = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        return r.width > 0 && r.height > 0 && (hit === element || element.contains(hit));
+    }, selector), { timeout: 20_000, timeoutMsg: 'Visible pointer target unavailable: ' + selector });
+    const point = await browser.execute((sel) => {
+        const r = document.querySelector(sel).getBoundingClientRect();
+        return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    }, selector);
+    await browser.action('pointer').move(point).down().up().perform();
+}
+async function selectVisibleOption(id, value) {
+    await $('#' + id + '-trigger').scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    await browser.pause(200); // Let the pre-open scroll event settle.
+    await pointerClick('#' + id + '-trigger');
+    await pointerClick('#' + id + '-menu [data-value="' + value + '"]');
+    assert.equal(await $('#' + id).getValue(), value, 'Visible menu choice was not applied');
 }
 async function warningRows() {
     return browser.execute(() => [...(window.__REDDBLOCK_INTERNALS__?.appBlockingWarningRows || [])]
@@ -95,37 +121,34 @@ async function createAndStart(name) {
     await click('#editor-section-when-header');
     await click('#when-kind-manual');
     await click('#editor-section-stop-header');
-    await click('#override-type-trigger');
-    await click('#override-type-menu [data-value="random-words"]');
-    await click('#override-count');
-    await browser.keys('Home');
-    assert.equal(await $('#override-count').getValue(), '1', 'One legitimate word must be configured through the slider');
+    // Exercise the ordinary factory challenge. The embedded driver's synthetic
+    // Home key does not implement the browser's native range-input default.
+    assert.equal(await $('#override-type').getValue(), 'random-words');
+    assert.equal(await $('#override-count').getValue(), '15', 'Expected the ordinary 15-word challenge');
     await screenshot('configured-focus-space');
     await click('#save-blocklist-btn');
     await $('.blocklist-switch').waitForDisplayed();
     assert.equal(await $('.blocklist-switch').getAttribute('aria-checked'), 'false');
     await click('.blocklist-switch');
     await click('#proceed-start-confirm-btn');
-    event('block-started-through-ui', { name, challengeWords: 1, ruleKind: 'Manual', finite: false, expected: 'warning then 30 s acknowledged pre-quit + 10 s grace' });
+    event('block-started-through-ui', { name, challengeWords: 15, ruleKind: 'Manual', finite: false, expected: 'warning then 30 s acknowledged pre-quit + 10 s grace' });
 }
 async function pauseThroughChallenge() {
     await click('.blocklist-switch');
     await $('#challenge-input').waitForDisplayed();
-    await click('#unlock-duration-select-trigger');
-    await click('#unlock-duration-select-menu [data-value="5"]');
+    await selectVisibleOption('unlock-duration-select', '5');
     const challenge = await $('#challenge-text').getText();
-    assert(challenge.trim() && challenge.trim().split(/\s+/).length === 1, 'Expected one non-empty challenge word');
+    assert.equal(challenge.trim().split(/\s+/).length, 15, 'Expected the configured 15-word challenge');
     assert.equal(await $('#confirm-override-btn').isEnabled(), false, 'Challenge must initially prevent confirmation');
     await click('#challenge-input');
     // Send actual WebDriver key events, never call confirm/stop internals.
-    for (const character of challenge) await browser.keys(character);
+    await browser.keys(challenge);
     await $('#confirm-override-btn').waitForEnabled();
     await screenshot('completed-pause-challenge');
-    const requestedAt = performance.now();
-    await click('#confirm-override-btn');
-    await browser.waitUntil(async () => (await $('.blocklist-switch').getAttribute('aria-checked')) === 'false', { timeout: 10_000 });
+    let requestedAt;
+    await click('#confirm-override-btn', () => { requestedAt = performance.now(); });
+    await browser.waitUntil(() => browser.execute(() => document.querySelector('.blocklist-switch')?.getAttribute('aria-checked') === 'false'), { timeout: 10_000 });
     event('pause-accepted-through-ui', { challenge, pauseMinutes: 5, acceptedAfterMs: performance.now() - requestedAt });
-    await screenshot('pause-accepted');
     return requestedAt;
 }
 
@@ -150,8 +173,8 @@ describe('Hosted native app recovery feasibility', () => {
             await heartbeat(target);
             await heartbeat(control);
             event('warning-before-ack-target-alive', { targetPid: target.pid });
-            const acknowledgedAt = performance.now();
-            await click('#app-blocking-lets-go-btn');
+            let acknowledgedAt;
+            await click('#app-blocking-lets-go-btn', () => { acknowledgedAt = performance.now(); });
             event('warning-acknowledged-through-ui', { targetPid: target.pid });
             await until(async () => {
                 await heartbeat(control);
@@ -178,6 +201,7 @@ describe('Hosted native app recovery feasibility', () => {
             await heartbeat(reopened);
             assert(performance.now() - releasedAt <= 10_000, 'Target did not become usable within proposed 10 s release bound');
             event('target-reopened-after-pause', { targetPid: reopened.pid, usableAfterMs: performance.now() - releasedAt, controlPid: control.pid });
+            await screenshot('pause-accepted');
             await recordInteraction(reopened, 'target-after-pause');
             const observeUntil = performance.now() + 75_000;
             while (performance.now() < observeUntil) {

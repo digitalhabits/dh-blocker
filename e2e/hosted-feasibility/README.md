@@ -23,10 +23,9 @@ failure. There are no automatic scenario retries.
    PIDs and window titles. Neither is installed into a real application folder.
 3. Prove both event loops answer fresh nonce requests, then independently press
    each real **Save marker** button through macOS System Events/Accessibility or
-   Windows UIAutomation `InvokePattern`. The button persists the nonce marker.
+   Windows UIAutomation `InvokePattern` or verified native keyboard activation. The button persists the nonce marker; the report names the actual activation method.
 4. Use the visible Blocker UI to create a Manual focus space, select only the
-   target through **Add App → Add … anyway**, and configure a one-word challenge
-   using the normal range slider. Turn it on and accept its start confirmation.
+   target through **Add App → Add … anyway**, and keep its ordinary 15-word challenge. Turn it on and accept its start confirmation.
 5. Observe the target's warning and continued liveness before acknowledging
    **Let's go!**. Observe actual target termination after the normal 30-second
    pre-quit interval, within a 45-second total budget, including its polite-close
@@ -84,3 +83,11 @@ Pure safety-helper tests can run locally without launching any native process:
 node --test e2e/hosted-feasibility/helpers.test.js
 node_modules/.bin/eslint e2e/hosted-feasibility
 ```
+
+The initial runs exposed embedded-driver limitations: `executeAsync` is absent,
+Home does not implement a range slider’s native default action, and element-click
+scrolling can dismiss a custom menu. Setup uses the established completion poll,
+the probe completes the full default challenge, and menus use pointer actions
+after a visible hit-test. No policy or challenge-completion internal is called.
+The 15-minute scenario timeout accommodates this slow transport; native release,
+pre-quit and sustained-observation bounds remain unchanged.
