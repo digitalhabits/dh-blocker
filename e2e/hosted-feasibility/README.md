@@ -1,5 +1,7 @@
 # Hosted recovery feasibility
 
+Recorded outcomes and remaining gaps: [experiment results](RESULTS.md).
+
 This opt-in workflow asks whether fresh GitHub-hosted `macos-15` and
 `windows-2025` VMs can exercise a real desktop app-blocking and recovery cycle.
 It changes no enforcement policy. `run.js` refuses native runs unless
