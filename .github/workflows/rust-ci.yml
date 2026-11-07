@@ -56,8 +56,7 @@ jobs:
       # the configured frontendDist — ../dist — exists, so the lib does not
       # compile on a clean checkout until the frontend has been built once.
       - run: pnpm vite:build
-      # `--lib` on purpose: bare `cargo test` also compiles the stale
-      # `test_watcher` example binary, which no longer builds (see testing.md).
+      # `--lib` scopes the run to backend unit tests.
       # build.rs compiles the Swift SafariServices bridge first; macOS runners
       # ship the Xcode toolchain it needs.
       #
@@ -69,6 +68,10 @@ jobs:
       - name: cargo test --lib
         working-directory: src-tauri
         run: cargo test --lib --locked
+      # The example starts the real watcher if executed. Only build it here.
+      - name: Build the standalone watcher example
+        working-directory: src-tauri
+        run: cargo build --example test_watcher --locked
       # The system-test app's isolation guarantees — that it can never read,
       # import, or wipe production data — are asserted by tests that only
       # exist under `--features system-test`, so the default run above
@@ -106,8 +109,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Same reason as the test job: build.rs validates that ../dist exists.
       - run: pnpm vite:build
-      # `--lib --bins --tests` includes the native-host entrypoint and unit
-      # tests while still skipping the stale `test_watcher` example.
+      # `--lib --bins --tests` covers the native-host entrypoint and unit tests.
       - name: cargo clippy --lib --bins --tests
         working-directory: src-tauri
         run: cargo clippy --lib --bins --tests --locked -- -D warnings

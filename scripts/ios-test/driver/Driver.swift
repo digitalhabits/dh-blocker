@@ -33,8 +33,8 @@ final class Driver: XCTestCase {
         try assertSafari(target, restricted: false, phase: "01 baseline target", attempts: 3)
         try assertSafari(control, restricted: false, phase: "02 baseline control", attempts: 3)
         blocker.activate()
+        let previousSwitches = try focusSpaceSwitches()
         guard !web.staticTexts[name].exists else { throw DriverFailure.expected("a new, unique fixture name") }
-        let previousSwitches = focusSpaceSwitches()
         try createSchedule(name: name, start: start, end: end)
         try enableSchedule(name: name, start: start, end: end)
         try verifyScheduleAfterRelaunch(name)
@@ -50,7 +50,7 @@ final class Driver: XCTestCase {
         try assertSafari(target, restricted: false, phase: "06 target loads after expiry", attempts: 3)
         try assertSafari(control, restricted: false, phase: "07 control still loads after expiry")
         try removeOwnedFixture(name: name, after: end)
-        guard focusSpaceSwitches() == previousSwitches else {
+        guard try focusSpaceSwitches() == previousSwitches else {
             throw DriverFailure.expected("the previous focus spaces and their on/off states to remain unchanged")
         }
         try observe(blocker, name: "08 owned fixture removed", includeTree: false)
@@ -67,10 +67,10 @@ final class Driver: XCTestCase {
         try assertSafari(target, restricted: false, phase: "01 baseline target", attempts: 3)
         try assertSafari(control, restricted: false, phase: "02 baseline control", attempts: 3)
         blocker.activate()
+        let previousSwitches = try focusSpaceSwitches()
         guard !web.staticTexts[name].exists, !web.buttons["Resume now"].exists else {
             throw DriverFailure.expected("a unique fixture name and no existing timed pause")
         }
-        let previousSwitches = focusSpaceSwitches()
         try createSchedule(name: name, start: start, end: end, pauseChallenge: true)
         try enableSchedule(name: name, start: start, end: end)
         try verifyScheduleAfterRelaunch(name)
@@ -138,7 +138,7 @@ final class Driver: XCTestCase {
         blocker.activate()
         try require(web.buttons["Block"], "Blocker focus space list after relaunch")
         guard !web.switches["Turn on \(name)"].exists, !web.switches["Turn off \(name)"].exists,
-              focusSpaceSwitches() == previousSwitches else {
+              try focusSpaceSwitches() == previousSwitches else {
             throw DriverFailure.expected("the owned fixture absent after relaunch and the previous switches unchanged")
         }
         try observe(blocker, name: "15 owned fixture removed and initial duration restored", includeTree: false)
@@ -387,9 +387,20 @@ final class Driver: XCTestCase {
         try restoreDuration(baseline, name: name, in: duration)
     }
 
-    private func focusSpaceSwitches() -> [String] {
-        web.switches.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@",
-            "Turn on ", "Turn off ")).allElementsBoundByIndex.map(\.label).sorted()
+    private func focusSpaceSwitches() throws -> [String] {
+        // Activating the app does not wait for its asynchronous data load. An
+        // empty accessibility query before render is not an empty saved list.
+        try require(web.buttons["Block"], "the focus-space list controls")
+        let deadline = Date().addingTimeInterval(15)
+        repeat {
+            let switches = web.switches.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@",
+                "Turn on ", "Turn off ")).allElementsBoundByIndex.map(\.label).sorted()
+            if !switches.isEmpty || web.staticTexts["No focus spaces yet"].exists {
+                return switches
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+        } while Date() < deadline
+        throw DriverFailure.expected("a rendered focus-space list or its explicit empty state")
     }
 
     private func configuration() throws -> (String, Date) {
@@ -588,7 +599,22 @@ final class Driver: XCTestCase {
             try observe(safari, name: "\(phase) unexpected")
             throw DriverFailure.expected("\(host) to \(restricted ? "show Safari's native restriction" : "load Example Domain")")
         }
-        guard expected.isHittable, !opposite.exists else { throw DriverFailure.expected("a single unambiguous Safari result for \(host)") }
+        // Static text need not have a tappable activation point. Safari on
+        // iPadOS 18 can throw from isHittable even for visible page text.
+        let visibleDeadline = Date().addingTimeInterval(5)
+        var visible = false
+        repeat {
+            if expected.exists {
+                let frame = expected.frame
+                let intersection = frame.intersection(safari.frame)
+                visible = frame.origin.x.isFinite && frame.origin.y.isFinite
+                    && frame.width.isFinite && frame.height.isFinite
+                    && !intersection.isNull && !intersection.isEmpty
+                if visible { break }
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+        } while Date() < visibleDeadline
+        guard visible, !opposite.exists else { throw DriverFailure.expected("a single unambiguous visible Safari result for \(host)") }
         print("REDD_IOS_OBSERVATION \(ISO8601DateFormatter().string(from: Date())) \(phase) \(url)")
         try observe(safari, name: phase, includeTree: false)
         return true

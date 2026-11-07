@@ -1,5 +1,4 @@
-// Schedule engine: occurrence math, native-helper schedule/block sync,
-// desktop helper status cache. Extracted verbatim from app.js.
+// Schedule occurrence calculations and iOS Screen Time synchronisation.
 import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { message } from '@tauri-apps/plugin-dialog';
@@ -10,10 +9,6 @@ import { formatTime } from './app.js';
 import { syncIOSStartWarnings } from './ios-start-warnings.js';
 
 let hasShownIOSScheduleSyncError = false;
-
-export const HELPER_STATUS_CACHE_TTL_MS = 3000;
-let lastDesktopHelperStatus = null;
-let lastDesktopHelperStatusAt = 0;
 
 export function isNonRepeatingSchedule(schedule) {
     return !!schedule && schedule.repeatType !== 'forever' && !(schedule.repeatType === 'date' && schedule.repeatDate);
@@ -104,6 +99,7 @@ function buildResolvedOneShotSegments(schedule) {
 function buildPersistedSchedule(schedule) {
     if (!schedule || !Array.isArray(schedule.segments)) return schedule;
 
+    // eslint-disable-next-line no-unused-vars -- Exclude stale resolved segments from the persisted copy.
     const { resolvedSegments: _oldResolvedSegments, ...baseSchedule } = schedule;
     if (typeof baseSchedule.repeatDate === 'number') {
         // Rust expects a string. Keep the selected instant (and its local day).
@@ -173,7 +169,7 @@ export function getSingleOccurrenceSegmentDates(schedule, segment) {
 /**
  * Flatten schedules into the iOS Screen Time plugin payload.
  *
- * Extracted from syncSchedulesToHelper so the per-entry `mode` below can be
+ * Extracted from syncIOSSchedules so the per-entry `mode` below can be
  * tested; the sync itself is async and talks to Tauri.
  *
  * Each entry carries `mode` so Swift knows whether its domains/tokens are
@@ -266,108 +262,33 @@ export async function reportIOSScheduleSyncFailure(failure) {
             kind: 'error'
         });
     } catch (dialogError) {
-        console.warn('[syncSchedulesToHelper] Failed to show iOS sync error:', dialogError);
+        console.warn('[syncIOSSchedules] Failed to show iOS sync error:', dialogError);
     }
 }
 
-export async function syncSchedulesToHelper({ reportFailure = true } = {}) {
-    if (state.isIOS) {
-        let failure = null;
-        let failedSaveIds;
-        try {
-            const flatEntries = buildIOSScheduleEntries();
-            console.log('[syncSchedulesToHelper] iOS: Sending', flatEntries.length, 'segment entries to plugin');
-            const result = await tauriAPI.setSchedulesPlugin(flatEntries);
-            if (result?.success !== true) {
-                failure = result?.error || 'unknown plugin error';
-                failedSaveIds = result?.failedSaveIds;
-                console.warn('[syncSchedulesToHelper] iOS plugin failed:', failure);
-            }
-        } catch (e) {
-            failure = e?.message || String(e);
-            console.warn('[syncSchedulesToHelper] iOS error:', e);
-        }
-        if (failure && reportFailure) await reportIOSScheduleSyncFailure(failure);
-        // After the save, so Swift plans from the schedules just stored. Not awaited:
-        // switching a space on must not wait for notifications (Swift runs rebuilds in order).
-        void syncIOSStartWarnings();
-        return failure ? { success: false, error: failure, failedSaveIds } : { success: true };
-    }
+export async function syncIOSSchedules({ reportFailure = true } = {}) {
+    if (!state.isIOS) return;
 
+    let failure = null;
+    let failedSaveIds;
     try {
-        const status = await tauriAPI.checkHelperStatus();
-        if (!status.running || !status.version_ok) {
-            console.log('[syncSchedulesToHelper] Helper not available, skipping');
-            return;
-        }
-
-        // Build schedule payloads with pre-resolved domains and apps
-        const helperSchedules = (state.appData.schedules || []).map(schedule => {
-            const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-            const helperSegments = isNonRepeatingSchedule(schedule)
-                ? buildResolvedOneShotSegments(schedule)
-                : (schedule.segments || []).map(seg => ({
-                    startHour: seg.startHour,
-                    startMinute: seg.startMinute,
-                    endHour: seg.endHour,
-                    endMinute: seg.endMinute,
-                    days: [...seg.days]
-                }));
-            return {
-                id: schedule.id,
-                domains: blocklist?.websites || [],
-                apps: blocklist?.apps || [],
-                isPaused: !!schedule.isPaused,
-                pauseEndTime: schedule.pauseEndTime || null,
-                segments: helperSegments
-            };
-        });
-
-        console.log('[syncSchedulesToHelper] Sending', helperSchedules.length, 'schedules to helper');
-        const result = await tauriAPI.setSchedulesViaHelper(helperSchedules);
-        if (!result.success) {
-            console.warn('[syncSchedulesToHelper] Failed:', result.error);
+        const flatEntries = buildIOSScheduleEntries();
+        console.log('[syncIOSSchedules] iOS: Sending', flatEntries.length, 'segment entries to plugin');
+        const result = await tauriAPI.setSchedulesPlugin(flatEntries);
+        if (result?.success !== true) {
+            failure = result?.error || 'unknown plugin error';
+            failedSaveIds = result?.failedSaveIds;
+            console.warn('[syncIOSSchedules] iOS plugin failed:', failure);
         }
     } catch (e) {
-        console.warn('[syncSchedulesToHelper] Error:', e);
+        failure = e?.message || String(e);
+        console.warn('[syncIOSSchedules] iOS error:', e);
     }
-}
-
-export async function syncActiveBlocksToHelper() {
-    if (state.isIOS) return;
-    try {
-        const status = await tauriAPI.checkHelperStatus();
-        if (!status.running || !status.version_ok) return;
-        const now = Date.now();
-        console.log('[syncActiveBlocksToHelper] Total activeBlocks:', state.appData.activeBlocks.length,
-            'blocks:', state.appData.activeBlocks.map(b => ({
-                id: b.id, blocklistId: b.blocklistId, startTime: b.startTime, endTime: b.endTime,
-                isPaused: b.isPaused, isAlwaysOn: b.isAlwaysOn,
-                startOk: b.startTime <= now, endOk: b.endTime > now, pauseOk: !b.isPaused
-            })));
-        const activeBlocks = state.appData.activeBlocks.filter(block => block.startTime <= now && block.endTime > now);
-        console.log('[syncActiveBlocksToHelper] Filtered activeBlocks:', activeBlocks.length);
-
-        // Build the blocks array for the atomic set-blocks command.
-        // Paused blocks are included so the helper can auto-resume them when the pause expires,
-        // even if the frontend isn't running.
-        const helperBlocks = activeBlocks.map(block => {
-            const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
-            return {
-                domains: blocklist?.websites || [],
-                endTime: block.endTime,
-                blocklistId: block.blocklistId,
-                isPaused: !!block.isPaused,
-                pauseEndTime: block.pauseEndTime || null
-            };
-        });
-
-        console.log('[syncActiveBlocksToHelper] Sending', helperBlocks.length, 'blocks to helper');
-        // Atomically replace all blocks in the helper daemon (no clear→re-add race)
-        await tauriAPI.setBlocksViaHelper(helperBlocks);
-    } catch (e) {
-        console.warn('[syncActiveBlocksToHelper] Error:', e);
-    }
+    if (failure && reportFailure) await reportIOSScheduleSyncFailure(failure);
+    // After the save, so Swift plans from the schedules just stored. Not awaited:
+    // switching a space on must not wait for notifications (Swift runs rebuilds in order).
+    void syncIOSStartWarnings();
+    return failure ? { success: false, error: failure, failedSaveIds } : { success: true };
 }
 
 export function isOneOffBlockEnforced(block, now = Date.now()) {
@@ -567,38 +488,4 @@ export function hasAnyBlockingStateToClear(now = Date.now(), nowDate = new Date(
     // A schedule switched off with no end time stays off until turned on, so there is nothing to stop.
     return !!state.appData.schedules?.some(schedule =>
         !(schedule.isPaused && !schedule.pauseEndTime) && scheduleCanStillBecomeActive(schedule, nowDate));
-}
-
-export async function refreshDesktopHelperStatus() {
-    if (state.isIOS) {
-        return { installed: false, running: false, version: null, version_ok: false, helperReady: false };
-    }
-    try {
-        const status = await tauriAPI.checkHelperStatus();
-        const helperReady = !!(status.running && status.version_ok);
-        const nextStatus = { ...status, helperReady };
-        state.helperAvailable = helperReady;
-        lastDesktopHelperStatus = nextStatus;
-        lastDesktopHelperStatusAt = Date.now();
-        return nextStatus;
-    } catch (err) {
-        console.error('Error checking helper status:', err);
-        state.helperAvailable = false;
-        lastDesktopHelperStatus = {
-            installed: false,
-            running: false,
-            version: null,
-            version_ok: false,
-            helperReady: false,
-            error: err
-        };
-        lastDesktopHelperStatusAt = Date.now();
-        return lastDesktopHelperStatus;
-    }
-}
-
-export function getCachedDesktopHelperStatus(maxAgeMs = HELPER_STATUS_CACHE_TTL_MS) {
-    if (!lastDesktopHelperStatus) return null;
-    if ((Date.now() - lastDesktopHelperStatusAt) > maxAgeMs) return null;
-    return lastDesktopHelperStatus;
 }

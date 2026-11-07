@@ -1,18 +1,17 @@
-// Settings surface: help links, helper status, diagnostics modal, grace
+// Settings surface: help links, diagnostics modal, grace
 // period, override-all, and in-app uninstall flows. Extracted verbatim from app.js.
 import { state } from './state.js';
 import { getChallengeController } from './challenge-controller.js';
-import { startHelperUiRefreshLoop, stopHelperUiRefreshLoop, isModalVisible } from './modal-manager.js';
-import { saveData, updateHostsFile } from './persistence.js';
+import { saveData } from './persistence.js';
 import { render } from './render.js';
 import { cancelIOSRestart, handleBlocklistSelect, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
-import { updateBlockedApps, openExternal, isHelperInstallCancelled, checkHelperStatus, requestScreentimeAuth } from './blocking-platform.js';
+import { updateBlockedApps, openExternal } from './blocking-platform.js';
 import { attachCopyChipHandlers, extensionsUrlChipHtml, restartOnboardingFromSettings, BROWSER_STORE_LINKS, MAC_BLOCKING_METHOD_KEYS, browserBlockingMethod, browserIconUrl, browserUsesAutomation, lastOnboardingState, openExtensionSetupOverlay, updateGraceSettingLock } from './enforcement.js';
-import { hasAnyBlockingStateToClear, hasAnyEnforcedBlocks, isOneOffBlockStillActive, refreshDesktopHelperStatus, scheduleCanStillBecomeActive, syncSchedulesToHelper } from './schedule-engine.js';
+import { hasAnyBlockingStateToClear, hasAnyEnforcedBlocks, isOneOffBlockStillActive, scheduleCanStillBecomeActive, syncIOSSchedules } from './schedule-engine.js';
 import { tauriAPI, openUrl } from './tauri-api.js';
-import { tSettings, tSettingsFmt, getSettingsLanguage } from './i18n.js';
+import { tSettings, tSettingsFmt } from './i18n.js';
 import { invoke } from '@tauri-apps/api/core';
-import { ask, message } from '@tauri-apps/plugin-dialog';
+import { message } from '@tauri-apps/plugin-dialog';
 import logoReddFocusUrl from './images/logo-reddfocus.svg';
 import { escapeHtml } from './utils.js';
 import { DEFAULT_OVERRIDE_WORDS, MAX_OVERRIDE_WORDS_DESKTOP, MAX_OVERRIDE_WORDS_SETTING_STEP, MIN_MAX_OVERRIDE_WORDS_SETTING, getDifficultyTypingCharCount, getMaxOverrideWords, getOverrideEstimatedMinutes, normalizeMaxOverrideWordsSetting, normalizeOverrideCount } from './override-challenge.js';
@@ -33,343 +32,6 @@ export function setupHelpMenuLinks() {
     tauriAPI.onMenuHelpWhoWeAre(() => {
         openExternal('https://digitalhabits.org/#team-anchor');
     }).catch(() => { });
-}
-
-// Setup Helper Settings in the settings modal
-export function setupHelperSettings() {
-    if (state.isIOS) return;
-    const statusIndicator = document.getElementById('helper-status-indicator');
-    const cleanHostsBtn = document.getElementById('clean-hosts-btn');
-
-    // Update helper status when settings modal opens
-    ['settings-btn', 'settings-btn-stack']
-        .map((id) => document.getElementById(id))
-        .filter(Boolean)
-        .forEach((settingsBtn) => {
-            settingsBtn.addEventListener('click', () => {
-                updateHelperStatusIndicator();
-                updateCleanHostsBtnState();
-                startHelperUiRefreshLoop();
-            });
-        });
-
-    // Clean hosts file button
-    if (cleanHostsBtn && !cleanHostsBtn._listenerAdded) {
-        cleanHostsBtn._listenerAdded = true;
-        cleanHostsBtn.addEventListener('click', async () => {
-            if (cleanHostsBtn.disabled) return;
-
-            const confirmed = await ask(
-                'This will remove all Digital Habits: Blocker entries from your system\'s hosts file. ' +
-                'Only use this if websites remain blocked after all blocks have been stopped.\n\n' +
-                'Your computer may ask for your password or show a security prompt.',
-                { title: 'Clean hosts file?', kind: 'warning' }
-            );
-            if (!confirmed) return;
-
-            cleanHostsBtn.disabled = true;
-            const originalHTML = cleanHostsBtn.innerHTML;
-            cleanHostsBtn.innerHTML = '<span class="btn-spinner"></span>Cleaning...';
-
-            try {
-                const result = await tauriAPI.cleanHostsFile();
-                if (result.success) {
-                    await message('Hosts file cleaned successfully. If websites were still blocked, they should now be accessible.', { title: 'Done', kind: 'info' });
-                } else {
-                    await message('Failed to clean hosts file: ' + (result.error || 'Unknown error'), { title: 'Error', kind: 'error' });
-                }
-            } catch (e) {
-                console.error('Error cleaning hosts file:', e);
-                await message('Error cleaning hosts file: ' + e.message, { title: 'Error', kind: 'error' });
-            } finally {
-                cleanHostsBtn.disabled = false;
-                cleanHostsBtn.innerHTML = originalHTML;
-                updateCleanHostsBtnState();
-            }
-        });
-    }
-
-}
-
-export function getHelperStatusDisplay(status) {
-    const isRunning = !!status.running;
-    const needsUpdate = isRunning && !status.version_ok;
-    const installedButStopped = !!(status.installed && !isRunning);
-    const enforcingNow = isRunning && status.version_ok && isDesktopBlockingEnforcedNow();
-
-    if (isRunning && status.version_ok) {
-        return {
-            helperReady: true,
-            indicatorClass: 'running',
-            statusKey: enforcingNow ? 'helperStatusActive' : 'helperStatusIdle',
-            showUpdate: false,
-            showRemove: true,
-            removeTitle: '',
-            reachable: true,
-        };
-    }
-
-    if (needsUpdate) {
-        return {
-            helperReady: false,
-            indicatorClass: 'running',
-            statusKey: 'helperStatusUpdateAvailable',
-            showUpdate: true,
-            showRemove: true,
-            removeTitle: '',
-            reachable: true,
-        };
-    }
-
-    if (installedButStopped) {
-        return {
-            helperReady: false,
-            indicatorClass: 'stopped',
-            statusKey: 'helperStatusInstalledNotReachable',
-            showUpdate: false,
-            showRemove: true,
-            removeTitle: tSettings('helperRemoveStaleHint'),
-            reachable: false,
-        };
-    }
-
-    return {
-        helperReady: false,
-        indicatorClass: 'stopped',
-        statusKey: 'helperStatusNotInstalled',
-        showUpdate: false,
-        showRemove: false,
-        removeTitle: '',
-        reachable: false,
-    };
-}
-
-export function logHelperRemovalFallback(result) {
-    if (result?.error) {
-        console.warn('[helper-uninstall] Fallback cleanup used:', result.error);
-    }
-}
-
-export async function confirmHelperRemoved() {
-    const status = await refreshDesktopHelperStatus();
-    const removed = !(status?.installed || status?.running);
-
-    await updateHelperStatusIndicator().catch(() => { });
-    await checkHelperStatus().catch(() => { });
-
-    if (!removed) {
-        return {
-            removed: false,
-            status,
-            error: 'Digital Habits: Blocker could not confirm that the helper was fully removed. It still appears to be installed.'
-        };
-    }
-
-    state.helperAvailable = false;
-    return { removed: true, status };
-}
-
-export async function uninstallHelperAndConfirmRemoved() {
-    const result = await tauriAPI.uninstallHelper();
-    if (!result.success) {
-        return {
-            success: false,
-            error: result.error || 'Unknown error'
-        };
-    }
-
-    logHelperRemovalFallback(result);
-
-    const confirmation = await confirmHelperRemoved();
-    if (!confirmation.removed) {
-        return {
-            success: false,
-            error: confirmation.error
-        };
-    }
-
-    return {
-        success: true,
-        usedFallback: !!result.error
-    };
-}
-
-export function isDesktopBlockingEnforcedNow() {
-    if (state.isIOS) return false;
-    return hasAnyEnforcedBlocks();
-}
-
-// Update helper status indicator in settings modal
-export async function updateHelperStatusIndicator() {
-    const statusIndicator = document.getElementById('helper-status-indicator');
-    if (!statusIndicator) return;
-
-    const statusText = statusIndicator.querySelector('.status-text');
-    const updateBtn = document.getElementById('update-helper-btn');
-
-    try {
-        const status = await refreshDesktopHelperStatus();
-        const helperDisplay = getHelperStatusDisplay(status);
-        state.helperAvailable = helperDisplay.helperReady;
-
-        statusIndicator.classList.remove('running', 'stopped');
-        statusIndicator.classList.add(helperDisplay.indicatorClass);
-        statusText.textContent = tSettings(helperDisplay.statusKey);
-
-        // Show/hide Update Helper button
-        if (updateBtn) {
-            updateBtn.style.display = helperDisplay.showUpdate ? 'flex' : 'none';
-
-            // Wire up click handler (only once)
-            if (!updateBtn._listenerAdded) {
-                updateBtn._listenerAdded = true;
-                updateBtn.addEventListener('click', async () => {
-                    updateBtn.disabled = true;
-                    const originalHTML = updateBtn.innerHTML;
-                    updateBtn.innerHTML = '<span class="btn-spinner"></span>Updating...';
-                    try {
-                        const result = await tauriAPI.installHelper();
-                        if (result.success) {
-                            // Wait for helper to start up
-                            await new Promise(resolve => setTimeout(resolve, 2000));
-                            await updateHelperStatusIndicator();
-                            await checkHelperStatus();
-                        } else if (isHelperInstallCancelled(result?.error)) {
-                            console.log('Helper update cancelled by user');
-                        } else {
-                            await message('Failed to update helper: ' + (result.error || 'Unknown error'), { title: 'Error', kind: 'error' });
-                        }
-                    } catch (e) {
-                        console.error('Error updating helper:', e);
-                        await message('Error updating helper: ' + e.message, { title: 'Error', kind: 'error' });
-                    } finally {
-                        updateBtn.disabled = false;
-                        updateBtn.innerHTML = originalHTML;
-                    }
-                });
-            }
-        }
-
-    } catch (e) {
-        statusIndicator.classList.remove('running', 'stopped');
-        statusIndicator.classList.add('stopped');
-        statusText.textContent = tSettings('helperStatusUnknown');
-
-        if (updateBtn) updateBtn.style.display = 'none';
-    }
-
-    // Also update Override All button visibility
-    updateOverrideAllButtonVisibility();
-}
-
-// Update clean hosts button state (disabled when blocks are running)
-export function updateCleanHostsBtnState() {
-    const btn = document.getElementById('clean-hosts-btn');
-    if (!btn) return;
-    const active = hasAnyActiveBlocks();
-    btn.disabled = active;
-    btn.title = active ? 'Stop all running blocks first' : '';
-}
-
-export function getDiagValue(diag, ...keys) {
-    for (const key of keys) {
-        if (diag && diag[key] !== undefined && diag[key] !== null) {
-            return diag[key];
-        }
-    }
-    return undefined;
-}
-
-export function getPrettyPrintedDiagnosticsJson(rawText) {
-    if (!rawText) return '(unavailable)';
-    try {
-        return JSON.stringify(JSON.parse(rawText), null, 2);
-    } catch (e) {
-        return rawText;
-    }
-}
-
-export function buildDiagnosticsReport(diag) {
-    const osName = getDiagValue(diag, 'os_name', 'osName')
-        || (navigator.platform?.startsWith('Mac') ? 'macOS' : navigator.platform?.startsWith('Win') ? 'Windows' : 'unknown');
-    const arch = getDiagValue(diag, 'arch') || 'unknown';
-    const appVersion = document.getElementById('current-app-version')?.dataset.appVersion || '';
-    const installed = !!getDiagValue(diag, 'helper_installed', 'helperInstalled');
-    const running = !!getDiagValue(diag, 'helper_running', 'helperRunning');
-    const version = getDiagValue(diag, 'helper_version', 'helperVersion') || 'Unknown';
-    const versionOk = !!getDiagValue(diag, 'helper_version_ok', 'helperVersionOk');
-    const expectedVersion = getDiagValue(diag, 'expected_helper_version', 'expectedHelperVersion') || 'unknown';
-    const hostsFile = getDiagValue(diag, 'hosts_file', 'hostsFile') || '(unavailable)';
-    const hostsPath = getDiagValue(diag, 'hosts_path', 'hostsPath') || '(unknown)';
-    const stateFile = getDiagValue(diag, 'helper_state_file', 'helperStateFile') || '(unavailable)';
-    const statePath = getDiagValue(diag, 'helper_state_path', 'helperStatePath') || '(unknown)';
-    const helperLogTail = getDiagValue(diag, 'helper_log_tail', 'helperLogTail');
-    const helperLogPath = getDiagValue(diag, 'helper_log_path', 'helperLogPath');
-    const installLogTail = getDiagValue(diag, 'install_log_tail', 'installLogTail');
-    const installLogPath = getDiagValue(diag, 'install_log_path', 'installLogPath');
-    const helperDisplay = getHelperStatusDisplay({ installed, running, version_ok: versionOk });
-    const helperStatusLabel = tSettings(helperDisplay.statusKey);
-    const reachable = !!running;
-
-    return {
-        osName,
-        arch,
-        appVersion,
-        installed,
-        running,
-        reachable,
-        version,
-        versionOk,
-        expectedVersion,
-        helperStatusLabel,
-        helperDisplay,
-        hostsFile,
-        hostsPath,
-        hasReddBlock: hostsFile.includes('BEGIN REDD BLOCK'),
-        statePretty: getPrettyPrintedDiagnosticsJson(stateFile),
-        statePath,
-        helperLogTail,
-        helperLogPath,
-        installLogTail,
-        installLogPath,
-    };
-}
-
-export function formatDiagnosticsText(diag) {
-    const report = buildDiagnosticsReport(diag);
-    return [
-        '=== System ===',
-        `OS: ${report.osName}`,
-        `Architecture: ${report.arch}`,
-        report.appVersion ? `App version: ${report.appVersion}` : '',
-        '',
-        '=== Helper Daemon ===',
-        `Status: ${report.helperStatusLabel}`,
-        `Installed: ${report.installed ? 'Yes' : 'No'}`,
-        `Reachable: ${report.reachable ? 'Yes' : 'No'}`,
-        `Running: ${report.running ? 'Yes' : 'No'}`,
-        `Version OK: ${report.versionOk ? 'Yes' : 'No'}`,
-        `Version: ${report.version}`,
-        `Expected version: ${report.expectedVersion}`,
-        '',
-        '=== Paths ===',
-        `Hosts file: ${report.hostsPath}`,
-        `Helper state file: ${report.statePath}`,
-        report.helperLogPath ? `Helper log: ${report.helperLogPath}` : '',
-        report.installLogPath ? `Install log: ${report.installLogPath}` : '',
-        '',
-        '=== Hosts File ===',
-        report.hostsFile.trim(),
-        '',
-        '=== Helper State File ===',
-        report.statePretty.trim(),
-        report.helperLogTail ? '' : undefined,
-        report.helperLogTail ? '=== Helper Log Tail ===' : undefined,
-        report.helperLogTail ? report.helperLogTail.trim() : undefined,
-        report.installLogTail ? '' : undefined,
-        report.installLogTail ? '=== Install Log Tail ===' : undefined,
-        report.installLogTail ? report.installLogTail.trim() : undefined,
-    ].filter(line => line !== undefined).join('\n');
 }
 
 export function captureDiagnosticsScrollState(content) {
@@ -432,7 +94,7 @@ export async function refreshDiagnosticsModalContent({ showLoading = false, load
         ]);
         try {
             enforcementEnabled = !!(await invoke('get_enforcement_enabled'));
-        } catch (_) { /* non-desktop */ }
+        } catch { /* non-desktop */ }
         stopLoadingTimer();
         content.innerHTML = renderSystemDiagnostics(diag, { enforcementEnabled });
         updateDiagnosticsModalChrome(diag);
@@ -508,7 +170,6 @@ export function diagnosticsBrowserExtensionState(key, b) {
 }
 
 export function diagnosticsAutomationEntry(d, key) {
-    const label = BROWSER_STORE_LINKS[key]?.label || key;
     const list = d.automation?.browsers || [];
     const entry = list.find((b) => String(b.label || '').toLowerCase() === key);
     return entry?.state || 'unknown';
@@ -810,7 +471,6 @@ export function closeDiagnosticsModal() {
     modal.classList.add('hidden');
     if (modal.dataset.settingsWasOpen === '1') {
         settingsModal?.classList.remove('hidden');
-        startHelperUiRefreshLoop();
     }
     delete modal.dataset.settingsWasOpen;
 }
@@ -843,13 +503,11 @@ export async function openDiagnosticsModal() {
         await refreshDiagnosticsModalContent({ showLoading: false });
         if (settingsWasOpen) {
             settingsModal.classList.add('hidden');
-            stopHelperUiRefreshLoop();
         }
         modal.classList.remove('hidden');
-    } catch (_) {
+    } catch {
         if (settingsWasOpen) {
             settingsModal.classList.add('hidden');
-            stopHelperUiRefreshLoop();
         }
         modal.classList.remove('hidden');
     } finally {
@@ -908,12 +566,6 @@ export function setupSettingsHelpButtons() {
     }
 }
 
-// Any blocks or schedules the user could clear via Stop All — includes
-// future scheduled segments, not only what is enforcing right now.
-export function hasAnyActiveBlocks() {
-    return hasAnyBlockingStateToClear();
-}
-
 // Manage section: macOS and Windows always show Uninstall guidance; Stop All when relevant.
 export function updateManageSectionVisibility() {
     const section = document.getElementById('settings-manage-section');
@@ -935,7 +587,7 @@ export function updateOverrideAllButtonVisibility() {
     // Cheap, and catches app-data changes that bypass the language pass
 }
 
-// Show challenge for removing helper when blocks are active
+// Show the challenge before stopping all focus spaces
 
 // Setup the configurable browser-extension grace period.
 // Backend reads `settings.extensionGraceSeconds` from the data file
@@ -1277,7 +929,7 @@ export function setupInAppUninstall() {
                     title: tSettings('uninstallFailedTitle'),
                     kind: 'error',
                 });
-            } catch (_) { /* swallow — best-effort error surface */ }
+            } catch { /* swallow — best-effort error surface */ }
         }
     });
 }
@@ -1335,7 +987,7 @@ export function setupWindowsUninstallGuidance() {
                     title: tSettings('windowsUninstallOpenFailedTitle'),
                     kind: 'error',
                 });
-            } catch (_) { /* dialog dismissed */ }
+            } catch { /* dialog dismissed */ }
         }
     });
 }
@@ -1452,23 +1104,18 @@ export async function performOverrideAll() {
         // Save the data
         await saveData();
 
-        // Full cleanup on the helper side
+        // Clear enforcement after saving the new state.
         if (state.isIOS) {
             for (const block of clearedBlocks) await cancelIOSRestart(block);
             await tauriAPI.screentimeClearBlock();
         } else {
-            const status = await refreshDesktopHelperStatus();
-            if (status.helperReady) {
-                // Atomically set everything to empty — helper will know nothing should be blocked
-                try { await tauriAPI.setBlocksViaHelper([]); } catch (e) { console.warn('Failed to clear blocks:', e); }
-                try { await tauriAPI.setBlockedAppsViaHelper([]); } catch (e) { console.warn('Failed to clear apps:', e); }
-            }
-            // Always clean the hosts file as a safety net, even if the helper is stopped or stale.
-            try { await tauriAPI.cleanHostsFile(); } catch (e) { console.warn('Failed to clean hosts file:', e); }
+            try { await tauriAPI.setBlockedApps([]); } catch (e) { console.warn('Failed to clear apps:', e); }
+            // Safety net for older installations that left hosts entries behind.
+            try { await tauriAPI.stripHostsMarkers(); } catch (e) { console.warn('Failed to clean hosts file:', e); }
         }
 
-        // Every platform learns the schedules are off the same way a single stop tells it.
-        await syncSchedulesToHelper({ reportFailure: false });
+        // Screen Time monitors must also reflect the saved schedules.
+        await syncIOSSchedules({ reportFailure: false });
 
         // Update blocked apps (will stop watcher if no apps to block)
         await updateBlockedApps();

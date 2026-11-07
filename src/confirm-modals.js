@@ -4,34 +4,32 @@ import { state } from './state.js';
 import { getChallengeController } from './challenge-controller.js';
 import { tauriAPI } from './tauri-api.js';
 import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor, setSpaceTitle } from './utils.js';
-import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
+import { tSettings, tSettingsFmt } from './i18n.js';
 import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn, formatSpaceTitleLabel } from './blocklist-utils.js';
-import { DEFAULT_OVERRIDE_WORDS, generateOverrideChallengeText, getMaxOverrideCountForType, getMaxOverrideWords, getMinOverrideCountForType, getOverrideWordsSliderMax, getOverrideEstimatedMinutes, isMobileOverrideChallengePlatform, migrateOverrideDifficultyToWords, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType, sanitizeChallengeTargetText } from './override-challenge.js';
-import { isSchedulePausedNow, refreshDesktopHelperStatus, reportIOSScheduleSyncFailure, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
-import { saveData, updateHostsFile } from './persistence.js';
-import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
+import { DEFAULT_OVERRIDE_WORDS, getMaxOverrideCountForType, getMaxOverrideWords, getMinOverrideCountForType, getOverrideWordsSliderMax, getOverrideEstimatedMinutes, migrateOverrideDifficultyToWords, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
+import { reportIOSScheduleSyncFailure, syncIOSSchedules } from './schedule-engine.js';
+import { saveData, syncBlockingState } from './persistence.js';
+import { layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks } from './render.js';
 import { isBlocklistEditFrictionRequired,renderBlocklists, truncateBlocklistName } from './blocklists.js';
 import { areSegmentsEqual, getSelectedSchedule, canEditScheduleBetweenBlocks } from './schedule-editor.js';
 import { pad } from './time-inputs.js';
 import { formatScheduleWhenSummary, formatUnlockDurationLabel, getWhenToBlockKind, isEditorInCreateModal, mountFocusSpaceEditor, notifyEditorChanged, populateFocusSpaceEditor, resyncEditorLockState, returnFocusSpaceEditorToPanel } from './focus-space-editor.js';
-import { resetModalScrollPosition, updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth, isHelperConnectionError } from './blocking-platform.js';
+import { resetModalScrollPosition, updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth } from './blocking-platform.js';
 import { resetWebsitesImportMenuPosition } from './website-input.js';
 import { bindUiZoomLayoutObserver, scheduleUiZoomResponsiveLayout, usesStackSettingsPlacement } from './theme.js';
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
 import {
-    IOS_STOP_BTN_META_COLLAPSE_SLACK_PX, MINUTES_PER_DAY, MAX_SAME_DAY_END_MINUTES,
+    MINUTES_PER_DAY, MAX_SAME_DAY_END_MINUTES,
     clampSameDayMinutes, formatBlockTimeRemainingShort, formatConfirmModalOverrideTypingLine,
-    formatMinutesAsHHMM, formatTime, generateId,
+    formatMinutesAsHHMM, generateId,
     snapMinutesToInterval,
 } from './app.js';
 import { getLastBreakMinutes, PAUSE_MINUTE_OPTIONS, applyStopToTarget, timedStopLostOwnPause } from './unlock-duration.js';
 import { deriveWhenToBlockKind } from './when-to-block.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
 import {
-    setBlocklistModalMode,
     syncBlocklistCreateUi,
     setConfirmModalBlockingLabel,
-    isBlocklistAllowlistMode,
 } from './list-mode.js';
 
 export const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
@@ -254,7 +252,6 @@ export function openScheduleOverrideModal(schedule) {
 
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: DEFAULT_OVERRIDE_WORDS };
     state.overrideBlockId = null;
-    state.overrideBlocklistIdForHelper = null;
 
     // A Flexible schedule sitting between its blocks stops without typing; the
     // unlock duration still applies so it comes back on its own. The challenge
@@ -293,7 +290,7 @@ export function bindPointerDragSession(element, { onStart, onMove, onEnd }) {
         const captureEl = e.currentTarget;
         try {
             captureEl.setPointerCapture?.(e.pointerId);
-        } catch (_) { /* ignore */ }
+        } catch { /* ignore */ }
 
         e.preventDefault();
 
@@ -312,7 +309,7 @@ export function bindPointerDragSession(element, { onStart, onMove, onEnd }) {
                 if (captureEl.hasPointerCapture?.(e.pointerId)) {
                     captureEl.releasePointerCapture(e.pointerId);
                 }
-            } catch (_) { /* ignore */ }
+            } catch { /* ignore */ }
             onEnd(endEvent);
         };
 
@@ -441,7 +438,6 @@ export function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
     let isResizing = false;
     let resizeHandle = null;
     let startX = 0;
-    let startY = 0;
     let startLeftPct = 0;
     let startWidthPct = 0;
     let startDayIndex = null;
@@ -574,7 +570,6 @@ export function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
             }
 
             startX = e.clientX;
-            startY = e.clientY;
             startLeftPct = parseFloat(previewEl.style.left) || 0;
             startWidthPct = parseFloat(previewEl.style.width) || 0;
             currentHoverTrack = track;
@@ -752,10 +747,6 @@ function getEnterSchedulerModal() {
 
 function getTimePickerHome() {
     return document.querySelector('#scheduler-section .scheduler-content');
-}
-
-function getEnterSchedulerScrollBody() {
-    return getEnterSchedulerModal()?.querySelector('.mobile-modal-scroll-body');
 }
 
 function syncEnterSchedulerModalTitle(blocklist) {
@@ -1029,7 +1020,7 @@ export async function startManualBlock(blocklistId) {
         isAlwaysOn: true,
     };
 
-    let result;
+    let result = { success: true };
 
     if (state.isIOS) {
         if (!state.screentimeAuthorized) {
@@ -1050,7 +1041,7 @@ export async function startManualBlock(blocklistId) {
         try {
             state.appData.activeBlocks.push(block);
             state.activatedBlockIds.add(block.id);
-            const updateResult = await updateHostsFile();
+            const updateResult = await syncBlockingState();
             if (!updateResult.success) {
                 state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
                 state.activatedBlockIds.delete(block.id);
@@ -1064,38 +1055,13 @@ export async function startManualBlock(blocklistId) {
             result = { success: false, error: err.toString() };
         }
     } else {
-        // Desktop: persist the block locally first so save_data and the
-        // native-messaging host see it immediately.
+        // Desktop backends pick up the block from the saved app data.
         state.appData.activeBlocks.push(block);
         state.activatedBlockIds.add(block.id);
-        if (state.helperAvailable) {
-            const status = await tauriAPI.checkHelperStatus();
-            if (!status.running || !status.version_ok) {
-                state.helperAvailable = false;
-            }
-        }
-        // v2: the app process IS the helper. startBlockViaHelper is a no-op
-        // shim; extension blocking follows from save_data below.
-        result = await tauriAPI.startBlockViaHelper({
-            domains: blocklist.websites || [],
-            endTime: block.endTime,
-            blocklistId,
-        });
     }
 
     if (!result.success) {
-        if (!state.isIOS) {
-            state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-            state.activatedBlockIds.delete(block.id);
-        }
-        if (!result.cancelled) {
-            if (isHelperConnectionError(result.error)) {
-                state.helperAvailable = false;
-                alert('The block service isn\'t running. Please open Settings, remove the helper, then try starting a block again to reinstall it.');
-            } else {
-                alert('Could not start block: ' + (result.error || 'Unknown error'));
-            }
-        }
+        if (!result.cancelled) alert('Could not start block: ' + (result.error || 'Unknown error'));
         return false;
     }
 
@@ -1444,7 +1410,6 @@ export function openOverrideModal(blockId) {
     delete window.overrideScheduleId;
     state.overrideBlockId = blockId;
     const block = state.appData.activeBlocks.find(b => b.id === blockId);
-    state.overrideBlocklistIdForHelper = block ? block.blocklistId : null;
 
     const blocklist = state.appData.blocklists.find(bl => bl.id === block?.blocklistId);
 
@@ -1463,7 +1428,6 @@ export function closeOverrideModal() {
     state.overrideBlockId = null;
     state.pendingPauseSpaceId = null;
     state.pauseChallengeSnapshot = null;
-    state.overrideBlocklistIdForHelper = null;
     getChallengeController('override').reset();
     delete window.overrideScheduleId;
     setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
@@ -1507,9 +1471,8 @@ export async function resumePausedBlock(block) {
     delete block.pauseEndTime;
     await cancelIOSRestart(block);
     await saveData();
-    await syncActiveBlocksToHelper();
-    await syncSchedulesToHelper();
-    await updateHostsFile();
+    await syncIOSSchedules();
+    await syncBlockingState();
     await updateBlockedApps();
     render();
     refreshSelectedBlocklistUi();
@@ -1521,8 +1484,8 @@ export async function resumePausedSchedule(schedule) {
     delete schedule.isPaused;
     delete schedule.pauseEndTime;
     await saveData();
-    await syncSchedulesToHelper();
-    await updateHostsFile();
+    await syncIOSSchedules();
+    await syncBlockingState();
     await updateBlockedApps();
     render();
     refreshSelectedBlocklistUi();
@@ -1569,12 +1532,12 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
                 console.error('[iOS] Failed to persist blocking restoration after resume registration failure:', error);
             }
             try {
-                await syncSchedulesToHelper({ reportFailure: false });
+                await syncIOSSchedules({ reportFailure: false });
             } catch (error) {
                 console.error('[iOS] Failed to resync schedules after resume registration failure:', error);
             }
             try {
-                await updateHostsFile();
+                await syncBlockingState();
             } catch (error) {
                 console.error('[iOS] Failed to reapply blocking after resume registration failure:', error);
             }
@@ -1623,19 +1586,8 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
             await cancelIOSRestart(block);
             await tauriAPI.screentimeClearManualBlock();
             state.lastBlockedDomains = new Set();
-            await updateHostsFile();
-            await syncSchedulesToHelper();
-        } else {
-            const status = await refreshDesktopHelperStatus();
-            if (status.helperReady) {
-                if (blocklistId != null) {
-                    await tauriAPI.clearBlockViaHelper(blocklistId);
-                } else {
-                    console.error('[stop] No blocklist id for single-block stop; not touching helper state');
-                }
-            } else {
-                await updateHostsFile();
-            }
+            await syncBlockingState();
+            await syncIOSSchedules();
         }
         // Update blocked apps (will stop watcher if no apps to block, including schedules)
         await updateBlockedApps();
@@ -1661,10 +1613,9 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
         await tauriAPI.screentimeClearScheduleBlock();
         state.lastBlockedDomains = new Set();
     }
-    if (block) await syncActiveBlocksToHelper();
     const scheduleSync = state.isIOS && outcome.kind === 'unlocked'
-        ? await syncSchedulesToHelper({ reportFailure: false })
-        : await syncSchedulesToHelper();
+        ? await syncIOSSchedules({ reportFailure: false })
+        : await syncIOSSchedules();
     if (state.isIOS && outcome.kind === 'unlocked' && scheduleSync?.success !== true) {
         if (timedStopLostOwnPause(scheduleSync, schedule)) {
             await restoreTimedIOSBlocking?.();
@@ -1675,8 +1626,8 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
         // This stop's pause is saved and its restart booked; only another space failed.
         await reportIOSScheduleSyncFailure(scheduleSync.error);
     }
-    // updateHostsFile skips paused blocks' domains.
-    await updateHostsFile();
+    // syncBlockingState skips paused blocks' domains.
+    await syncBlockingState();
     await updateBlockedApps();
 
     return outcome;

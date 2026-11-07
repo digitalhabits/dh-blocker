@@ -86,8 +86,8 @@ for a failure that silently allowed blocked sites.
 - **Version bumps span app, system-test and generated iOS files** — use
   `./scripts/bump-version.sh <version>`; its implementation owns the file list.
   Hand-editing only the main config leaves inconsistent versions.
-- **Use `cargo test --lib`**, not bare `cargo test` — the latter still tries to
-  build a stale `test_watcher` example.
+- Use `cargo test --lib` for the backend unit tests. See [testing.md](testing.md#rust-unit-tests)
+  for the standalone watcher example.
 - Run `pnpm lint` from the repository root and `cargo fmt --all --check` in
   `src-tauri`; the latter also covers the Screen Time plugin.
 
@@ -150,8 +150,9 @@ nothing in the code will remind you of:
 - The focus-space editor (`src/focus-space-editor.js`) is **one DOM node,
   `#focus-space-editor`, moved between two hosts**: the create modal borrows it
   from the scheduler panel in `openBlocklistModal` and `closeBlocklistModal`
-  returns it. Every id inside it is looked up globally by the listeners in
-  `setupModalListeners`, so never clone it or give either host its own copy —
+  returns it. The listeners in `focus-space-tags.js` and
+  `focus-space-editor-fields.js` look up its ids globally, so never clone it or
+  give either host its own copy —
   duplicate ids would silently bind the wrong form. `handleBlocklistSelect`
   repopulates it for the selected space, except when the id is unchanged
   (then only the lock state is resynced, so a pause or stop does not discard
@@ -162,11 +163,10 @@ The order-sensitive startup sequence is the `DOMContentLoaded` handler in
 are a contract with the in-app tests — renaming one breaks tests that will not
 tell you why.
 
-`src/tauri-api.js` is a compat layer. The frontend still calls legacy
-`*_via_helper` command names that route through
-`src-tauri/src/commands/helper_shim.rs` (mostly no-ops for website blocking; app
-blocking forwards to `app_watcher`). This is dead naming, not a live daemon —
-there is no `helper-daemon/` in the repo, so do not go looking for one.
+`src/tauri-api.js` wraps the Tauri command and plugin APIs. On desktop,
+website enforcement reads the saved app data and the frontend pushes app
+policy directly through `set_blocked_apps`. The legacy helper and hosts
+commands in `commands/migration.rs` are for v1 cleanup.
 
 ### Startup gate
 
@@ -213,7 +213,6 @@ all feature-gated code. In particular, system-test data isolation needs
 Clippy's platform jobs still use default features.
 
 Run `cargo clippy --lib --bins --tests -- -D warnings` locally before pushing
-Rust. A green lint run is not proof of no dead code or deprecations: ESLint's
-`no-unused-vars` is a warning, and the Rust crate currently allows deprecations.
+Rust. ESLint rejects unused bindings; macOS Cocoa FFI has local deprecation allowances.
 Consult the lint configuration and workflows for the current exceptions rather
 than extending them to silence a new problem.

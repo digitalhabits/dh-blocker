@@ -24,7 +24,6 @@ export const state = {
     userExplicitlyDeselected: false,
     /** True while the hidden blocklist <select> is being rebuilt programmatically. */
     suppressBlocklistSelectChange: false,
-    helperAvailable: false, // Track if the privileged helper daemon is running
     isIOS: false, // Track if running on iOS
     // True on macOS desktop (i.e. Mac platform AND not the iOS Tauri
     // runtime). Set in `detectPlatform`. Used to gate macOS-only Tauri
@@ -54,8 +53,8 @@ export const state = {
     activeScheduleSegmentCount: 0, // Number of segments locked in the active schedule (new segments can be added)
     /** Draft for allowEditsBetweenBlocks before a schedule is started (opt-in, default off). */
     draftAllowEditsBetweenBlocks: false,
-    lastBlockedDomains: new Set(), // Track what's currently blocked to avoid re-prompting
-    activatedBlockIds: new Set(), // Track blocks that have already triggered host updates
+    lastBlockedDomains: new Set(), // Track the domains used by the last blocking sync
+    activatedBlockIds: new Set(), // Track blocks that have already triggered activation
     scheduleSegments: null, // Array of time segments with per-segment days (set at startup)
     scheduleRepeatDate: null, // Date object when repeatType is 'date'
     appBlockingActiveStartOverlay: null, // Custom start-overlay config for the active schedule warning session
@@ -71,7 +70,6 @@ export const state = {
     lastOverrideTypeValue: '',
     overrideBlockId: null,
     pendingStartBlocklistId: null, // Space waiting in the start confirmation modal
-    overrideBlocklistIdForHelper: null,
     startupInitializationComplete: false, // Track whether post-onboarding startup already ran
     migrationOnboardingActive: false,
     migrationOnboardingDismissed: false,

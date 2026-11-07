@@ -22,7 +22,7 @@ import {
     shouldBlockChallengeSpaceKey,
 } from './override-challenge.js';
 import { createChallengeController } from './challenge-controller.js';
-import { saveData, updateHostsFile } from './persistence.js';
+import { saveData, syncBlockingState } from './persistence.js';
 import { acceptEula, appBlockingWarningRows, findResponsibleBlocklistsForWarningApps, isAppBlockingWarningScheduleEligible, newWarningRow, renderAppBlockingWarningOverlay, updateBlockedApps } from './blocking-platform.js';
 import { CURRENT_EULA_REVISION } from './onboarding.js';
 import { render, isClockTickRunning } from './render.js';
@@ -57,7 +57,8 @@ window.__REDDBLOCK_INTERNALS__ = {
     get isIOS() { return state.isIOS; },
     set isIOS(val) { state.isIOS = val; },
     saveData,
-    updateHostsFile,
+    syncBlockingState,
+    updateHostsFile: syncBlockingState,
     get tauriAPI() { return tauriAPI; },
     render,
     isProtectedApp,

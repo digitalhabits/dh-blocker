@@ -1,6 +1,5 @@
 //! System diagnostics — single command that returns a structured
-//! snapshot of the app's runtime state. Replaces the v1.x-era
-//! `get_helper_diagnostics` which only reported `{version, "extension"}`.
+//! snapshot of the app's runtime state.
 //!
 //! Surface area kept *small*: things a user or support engineer
 //! would actually want to see when the app is misbehaving. We
