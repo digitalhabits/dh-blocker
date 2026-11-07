@@ -192,3 +192,15 @@ cannot satisfy it. The normal fixture's 45-second polite-termination budget and
 the primary target's exact ten-second cancellation phase are unchanged. The first
 macOS attempt using the normal 45-second budget for this distinct force-kill case
 is retained as a failure, not retrospectively converted to PASS.
+
+## Stale warning delivery fix
+
+Warning-show events now trigger a read of the watcher's current pending-ACK
+snapshot; their payloads cannot directly create UI rows. Startup uses the same
+path. Hide/ack transitions invalidate in-flight reads, and newest snapshots retain
+all concurrent genuine warnings without resetting existing countdown/snooze rows.
+Read-only verification retries at most three times. If it still fails, existing
+visible warnings remain, unverified new rows are not created, and the error is
+logged. Native enforcement is unchanged and nothing auto-acknowledges a warning.
+The hosted stale replay regression is unchanged; it must proceed through the
+later second-target acknowledgement, sustained survival and external GUI checks.
