@@ -206,9 +206,7 @@ async function safetyScenario(kind) {
     await recordInteraction(target, 'safety-target-baseline');
     await recordInteraction(control, 'safety-control-baseline');
     // Cache element references before the native 30-second countdown starts.
-    const switchElement = await $(a);
     const confirm = await $('#confirm-override-btn');
-    const input = await $('#challenge-input');
     await startRule(a);
     await waitForWarning(target);
     if (b) {
@@ -234,9 +232,18 @@ async function safetyScenario(kind) {
             }, { capture: true, once: true });
         });
         const ack = await $('#app-blocking-lets-go-btn');
-        await browser.action('pointer').move({ origin: ack }).down().up().pause(500)
-            .move({ origin: switchElement }).down().up().pause(500)
-            .move({ origin: input }).down().up().perform();
+        await browser.action('pointer').move({ origin: ack }).down().up().pause(1000).perform();
+        // Acknowledgement rebuilds the cards. Read current geometry after that
+        // render and hit-test it; never reuse the detached switch element.
+        const point = await browser.execute((selector) => {
+            const e = document.querySelector(selector);
+            const r = e.getBoundingClientRect();
+            const x = Math.round(r.x + r.width / 2), y = Math.round(r.y + r.height / 2);
+            const hit = document.elementFromPoint(x, y);
+            if (hit !== e && !e.contains(hit)) throw new Error('Stop switch is obscured');
+            return { x, y };
+        }, a);
+        await browser.action('pointer').move(point).down().up().perform();
         const challenge = await browser.execute(() => ({ text: document.getElementById('challenge-text').textContent, duration: document.getElementById('unlock-duration-select').value }));
         assert.equal(challenge.text.trim().split(/\s+/).length, 15);
         assert.equal(challenge.duration, '10', 'Expected ordinary initial ten-minute pause');
