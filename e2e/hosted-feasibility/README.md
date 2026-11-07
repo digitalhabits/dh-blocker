@@ -9,7 +9,7 @@ It changes no enforcement policy. `run.js` refuses native runs unless
 all present. Do not set those variables to run this on a personal machine.
 
 The workflow initially runs on pushes to `codex/hosted-recovery-feasibility` and
-supports `workflow_dispatch`. The branch push starts this initial experiment; normal manual-dispatch discovery
+and `codex/hosted-expiry-restart`, and supports `workflow_dispatch`. The branch push starts this initial experiment; normal manual-dispatch discovery
 requires the workflow file to exist on the default branch. Each OS
 runs independently, with a 40-minute job deadline and evidence uploaded even on
 failure. There are no automatic scenario retries.
@@ -206,7 +206,7 @@ The hosted stale replay regression is unchanged; it must proceed through the
 later second-target acknowledgement, sustained survival and external GUI checks.
 ## Expiry and process restart
 
-The `expiry` case configures a real five-minute daily window through visible UI,
+The `expiry` case configures a real ten-minute daily window through visible UI,
 proves acknowledged native termination, waits for the actual wall-clock end (no
 clock changes), and requires release within ten seconds plus 75 seconds of GUI
 usability. It then starts a fresh Blocker process and verifies that the expired

@@ -146,8 +146,8 @@ async function createAndStart(name, startNow = true, schedule = null) {
     event('block-started-through-ui', { name, challengeWords: 15, ruleKind: 'Manual', finite: false, expected: 'warning then 30 s acknowledged pre-quit + 10 s grace' });
     return selector;
 }
-async function pauseThroughChallenge() {
-    await click('.blocklist-switch');
+async function pauseThroughChallenge(selector = '.blocklist-switch') {
+    await click(selector);
     await $('#challenge-input').waitForDisplayed();
     await selectVisibleOption('unlock-duration-select', '5');
     const challenge = await $('#challenge-text').getText();
@@ -157,7 +157,7 @@ async function pauseThroughChallenge() {
     // mismatch. Prove the behaviour rather than assuming a disabled button.
     await click('#confirm-override-btn');
     assert(await $('#override-modal').isDisplayed(), 'Empty challenge dismissed the pause dialog');
-    assert.equal(await $('.blocklist-switch').getAttribute('aria-checked'), 'true', 'Empty challenge paused the space');
+    assert.equal(await $(selector).getAttribute('aria-checked'), 'true', 'Empty challenge paused the space');
     assert.equal(await $('#challenge-input').getValue(), '', 'Empty confirmation unexpectedly filled the challenge');
     event('empty-challenge-rejected-through-ui');
     await click('#challenge-input');
@@ -168,7 +168,7 @@ async function pauseThroughChallenge() {
     await screenshot('completed-pause-challenge');
     let requestedAt;
     await click('#confirm-override-btn', () => { requestedAt = performance.now(); });
-    await browser.waitUntil(() => browser.execute(() => document.querySelector('.blocklist-switch')?.getAttribute('aria-checked') === 'false'), { timeout: 10_000 });
+    await browser.waitUntil(() => browser.execute((sel) => document.querySelector(sel)?.getAttribute('aria-checked') === 'false', selector), { timeout: 10_000 });
     event('pause-accepted-through-ui', { challenge, pauseMinutes: 5, acceptedAfterMs: performance.now() - requestedAt });
     return requestedAt;
 }
@@ -255,7 +255,7 @@ async function lifecycleScenario(kind) {
         let schedule = null;
         if (kind === 'expiry') {
             const now = new Date();
-            const end = new Date(now); end.setMinutes(end.getMinutes() + 5, 0, 0);
+            const end = new Date(now); end.setMinutes(end.getMinutes() + 10, 0, 0);
             const begin = new Date(now); begin.setMinutes(begin.getMinutes() - 1);
             assert.equal(begin.getDate(), end.getDate(), 'Midnight boundary requires a separate scenario');
             const time = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -291,9 +291,9 @@ async function lifecycleScenario(kind) {
             await recordInteraction(reopened, 'natural-expiry-release');
             await observeReleased([reopened], control, 'natural-expiry');
         } else {
-            await pauseThroughChallenge();
             const stopped = await createAndStart(report.fixtures.secondary.name, true);
             await permanentStop(stopped);
+            await pauseThroughChallenge(a);
             report.lifecycle = {};
         }
         report.lifecycle.policy = await browser.execute(() => window.__REDDBLOCK_INTERNALS__.appData);
