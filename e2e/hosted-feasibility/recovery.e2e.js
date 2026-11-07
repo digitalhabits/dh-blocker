@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -197,16 +197,33 @@ async function startRule(selector) {
 }
 async function safetyScenario(kind) {
     report.scenario = kind;
+    const postquit = kind === 'postquit';
     const a = await createAndStart(report.fixtures.target.name, false);
     const b = kind === 'overlap' ? await createAndStart(report.fixtures.target.name, false) : null;
     const c = await createAndStart(report.fixtures.secondary.name, false);
     const control = launchFixture(report.fixtures.control, root, 'control'); handles.push(control);
-    let target = launchFixture(report.fixtures.target, root, 'safety'); handles.push(target);
+    let target = launchFixture(report.fixtures.target, root, 'safety', postquit); handles.push(target);
     await Promise.all([ready(target), ready(control)]);
     await recordInteraction(target, 'safety-target-baseline');
     await recordInteraction(control, 'safety-control-baseline');
     // Cache element references before the native 30-second countdown starts.
     const confirm = await $('#confirm-override-btn');
+    if (kind === 'stale') {
+        report.faultInjection = { layer: 'frontend Tauri warning-show callback', runtimeInjected: true, releaseCandidate: false };
+        await browser.execute((pid) => {
+            const callbacks = window.__TAURI_INTERNALS__.callbacks;
+            if (!(callbacks instanceof Map)) throw new Error('Tauri callback registry unavailable');
+            window.__HOSTED_STALE_WARNING__ = null;
+            for (const [id, callback] of callbacks) {
+                callbacks.set(id, (data) => {
+                    if (data?.event === 'app-blocking://warning-show' && Number(data.payload?.pid) === pid) {
+                        window.__HOSTED_STALE_WARNING__ = { callback, data: structuredClone(data) };
+                    }
+                    return callback(data);
+                });
+            }
+        }, target.pid);
+    }
     await startRule(a);
     await waitForWarning(target);
     if (b) {
@@ -248,6 +265,13 @@ async function safetyScenario(kind) {
         assert.equal(challenge.text.trim().split(/\s+/).length, 15);
         assert.equal(challenge.duration, '10', 'Expected ordinary initial ten-minute pause');
         await browser.keys(challenge.text);
+        if (postquit) {
+            await until(() => {
+                assert(alive(target), 'Stubborn target exited before grace cancellation');
+                return existsSync(path.join(target.directory, 'polite-quit'));
+            }, 40_000, 'No real polite quit received by stubborn target', { intervalMs: 50 });
+            event('postquit-grace-entered', { pid: target.pid, politeQuitWallTime: statSync(path.join(target.directory, 'polite-quit')).mtimeMs });
+        }
         await browser.action('pointer').move({ origin: confirm }).down().up().perform();
         const observed = await browser.execute(() => window.__HOSTED_CONFIRM_OBSERVATION__);
         event('pending-confirm-phase-observation', { observed, pid: target.pid });
@@ -256,14 +280,30 @@ async function safetyScenario(kind) {
         // native survival are the oracles, not browser event trust branding.
         assert(observed, 'WebDriver confirmation did not reach the button');
         const row = observed.rows.find((r) => Number(r.pid) === target.pid);
-        assert(row?.deadline > observed.now && row.deadline - observed.now < 30_000, 'Stop missed acknowledged pre-quit phase');
+        if (postquit) {
+            const politeAt = statSync(path.join(target.directory, 'polite-quit')).mtimeMs;
+            assert(row && observed.now >= row.deadline && observed.now >= politeAt && observed.now - politeAt < 10_000, 'Stop missed actual post-quit grace phase');
+        } else {
+            assert(row?.deadline > observed.now && row.deadline - observed.now < 30_000, 'Stop missed acknowledged pre-quit phase');
+        }
         await browser.waitUntil(async () => await $(a).getAttribute('aria-checked') === 'false', { timeout: 10_000 });
         assert(alive(target), 'Pending cancellation must preserve original PID');
-        assert(!existsSync(path.join(target.directory, 'polite-quit')), 'Cancellation already sent polite quit');
-        event('pending-prequit-cancelled', { pid: target.pid, pauseMinutes: 10, remainingMs: row.deadline - observed.now });
+        if (!postquit) assert(!existsSync(path.join(target.directory, 'polite-quit')), 'Cancellation already sent polite quit');
+        event(postquit ? 'postquit-grace-cancelled' : 'pending-prequit-cancelled', { pid: target.pid, pauseMinutes: 10, remainingMs: row.deadline - observed.now });
     }
     await recordInteraction(target, 'safety-target-released');
-    const secondary = launchFixture(report.fixtures.secondary, root, 'later-ack'); handles.push(secondary);
+    if (kind === 'stale') {
+        const injection = await browser.execute(() => {
+            const saved = window.__HOSTED_STALE_WARNING__;
+            if (!saved) throw new Error('No genuine warning callback captured');
+            saved.callback(structuredClone(saved.data));
+            return { payload: saved.data.payload, injectedAt: Date.now() };
+        });
+        event('stale-warning-callback-replayed', injection);
+        await screenshot('stale-callback-after-release');
+        await assertNoTargetWarnings(target);
+    }
+    const secondary = launchFixture(report.fixtures.secondary, root, 'later-ack', postquit); handles.push(secondary);
     await ready(secondary);
     await startRule(c);
     await waitForWarning(secondary);
@@ -292,7 +332,7 @@ describe('Hosted native app recovery feasibility', () => {
         try {
             await setup();
             if (process.env.HOSTED_SCENARIO && process.env.HOSTED_SCENARIO !== 'recovery') {
-                assert(['pending', 'overlap'].includes(process.env.HOSTED_SCENARIO));
+                assert(['pending', 'overlap', 'postquit', 'stale'].includes(process.env.HOSTED_SCENARIO));
                 await safetyScenario(process.env.HOSTED_SCENARIO);
                 return;
             }

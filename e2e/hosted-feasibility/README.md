@@ -160,3 +160,26 @@ nonces afterward. All names and children are run-owned. Native deadlines and
 cleanup rules are unchanged. The scenario transport timeout is 30 minutes.
 Post-quit grace cancellation, injected stale callbacks and three-pass qualification
 remain separate coverage. No local blocking run is used.
+
+## Post-quit grace and stale callback cases
+
+`postquit` uses a disposable stubborn fixture: it records the real polite-close
+request and declines it while keeping its event loop and GUI usable. The harness
+prepares the ordinary 15-word challenge, waits for the close marker, then confirms
+the ten-minute pause. Confirmation must occur after the acknowledged pre-quit
+deadline and within ten seconds of the actual close marker. The same PID must
+survive. A later independently blocked stubborn secondary fixture must terminate,
+proving force-kill enforcement remains observable while the released target and
+control survive the subsequent 75-second observation. No grace timer is extended.
+
+`stale` captures the actual registered frontend Tauri warning-show callback when
+its genuine event is delivered, without suppressing normal delivery. After the
+real challenge earns release, it replays that retained callback and payload. A
+renewed target warning fails immediately, with a screenshot and injection record.
+This is explicitly runtime fault injection in the debug-WebDriver build, not a
+signed-release result. It does not simulate a native PID state reinsertion or
+prove all stale persistence/schedule/callback combinations. No production test
+endpoint or app-code hook is added. Failures stay non-green and retained.
+
+Fixture-only Windows stubborn-close diagnostics can run without Blocker:
+`powershell.exe -NoProfile -File e2e/hosted-feasibility/diagnose-windows-fixtures.ps1 -Stubborn`.

@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-15, windows-2025]
-        scenario: [recovery, pending, overlap]
+        scenario: [recovery, pending, overlap, postquit, stale]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     env:

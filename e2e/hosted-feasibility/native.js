@@ -48,14 +48,14 @@ export function buildFixtures(root, suffix) {
     }
     return entries;
 }
-export function launchFixture(entry, root, generation) {
+export function launchFixture(entry, root, generation, stubborn = false) {
     requireHosted();
     const directory = path.join(entry.directory, 'state');
     mkdirSync(directory, { recursive: true });
     // Each launch must prove readiness anew; marker state intentionally survives.
     const readyBefore = existsSync(path.join(directory, 'ready')) ? readFileSync(path.join(directory, 'ready'), 'utf8') : '';
     const title = `${entry.name}-${generation}`;
-    const child = spawn(entry.binary, [directory, title], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(entry.binary, [directory, title, stubborn ? 'stubborn' : 'normal'], { stdio: ['ignore', 'pipe', 'pipe'] });
     const handle = { ...entry, directory, title, child, pid: child.pid, readyBefore };
     assertOwned(handle, root);
     const log = path.join(root, `${entry.name}-${generation}.log`);

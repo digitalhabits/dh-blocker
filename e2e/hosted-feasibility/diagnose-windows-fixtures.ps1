@@ -1,5 +1,5 @@
 # Explicit local entry point: compiles/starts only disposable fixtures, never Blocker.
-param([switch]$ManagedBaseline, [switch]$StressHeartbeat)
+param([switch]$ManagedBaseline, [switch]$StressHeartbeat, [switch]$Stubborn)
 $ErrorActionPreference = 'Stop'
 $root = Join-Path (Resolve-Path "$PSScriptRoot/../..").Path ('artifacts/hosted-feasibility/local-' + [guid]::NewGuid().ToString('N'))
 [void](New-Item -ItemType Directory -Path $root)
@@ -26,13 +26,19 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Fixture compilation failed' }
         Copy-Item "$PSScriptRoot/fixtures/Probe.exe.config" ($binary + '.config')
         # Visible windows are the subject of this explicit GUI diagnostic.
-        $child = Start-Process -FilePath $binary -ArgumentList @(('"' + $directory + '"'), $name) -WindowStyle Normal -PassThru
+        $mode = if ($Stubborn) { 'stubborn' } else { 'normal' }
+        $child = Start-Process -FilePath $binary -ArgumentList @(('"' + $directory + '"'), $name, $mode) -WindowStyle Normal -PassThru
         $children += $child
         $deadline = (Get-Date).AddSeconds(15)
         while (!(Test-Path "$directory/ready")) { if ($child.HasExited -or (Get-Date) -gt $deadline) { throw 'Fixture readiness failed' }; Start-Sleep -Milliseconds 100 }
     }
     foreach ($child in $children) {
         $directory = Split-Path $child.Path
+        if ($Stubborn) {
+            if (!$child.CloseMainWindow()) { throw 'No owned fixture window accepted close request' }
+            Start-Sleep -Milliseconds 500
+            if ($child.HasExited -or !(Test-Path "$directory/polite-quit")) { throw 'Stubborn fixture did not record and decline close' }
+        }
         if ($StressHeartbeat) {
             # Hold a writer open across timer ticks to reproduce the reader side
             # of the hosted file-sharing race deterministically.

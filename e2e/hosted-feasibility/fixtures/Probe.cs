@@ -39,7 +39,10 @@ class Probe {
             }
         };
         form.Shown += delegate { File.WriteAllText(Path.Combine(directory, "ready"), Process.GetCurrentProcess().Id.ToString()); timer.Start(); };
-        form.FormClosing += delegate { File.WriteAllText(Path.Combine(directory, "polite-quit"), DateTime.UtcNow.ToString("O")); };
+        form.FormClosing += delegate(object sender, FormClosingEventArgs close) {
+            File.WriteAllText(Path.Combine(directory, "polite-quit"), DateTime.UtcNow.ToString("O"));
+            if (args.Length > 2 && args[2] == "stubborn") close.Cancel = true;
+        };
         Application.Run(form);
     }
 }

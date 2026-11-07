@@ -34,7 +34,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
     }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         write("polite-quit", String(Date().timeIntervalSince1970))
-        return .terminateNow
+        return CommandLine.arguments.count > 3 && CommandLine.arguments[3] == "stubborn" ? .terminateCancel : .terminateNow
     }
 }
 let app = NSApplication.shared
