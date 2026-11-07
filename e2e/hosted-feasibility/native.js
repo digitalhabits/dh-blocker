@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -32,8 +32,15 @@ export function buildFixtures(root, suffix) {
             binary = path.join(directory, `${name}.exe`);
             const compiler = path.join(process.env.WINDIR, 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe');
             command(compiler, ['/nologo', '/target:winexe', `/out:${binary}`, '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', path.join(fixtures, 'Probe.cs')], { log: path.join(root, 'native-commands.jsonl') });
+            copyFileSync(path.join(fixtures, 'Probe.exe.config'), binary + '.config');
         }
-        entries[role.toLowerCase()] = { name, binary, directory, sha256: createHash('sha256').update(readFileSync(binary)).digest('hex') };
+        entries[role.toLowerCase()] = {
+            name, binary, directory, sha256: createHash('sha256').update(readFileSync(binary)).digest('hex'),
+            ...(process.platform === 'win32' ? {
+                accessibilityProfile: 'net48-modern',
+                runtimeConfigSha256: createHash('sha256').update(readFileSync(binary + '.config')).digest('hex'),
+            } : {}),
+        };
     }
     return entries;
 }

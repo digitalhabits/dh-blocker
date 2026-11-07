@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Windows.Forms;
 using System.Diagnostics;
+using System.Runtime.Versioning;
+[assembly: TargetFramework(".NETFramework,Version=v4.8")]
 class Probe {
     [STAThread]
     static void Main(string[] args) {

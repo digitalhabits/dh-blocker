@@ -98,3 +98,11 @@ and reject both InvokePattern and SetFocus. In that case the probe verifies the
 exact foreground PID and uses native Tab/Space on the fixture’s sole tabbable
 control. A fresh GUI-saved nonce remains mandatory; a heartbeat does not pass it.
 The reported method and original focus error preserve this distinction.
+
+The current Windows fixture explicitly targets .NET Framework 4.8 and opts into
+its modern accessibility behaviour through its executable configuration. The
+report records `net48-modern` and hashes the binary and runtime configuration.
+This follows [Microsoft’s accessibility configuration](https://learn.microsoft.com/en-us/dotnet/framework/migration-guide/retargeting/4.8.x).
+Prior legacy-provider focus failures remain evidence for that fixture profile;
+a modern-profile pass must not be presented as proof of generic foreground
+control or all legacy application providers.
