@@ -226,3 +226,50 @@ scenarios, guards and native timers are unchanged.
 This PR is stacked on the isolated stale-warning fix so its review diff contains
 only test infrastructure. Historical results identify their original source SHA;
 they are not evidence for the newly based branch until its hosted run completes.
+## Installed debug upgrade lane
+
+`hosted-upgrade.yml` installs reconstructed v3.10.1 baseline packages from pinned
+source `c1567ce38b3f52c61ca0a6c92b9041d409906657`, configures policy through the
+real UI, and installs the current candidate over that installation. The candidate
+version must be newer. No data is seeded or cleared by the runner.
+
+Three rows run independently on hosted macOS 15 and Windows Server 2025 x64:
+
+- Active Manual rule: blocking works before and after upgrade; the upgraded app
+  must release the target through the real 15-word challenge.
+- Paused and permanently stopped rules: both real challenges are completed on
+  the baseline. A ten-minute pause allows bounded installer time. Both states
+  must survive the candidate install and launch.
+- Ended daily window: baseline enforcement and natural release are proved before
+  installing the candidate. The ended window must remain released after upgrade.
+
+Every released fixture and unrelated control must remain usable for 75 seconds,
+with independent AX/UIA button handlers saving fresh nonces. A separate sentinel
+is owned by the outer runner and survives both installer boundaries, with GUI
+checks before and after each install. Missing prerequisites and cleanup failures
+remain non-green. Installation refuses existing app/data/legacy-helper state.
+
+The lane uses actual PKG and NSIS installers, not an executable copy disguised
+as an upgrade. macOS uses each source's `build-mac-pkg.sh`, including production
+pre/postinstall scripts, with an ad-hoc signed debug app and unsigned PKG. CLI
+installation preserves the actual runner USER for the postinstall GUI launch.
+Windows uses unsigned debug NSIS with current-user mode and a run-owned install
+folder. Installed executable hashes must equal the packaged build; both running
+app versions and distinct PIDs are observed. Full policy snapshots are preserved,
+with configured rules, active/paused state and schedules compared across install.
+
+These are rebuilt debug packages with embedded WebDriver, not downloaded signed
+release installers. No distribution credentials, certificates, permission-store
+edits, release-feature exceptions, OS-clock changes or security-setting changes
+are used. Signed release, actual updater transport, interrupted/live-process
+upgrade, MSIX, ARM64, browser integration, reboot and physical iOS upgrades remain
+separate coverage rows. The baseline process is stopped by its owning WDIO
+service before candidate installation; this row does not test installer shutdown
+of a running user app.
+
+Build and install entry points refuse local/self-hosted execution. Pure package
+verification tests may run locally without building or launching an app:
+
+```sh
+node --test e2e/hosted-feasibility/upgrade/install.test.js
+```

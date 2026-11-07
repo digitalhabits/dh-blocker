@@ -4,6 +4,10 @@ on:
   workflow_dispatch:
   push:
     branches: [codex/hosted-recovery-feasibility, codex/hosted-expiry-restart]
+    paths-ignore:
+      - 'e2e/hosted-feasibility/upgrade/**'
+      - '.github/workflows/hosted-upgrade.yml'
+      - '**/*.md'
 
 permissions:
   contents: read

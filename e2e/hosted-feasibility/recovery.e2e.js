@@ -152,10 +152,10 @@ async function createAndStart(name, startNow = true, schedule = null) {
     event('block-started-through-ui', { name, challengeWords: 15, ruleKind: 'Manual', finite: false, expected: 'warning then 30 s acknowledged pre-quit + 10 s grace' });
     return selector;
 }
-async function pauseThroughChallenge(selector = '.blocklist-switch') {
+async function pauseThroughChallenge(selector = '.blocklist-switch', minutes = '5') {
     await click(selector);
     await $('#challenge-input').waitForDisplayed();
-    await selectVisibleOption('unlock-duration-select', '5');
+    await selectVisibleOption('unlock-duration-select', minutes);
     const challenge = await $('#challenge-text').getText();
     assert.equal(challenge.trim().split(/\s+/).length, 15, 'Expected the configured 15-word challenge');
     assert.equal(await $('#challenge-input').getValue(), '', 'Challenge must begin empty');
@@ -175,7 +175,7 @@ async function pauseThroughChallenge(selector = '.blocklist-switch') {
     let requestedAt;
     await click('#confirm-override-btn', () => { requestedAt = performance.now(); });
     await browser.waitUntil(() => browser.execute((sel) => document.querySelector(sel)?.getAttribute('aria-checked') === 'false', selector), { timeout: 10_000 });
-    event('pause-accepted-through-ui', { challenge, pauseMinutes: 5, acceptedAfterMs: performance.now() - requestedAt });
+    event('pause-accepted-through-ui', { challenge, pauseMinutes: Number(minutes), acceptedAfterMs: performance.now() - requestedAt });
     return requestedAt;
 }
 
@@ -224,6 +224,18 @@ async function observeReleased(targets, control, label) {
 async function lifecycleScenario(kind) {
     report.scenario = kind;
     const afterRestart = process.env.HOSTED_PHASE === 'after-restart';
+    if (report.upgrade) {
+        await browser.execute(() => {
+            window.__HOSTED_INSTALLED_VERSION__ = null;
+            window.__TAURI_INTERNALS__.invoke('get_app_version').then((version) => {
+                window.__HOSTED_INSTALLED_VERSION__ = { version };
+            }).catch((error) => { window.__HOSTED_INSTALLED_VERSION__ = { error: String(error) }; });
+        });
+        await browser.waitUntil(() => browser.execute(() => window.__HOSTED_INSTALLED_VERSION__ !== null), { timeout: 30_000 });
+        const version = await browser.execute(() => window.__HOSTED_INSTALLED_VERSION__);
+        assert.equal(version.version, report.upgrade.packages[afterRestart ? 'candidate' : 'baseline'].version, version.error);
+        event('installed-version-observed', { phase: process.env.HOSTED_PHASE, ...version });
+    }
     const appPids = process.platform === 'win32'
         ? JSON.parse(command('powershell.exe', ['-NoProfile', '-Command', 'ConvertTo-Json -InputObject @(Get-Process | Where-Object { $_.Path -eq $env:E2E_APP_BINARY } | Select-Object -ExpandProperty Id) -Compress']))
         : command('/bin/ps', ['-axo', 'pid=,comm=']).split('\n').map((line) => line.trim().match(/^(\d+)\s+(.+)$/))
@@ -240,11 +252,24 @@ async function lifecycleScenario(kind) {
         const policy = await browser.execute(() => window.__REDDBLOCK_INTERNALS__.appData);
         assert.notEqual(appPid, report.lifecycle.appPid, 'Restart reused the previous Blocker process');
         assert.deepEqual(policy.blocklists, report.lifecycle.policy.blocklists, 'Restart changed configured rules');
+        if (report.upgrade) {
+            assert.deepEqual(policy.activeBlocks, report.lifecycle.policy.activeBlocks, 'Upgrade changed active or paused intent');
+            assert.deepEqual(policy.schedules, report.lifecycle.policy.schedules, 'Upgrade changed schedules');
+        }
         if (kind === 'restart') {
             assert.deepEqual(policy.activeBlocks, report.lifecycle.policy.activeBlocks, 'Restart changed paused/stopped intent');
             assert(Date.now() < report.lifecycle.pauseDeadline - 80_000, 'Pause too near expiry for restart observation');
-        } else {
+        } else if (kind === 'expiry') {
             assert(Date.now() >= report.lifecycle.endAt, 'Cold start preceded schedule expiry');
+        }
+        if (kind === 'upgrade-active') {
+            const blocked = launchFixture(report.fixtures.target, root, 'upgrade-still-active'); handles.push(blocked);
+            await until(async () => { await heartbeat(control); return !alive(blocked); }, 15_000, 'Installed upgrade lost active enforcement');
+            assert(existsSync(path.join(blocked.directory, 'polite-quit')));
+            const id = policy.blocklists.find((b) => b.apps.includes(report.fixtures.target.name))?.id;
+            assert(id, 'Upgraded active rule missing');
+            await pauseThroughChallenge(`.blocklist-switch[data-id="${id}"]`);
+            event('upgraded-active-rule-released-through-real-challenge');
         }
         const targets = [];
         for (const role of kind === 'restart' ? ['target', 'secondary'] : ['target']) {
@@ -296,10 +321,12 @@ async function lifecycleScenario(kind) {
             assert(performance.now() - releasedAt <= 10_000, 'Expiry missed release budget');
             await recordInteraction(reopened, 'natural-expiry-release');
             await observeReleased([reopened], control, 'natural-expiry');
-        } else {
+        } else if (kind === 'restart') {
             const stopped = await createAndStart(report.fixtures.secondary.name, true);
             await permanentStop(stopped);
-            await pauseThroughChallenge(a);
+            await pauseThroughChallenge(a, report.upgrade ? '10' : '5');
+            report.lifecycle = {};
+        } else {
             report.lifecycle = {};
         }
         report.lifecycle.policy = await browser.execute(() => window.__REDDBLOCK_INTERNALS__.appData);
@@ -465,7 +492,7 @@ describe('Hosted native app recovery feasibility', () => {
     it('enforces and legitimately pauses a real target while its control remains usable', async () => {
         try {
             if (process.env.HOSTED_PHASE !== 'after-restart') await setup();
-            if (['expiry', 'restart'].includes(process.env.HOSTED_SCENARIO)) {
+            if (['expiry', 'restart', 'upgrade-active'].includes(process.env.HOSTED_SCENARIO)) {
                 await lifecycleScenario(process.env.HOSTED_SCENARIO);
                 return;
             }

@@ -14,13 +14,13 @@ export function command(program, args, { log, timeout = 120_000 } = {}) {
     if (result.error || result.status !== 0) throw new Error(`${program} failed: ${result.error?.message || result.stderr || result.stdout}`);
     return result.stdout;
 }
-export function buildFixtures(root, suffix) {
+export function buildFixtures(root, suffix, roles = ['Target', 'Control', 'Secondary']) {
     requireHosted();
     if (process.platform === 'win32') {
         command('powershell.exe', ['-NoProfile', '-File', path.join(fixtures, 'build-native-uia.ps1'), '-OutputDirectory', root], { log: path.join(root, 'native-commands.jsonl') });
     }
     const entries = {};
-    for (const role of ['Target', 'Control', 'Secondary']) {
+    for (const role of roles) {
         const name = `DHProbe${role}_${suffix}`;
         const directory = path.join(root, 'fixtures', name);
         mkdirSync(directory, { recursive: true });

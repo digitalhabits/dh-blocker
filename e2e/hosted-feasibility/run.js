@@ -4,7 +4,8 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildFixtures, emptyProfile } from './native.js';
+import { buildFixtures, cleanupFixture, emptyProfile, heartbeat, interact, launchFixture, ready } from './native.js';
+import { prepareUpgrade } from './upgrade/install.js';
 import { BlockedError, requireHosted, verdict } from './helpers.js';
 
 const repo = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
@@ -22,24 +23,47 @@ const report = {
 };
 const reportFile = path.join(artifacts, 'report.json');
 function persist() { writeFileSync(reportFile, JSON.stringify(report, null, 2)); }
+let sentinel;
+async function sentinelCheck(label) {
+    if (!sentinel) return;
+    await heartbeat(sentinel);
+    const result = await interact(sentinel, root, label);
+    report.capabilities.push(result);
+    if (result.verdict !== 'PASS') {
+        report.capability = result.verdict;
+        throw new Error('Upgrade sentinel GUI unavailable: ' + JSON.stringify(result));
+    }
+    persist();
+}
 persist();
 try {
     requireHosted();
     report.profile = emptyProfile();
     mkdirSync(root, { recursive: true });
     report.runRoot = root;
-    const fixtures = buildFixtures(root, id.slice(0, 8));
+    const upgrade = process.env.HOSTED_UPGRADE === 'true' ? prepareUpgrade(repo) : null;
+    const fixtures = buildFixtures(root, id.slice(0, 8), upgrade ? ['Target', 'Control', 'Secondary', 'Sentinel'] : undefined);
+    report.fixtures = fixtures;
+    if (upgrade) {
+        report.upgrade = { ...upgrade.manifest, installs: upgrade.installs };
+        report.limitations.push('Installed upgrade uses rebuilt unsigned/ad-hoc debug packages, not signed release installers; no MSIX/ARM64, browser, reboot or iOS upgrade coverage.');
+        sentinel = launchFixture(fixtures.sentinel, root, 'whole-upgrade');
+        await ready(sentinel);
+        await sentinelCheck('sentinel-before-baseline-install');
+        await upgrade.install('baseline', report.profile, artifacts);
+        await sentinelCheck('sentinel-after-baseline-install');
+    }
     const target = process.env.CARGO_TARGET_DIR;
     if (!target || !path.resolve(target).startsWith(repo + path.sep)) throw new BlockedError('CARGO_TARGET_DIR must be inside this worktree');
     const suffix = process.platform === 'win32' ? '.exe' : '';
-    const binary = ['redd-block', 'Digital Habits Blocker'].map((name) => path.join(target, 'debug', name + suffix)).find(existsSync);
+    const binary = upgrade?.binary || ['redd-block', 'Digital Habits Blocker'].map((name) => path.join(target, 'debug', name + suffix)).find(existsSync);
     if (!binary) throw new BlockedError('Missing debug e2e app binary');
     report.build.binary = binary;
     report.build.sha256 = createHash('sha256').update(readFileSync(binary)).digest('hex');
     report.fixtures = fixtures;
     persist();
     const wdio = path.join(repo, 'node_modules', '@wdio', 'cli', 'bin', 'wdio.js');
-    const phases = ['expiry', 'restart'].includes(process.env.HOSTED_SCENARIO)
+    const phases = upgrade || ['expiry', 'restart'].includes(process.env.HOSTED_SCENARIO)
         ? ['before-restart', 'after-restart'] : ['single'];
     for (const phase of phases) {
         const child = spawn(process.execPath, [wdio, 'run', 'e2e/hosted-feasibility/wdio.conf.js'], {
@@ -65,6 +89,14 @@ try {
             report.behaviour = 'NOT_RUN';
             report.verdict = 'BLOCKED';
             persist();
+            if (upgrade) {
+                await sentinelCheck('sentinel-before-candidate-install');
+                await upgrade.install('candidate', report.profile, artifacts);
+                report.build.sha256 = upgrade.manifest.packages.candidate.executableSHA256;
+                report.upgrade.installs = upgrade.installs;
+                await sentinelCheck('sentinel-after-candidate-install');
+                persist();
+            }
         }
     }
 
@@ -72,6 +104,17 @@ try {
     report.error = { name: error.name, message: error.message, stack: error.stack };
     report.verdict = error instanceof BlockedError ? 'BLOCKED' : 'FAIL';
 } finally {
+    if (sentinel) {
+        try {
+            await sentinelCheck('sentinel-final');
+            await cleanupFixture(sentinel, root);
+            cpSync(sentinel.directory, path.join(artifacts, sentinel.name), { recursive: true });
+        } catch (error) {
+            report.cleanup = 'FAIL';
+            report.error = { message: error.message, stack: error.stack };
+            report.verdict = 'FAIL';
+        }
+    }
     report.finishedAt = new Date().toISOString();
     persist();
     for (const file of ['native-commands.jsonl', 'external-gui.jsonl']) {
