@@ -83,7 +83,7 @@ export async function interact(handle, root, label) {
             const source = `tell application "System Events"\nset p to first application process whose unix id is ${handle.pid}\ntell p\nset frontmost to true\nclick button "Save marker" of window "${handle.title}"\nend tell\nend tell`;
             command('/usr/bin/osascript', ['-e', source], { log: path.join(root, 'external-gui.jsonl'), timeout: 12_000 });
         } else {
-            const output = command('powershell.exe', ['-NoProfile', '-File', path.join(fixtures, 'invoke-button.ps1'), '-FixturePid', String(handle.pid), '-WindowTitle', handle.title], { log: path.join(root, 'external-gui.jsonl'), timeout: 12_000 });
+            const output = command('powershell.exe', ['-NoProfile', '-MTA', '-File', path.join(fixtures, 'invoke-button.ps1'), '-FixturePid', String(handle.pid), '-WindowTitle', handle.title], { log: path.join(root, 'external-gui.jsonl'), timeout: 12_000 });
             method = JSON.parse(output.trim()).method;
         }
     } catch (error) {

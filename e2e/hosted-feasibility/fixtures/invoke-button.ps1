@@ -1,5 +1,6 @@
 param([Parameter(Mandatory=$true)][int]$FixturePid, [Parameter(Mandatory=$true)][string]$WindowTitle)
 $ErrorActionPreference = 'Stop'
+if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'MTA') { throw 'UIAutomation probe requires an MTA thread' }
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName System.Windows.Forms
@@ -53,4 +54,4 @@ if ($button.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Patt
     [System.Windows.Forms.SendKeys]::SendWait(' ')
     $method = if ($null -eq $focusError) { 'UIAutomation SetFocus + native Space key' } else { 'UIAutomation window identity + native Tab/Space' }
 }
-@{ method = $method; pid = $FixturePid; title = $WindowTitle; patterns = $patterns; focusError = $focusError; controlType = $button.Current.ControlType.ProgrammaticName } | ConvertTo-Json -Compress
+@{ method = $method; apartment = [System.Threading.Thread]::CurrentThread.GetApartmentState().ToString(); pid = $FixturePid; title = $WindowTitle; patterns = $patterns; focusError = $focusError; controlType = $button.Current.ControlType.ProgrammaticName } | ConvertTo-Json -Compress
