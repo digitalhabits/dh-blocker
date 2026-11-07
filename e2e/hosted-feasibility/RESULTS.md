@@ -1,5 +1,101 @@
 # Hosted feasibility results — 7 November 2026
 
+## Final separated-PR comparison: all fourteen hosted jobs PASS
+
+[Run 42402336061](https://github.com/digitalhabits/dh-blocker/actions/runs/42402336061)
+validated source 6104cd2aea9c7f55474b0e011e0c235e895bee59 on 7 November 2026.
+All seven scenarios passed on hosted macOS 15 and Windows Server 2025 x64:
+recovery, pending cancellation, post-quit cancellation, overlap, unchanged stale
+warning replay, natural schedule expiry/cold start, and paused/stopped restart.
+All fourteen downloaded reports were independently checked for that source SHA
+and behaviour, external GUI capability and exact-child cleanup PASS.
+
+The new expiry cases prove acknowledged termination during the configured daily
+window, release within ten seconds of its actual wall-clock end, 75 seconds of
+usability, then another fresh Blocker process and 75 seconds of usability. The
+schedule remains configured for its next daily window; this tests window end,
+not deletion of the recurring rule. Saved times match the independent deadline.
+The paused/stopped cases complete real 15-word challenges and retain both states
+after process restart; no policy is cleared by the runner.
+
+| Scenario | macOS Blocker PIDs | Windows Blocker PIDs | GUI checks per OS |
+| --- | --- | --- | --- |
+| Expiry / cold start | 4713 to 29280 | 5816 to 4612 | 9 |
+| Paused / stopped restart | 3294 to 26583 | 1440 to 2472 | 8 |
+
+Both phase reports, fixture state and logs were inspected. Final target/control
+nonces, and the stopped secondary in restart cases, were independently matched
+to saved-marker files on both OSes. Both final expiry screenshots were visually
+inspected: the rule awaits its next daily window without a stale overlay.
+Evidence is retained under artifacts/hosted-feasibility/evidence/42402336061/all/
+and in Actions artifacts for 14 days. Earlier failed/cancelled attempts below
+remain intact. Subsequent documentation commits do not change the tested source.
+
+Local fixture ownership/protocol tests (6), focused warning-delivery tests (6),
+scoped ESLint and diff checks passed. The initial sandbox helper test could not
+create its symlink-escape fixture; it passed outside the filesystem sandbox.
+No security setting changed and no local blocking test ran. GitHub frontend
+build, lint, Tier 0, Tier 1, iOS timing and desktop Tier 2 checks also passed.
+
+This remains hosted debug-WebDriver evidence. It does not establish signed
+installed builds, upgrades, reboot/sleep, generic native callback faults, physical
+iOS enforcement or three consecutive fresh qualification passes. The new tests
+change no app code or native enforcement timer. No main push or merge occurred.
+
+
+
+## Separate PRs and new lifecycle coverage
+
+The app fix is isolated in [PR #244](https://github.com/digitalhabits/dh-blocker/pull/244),
+branch `codex/fix-stale-warning`, commit `faeacaf7`, based on main.
+Only warning delivery and its six focused tests are included. All six GitHub
+checks passed, including the unsigned iOS build. No main push or merge occurred.
+[PR #245](https://github.com/digitalhabits/dh-blocker/pull/245) is stacked on that
+branch and contains only hosted tests, fixtures, workflow and documentation.
+The original branch remains intact; its historical source-qualified results below
+do not establish the new branch's lifecycle coverage.
+
+First lifecycle attempt [42399596610](https://github.com/digitalhabits/dh-blocker/actions/runs/42399596610),
+source `37d37756`: seven jobs passed, three failed and four were cancelled.
+Both expiry cases used a five-minute window measured before several minutes of
+UI setup. The macOS case reached activation after the window ended and never
+received a warning; Windows explicitly failed the missed-window assertion.
+The macOS restart case consumed its five-minute pause while configuring and
+permanently stopping the second rule, and failed before restart because the
+pause had expired. These are harness setup failures, not proven product lockouts.
+Completed artifacts were downloaded before cancelling the superseded attempt to
+release the workflow queue. Cancelled jobs do not count as passes. Evidence:
+`artifacts/hosted-feasibility/evidence/42399596610/`.
+
+The intermediate evidence-strengthening commit `ef92573b` queued run
+42400249873, which GitHub cancelled while pending when the corrected commit
+replaced it. It executed no scenarios. The correction `e85bd51d` uses a real
+ten-minute finite schedule window and configures/stops the second rule before
+starting the five-minute pause. The ten-second expiry release bound and real
+challenges remain unchanged. PID observations require exactly one matching app
+process and a different PID after restart. Phase reports, fixture state and logs
+are copied before the next invocation can overwrite them.
+
+
+
+Second attempt [42400755271](https://github.com/digitalhabits/dh-blocker/actions/runs/42400755271),
+source e85bd51d: nine passes, one failure and four cancellations. macOS natural
+schedule expiry plus cold start passed. Paused/stopped process restart passed
+on both OSes (macOS PIDs 8549 to 29225; Windows 6784 to 8640), with both phase
+reports retained. Final saved-marker nonces for target, secondary and control
+were independently verified on both platforms. Windows expiry failed the new
+saved-schedule assertion: it saved 18:00 instead of the requested 18:31. It was
+not counted as expiry coverage. After downloading completed artifacts, the
+superseded run was cancelled to release the queue. Evidence is retained under
+artifacts/hosted-feasibility/evidence/42400755271/.
+
+The next adapter uses actual pointer input on the visible hour/minute picker
+instead of relying on text-field blur. It chooses five-minute increments and
+verifies both visible and saved values, retaining the same independent deadline
+and ten-second release bound. The selected end is 10–15 minutes after setup
+begins, allowing measured UI transport time without modifying clocks or timers.
+
+
 ## Stale-warning fix: all ten hosted jobs PASS
 
 [Actions run 42396442978](https://github.com/digitalhabits/dh-blocker/actions/runs/42396442978)

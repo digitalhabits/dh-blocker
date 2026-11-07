@@ -206,7 +206,7 @@ The hosted stale replay regression is unchanged; it must proceed through the
 later second-target acknowledgement, sustained survival and external GUI checks.
 ## Expiry and process restart
 
-The `expiry` case configures a real ten-minute daily window through visible UI,
+The `expiry` case configures a real daily window ending 10–15 minutes after setup begins through visible UI,
 proves acknowledged native termination, waits for the actual wall-clock end (no
 clock changes), and requires release within ten seconds plus 75 seconds of GUI
 usability. It then starts a fresh Blocker process and verifies that the expired
