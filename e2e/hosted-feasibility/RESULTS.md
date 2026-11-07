@@ -35,7 +35,11 @@ inspected. Local evidence is under
 14 days. Documentation-only follow-ups do not change the tested source.
 
 Local ownership/protocol/package/policy tests (10), scoped ESLint and diff checks
-passed. No local installer or blocking test ran, no security setting changed,
+passed. The same source also passed all fourteen recovery regression cases in
+[run 42414833182](https://github.com/digitalhabits/dh-blocker/actions/runs/42414833182).
+All fourteen downloaded reports were checked for source and separate
+behaviour/capability/cleanup PASS. Frontend, lint, Tier 0/1, iOS timing and both
+desktop Tier 2 checks passed too. No local installer or blocking test ran, no security setting changed,
 and no production app code changed in the testing PR. The stale-warning fix
 remains separate in [PR #244](https://github.com/digitalhabits/dh-blocker/pull/244);
 testing is [PR #245](https://github.com/digitalhabits/dh-blocker/pull/245).
