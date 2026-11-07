@@ -1,6 +1,48 @@
 # Hosted feasibility results — 7 November 2026
 
-Final comparison: [Actions run 42369161685](https://github.com/digitalhabits/dh-blocker/actions/runs/42369161685), source `ccfb0acff5fda2a8ccec9c5da17e49fc581f8aaa`.
+## Current result: both hosted platforms PASS
+
+[Actions run 42375075526](https://github.com/digitalhabits/dh-blocker/actions/runs/42375075526)
+validated source `17c5abf3db4a7ae6276a78fd120f36f619b43988` on 7 November 2026.
+Both macOS and Windows report **behaviour PASS, capability PASS, cleanup PASS**.
+
+Windows passed all six external GUI activations through native
+`IUIAutomationInvokePattern::Invoke`: target/control baseline, control during
+blocking, target after pause, and both after at least 75 seconds. Every activation
+persisted its fresh nonce through the real button handler. The final target and
+control marker files were independently checked against their reported nonces;
+the target's earlier saved marker also survived termination and relaunch.
+All six native trees show an enabled Button with `save-marker` ID and InvokePattern.
+
+The real warning, acknowledgement, termination, empty-challenge rejection,
+15-word challenge and five-minute pause passed. Windows target termination was
+observed at 35.78 seconds; post-pause responsiveness at 5.65 seconds. macOS values
+were 36.07 seconds and 5.91 seconds. Both passed sustained release and exact-child
+cleanup. The Windows fixture-only sharing-lock regression also passed, recording
+three target and four control timer collisions before six successful GUI actions.
+No `fixture-error.txt` was present in the Windows artifacts.
+
+Runner images: Windows `20261103.298.1` (`win25-vs2026`, x64), macOS
+`20261104.0514.1`. Debug app SHA-256:
+
+- Windows: `ca4877c425de22ed8c039f88455223345d598aeaf4d80ba9f6a266a3b2509b32`
+- macOS: `f39dd76c7ca2ba63ac25686cd4f3a91f6a5ef686eb53be2b17cdcf25ab13ed1c`
+
+Complete artifacts are preserved locally under ignored
+`artifacts/hosted-feasibility/evidence/42375075526/` and in Actions (14-day retention).
+The earlier failed attempts below remain evidence: of the three new comparisons,
+Windows failed twice for diagnosed fixture-protocol defects and passed once;
+macOS passed all three. This is **one complete Windows feasibility pass**, not the
+safety plan's three consecutive fresh qualification passes. Native fixture control
+does not establish generic Windows application control, signed-release Blocker
+control, browser enforcement, consumer Windows variants or physical iOS coverage.
+No local blocking test, production-data change, security-setting change or merge
+was performed. Future automation priorities remain pending-quit cancellation,
+overlapping rules and stale persistence/callback recovery.
+
+## Historical comparison before the native adapter
+
+Previous comparison: [Actions run 42369161685](https://github.com/digitalhabits/dh-blocker/actions/runs/42369161685), source `ccfb0acff5fda2a8ccec9c5da17e49fc581f8aaa`.
 
 | Evidence | macOS 15 | Windows Server 2025 |
 | --- | --- | --- |
@@ -103,3 +145,4 @@ window and native enabled state. The deterministic lock plus ten-second write
 stress passed for both fixtures, followed by six real saved-nonce activations and
 cleanup (`local-ffe259c803714edd8e1436aaf41b492e`). Windows CI now runs that explicit
 fixture-only regression before the full recovery scenario. Full ESLint passed.
+
