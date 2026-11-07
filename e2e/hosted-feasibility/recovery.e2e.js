@@ -72,6 +72,15 @@ async function setup() {
     const acceptance = await browser.execute(() => window.__HOSTED_EULA_RESULT__);
     assert.equal(acceptance?.status, 'done', acceptance?.error || 'EULA acceptance did not complete');
     event('setup-eula-accepted', { method: 'existing acceptEula setup seam; no policy mutation' });
+    await browser.waitUntil(async () => await $('#add-blocklist-btn').isDisplayed()
+        || await $('#migration-skip-btn').isDisplayed(),
+    { timeout: 30_000, timeoutMsg: 'Neither main UI nor browser setup appeared after acceptance' });
+    // This probe creates app-only rules. Use the normal Skip control for the
+    // browser setup checklist; do not hide overlays or mutate onboarding state.
+    if (await $('#migration-skip-btn').isDisplayed()) {
+        await click('#migration-skip-btn');
+        event('browser-setup-skipped-through-ui', { scope: 'app-only probe' });
+    }
     await $('#add-blocklist-btn').waitForDisplayed({ timeout: 30_000 });
 }
 async function createAndStart(name) {
