@@ -274,6 +274,7 @@ async function lifecycleScenario(kind) {
         } else if (kind === 'expiry') {
             assert(Date.now() >= report.lifecycle.endAt, 'Cold start preceded schedule expiry');
         }
+        let releasedAt;
         if (kind === 'upgrade-active') {
             const blocked = launchFixture(report.fixtures.target, root, 'upgrade-still-active'); handles.push(blocked);
             await until(async () => { await heartbeat(control); return !alive(blocked); }, 15_000, 'Installed upgrade lost active enforcement');
@@ -286,13 +287,19 @@ async function lifecycleScenario(kind) {
             event('upgraded-active-target-termination-observed', { pid: blocked.pid, exit: blocked.exitObservation });
             const id = policy.blocklists.find((b) => b.apps.includes(report.fixtures.target.name))?.id;
             assert(id, 'Upgraded active rule missing');
-            await pauseThroughChallenge(`.blocklist-switch[data-id="${id}"]`);
+            releasedAt = await pauseThroughChallenge(`.blocklist-switch[data-id="${id}"]`);
             event('upgraded-active-rule-released-through-real-challenge');
         }
         const targets = [];
         for (const role of kind === 'restart' ? ['target', 'secondary'] : ['target']) {
             const target = launchFixture(report.fixtures[role], root, 'after-restart'); handles.push(target); targets.push(target);
             await ready(target);
+            if (releasedAt !== undefined) {
+                await heartbeat(target);
+                const usableAfterMs = performance.now() - releasedAt;
+                assert(usableAfterMs <= 10_000, 'Upgraded app missed legitimate release budget');
+                event('upgraded-target-usable-within-release-budget', { pid: target.pid, usableAfterMs, maximumMs: 10_000 });
+            }
             await recordInteraction(target, `restart-${role}-baseline`);
         }
         await observeReleased(targets, control, 'after-process-restart');
@@ -595,7 +602,10 @@ describe('Hosted native app recovery feasibility', () => {
             }
             // Behaviour is final before cleanup. Cleanup never clears policy or
             // masquerades as release; the disposable hosted profile is discarded.
-            for (const entry of Object.values(report.fixtures)) {
+            for (const [role, entry] of Object.entries(report.fixtures)) {
+                // The outer runner owns this still-live control and copies its
+                // state only after stopping it; avoid live WinForms file locks.
+                if (report.upgrade && role === 'sentinel') continue;
                 const stateDir = path.join(entry.directory, 'state');
                 if (existsSync(stateDir)) cpSync(stateDir, path.join(artifacts, entry.name), { recursive: true });
             }
