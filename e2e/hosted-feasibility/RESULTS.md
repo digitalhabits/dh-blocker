@@ -1,5 +1,55 @@
 # Hosted feasibility results — 7 November 2026
 
+## Stale-warning fix: all ten hosted jobs PASS
+
+[Actions run 42396442978](https://github.com/digitalhabits/dh-blocker/actions/runs/42396442978)
+validated `60b76ae76d85b8d8c517fbf313019781140bedc7` on 7 November 2026.
+Recovery, pending cancellation, post-quit grace cancellation, overlapping rules
+and the **unchanged stale-callback replay regression** all passed on hosted
+Windows Server 2025 x64 and macOS 15. Every report records behaviour, independent
+external GUI capability and exact-child cleanup PASS.
+
+Warning-show events now request the existing authoritative native pending-ACK
+snapshot instead of installing their payload directly. Startup uses the same
+path. Hide and acknowledgement invalidate in-flight reads; newer full snapshots
+supersede older responses while retaining concurrent genuine warnings. Existing
+rows are not replaced, preserving acknowledgement deadlines and snooze state.
+Three read-only attempts handle transient query failures. On persistent failure,
+existing UI remains and the error is logged; no unverified new row is installed,
+no acknowledgement is fabricated, and native enforcement does not change.
+
+The hosted test is byte-for-byte unchanged from the previously failing version.
+Both replay events and exact original payloads appear in the new reports, after
+the actual 15-word challenge and a successful external target GUI activation.
+The replay no longer resurrects the released target's warning. Each case then
+starts and acknowledges the secondary target, proves its termination, and keeps
+the original released target plus unrelated control usable through at least
+75 seconds. All five GUI-saved nonce checks per replay case passed. Final target
+and control marker files were independently compared with their report nonces;
+released targets have no polite-quit marker. The two post-replay screenshots were
+visually inspected and show the target paused with no stale warning overlay.
+
+Local verification: 258 Tier 0 tests (including six new warning-delivery race and
+failure cases), 559 Tier 1 tests, production frontend build and repository ESLint
+passed. ESLint excludes only ignored downloaded browser artifacts. The first
+Tier 1 attempt could not find Chromium in the sandbox; a worktree-local browser
+installation resolved that prerequisite. No local native blocking test ran.
+
+Evidence is preserved under ignored
+`artifacts/hosted-feasibility/evidence/42396442978/all/`, with Actions artifacts
+retained for 14 days. The earlier failures in 42391230840 and 42392538195 below
+remain intact and are not reclassified. The report-limit/source SHA identifies
+the exact tested source; subsequent documentation commits do not change the fix.
+
+The shared frontend change applies to desktop warning presentation on both
+Windows and macOS; both were exercised. iOS Screen Time enforcement paths are
+unchanged; local iOS logic checks passed within Tier 1, but physical iOS was not
+verified. Signed-release external control, generic native stale PID/persistence
+callbacks and three consecutive fresh qualification passes remain outside this
+result. No real challenge, native timer, enforcement policy, security setting,
+production data or release hard stop was weakened. Nothing merged.
+
+## Historical failing stale-warning comparison
 ## Post-quit grace: PASS; stale warning callback: FAIL
 
 [Final comparison 42392538195](https://github.com/digitalhabits/dh-blocker/actions/runs/42392538195)
