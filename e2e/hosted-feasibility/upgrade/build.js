@@ -30,7 +30,14 @@ for (const [role, cwd] of [['baseline', baseline], ['candidate', repo]]) {
         bundle: process.platform === 'darwin' ? { macOS: { signingIdentity: '-' } } : { windows: { signCommand: null, nsis: { installMode: 'currentUser' } } } }));
     const env = { CARGO_TARGET_DIR: target, BUILD_MAC_TARGET: '' };
     run(process.execPath, ['scripts/ensure-dev-icons.js'], cwd, env);
-    run(process.execPath, ['node_modules/@tauri-apps/cli/tauri.js', 'build', '--debug', '--features', 'e2e-webdriver', '--bundles', process.platform === 'darwin' ? 'app' : 'nsis', '--config', overlay], cwd, env);
+    const args = ['node_modules/@tauri-apps/cli/tauri.js', 'build', '--debug', '--features', 'e2e-webdriver', '--bundles', process.platform === 'darwin' ? 'app' : 'nsis', '--config', overlay];
+    if (process.platform === 'win32') {
+        const help = spawnSync(process.execPath, ['node_modules/@tauri-apps/cli/tauri.js', 'build', '--help'], { cwd, encoding: 'utf8', windowsHide: true });
+        assert.equal(help.status, 0);
+        if (help.stdout.includes('--no-sign')) args.push('--no-sign');
+    }
+    args.push('--', '--locked');
+    run(process.execPath, args, cwd, env);
     let installer, executable;
     if (process.platform === 'darwin') {
         run('/bin/bash', ['scripts/build-mac-pkg.sh'], cwd, env);
@@ -46,7 +53,7 @@ for (const [role, cwd] of [['baseline', baseline], ['candidate', repo]]) {
     assert(existsSync(installer) && existsSync(executable));
     const copy = path.join(root, role + path.extname(installer));
     cpSync(installer, copy);
-    manifest.packages[role] = { version, installer: copy, installerSHA256: hash(copy), executableSHA256: hash(executable) };
+    manifest.packages[role] = { version, buildArgs: args, installer: copy, installerSHA256: hash(copy), executableSHA256: hash(executable) };
 }
 assert.notEqual(manifest.packages.baseline.version, manifest.packages.candidate.version);
 writeFileSync(path.join(root, 'manifest.json'), JSON.stringify(manifest, null, 2));
