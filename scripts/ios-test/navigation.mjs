@@ -65,7 +65,7 @@ export async function runWithNavigation(args, { log, udid, token, maxRequests, t
         writeSync(fd, `\n$ xcodebuild ${args.join(' ')}\n`);
         child = spawn('xcodebuild', args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
         process.once('SIGINT', interrupt);
-        timer = setTimeout(() => stop(new Error('XCTest exceeded its 10-minute timeout.')), timeout);
+        timer = setTimeout(() => stop(new Error('XCTest exceeded its configured timeout.')), timeout);
         const handleLine = line => {
             const url = navigationRequest(line, token);
             if (!url || failure || urls.has(url)) return;

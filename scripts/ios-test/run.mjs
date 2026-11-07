@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util';
 import { dirname } from 'node:path';
 import { build, preflight, preferReleaseXcode } from './apple.mjs';
 import { check, command, lock, newReport, outputRoot, readJson, record, writeJson } from './common.mjs';
-import { deviceRun, reportPath } from './device.mjs';
+import { deviceRun, isAutomatedProfile, reportPath } from './device.mjs';
 
 const options = {
     mode: { type: 'string' },
@@ -62,11 +62,11 @@ async function main() {
     if (!modes.includes(mode)) throw new Error('Use --mode device|simulator|unsigned-device|store.');
     if (values.device && mode !== 'device') throw new Error('--device is only used for a physical device.');
     if (values.report && (values.build || values.baseline)) throw new Error('Use --build and --baseline only when starting a new device run.');
-    if (values.build && !values.baseline && values.profile !== 'website') throw new Error('An in-place update requires --baseline.');
+    if (values.build && !values.baseline && !isAutomatedProfile(values.profile)) throw new Error('An in-place update requires --baseline.');
     if (values.status && !values.case) throw new Error('--status requires --case.');
     if (values.evidence.length && !values.case) throw new Error('--evidence requires --case.');
-    if (values.recover && !values.report) throw new Error('--recover requires the interrupted website run report.');
-    if (values.profile && (values.profile !== 'website' || values.report)) throw new Error('Use --profile website when starting a new device-full run.');
+    if (values.recover && !values.report) throw new Error('--recover requires the interrupted automated run report.');
+    if (values.profile && (!isAutomatedProfile(values.profile) || values.report)) throw new Error('Use --profile website|pause when starting a new device-full run.');
     if (deviceLane && !values.device) throw new Error('Specify --device with an explicit UDID or CoreDevice identifier.');
     if (deviceLane && !values.report && values.case) {
         throw new Error('Start the device run before adding observations or planning a fixture.');

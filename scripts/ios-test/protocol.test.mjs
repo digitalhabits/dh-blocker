@@ -4,7 +4,7 @@ import { assertSafeBuild, selectDevice } from './apple.mjs';
 import { assertObservation, pendingCases, sameInstalledApp } from './device.mjs';
 import { lineReader, navigationRequest } from './navigation.mjs';
 import { profileMatches } from './provisioning.mjs';
-import { driverConfiguration, failureVerdict, passedOneTest } from './xctest.mjs';
+import { driverConfiguration, failureVerdict, passedOneTest, pausePreference } from './xctest.mjs';
 
 const device = {
     identifier: 'CORE-DEVICE',
@@ -49,12 +49,16 @@ test('a replaced installation invalidates an ongoing run despite a matching vers
     assert.equal(sameInstalledApp(install, null), false);
 });
 
-test('the website profile accepts only a real XCTest pass', () => {
+test('automated profiles accept only a real XCTest pass', () => {
     const report = { lane: 'device-full', profile: 'website', cases: {
         'upgrade-continuity': { status: 'PASS' }, relaunch: { status: 'PASS' },
     } };
     assert.deepEqual(pendingCases(report), ['fresh-website']);
     assert.throws(() => assertObservation(report, 'fresh-website', 'PASS', 'manual', ['evidence.png']), /only accepts XCTest/);
+    const pause = { ...report, profile: 'pause' };
+    assert.deepEqual(pendingCases(pause), ['scheduled-pause']);
+    assert.throws(() => assertObservation(pause, 'scheduled-pause', 'PASS', 'manual', ['evidence.png']), /only accepts XCTest/);
+    assert.throws(() => assertObservation({ ...report, profile: 'default' }, 'scheduled-pause', 'PASS', 'manual', ['evidence.png']), /only accepts XCTest/);
     assert.equal(passedOneTest({ totalTestCount: 1, passedTests: 1, failedTests: 0, skippedTests: 0 }), true);
     assert.equal(passedOneTest({ totalTestCount: 1, passedTests: 0, failedTests: 0, skippedTests: 1 }), false);
     assert.equal(passedOneTest({ totalTestCount: 2, passedTests: 1, failedTests: 1, skippedTests: 0 }), false);
@@ -68,8 +72,21 @@ test('XCTest receives only the owned fixture and deadline, preserving Xcode test
     const configured = driverConfiguration(base, fixture, token);
     assert.deepEqual(configured.Driver.EnvironmentVariables,
         { TERM: 'dumb', REDD_IOS_TEST_FIXTURE: fixture.name, REDD_IOS_TEST_END: fixture.deadline, REDD_IOS_NAV_TOKEN: token });
-    assert.deepEqual(configured.Driver.UITargetAppEnvironmentVariables, { KEEP: 'yes' });
+    const recovery = driverConfiguration(base, fixture, token, '8 hours');
+    assert.deepEqual(recovery.Driver.EnvironmentVariables, { ...configured.Driver.EnvironmentVariables, REDD_IOS_BREAK_TO_RESTORE: '8 hours' });
+    assert.deepEqual(recovery.Driver.UITargetAppEnvironmentVariables, { KEEP: 'yes' });
     assert.throws(() => driverConfiguration({ Driver: { IsUITestBundle: false } }, fixture), /Unexpected Xcode/);
+});
+
+test('pause recovery journals only a supported prior duration and actual attempts to change it', () => {
+    const baseline = 'REDD_IOS_BREAK_BASELINE 8 hours\r\n';
+    const change = 'REDD_IOS_BREAK_CHANGE_REQUESTED\r\n';
+    assert.deepEqual(pausePreference(baseline), { baseline: '8 hours', possiblyChanged: false, restored: false });
+    assert.deepEqual(pausePreference(baseline + change), { baseline: '8 hours', possiblyChanged: true, restored: false });
+    assert.equal(pausePreference(baseline + change + 'REDD_IOS_BREAK_RESTORED 10 minutes\n').restored, false);
+    assert.equal(pausePreference(baseline + change + 'REDD_IOS_BREAK_RESTORED 8 hours\n').restored, true);
+    assert.equal(pausePreference(baseline.replace('8 hours', '5 minutes') + change).possiblyChanged, false);
+    assert.equal(pausePreference(baseline.replace('8 hours', 'Never') + change).possiblyChanged, false);
 });
 
 test('UI Automation approval and failed behavioural assertions have different verdicts', () => {
@@ -78,6 +95,8 @@ test('UI Automation approval and failed behavioural assertions have different ve
         testIdentifierString: 'Driver-Runner encountered an error' }), 'BLOCKED');
     assert.equal(verdict({ failureText: 'Expected target to be restricted.',
         testIdentifierString: 'Driver/testFreshWebsiteLifecycle()' }), 'FAIL');
+    assert.equal(verdict({ failureText: 'Expected no Blocker alert.',
+        testIdentifierString: 'Driver/testScheduledPauseLifecycle()' }), 'FAIL');
 });
 
 test('Safari navigation accepts only the current token and exact fixed HTTPS URLs', () => {
