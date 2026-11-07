@@ -265,7 +265,13 @@ async function lifecycleScenario(kind) {
         if (kind === 'upgrade-active') {
             const blocked = launchFixture(report.fixtures.target, root, 'upgrade-still-active'); handles.push(blocked);
             await until(async () => { await heartbeat(control); return !alive(blocked); }, 15_000, 'Installed upgrade lost active enforcement');
-            assert(existsSync(path.join(blocked.directory, 'polite-quit')));
+            // Relaunching into an already-active block uses the existing silent
+            // termination path, not another warning or polite-close handler.
+            // Do not accept the previous generation's polite-quit marker.
+            assert(!existsSync(path.join(blocked.directory, 'fixture-error.txt')), 'Blocked fixture crashed through its exception handler');
+            assert(process.platform === 'win32' ? blocked.exitObservation?.code === 1
+                : ['SIGTERM', 'SIGKILL'].includes(blocked.exitObservation?.signal), 'Unexpected exit during upgraded active enforcement');
+            event('upgraded-active-target-termination-observed', { pid: blocked.pid, exit: blocked.exitObservation });
             const id = policy.blocklists.find((b) => b.apps.includes(report.fixtures.target.name))?.id;
             assert(id, 'Upgraded active rule missing');
             await pauseThroughChallenge(`.blocklist-switch[data-id="${id}"]`);
