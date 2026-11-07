@@ -1,5 +1,77 @@
 # Hosted feasibility results — 7 November 2026
 
+## Installed debug upgrades: all six hosted jobs PASS
+
+[Run 42414833138](https://github.com/digitalhabits/dh-blocker/actions/runs/42414833138)
+validated source `c77a47b40eac9b285954c3b52e715acb790e8e3a` on 7 November 2026.
+All three installed scenarios passed on hosted macOS 15 and Windows Server 2025
+x64, upgrading reconstructed v3.10.1 (`c1567ce38b3f52c61ca0a6c92b9041d409906657`)
+to candidate v3.11.0 through actual PKG/NSIS installation:
+
+- Active Manual policy survived and actually terminated the target after upgrade.
+  The real fifteen-word challenge released it in 5.6 seconds on Windows and
+  6.0 seconds on macOS, within the ten-second budget.
+- A ten-minute pause retained its exact deadline; a separate permanently stopped
+  rule remained stopped. Both releases used the baseline's real challenge.
+- A daily window ended naturally before upgrade. Its configuration survived,
+  and the ended window did not block after the candidate's cold start.
+
+Every released target and unrelated control then sustained 75 seconds of use.
+A separate control kept the same PID across both installers and passed five
+external GUI button checks. Heartbeats alone cannot satisfy GUI activation.
+The three policy arrays are compared exactly against the old durable file,
+including target identity, pause/end times and schedule fields. Raw snapshots,
+installer bytes/hashes, packaged executable hashes, both running versions,
+distinct Blocker PIDs, both phase reports, native logs and screenshots are saved.
+
+All six downloaded reports and both phases per row were independently checked
+for source SHA and behaviour/capability/cleanup PASS. Installer bytes matched
+their recorded hashes, the old durable policy matched both saved snapshots, and
+final target/control/sentinel nonces (plus the stopped secondary) matched actual
+saved-marker files. GUI checks per OS were 11 active, 13 paused/stopped and 14
+expiry. Final macOS paused/stopped and both expiry screenshots were visually
+inspected. Local evidence is under
+`artifacts/hosted-feasibility/evidence/42414833138/all/`; Actions retains it for
+14 days. Documentation-only follow-ups do not change the tested source.
+
+Local ownership/protocol/package/policy tests (10), scoped ESLint and diff checks
+passed. No local installer or blocking test ran, no security setting changed,
+and no production app code changed in the testing PR. The stale-warning fix
+remains separate in [PR #244](https://github.com/digitalhabits/dh-blocker/pull/244);
+testing is [PR #245](https://github.com/digitalhabits/dh-blocker/pull/245).
+Nothing was merged or pushed directly to main.
+
+### Installed-lane attempt ledger
+
+Failed and cancelled attempts remain evidence, never passes:
+
+| Run / source | Outcome and cause |
+| --- | --- |
+| [42408619091](https://github.com/digitalhabits/dh-blocker/actions/runs/42408619091) / `1feb6428` | Six failures: Windows signing-command configuration; baseline macOS lacked the newer typed-app picker control. |
+| [42409376731](https://github.com/digitalhabits/dh-blocker/actions/runs/42409376731) / `2a7a9ca8` | Superseded pending run; no scenario verdicts. |
+| [42409657346](https://github.com/digitalhabits/dh-blocker/actions/runs/42409657346) / `c10cbdf1` | Six cancelled jobs after diagnosing baseline UI incompatibility. |
+| [42409819525](https://github.com/digitalhabits/dh-blocker/actions/runs/42409819525) / `1171b020` | Superseded pending run; no scenario verdicts. |
+| [42410206770](https://github.com/digitalhabits/dh-blocker/actions/runs/42410206770) / `5058ef67` | macOS active passed; Windows three failed the image-hash guard; two macOS jobs cancelled. NSIS metadata changes require hashing the actual packaged payload, not the raw Cargo executable. |
+| [42411049156](https://github.com/digitalhabits/dh-blocker/actions/runs/42411049156) / `56fbf82c` | Superseded pending run; no scenario verdicts. |
+| [42411140662](https://github.com/digitalhabits/dh-blocker/actions/runs/42411140662) / `dafac0cd` | Six cancelled jobs before the explicit release-budget/control-ownership revision. |
+| [42412259582](https://github.com/digitalhabits/dh-blocker/actions/runs/42412259582) / `9e6c5184` | Both active passed; both restart failed the old duration-control adapter; both expiry failed a comparison against UI-only nulls absent from the old saved file. |
+| [42414108087](https://github.com/digitalhabits/dh-blocker/actions/runs/42414108087) / `912b6da1` | Six cancelled jobs when durable snapshot selection was corrected. |
+| [42414833138](https://github.com/digitalhabits/dh-blocker/actions/runs/42414833138) / `c77a47b4` | All six passed. |
+
+The fixes adapt to the actual old UI and packaged payload, and compare the
+actual pre-installer saved policy without ignoring fields or normalising nulls.
+No failing app regression was hidden or weakened. Earlier recovery results below
+remain source-qualified historical evidence.
+
+This is reconstructed debug-WebDriver PKG/NSIS coverage, not signed-release
+qualification. Actual updater transport, interrupted/live-process upgrades,
+MSIX, ARM64, browser integration, reboot, sleep/wake and physical iOS upgrades
+remain unverified. The owner stops baseline Blocker before candidate installation;
+installer shutdown of a live user process is not established. A single passing
+matrix is not the safety plan's three-run qualification.
+
+
+
 ## Final separated-PR comparison: all fourteen hosted jobs PASS
 
 [Run 42402336061](https://github.com/digitalhabits/dh-blocker/actions/runs/42402336061)

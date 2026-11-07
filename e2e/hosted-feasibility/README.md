@@ -73,10 +73,10 @@ not signed release installation, external control of Blocker's UI, release TCC
 behaviour, real browser enforcement, iOS shielding or physical-device support.
 No permissions database is edited and no security protection is disabled.
 
-This initial probe covers acknowledged termination followed by a legitimate
-pause and sustained relaunch. It does not yet cover cancellation during pending
-quit, a later second-target acknowledgement, injected stale callbacks, faults,
-restart/update, natural expiry or overlaps. Three consecutive fresh qualified
+The scenarios below extend the initial recovery probe with pending/post-quit
+cancellation, overlapping rules, frontend stale-warning replay, natural expiry,
+process restart and installed debug upgrades. Generic native callback faults and
+signed release upgrades remain unverified. Three consecutive fresh qualified
 runs are still required by [the safety plan](../../docs/lockout-safety-plan.md);
 one feasibility pass is not a release gate.
 
@@ -257,6 +257,19 @@ Windows uses unsigned debug NSIS with current-user mode and a run-owned install
 folder. Installed executable hashes must equal the packaged build; both running
 app versions and distinct PIDs are observed. Full policy snapshots are preserved,
 with configured rules, active/paused state and schedules compared across install.
+
+Windows verifies the executable extracted from the actual NSIS payload; the raw
+Cargo executable hash is diagnostic because bundling changes its metadata.
+Baseline v3.10.1 uses registered, run-owned fixture shortcuts/application links
+and its actual app-picker checkboxes. Its stop duration is selected in the
+focus-space editor before activation (Never for permanent stop, ten minutes for
+pause); every release still requires the real fifteen-word challenge.
+
+Policy comparison uses the old version's durable file captured before invoking
+the candidate installer, with raw before/after snapshots retained. It compares
+all three policy arrays exactly, including deadlines and schedule fields. It
+does not strip nulls or ignore timing differences: the old live editor model can
+contain optional nulls already absent from its own saved file.
 
 These are rebuilt debug packages with embedded WebDriver, not downloaded signed
 release installers. No distribution credentials, certificates, permission-store

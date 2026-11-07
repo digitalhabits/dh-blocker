@@ -1,6 +1,6 @@
 # Preventing unintended lockout: implementation plan
 
-Status: reviewed planning document; ready to begin bounded infrastructure and deterministic-test work. Product decisions below remain prerequisites for enforcement-policy changes. Implementation and device installation are not authorised by this plan alone.
+Status: bounded hosted desktop recovery and installed debug-upgrade infrastructure is implemented; source-qualified outcomes and remaining gaps live in [hosted results](../e2e/hosted-feasibility/RESULTS.md). The baseline audit below is historical, not a current coverage inventory. Product decisions below remain prerequisites for enforcement-policy changes. Implementation and device installation are not authorised by this plan alone.
 Source baseline: `59a76211`, including the connected-iOS pause profile from `4291ba13`.
 
 ## Objective and boundaries
