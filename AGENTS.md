@@ -12,17 +12,19 @@ repeated here — keep it that way when you edit this file.
 
 Digital Habits: Blocker is a cross-platform website/app blocker built as a
 **single Tauri v2 app** (Rust backend + HTML/JS/CSS frontend) targeting macOS
-11+, Windows 10+, iOS 16+, and Android 8+ (API 26+). One frontend codebase
-(`src/`) drives all four platforms; enforcement differs completely per platform.
+11+, Windows 10+, and iOS 16+. One frontend codebase
+(`src/`) drives all three platforms; enforcement differs completely per platform.
 There is **no** privileged helper daemon and **no** hosts-file writing — the app
 itself is the enforcement engine (v3 architecture).
 
-**Blast radius.** Because one `src/` ships to four platforms with four unrelated
+**Blast radius.** Because one `src/` ships to three platforms with three unrelated
 enforcement backends, the usual way a change goes wrong here is not a broken
 build — it is working correctly on the platform you ran and silently changing
-behavior on the other three. Before you call a change to `src/` done, say what
+behavior on the other two. Before you call a change to `src/` done, say what
 it does on the platforms you did not run, and say plainly which ones you could
-not verify. "Tier 1 is green" is not the same claim as "Android still blocks."
+not verify. "Tier 1 is green" is not the same claim as "iOS still blocks."
+
+Android is maintained in [digitalhabits/dh-blocker-android](https://github.com/digitalhabits/dh-blocker-android); do not reintroduce its build or enforcement paths here.
 
 ## The product principle
 
@@ -72,11 +74,10 @@ for a failure that silently allowed blocked sites.
 
 | Read this | Before you |
 | --- | --- |
-| [DEVELOPMENT.md](DEVELOPMENT.md) | Set up a local build, package a release, or troubleshoot Android Studio. |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Set up a local build or package a release. |
 | [architecture.md](architecture.md) | Touch any enforcement code. **Part I = v3 (current, start here).** Parts II/III are historical v2/v1 kept for migration context — do not reason about current behavior from them, they describe a daemon and a hosts file that no longer exist. |
+| [docs/ios-testing.md](docs/ios-testing.md) | Run iOS Simulator or connected-device checks; distinguish automated cases from remaining physical-device coverage. |
 | [testing.md](testing.md) | Add or debug a test. Has the full "What runs in CI" table with triggers and path filters. |
-| [docs/android-build.md](docs/android-build.md) | Build, install, or profile the Android app. Includes the toolchain trap that costs an hour if you hit it blind (`cargo` resolving to Homebrew's rust, failing with `can't find crate for std`) and the adb recipes for granting accessibility and measuring startup. |
-| [docs/android-generated-project-manual-edits.md](docs/android-generated-project-manual-edits.md) | Run `tauri android init` or edit `src-tauri/gen/android/` — it is committed, and re-initializing drops hand-applied patches. |
 
 ## Commands
 
@@ -85,20 +86,10 @@ for a failure that silently allowed blocked sites.
 - **Version bumps span app, system-test and generated iOS files** — use
   `./scripts/bump-version.sh <version>`; its implementation owns the file list.
   Hand-editing only the main config leaves inconsistent versions.
-- **`pnpm build:android` needs `ANDROID_HOME` / `NDK_HOME` / `JAVA_HOME`
-  exported** — `pnpm install` does not set them. See
-  [docs/android-build.md](docs/android-build.md).
-- **Use `cargo test --lib`**, not bare `cargo test` — the latter still tries to
-  build a stale `test_watcher` example.
-- **`cargo fmt` needs two invocations**, because `tauri-plugin-android-blocker`
-  is a separate crate graph from `src-tauri`. CI runs `cargo fmt --all --check`
-  in both directories, so formatting only one leaves the other red:
-
-  ```bash
-  pnpm lint                                             # eslint over src/, scripts/, e2e/, vite.config.js
-  (cd src-tauri && cargo fmt --all)                     # --all here also covers tauri-plugin-screentime
-  (cd tauri-plugin-android-blocker && cargo fmt --all)
-  ```
+- Use `cargo test --lib` for the backend unit tests. See [testing.md](testing.md#rust-unit-tests)
+  for the standalone watcher example.
+- Run `pnpm lint` from the repository root and `cargo fmt --all --check` in
+  `src-tauri`; the latter also covers the Screen Time plugin.
 
 ### pnpm is the only supported package manager
 
@@ -159,8 +150,9 @@ nothing in the code will remind you of:
 - The focus-space editor (`src/focus-space-editor.js`) is **one DOM node,
   `#focus-space-editor`, moved between two hosts**: the create modal borrows it
   from the scheduler panel in `openBlocklistModal` and `closeBlocklistModal`
-  returns it. Every id inside it is looked up globally by the listeners in
-  `setupModalListeners`, so never clone it or give either host its own copy —
+  returns it. The listeners in `focus-space-tags.js` and
+  `focus-space-editor-fields.js` look up its ids globally, so never clone it or
+  give either host its own copy —
   duplicate ids would silently bind the wrong form. `handleBlocklistSelect`
   repopulates it for the selected space, except when the id is unchanged
   (then only the lock state is resynced, so a pause or stop does not discard
@@ -171,30 +163,10 @@ The order-sensitive startup sequence is the `DOMContentLoaded` handler in
 are a contract with the in-app tests — renaming one breaks tests that will not
 tell you why.
 
-`src/tauri-api.js` is a compat layer. The frontend still calls legacy
-`*_via_helper` command names that route through
-`src-tauri/src/commands/helper_shim.rs` (mostly no-ops for website blocking; app
-blocking forwards to `app_watcher`). This is dead naming, not a live daemon —
-there is no `helper-daemon/` in the repo, so do not go looking for one.
-
-### Build-time platform gating
-`__ANDROID_BUILD__` is a Vite `define` constant, and it is the right tool **only
-when it lets Rollup delete code from the Android bundle** — an early
-`if (__ANDROID_BUILD__) return;` in a void function lets Rollup drop the body
-and tree-shake its helpers. That trick only works on functions nobody reads a
-value from: shared value-returning helpers (`browserIconUrl`,
-`BROWSER_STORE_LINKS`, …) are deliberately left unguarded, because returning
-`undefined` on Android would break callers rather than shrink anything. For
-behavioral branching that must stay in the bundle for desktop, use the runtime
-`state.isAndroid` flag instead.
-
-Gating the *code* that references a static asset does not by itself drop the
-asset: Vite emits a file for every `import url from './x.png'` at transform
-time, before tree-shaking, so a desktop-only image whose only reference is
-eliminated is left orphaned in the APK. Guard the reference with
-`__ANDROID_BUILD__` and the `pruneOrphanAndroidAssets` plugin in
-`vite.config.js` sweeps the file. This is also why dead asset imports are worth
-cleaning up rather than tolerating.
+`src/tauri-api.js` wraps the Tauri command and plugin APIs. On desktop,
+website enforcement reads the saved app data and the frontend pushes app
+policy directly through `set_blocked_apps`. The legacy helper and hosts
+commands in `commands/migration.rs` are for v1 cleanup.
 
 ### Startup gate
 
@@ -209,10 +181,6 @@ The limits and cross-platform contracts matter more than the suite names:
 - Tier 2 asserts the Rust-derived `current_blocking` snapshot; it does not prove
   that a browser redirects. Use the [manual checklist](scripts/manual-test-checklist.md)
   for actual website enforcement.
-- Android `Schedules.kt` duplicates desktop `native_host::derive_payload`
-  semantics. Blocking-policy changes need regression cases on both sides.
-- Add a real URL-bar fixture to `BrowserUrlParserTest` when changing supported
-  browsers; recognition alone does not prove that URL extraction works.
 - Logic tests do not render layout. Visually inspect UI changes using the
   screenshot harness described in [testing.md](testing.md).
 
@@ -245,7 +213,6 @@ all feature-gated code. In particular, system-test data isolation needs
 Clippy's platform jobs still use default features.
 
 Run `cargo clippy --lib --bins --tests -- -D warnings` locally before pushing
-Rust. A green lint run is not proof of no dead code or deprecations: ESLint's
-`no-unused-vars` is a warning, and the Rust crate currently allows deprecations.
+Rust. ESLint rejects unused bindings; macOS Cocoa FFI has local deprecation allowances.
 Consult the lint configuration and workflows for the current exceptions rather
 than extending them to silence a new problem.

@@ -13,7 +13,7 @@
 //
 // The key lives in localStorage, not in the data file: the data file is
 // exported and imported between machines, and two machines must not share
-// a key. Android sends no ping from this code.
+// a key.
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { state } from './state.js';
 import { saveData } from './persistence.js';
@@ -81,7 +81,7 @@ function randomUuid() {
 }
 
 export async function maybeSendUsagePing() {
-    if (__ANDROID_BUILD__ || import.meta.env.MODE !== 'production' || state.isAndroid) return;
+    if (import.meta.env.MODE !== 'production') return;
     const today = utcToday();
     if (pingSentDay === today || pingInFlight) return;
     if (!usagePingEnabled()) return;
@@ -121,13 +121,13 @@ function markPingDue() {
 
 /** From the 1 s tick in render.js: a block or schedule in force counts as use. */
 export function usagePingTick(now = Date.now()) {
-    if (__ANDROID_BUILD__ || !pingStarted || pingDueDay === utcToday()) return;
+    if (!pingStarted || pingDueDay === utcToday()) return;
     try { if (hasAnyEnforcedBlocks(now)) markPingDue(); } catch { /* never disturb the tick */ }
 }
 
 /** Ping when the user brings the window up or a block is in force; retry a failed one hourly. */
 export function startUsagePing() {
-    if (__ANDROID_BUILD__ || import.meta.env.MODE !== 'production' || pingStarted) return;
+    if (import.meta.env.MODE !== 'production' || pingStarted) return;
     pingStarted = true;
     const win = getCurrentWindow();
     // iOS runs this only while the app is open. A desktop login start is
@@ -145,15 +145,12 @@ export function startUsagePing() {
 /**
  * The "Send anonymous usage count" switch in Settings, and its info icon.
  * It reads the setting each time Settings opens, because the data file
- * loads after the listeners are set up. Android hides the row.
+ * loads after the listeners are set up.
  */
 export function setupUsagePingToggle() {
     const input = document.getElementById('settings-usage-ping-input');
     if (!input) return;
-    if (__ANDROID_BUILD__ || state.isAndroid) {
-        document.getElementById('settings-usage-ping-row')?.classList.add('hidden');
-        return;
-    }
+
     // The info icon opens and closes through setupSettingsInfoTooltips. Settings opens with it closed.
     const infoWrap = document.getElementById('settings-usage-ping-info-btn')?.closest('.settings-info-hover-wrap');
     const sync = () => {

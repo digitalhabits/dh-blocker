@@ -66,11 +66,6 @@ function cleanWorktree(worktree) {
     ['legacy Cargo target', path.join(worktree, 'src-tauri', 'target')],
     ['Vite output', path.join(worktree, 'dist')],
     ['Vite cache', path.join(worktree, 'node_modules', '.vite')],
-    ['Android Gradle cache', path.join(worktree, 'src-tauri', 'gen', 'android', '.gradle')],
-    ['Android build output', path.join(worktree, 'src-tauri', 'gen', 'android', 'app', 'build')],
-    ['Android native build output', path.join(worktree, 'src-tauri', 'gen', 'android', 'app', '.cxx')],
-    ['Android root build output', path.join(worktree, 'src-tauri', 'gen', 'android', 'build')],
-    ['Android buildSrc output', path.join(worktree, 'src-tauri', 'gen', 'android', 'buildSrc', 'build')],
   ];
   generated.forEach(([label, target]) => removeGenerated(label, target));
 }

@@ -1,7 +1,6 @@
 // Override challenge generation: word list, word-count difficulty math.
 // Extracted verbatim from app.js.
 import { state } from './state.js';
-import { tSettings, tSettingsFmt, getSettingsLanguage } from './i18n.js';
 import { escapeHtml } from './utils.js';
 
 /**
@@ -217,7 +216,7 @@ export const LEGACY_MAX_OVERRIDE_WORDS = 300;
 export const MIN_MAX_OVERRIDE_WORDS_SETTING = 50;
 export const DEFAULT_MAX_OVERRIDE_WORDS_SETTING = LEGACY_MAX_OVERRIDE_WORDS;
 export const MAX_OVERRIDE_WORDS_SETTING_STEP = 50;
-/** Phones: Android's native gate clamps at its 111-word list anyway. */
+/** iOS keeps the shorter mobile challenge ceiling. */
 export const MAX_OVERRIDE_WORDS_MOBILE = 100;
 export const MAX_CUSTOM_OVERRIDE_CHARS = 7500;
 /** Letters per generated word (the pool is five-letter words). */
@@ -240,7 +239,7 @@ export function buildWordChallengeState(text) {
 }
 
 export function isMobileOverrideChallengePlatform() {
-    return state.isIOS || state.isAndroid;
+    return state.isIOS;
 }
 
 /** Phones type the challenge one word at a time; desktop types the whole text. */
@@ -284,8 +283,7 @@ export function normalizeMaxOverrideWordsSetting(value) {
  * only, so lowering the setting cannot make an existing space easier to stop.
  * A space already above the setting gets a slider long enough to hold its
  * count, or opening the editor and saving would quietly cut the challenge.
- * Phones ignore the setting — Android's native gate serves at most its own
- * word list.
+ * iOS uses the fixed mobile ceiling instead of this desktop setting.
  */
 export function getOverrideWordsSliderMax({
     maxSetting = state.appData?.settings?.maxOverrideWords,
@@ -344,6 +342,7 @@ export function generateOverrideChallengeText(type, count, customText = '') {
 }
 
 /** Clamp a word count to [1, max words]; anything unparseable is the default. */
+// eslint-disable-next-line no-unused-vars -- Retain the unused type parameter so maxWords stays in the third argument slot.
 export function normalizeOverrideCount(value, type = 'random-words', maxWords = getMaxOverrideWords()) {
     const parsed = parseInt(value, 10);
     if (!Number.isFinite(parsed)) return DEFAULT_OVERRIDE_WORDS;
@@ -443,4 +442,12 @@ export function migrateOverrideDifficultyToWords(raw, { maxWords, countsAreChars
     }
     const words = countsAreChars ? Math.round(parsed / LEGACY_CHARS_PER_WORD) : parsed;
     return { type, count: Math.min(countsAreChars ? legacyMax : max, Math.max(MIN_OVERRIDE_WORDS, words)), customText: '' };
+}
+
+/** Active spaces may only increase the same random-word challenge. Recheck on save. */
+export function resolveActiveOverrideDifficulty(saved, candidate, active) {
+    if (!active) return candidate;
+    const floor = saved || { type: 'random-words', count: DEFAULT_OVERRIDE_WORDS };
+    if (normalizeOverrideType(floor.type) !== 'random-words' || candidate.type !== 'random-words') return { ...floor };
+    return { ...floor, count: Math.max(normalizeOverrideCount(floor.count, 'random-words'), candidate.count) };
 }

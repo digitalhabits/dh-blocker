@@ -4,35 +4,32 @@ import { state } from './state.js';
 import { getChallengeController } from './challenge-controller.js';
 import { tauriAPI } from './tauri-api.js';
 import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor, setSpaceTitle } from './utils.js';
-import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
+import { tSettings, tSettingsFmt } from './i18n.js';
 import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn, formatSpaceTitleLabel } from './blocklist-utils.js';
-import { DEFAULT_OVERRIDE_WORDS, generateOverrideChallengeText, getMaxOverrideCountForType, getMaxOverrideWords, getMinOverrideCountForType, getOverrideWordsSliderMax, getOverrideEstimatedMinutes, isMobileOverrideChallengePlatform, migrateOverrideDifficultyToWords, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType, sanitizeChallengeTargetText } from './override-challenge.js';
-import { isAndroidAllowlistUnsupported, isSchedulePausedNow, refreshDesktopHelperStatus, reportIOSScheduleSyncFailure, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
-import { saveData, updateHostsFile } from './persistence.js';
-import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
+import { DEFAULT_OVERRIDE_WORDS, getMaxOverrideCountForType, getMaxOverrideWords, getMinOverrideCountForType, getOverrideWordsSliderMax, getOverrideEstimatedMinutes, migrateOverrideDifficultyToWords, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
+import { reportIOSScheduleSyncFailure, syncIOSSchedules } from './schedule-engine.js';
+import { saveData, syncBlockingState } from './persistence.js';
+import { layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks } from './render.js';
 import { isBlocklistEditFrictionRequired,renderBlocklists, truncateBlocklistName } from './blocklists.js';
 import { areSegmentsEqual, getSelectedSchedule, canEditScheduleBetweenBlocks } from './schedule-editor.js';
 import { pad } from './time-inputs.js';
 import { formatScheduleWhenSummary, formatUnlockDurationLabel, getWhenToBlockKind, isEditorInCreateModal, mountFocusSpaceEditor, notifyEditorChanged, populateFocusSpaceEditor, resyncEditorLockState, returnFocusSpaceEditorToPanel } from './focus-space-editor.js';
-import { resetModalScrollPosition, updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth, isHelperConnectionError } from './blocking-platform.js';
+import { resetModalScrollPosition, updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth } from './blocking-platform.js';
 import { resetWebsitesImportMenuPosition } from './website-input.js';
 import { bindUiZoomLayoutObserver, scheduleUiZoomResponsiveLayout, usesStackSettingsPlacement } from './theme.js';
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
 import {
-    IOS_STOP_BTN_META_COLLAPSE_SLACK_PX, MINUTES_PER_DAY, MAX_SAME_DAY_END_MINUTES,
+    MINUTES_PER_DAY, MAX_SAME_DAY_END_MINUTES,
     clampSameDayMinutes, formatBlockTimeRemainingShort, formatConfirmModalOverrideTypingLine,
-    formatMinutesAsHHMM, formatTime, generateId,
+    formatMinutesAsHHMM, generateId,
     snapMinutesToInterval,
 } from './app.js';
-import { NEW_ALLOW_SPACE_UNLOCK_MINUTES, NEW_SPACE_UNLOCK_MINUTES, applyStopToTarget, getBlocklistUnlockMinutes, timedStopLostOwnPause } from './unlock-duration.js';
+import { getLastBreakMinutes, PAUSE_MINUTE_OPTIONS, applyStopToTarget, timedStopLostOwnPause } from './unlock-duration.js';
 import { deriveWhenToBlockKind } from './when-to-block.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
 import {
-    setBlocklistModalMode,
     syncBlocklistCreateUi,
     setConfirmModalBlockingLabel,
-    isBlocklistAllowlistMode,
-    getSelectedBlocklistModalMode,
 } from './list-mode.js';
 
 export const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
@@ -124,8 +121,7 @@ export function renderStartConfirmBlockingDetails(blocklist, listEl, showAllBtn,
     }
 }
 
-/** Shared by Start and Stop: the Times or Duration row, and the If turned off row,
- *  which is hidden (with its divider) when the space never comes back on. */
+/** Shared timing summary. The legacy unlock row stays hidden: pauses choose their own duration. */
 function renderConfirmTimingRows(prefix, blocklist, { schedule = null, block = null } = {}) {
     const durationLabelEl = document.getElementById(`${prefix}-duration-label`);
     if (durationLabelEl) {
@@ -137,10 +133,10 @@ function renderConfirmTimingRows(prefix, blocklist, { schedule = null, block = n
         else if (block && !isBlockAlwaysOn(block)) durationEl.textContent = formatBlockTimeRemainingShort((block.endTime - Date.now()) / 60000);
         else durationEl.textContent = tSettings('startConfirmDurationManual');
     }
-    const minutes = getBlocklistUnlockMinutes(blocklist);
+    const minutes = getLastBreakMinutes(state.appData.settings);
     const unlockRow = document.getElementById(`${prefix}-unlock-row`);
-    unlockRow?.classList.toggle('hidden', minutes <= 0);
-    unlockRow?.previousElementSibling?.classList.toggle('hidden', minutes <= 0);
+    unlockRow?.classList.add('hidden');
+    unlockRow?.previousElementSibling?.classList.add('hidden');
     const unlockEl = document.getElementById(`${prefix}-unlock`);
     if (unlockEl) {
         unlockEl.textContent = minutes > 0
@@ -157,15 +153,10 @@ function findBlocklistSchedule(blocklistId) {
 export function populateOverrideConfirmModalContent(blocklist, { block = null } = {}) {
     if (!blocklist) return;
 
-    // "Stop 🎯 No Twitter for 24 hours?" when it comes back on by itself.
+    state.pendingPauseSpaceId = blocklist.id;
+    document.getElementById('unlock-duration-select').value = String(getLastBreakMinutes(state.appData.settings));
     const titleEl = document.getElementById('override-modal-title');
-    if (titleEl) {
-        const minutes = getBlocklistUnlockMinutes(blocklist);
-        const space = formatSpaceTitleLabel(blocklist);
-        setSpaceTitle(titleEl, minutes > 0
-            ? tSettingsFmt('stopSpaceForTitleFmt', { space, duration: formatUnlockDurationLabel(minutes) })
-            : tSettingsFmt('stopSpaceTitleFmt', { space }), blocklist.name);
-    }
+    if (titleEl) setSpaceTitle(titleEl, tSettingsFmt('pauseSpaceTitle', { space: formatSpaceTitleLabel(blocklist) }), blocklist.name);
 
     setConfirmModalBlockingLabel(blocklist, 'override-confirm-blocking-label');
 
@@ -180,7 +171,7 @@ export function populateOverrideConfirmModalContent(blocklist, { block = null } 
         schedule: block ? null : findBlocklistSchedule(blocklist.id),
     });
 
-    setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
+    updatePauseDialogDuration();
 }
 
 /**
@@ -261,7 +252,6 @@ export function openScheduleOverrideModal(schedule) {
 
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: DEFAULT_OVERRIDE_WORDS };
     state.overrideBlockId = null;
-    state.overrideBlocklistIdForHelper = null;
 
     // A Flexible schedule sitting between its blocks stops without typing; the
     // unlock duration still applies so it comes back on its own. The challenge
@@ -300,7 +290,7 @@ export function bindPointerDragSession(element, { onStart, onMove, onEnd }) {
         const captureEl = e.currentTarget;
         try {
             captureEl.setPointerCapture?.(e.pointerId);
-        } catch (_) { /* ignore */ }
+        } catch { /* ignore */ }
 
         e.preventDefault();
 
@@ -319,7 +309,7 @@ export function bindPointerDragSession(element, { onStart, onMove, onEnd }) {
                 if (captureEl.hasPointerCapture?.(e.pointerId)) {
                     captureEl.releasePointerCapture(e.pointerId);
                 }
-            } catch (_) { /* ignore */ }
+            } catch { /* ignore */ }
             onEnd(endEvent);
         };
 
@@ -448,7 +438,6 @@ export function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
     let isResizing = false;
     let resizeHandle = null;
     let startX = 0;
-    let startY = 0;
     let startLeftPct = 0;
     let startWidthPct = 0;
     let startDayIndex = null;
@@ -581,7 +570,6 @@ export function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
             }
 
             startX = e.clientX;
-            startY = e.clientY;
             startLeftPct = parseFloat(previewEl.style.left) || 0;
             startWidthPct = parseFloat(previewEl.style.width) || 0;
             currentHoverTrack = track;
@@ -719,7 +707,6 @@ export function usesEnterSchedulerSheet() {
     if (document.body.classList.contains('ios')) return document.body.classList.contains('ui-zoom-tier-stack');
     if (
         document.body.classList.contains('ios')
-        || document.body.classList.contains('android')
         || document.body.classList.contains('handset-device')
     ) {
         return false;
@@ -760,10 +747,6 @@ function getEnterSchedulerModal() {
 
 function getTimePickerHome() {
     return document.querySelector('#scheduler-section .scheduler-content');
-}
-
-function getEnterSchedulerScrollBody() {
-    return getEnterSchedulerModal()?.querySelector('.mobile-modal-scroll-body');
 }
 
 function syncEnterSchedulerModalTitle(blocklist) {
@@ -1025,10 +1008,7 @@ export function deselectBlocklist() {
 export async function startManualBlock(blocklistId) {
     const blocklist = state.appData.blocklists.find(bl => bl.id === blocklistId);
     if (!blocklist) return false;
-    if (isAndroidAllowlistUnsupported(blocklist)) {
-        alert(tSettings('androidAllowlistUnsupported'));
-        return false;
-    }
+
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this block')) return false;
     if (!await ensureIOSAllowlistStartable(blocklist)) return false;
 
@@ -1040,7 +1020,7 @@ export async function startManualBlock(blocklistId) {
         isAlwaysOn: true,
     };
 
-    let result;
+    let result = { success: true };
 
     if (state.isIOS) {
         if (!state.screentimeAuthorized) {
@@ -1061,7 +1041,7 @@ export async function startManualBlock(blocklistId) {
         try {
             state.appData.activeBlocks.push(block);
             state.activatedBlockIds.add(block.id);
-            const updateResult = await updateHostsFile();
+            const updateResult = await syncBlockingState();
             if (!updateResult.success) {
                 state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
                 state.activatedBlockIds.delete(block.id);
@@ -1074,60 +1054,14 @@ export async function startManualBlock(blocklistId) {
             state.activatedBlockIds.delete(block.id);
             result = { success: false, error: err.toString() };
         }
-    } else if (state.isAndroid) {
-        // Android: push locally, sync (creates the MANUAL Schedule entity in
-        // Kotlin), then explicitly start the session — set_schedules alone
-        // doesn't activate a MANUAL schedule, see syncSchedulesToHelper.
-        try {
-            state.appData.activeBlocks.push(block);
-            await saveData();
-            await syncSchedulesToHelper();
-            const startResult = await tauriAPI.androidStartManualBlock(block.id, null);
-            if (!startResult.success) {
-                state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-                await saveData();
-                result = { success: false, error: startResult.error || 'Failed to start block' };
-            } else {
-                result = { success: true };
-            }
-        } catch (err) {
-            state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-            await saveData();
-            result = { success: false, error: err.toString() };
-        }
     } else {
-        // Desktop: persist the block locally first so save_data and the
-        // native-messaging host see it immediately.
+        // Desktop backends pick up the block from the saved app data.
         state.appData.activeBlocks.push(block);
         state.activatedBlockIds.add(block.id);
-        if (state.helperAvailable) {
-            const status = await tauriAPI.checkHelperStatus();
-            if (!status.running || !status.version_ok) {
-                state.helperAvailable = false;
-            }
-        }
-        // v2: the app process IS the helper. startBlockViaHelper is a no-op
-        // shim; extension blocking follows from save_data below.
-        result = await tauriAPI.startBlockViaHelper({
-            domains: blocklist.websites || [],
-            endTime: block.endTime,
-            blocklistId,
-        });
     }
 
     if (!result.success) {
-        if (!state.isIOS) {
-            state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-            state.activatedBlockIds.delete(block.id);
-        }
-        if (!result.cancelled) {
-            if (isHelperConnectionError(result.error)) {
-                state.helperAvailable = false;
-                alert('The block service isn\'t running. Please open Settings, remove the helper, then try starting a block again to reinstall it.');
-            } else {
-                alert('Could not start block: ' + (result.error || 'Unknown error'));
-            }
-        }
+        if (!result.cancelled) alert('Could not start block: ' + (result.error || 'Unknown error'));
         return false;
     }
 
@@ -1170,16 +1104,13 @@ function applyModalLockedItems(lockedWebsitesList, lockedAppsList) {
  */
 export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { preserveModalItems = false } = {}) {
     const isActive = isBlocklistEditFrictionRequired(blocklist?.id, now);
-    // The unlock duration is locked with the rest of To stop early: lengthening
-    // it while the space runs would be a cheaper way out than the challenge.
+    // Challenge method stays locked; word count may increase.
     const overrideInputs = [
         document.getElementById('override-type'),
         document.getElementById('override-count'),
         document.getElementById('custom-override-text'),
-        document.getElementById('unlock-duration-select'),
     ];
     const overrideTypeSelect = document.getElementById('override-type');
-    const unlockSelect = document.getElementById('unlock-duration-select');
     const overrideCountInput = document.getElementById('override-count');
     const overrideCountWrapperEl = document.getElementById('override-count-wrapper');
     const overrideMethodRowEl = document.getElementById('override-method-row');
@@ -1195,11 +1126,17 @@ export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { prese
     if (isActive) {
         overrideInputs.forEach(el => { if (el) el.disabled = true; });
         overrideTypeSelect?.classList.add('form-select-disabled');
-        unlockSelect?.classList.add('form-select-disabled');
         overrideCountInput?.classList.add('form-input-disabled');
         overrideTimeEstimateEl?.classList.add('time-estimate-disabled');
         overrideMethodRowEl?.classList.add('blocklist-active-locked');
         overrideCountWrapperEl?.classList.add('blocklist-active-locked');
+        if (normalizeOverrideType(blocklist.overrideDifficulty?.type) === 'random-words') {
+            overrideCountInput.disabled = false;
+            overrideCountInput.min = String(normalizeOverrideCount(blocklist.overrideDifficulty?.count, 'random-words'));
+            overrideCountInput.classList.remove('form-input-disabled');
+            overrideCountWrapperEl?.classList.remove('blocklist-active-locked');
+            overrideTimeEstimateEl?.classList.remove('time-estimate-disabled');
+        }
 
         const lockedWebsites = allowRunning ? [] : blocklist.websites || [];
         const lockedApps = allowRunning ? [] : getBlocklistModalLockedApps(blocklist);
@@ -1219,8 +1156,8 @@ export function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { prese
     }
 
     overrideInputs.forEach(el => { if (el) el.disabled = false; });
+    if (overrideCountInput) overrideCountInput.min = String(getMinOverrideCountForType('random-words'));
     overrideTypeSelect?.classList.remove('form-select-disabled');
-    unlockSelect?.classList.remove('form-select-disabled');
     overrideCountInput?.classList.remove('form-input-disabled');
     overrideTimeEstimateEl?.classList.remove('time-estimate-disabled');
     overrideMethodRowEl?.classList.remove('blocklist-active-locked');
@@ -1305,13 +1242,6 @@ export function populateBlocklistFormFields(blocklist) {
     state.lastOverrideCountValue = String(overrideCountField.value);
     state.lastCustomOverrideTextValue = customTextArea.value;
     state.lastOverrideTypeValue = document.getElementById('override-type').value;
-
-    const unlockSelect = document.getElementById('unlock-duration-select');
-    // A new space starts on 10 minutes (allow-only: Never); an existing one shows what it has saved.
-    if (unlockSelect) {
-        const newSpaceMinutes = getSelectedBlocklistModalMode() === 'allowlist' ? NEW_ALLOW_SPACE_UNLOCK_MINUTES : NEW_SPACE_UNLOCK_MINUTES;
-        unlockSelect.value = String(blocklist ? getBlocklistUnlockMinutes(blocklist) : newSpaceMinutes);
-    }
 
     // Restore color swatch selection
     document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
@@ -1480,7 +1410,6 @@ export function openOverrideModal(blockId) {
     delete window.overrideScheduleId;
     state.overrideBlockId = blockId;
     const block = state.appData.activeBlocks.find(b => b.id === blockId);
-    state.overrideBlocklistIdForHelper = block ? block.blocklistId : null;
 
     const blocklist = state.appData.blocklists.find(bl => bl.id === block?.blocklistId);
 
@@ -1493,10 +1422,12 @@ export function openOverrideModal(blockId) {
 
 // Close override modal
 export function closeOverrideModal() {
+    if (state.pauseSubmitting) return;
     document.getElementById('override-modal').classList.add('hidden');
     document.getElementById('override-modal').classList.remove('override-frictionless');
     state.overrideBlockId = null;
-    state.overrideBlocklistIdForHelper = null;
+    state.pendingPauseSpaceId = null;
+    state.pauseChallengeSnapshot = null;
     getChallengeController('override').reset();
     delete window.overrideScheduleId;
     setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
@@ -1505,11 +1436,11 @@ export function closeOverrideModal() {
 }
 
 export function initializeOverrideModalChallenge(difficulty, progressColor = null, { skipChallenge = false } = {}) {
-    // Signature preserved: the Android friction gate deliberately bypasses
-    // openOverrideModal and calls this directly (blocking-platform.js), setting
-    // state.overrideBlockId itself.
+    // The shared stop flow applies the focus space's unlock duration.
     const controller = getChallengeController('override');
+    state.pauseChallengeSnapshot = JSON.stringify({ difficulty, skipChallenge });
     controller.open({ difficulty, progressColor, skipChallenge });
+    updatePauseDialogDuration();
     const modal = document.getElementById('override-modal');
     modal.classList.toggle('override-frictionless', !!skipChallenge);
     modal.classList.remove('hidden');
@@ -1540,9 +1471,8 @@ export async function resumePausedBlock(block) {
     delete block.pauseEndTime;
     await cancelIOSRestart(block);
     await saveData();
-    await syncActiveBlocksToHelper();
-    await syncSchedulesToHelper();
-    await updateHostsFile();
+    await syncIOSSchedules();
+    await syncBlockingState();
     await updateBlockedApps();
     render();
     refreshSelectedBlocklistUi();
@@ -1554,8 +1484,8 @@ export async function resumePausedSchedule(schedule) {
     delete schedule.isPaused;
     delete schedule.pauseEndTime;
     await saveData();
-    await syncSchedulesToHelper();
-    await updateHostsFile();
+    await syncIOSSchedules();
+    await syncBlockingState();
     await updateBlockedApps();
     render();
     refreshSelectedBlocklistUi();
@@ -1565,17 +1495,18 @@ export async function resumePausedSchedule(schedule) {
 
 /**
  * A confirmed stop: the override challenge passed (or was waived for a
- * Flexible schedule between blocks). Applies the space's temporary unlock
+ * Flexible schedule between blocks). Applies the dialog's selected pause
  * duration in memory (`applyStopToTarget`) and then syncs every enforcement
  * layer for what actually happened. Returns that outcome, or null when
  * nothing was running or iOS could not register automatic restart.
  */
-export async function stopFocusSpaceTarget({ block = null, schedule = null } = {}) {
+export async function stopFocusSpaceTarget({ block = null, schedule = null, minutes = null } = {}) {
     const blocklistId = schedule?.blocklistId ?? block?.blocklistId ?? null;
     const blocklist = state.appData.blocklists.find(bl => bl.id === blocklistId) || null;
-    const unlockMinutes = getBlocklistUnlockMinutes(blocklist);
+    const unlockMinutes = minutes ?? getLastBreakMinutes(state.appData.settings);
     const stageIOSPause = state.isIOS && unlockMinutes > 0 && !!(block || schedule);
     const stagedTarget = stageIOSPause ? { ...(schedule || block) } : null;
+    const previousSchedule = state.isIOS && schedule && !stageIOSPause ? { ...schedule } : null;
     const outcome = applyStopToTarget(
         state.appData,
         { block: stageIOSPause ? (block ? stagedTarget : null) : block, schedule: stageIOSPause ? (schedule ? stagedTarget : null) : schedule },
@@ -1601,12 +1532,12 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
                 console.error('[iOS] Failed to persist blocking restoration after resume registration failure:', error);
             }
             try {
-                await syncSchedulesToHelper({ reportFailure: false });
+                await syncIOSSchedules({ reportFailure: false });
             } catch (error) {
                 console.error('[iOS] Failed to resync schedules after resume registration failure:', error);
             }
             try {
-                await updateHostsFile();
+                await syncBlockingState();
             } catch (error) {
                 console.error('[iOS] Failed to reapply blocking after resume registration failure:', error);
             }
@@ -1655,47 +1586,36 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
             await cancelIOSRestart(block);
             await tauriAPI.screentimeClearManualBlock();
             state.lastBlockedDomains = new Set();
-            await updateHostsFile();
-            await syncSchedulesToHelper();
-        } else if (state.isAndroid) {
-            try {
-                await tauriAPI.androidStopManualBlock(block.id);
-            } catch (err) {
-                console.error('androidStopManualBlock failed:', err);
-            }
-            await syncSchedulesToHelper();
-        } else {
-            const status = await refreshDesktopHelperStatus();
-            if (status.helperReady) {
-                if (blocklistId != null) {
-                    await tauriAPI.clearBlockViaHelper(blocklistId);
-                } else {
-                    console.error('[stop] No blocklist id for single-block stop; not touching helper state');
-                }
-            } else {
-                await updateHostsFile();
-            }
+            await syncBlockingState();
+            await syncIOSSchedules();
         }
         // Update blocked apps (will stop watcher if no apps to block, including schedules)
         await updateBlockedApps();
         return outcome;
     }
 
-    if (outcome.kind === 'off' && state.isIOS) {
-        // Only a schedule reaches 'off', and it stays in the data as paused, so
-        // setSchedules sees nothing removed and will not clear the store itself.
-        // Clear the schedule store alone: clearing both would drop every other
-        // space's shields too, and leave them down if the re-apply below never
-        // lands. syncSchedulesToHelper re-applies the rest in the same call.
+    const turnsOffIOSSchedule = outcome.kind === 'off' && state.isIOS;
+    try {
+        await saveData();
+    } catch (error) {
+        if (turnsOffIOSSchedule) {
+            for (const key of ['isPaused', 'pauseEndTime']) {
+                if (Object.hasOwn(previousSchedule, key)) schedule[key] = previousSchedule[key];
+                else delete schedule[key];
+            }
+        }
+        throw error;
+    }
+
+    if (turnsOffIOSSchedule) {
+        // A saved indefinite pause retains its schedule ID. Clear the schedule
+        // store only after saving succeeds, then reapply the other schedules.
         await tauriAPI.screentimeClearScheduleBlock();
         state.lastBlockedDomains = new Set();
     }
-
-    await saveData();
-    if (block) await syncActiveBlocksToHelper();
     const scheduleSync = state.isIOS && outcome.kind === 'unlocked'
-        ? await syncSchedulesToHelper({ reportFailure: false })
-        : await syncSchedulesToHelper();
+        ? await syncIOSSchedules({ reportFailure: false })
+        : await syncIOSSchedules();
     if (state.isIOS && outcome.kind === 'unlocked' && scheduleSync?.success !== true) {
         if (timedStopLostOwnPause(scheduleSync, schedule)) {
             await restoreTimedIOSBlocking?.();
@@ -1706,25 +1626,16 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null } = {
         // This stop's pause is saved and its restart booked; only another space failed.
         await reportIOSScheduleSyncFailure(scheduleSync.error);
     }
-    // updateHostsFile skips paused blocks' domains.
-    await updateHostsFile();
+    // syncBlockingState skips paused blocks' domains.
+    await syncBlockingState();
     await updateBlockedApps();
 
     return outcome;
 }
 
-/**
- * Strictness changed on a stopped space whose restart is pending: redo the stop
- * as if made now with the new setting, so Never cancels the restart and 5 min
- * restarts in 5 min. A running space, or one plainly off, is left alone.
- */
-export async function restopForNewStrictness(blocklistId, now = Date.now()) {
-    const pending = (t) => t.blocklistId === blocklistId && t.isPaused && t.pauseEndTime > now;
-    const block = state.appData.activeBlocks.find(pending) || null;
-    const schedule = block ? null : (state.appData.schedules || []).find(pending) || null;
-    if (!block && !schedule) return null;
-    // Never removes the block, and that path cancels the restart booked at the first stop.
-    return stopFocusSpaceTarget({ block, schedule });
+/** Legacy test/dev entrypoint. Editor changes never reschedule a confirmed pause. */
+export async function restopForNewStrictness() {
+    return null;
 }
 
 export function updateOverridePreview() {
@@ -1755,7 +1666,10 @@ export function syncOverrideCountUi() {
     const countInput = document.getElementById('override-count');
     if (countLabelEl) countLabelEl.textContent = tSettings('overrideWordsToType');
     if (countInput) {
-        countInput.min = String(getMinOverrideCountForType('random-words'));
+        const saved = state.appData.blocklists.find(bl => bl.id === state.editingBlocklistId);
+        countInput.min = String(saved && isBlocklistEditFrictionRequired(saved.id)
+            ? normalizeOverrideCount(saved.overrideDifficulty?.count, 'random-words')
+            : getMinOverrideCountForType('random-words'));
         // Never below the count already on the slider — see getOverrideWordsSliderMax.
         countInput.max = String(getOverrideWordsSliderMax({ currentCount: countInput.value }));
     }
@@ -1810,4 +1724,17 @@ export function applyOverrideTypeUi(type) {
 /** Current-shape copy of a stored difficulty (`{ type, count, customText }`), clamped for this platform. */
 export function cloneOverrideDifficulty(raw) {
     return migrateOverrideDifficultyToWords(raw, { maxWords: getMaxOverrideWords(), countsAreChars: false });
+}
+
+/** Updating duration must not reopen the controller or discard typed words. */
+export function updatePauseDialogDuration() {
+    const select = document.getElementById('unlock-duration-select');
+    if (!select) return;
+    if (!PAUSE_MINUTE_OPTIONS.includes(Number(select.value))) select.value = String(getLastBreakMinutes(state.appData.settings));
+    const never = Number(select.value) === 0;
+    document.getElementById('pause-never-warning')?.classList.toggle('hidden', !never);
+    const space = state.appData.blocklists.find(bl => bl.id === state.pendingPauseSpaceId);
+    getChallengeController('override').setConfirmLabel(never
+        ? tSettingsFmt('switchTurnOffFmt', { name: space?.name || '' })
+        : tSettingsFmt('pauseForDuration', { duration: formatUnlockDurationLabel(Number(select.value)) }));
 }

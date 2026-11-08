@@ -637,15 +637,28 @@ pub(crate) fn blocking_warning_begin(app: Option<&AppHandle>) {
     }
 }
 
+// Keep the saturating update compatible with the declared Rust MSRV without
+// relying on the deprecated fetch_update name or its newer replacement.
+fn decrement_warning_layers(layers: &AtomicU32) -> u32 {
+    let mut previous = layers.load(Ordering::SeqCst);
+    loop {
+        match layers.compare_exchange_weak(
+            previous,
+            previous.saturating_sub(1),
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            Ok(value) => return value,
+            Err(current) => previous = current,
+        }
+    }
+}
+
 pub(crate) fn blocking_warning_end(app: Option<&AppHandle>) {
     // Saturating decrement so a force-dismiss (which zeroes the refcount,
     // see `force_dismiss_warning_overlay`) doesn't underflow when the
     // still-tracked PIDs eventually exit and hit this path.
-    let prev = BLOCKING_WARNING_LAYERS
-        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
-            Some(v.saturating_sub(1))
-        })
-        .unwrap_or(0);
+    let prev = decrement_warning_layers(&BLOCKING_WARNING_LAYERS);
     if prev == 1 {
         if let Some(a) = app {
             crate::commands::leave_blocking_warning_compact_window(a);

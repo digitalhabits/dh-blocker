@@ -1,8 +1,3 @@
-#![allow(deprecated)]
-
-// The macOS FFI in this crate still uses the `cocoa` crate. Keep its
-// deprecation migration separate from this lint gate.
-
 // Hard stop against shipping the e2e automation server. `e2e-webdriver`
 // compiles an HTTP WebDriver endpoint into the binary so the Tier 2 suite can
 // drive a real app on macOS; in a released blocker that endpoint would be a
@@ -38,6 +33,7 @@ use tauri::Manager;
 /// The enforcer keeps running regardless of the policy; this is purely
 /// a UI affordance.
 #[cfg(target_os = "macos")]
+#[allow(deprecated)] // Cocoa FFI pending migration to objc2.
 pub(crate) fn set_macos_activation_policy(regular: bool) {
     use cocoa::appkit::NSApplication;
     use cocoa::appkit::NSApplicationActivationPolicy::{
@@ -51,6 +47,19 @@ pub(crate) fn set_macos_activation_policy(regular: bool) {
     unsafe {
         let ns_app = cocoa::appkit::NSApp();
         let _ = ns_app.setActivationPolicy_(policy);
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(deprecated)] // Cocoa FFI pending migration to objc2.
+fn set_macos_window_background(window: &tauri::WebviewWindow) {
+    use cocoa::appkit::{NSColor, NSWindow};
+    use cocoa::base::{id, nil};
+
+    let ns_window = window.ns_window().unwrap() as id;
+    unsafe {
+        let white = NSColor::colorWithRed_green_blue_alpha_(nil, 1.0, 1.0, 1.0, 1.0);
+        ns_window.setBackgroundColor_(white);
     }
 }
 
@@ -79,9 +88,6 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "ios")]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
-#[cfg(target_os = "android")]
-use tauri::{WebviewUrl, WebviewWindowBuilder};
-
 pub mod commands;
 #[cfg(target_os = "macos")]
 pub mod cross_app_consent;
@@ -100,9 +106,9 @@ pub mod product_identity;
 /// deactivation, and isn't a floating panel by default.
 //
 // `tauri::Manager` is required in scope by the macro expansion (it calls
-// `window.app_handle()` internally). The crate-level import is gated on
-// the `desktop` feature, so re-import it here for the macOS build.
-#[cfg(target_os = "macos")]
+// `window.app_handle()` internally). Import it here when the `desktop`
+// feature is disabled.
+#[cfg(all(target_os = "macos", not(feature = "desktop")))]
 use tauri::Manager as _;
 
 #[cfg(target_os = "macos")]
@@ -121,9 +127,9 @@ tauri_nspanel::tauri_panel! {
 
 #[cfg(target_os = "macos")]
 pub mod app_group;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 pub mod app_watcher;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 pub mod enforcer;
 #[cfg(target_os = "macos")]
 pub mod window_inventory;
@@ -132,21 +138,21 @@ pub mod workspace_events;
 // JOMO-style website blocking via macOS Automation (Apple Events) — the
 // macOS replacement for the Safari/Chromium extension. Firefox stays on
 // the extension + enforcer path.
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 pub mod block_page;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 pub mod blocking_method;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 pub mod browser_policy;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 pub mod data_cache;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 pub mod extension_install;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 pub mod native_host;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 pub mod native_host_install;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 pub mod profile_scan;
 // Firefox on macOS has no AppleScript dictionary for tabs, so the opt-in
 // alternative to its extension reads the active tab through Accessibility.
@@ -180,7 +186,8 @@ pub mod windows_process;
 /// hook it at the AppKit layer ourselves. In-app uninstall exits via
 /// `std::process::exit(0)` and so is not routed through here.
 #[cfg(target_os = "macos")]
-unsafe fn install_terminate_guard(ns_app: cocoa::base::id) {
+#[allow(deprecated)] // Cocoa FFI pending migration to objc2.
+unsafe fn install_terminate_guard() {
     use cocoa::base::id;
     use objc::runtime::{class_addMethod, class_getInstanceMethod, method_setImplementation, Sel};
     use objc::{msg_send, sel, sel_impl};
@@ -199,6 +206,7 @@ unsafe fn install_terminate_guard(ns_app: cocoa::base::id) {
         0
     }
 
+    let ns_app = cocoa::appkit::NSApp();
     let delegate: id = msg_send![ns_app, delegate];
     if delegate.is_null() {
         log::warn!("install_terminate_guard: NSApp has no delegate yet");
@@ -251,10 +259,7 @@ pub fn run() {
     // Windows, this also means clicking the app icon while it's
     // already running focuses the existing window instead of
     // spawning a duplicate.
-    #[cfg(all(
-        not(any(target_os = "ios", target_os = "android")),
-        not(feature = "system-test")
-    ))]
+    #[cfg(all(not(target_os = "ios"), not(feature = "system-test")))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
         use tauri::Manager;
         if let Some(w) = app.get_webview_window("main") {
@@ -298,7 +303,7 @@ pub fn run() {
     // hidden in the tray rather than popping the window on every
     // login. Plain double-click from Finder / Start menu doesn't
     // pass the flag, so the window shows normally there.
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    #[cfg(not(target_os = "ios"))]
     let builder = builder.plugin(tauri_plugin_autostart::init(
         tauri_plugin_autostart::MacosLauncher::LaunchAgent,
         Some(vec!["--autostart"]),
@@ -309,12 +314,6 @@ pub fn run() {
     // same Rust native host the Windows target uses).
     #[cfg(target_os = "ios")]
     let builder = builder.plugin(tauri_plugin_screentime::init());
-
-    // Android blocking runs entirely in Kotlin (AccessibilityService +
-    // WorkManager) — this plugin is a thin marshaling bridge only, no
-    // background work on the Rust side.
-    #[cfg(target_os = "android")]
-    let builder = builder.plugin(tauri_plugin_android_blocker::init());
 
     builder
         .setup(|app| {
@@ -378,8 +377,7 @@ pub fn run() {
             unsafe {
                 let is_autostart = std::env::args().any(|a| a == "--autostart");
                 set_macos_activation_policy(!is_autostart);
-                let ns_app = cocoa::appkit::NSApp();
-                install_terminate_guard(ns_app);
+                install_terminate_guard();
             }
 
             // Create main window with transparent titlebar on macOS
@@ -417,21 +415,7 @@ pub fn run() {
                 // standard traffic lights hidden — assert on every create.
                 commands::ensure_macos_traffic_lights_visible(app.handle());
 
-                // Set background color to match app (white)
-                use cocoa::appkit::{NSColor, NSWindow};
-                use cocoa::base::{id, nil};
-
-                let ns_window = window.ns_window().unwrap() as id;
-                unsafe {
-                    // Pure white background
-                    let bg_color = NSColor::colorWithRed_green_blue_alpha_(
-                        nil, 1.0, // R
-                        1.0, // G
-                        1.0, // B
-                        1.0, // A
-                    );
-                    ns_window.setBackgroundColor_(bg_color);
-                }
+                set_macos_window_background(&window);
 
                 #[cfg(feature = "desktop")]
                 {
@@ -608,17 +592,7 @@ pub fn run() {
                                             }
                                             commands::ensure_macos_traffic_lights_visible(app);
 
-                                            use cocoa::appkit::{NSColor, NSWindow};
-                                            use cocoa::base::{id, nil};
-
-                                            let ns_window = new_window.ns_window().unwrap() as id;
-                                            unsafe {
-                                                let bg_color =
-                                                    NSColor::colorWithRed_green_blue_alpha_(
-                                                        nil, 1.0, 1.0, 1.0, 1.0,
-                                                    );
-                                                ns_window.setBackgroundColor_(bg_color);
-                                            }
+                                            set_macos_window_background(&new_window);
                                             set_macos_activation_policy(true);
                                             let _ = new_window.show();
                                             let _ = new_window.set_focus();
@@ -677,13 +651,6 @@ pub fn run() {
                     WebviewWindowBuilder::new(app, "main", WebviewUrl::default()).build()?;
             }
 
-            // Create main window on Android — full screen webview
-            #[cfg(target_os = "android")]
-            {
-                let _window =
-                    WebviewWindowBuilder::new(app, "main", WebviewUrl::default()).build()?;
-            }
-
             // Tray icon (desktop only) — no right-click menu by design:
             // exiting the app would tear down the enforcer/watcher and
             // silently drop active blocks. Left-click reveals/focuses
@@ -728,7 +695,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             workspace_events::install();
 
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            #[cfg(not(target_os = "ios"))]
             {
                 commands::app_blocking::register(app);
                 commands::enforcement::register(app);
@@ -807,7 +774,7 @@ pub fn run() {
             // is installed manually — Firefox native-host manifest sync
             // runs above (EULA-gated) and during onboarding scans.
             #[cfg(all(
-                not(any(target_os = "ios", target_os = "android")),
+                not(target_os = "ios"),
                 not(target_os = "macos"),
                 not(feature = "system-test")
             ))]
@@ -862,7 +829,7 @@ pub fn run() {
             // http://localhost:5173. Release builds — the .pkg / .dmg
             // path users actually install — keep self-healing.
             #[cfg(all(
-                not(any(target_os = "ios", target_os = "android")),
+                not(target_os = "ios"),
                 not(debug_assertions),
                 not(feature = "system-test")
             ))]
@@ -909,7 +876,7 @@ pub fn run() {
                 // "--autostart" arg above. Without this, every login
                 // would briefly pop the window in the user's face.
                 // The user can re-open the window via the tray icon.
-                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                #[cfg(not(target_os = "ios"))]
                 if std::env::args().any(|a| a == "--autostart") {
                     let _ = main.hide();
                     log::info!("startup: launched by autostart, window hidden");
@@ -1004,17 +971,6 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::set_blocking_method,
         commands::get_system_diagnostics,
         commands::onboarding_state,
-        commands::check_helper_status,
-        commands::install_helper,
-        commands::uninstall_helper,
-        commands::start_block_via_helper,
-        commands::clear_block_via_helper,
-        commands::set_blocked_apps_via_helper,
-        commands::set_blocks_via_helper,
-        commands::set_schedules_via_helper,
-        commands::block_websites,
-        commands::clean_hosts_file,
-        commands::get_helper_diagnostics,
         commands::check_safari_fda_access,
         commands::sync_safari_fda_access,
         commands::complete_safari_fda_onboarding,
@@ -1034,7 +990,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
 }
 
 /// All commands for Windows / Linux desktop.
-#[cfg(not(any(target_os = "ios", target_os = "android", target_os = "macos")))]
+#[cfg(not(any(target_os = "ios", target_os = "macos")))]
 fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
     tauri::generate_handler![
         commands::get_app_version,
@@ -1081,17 +1037,6 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::set_blocking_method,
         commands::get_system_diagnostics,
         commands::onboarding_state,
-        commands::check_helper_status,
-        commands::install_helper,
-        commands::uninstall_helper,
-        commands::start_block_via_helper,
-        commands::clear_block_via_helper,
-        commands::set_blocked_apps_via_helper,
-        commands::set_blocks_via_helper,
-        commands::set_schedules_via_helper,
-        commands::block_websites,
-        commands::clean_hosts_file,
-        commands::get_helper_diagnostics,
         commands::open_browser_extension_settings,
         commands::open_url_in_browser,
         commands::save_overlay_image_asset,
@@ -1119,27 +1064,39 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
     ]
 }
 
-/// Commands for Android (only shared commands for now; android-blocker plugin adds the rest)
-#[cfg(target_os = "android")]
-fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
-    tauri::generate_handler![
-        // Data commands (all platforms)
-        commands::get_app_version,
-        commands::load_data,
-        commands::save_data,
-        commands::set_window_size,
-    ]
-}
-
 #[cfg(test)]
 mod command_registration_tests {
+    #[test]
+    fn desktop_registers_the_app_policy_command() {
+        // Both desktop WebViews share the frontend call to set_blocked_apps.
+        let source = include_str!("lib.rs");
+        for platform in [
+            "/// All commands for macOS.",
+            "/// All commands for Windows",
+        ] {
+            let handler = source
+                .split_once(platform)
+                .expect("desktop command handler")
+                .1
+                .split_once("\n}")
+                .expect("end of desktop command handler")
+                .0;
+            assert!(
+                handler.contains("commands::set_blocked_apps,"),
+                "{platform} is missing set_blocked_apps"
+            );
+        }
+    }
+
     #[test]
     fn windows_registers_blocking_method_settings_commands() {
         // Guard the platform-specific IPC wiring: testing the commands directly
         // cannot detect their omission from generate_handler!.
         let source = include_str!("lib.rs").replace("\r\n", "\n");
         let windows = source
-            .split("#[cfg(not(any(target_os = \"ios\", target_os = \"android\", target_os = \"macos\")))]\nfn all_commands()")
+            .split(
+                "#[cfg(not(any(target_os = \"ios\", target_os = \"macos\")))]\nfn all_commands()",
+            )
             .nth(1)
             .expect("Windows command handler")
             .split("/// Commands for mobile")

@@ -1,63 +1,21 @@
 // Tauri API imports - proper ES modules from @tauri-apps/api
-import { invoke, convertFileSrc, Channel } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
-import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { ask, message, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
-import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import logoReddFocusUrl from './images/logo-reddfocus.svg';
 import logoReddShieldUrl from './images/logo-redd-shield.svg';
 import appleLogoUrl from './images/apple-logo.svg';
-import iconChromeUrl from './images/icon-chrome.svg';
-import iconBraveUrl from './images/icon-brave.svg';
-import iconEdgeUrl from './images/icon-edge.svg';
-import iconFirefoxUrl from './images/icon-firefox.svg';
-import iconSafariUrl from './images/icon-safari.svg';
-import snoozeIconUrl from './images/snooze.png';
 // Compatibility layer wrapping Tauri APIs — extracted to tauri-api.js
-import { tauriAPI, openUrl } from './tauri-api.js';
-import { state, appState } from './state.js';
+import { tauriAPI } from './tauri-api.js';
+import { state } from './state.js';
 import './dev-internals.js';
-import {
-    ALWAYS_ON_END_TIME,
-    PROTECTED_APP_NAMES,
-    PROTECTED_DOMAINS,
-    isProtectedApp,
-    isProtectedDomain,
-    isBlockAlwaysOn,
-    isScreenTimeSummaryEntry,
-    parseLegacyScreenTimeSummary,
-    normalizeIOSScreenTimeSelection,
-    cloneIOSScreenTimeSelection,
-    isIOSSelectionNarrowing,
-    hasUsableIOSScreenTimeSelection,
-    formatIOSScreenTimeSelectionLabel,
-    getBlocklistIOSScreenTimeSelection,
-    getBlocklistModalLockedApps,
-    mergeIOSScreenTimeSelectionAdditive,
-    resolveIOSScreenTimeSelectionForSave,
-    blocklistNeedsIOSSelectionRefresh,
-    ensureIOSBlocklistSelectionReady,
-    normalizeBlocklist,
-    collectActiveIOSManualBlockPayload,
-    displayNameForBlockedApp,
-} from './blocklist-utils.js';
-import { openInstalledAppsPicker } from './apps-picker.js';
+import { setupFocusSpaceAppearanceFields, setupFocusSpaceOverrideFields } from './focus-space-editor-fields.js';
+import { saveFocusSpace } from './focus-space-save.js';
+import { installFocusSpaceTagBridges, setupFocusSpaceTagEditors } from './focus-space-tags.js';
 import { handlePopoverOutsideClick } from './time-inputs.js';
-import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
-import { applyEditorScheduleForBlocklist, applyFocusSpaceEditorLanguage, confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, isEditorInCreateModal, notifyEditorChanged, populateFocusSpaceEditor, setOpenEditorSection, setupFocusSpaceEditor } from './focus-space-editor.js';
-import { loadData, saveData, updateHostsFile } from './persistence.js';
-import { cleanDomainInput, isValidDomain, processWebsiteInput, setupWebsitesImportMenu, resetWebsitesImportMenuPosition } from './website-input.js';
-import { updateBlockedApps, acceptEula, appBlockingWarningSnoozedUntilMs, checkAndroidPermissions, checkHelperStatus, checkScreentimeAuth, collectManualBlockedApps, collectScheduleBlockedApps, detectPlatform, ensureInstalledAppsCache, initializeAndroidBlockingState, initializeIOSBlockingState, listenForAndroidFrictionGate, onAndroidResumed, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAndroidBackButtonHandling, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility, openExternal, updateWindowHeight, isHelperInstallCancelled, isHelperConnectionError, joinAppListWithLimit, formatAppBlockingSnoozeStartsIn, APP_BLOCKING_SNOOZE_ICON_IMG_12 } from './blocking-platform.js';
-import { CURRENT_EULA_REVISION, applyEnforcementDescCopy, applyMacAutomationIntroCopy, ensureExtensionSetupOnboardingShown, getAcceptedEulaRevision, hasAcceptedEula, isFirstRunOnboardingInProgress, resetDevOnlyEulaAcceptance, returnToWelcomeFromEula, runDesktopOnboarding, runInitialOnboardingSequence, setupMacAutomationIntroModal, syncMigrationPostBackButtonVisibility, syncSetupBannerHeadline, welcomeFirefoxInstalled } from './onboarding.js';
-// app.js calls these enforcement.js exports but historically never imported
-// them — they resolved only through Rollup's scope hoisting, which held while
-// the desktop bundle retained every enforcement helper. The Android build now
-// strips desktop-only UI (__ANDROID_BUILD__ guards, CSS purge, DOM removal),
-// so Rollup tree-shakes any export without a real import edge and these bare
-// references become runtime ReferenceErrors (e.g. syncBlockingMethodLabelIcons
-// in applySettingsLanguage). Importing them keeps the edges on every target;
-// the guarded functions remain as no-ops on Android.
+import { applyFocusSpaceEditorLanguage, confirmDiscardEditorEdits, editorHasUnsavedEdits, setupFocusSpaceEditor } from './focus-space-editor.js';
+import { loadData, saveData, syncBlockingState } from './persistence.js';
+import { updateBlockedApps, acceptEula, checkScreentimeAuth, detectPlatform, ensureInstalledAppsCache, initializeIOSBlockingState, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility } from './blocking-platform.js';
+import { applyEnforcementDescCopy, applyMacAutomationIntroCopy, ensureExtensionSetupOnboardingShown, hasAcceptedEula, resetDevOnlyEulaAcceptance, returnToWelcomeFromEula, runDesktopOnboarding, runInitialOnboardingSequence, setupMacAutomationIntroModal, syncMigrationPostBackButtonVisibility, syncSetupBannerHeadline, welcomeFirefoxInstalled } from './onboarding.js';
 import {
     ALL_BLOCKING_METHOD_KEYS,
     browserBlockingMethod,
@@ -75,7 +33,6 @@ import {
     syncBlockingMethodLabelIcons,
     syncMigrationMacHowto,
     syncMigrationPostHeader,
-    syncSafariFdaOnboardingGrantButton,
     updateAllEnforcementToggleLocks,
     updateGraceSettingLock,
     wireEnforcementToggle,
@@ -88,49 +45,45 @@ import {
     setupAllowEditsBetweenBlocksToggle,
 } from './schedule-editor.js';
 import {
-    SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE, applyScheduleStartOverlayPresentation,
-    getScheduleStartOverlayForWarningApps,
+    SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE,
     handleSchedulePanelOverlayOptionClick, isScheduleOverlayCustomiseModalOpen,
-    playAppBlockingLetsGoVoice, populateScheduleOverlayCustomiseSelector,
+    populateScheduleOverlayCustomiseSelector,
     setupScheduleOverlayCustomiseModal,
     syncScheduleOverlayCustomiseDirtyState,
     syncScheduleOverlayCustomiseEditorState, syncScheduleOverlayCustomiseTitle,
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
-import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, isEnterSchedulerModalOpen, openBlocklistModal, openOverrideModal, refreshSelectedBlocklistUi, restopForNewStrictness, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncColorSwatchInk, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
+import { closeBlocklistModal, closeOverrideModal, closeStartConfirmModal, deselectBlocklist, handleBlocklistSelect, openBlocklistModal, refreshSelectedBlocklistUi, updatePauseDialogDuration, initializeOverrideModalChallenge, setStartConfirmPrimaryLabel, stopFocusSpaceTarget, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
 import { enhanceNativeSelects } from './custom-select.js';
-import { expandBlocklistCard, renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, deleteBlocklist, isBlocklistEditFrictionRequired, pendingDelete, saveBlocklistOrderFromDOM, setUndoToastMessage } from './blocklists.js';
+import { renderBlocklists, closeAllBlocklistMenus, setupBlocklistsImportExportButtons, isBlocklistEditFrictionRequired, pendingDelete, setUndoToastMessage } from './blocklists.js';
 import {
     getSelectedBlocklistModalMode,
     syncBlocklistCreateUi,
     syncModalAppPlaceholder,
     syncModalWebsitePlaceholder,
-    updateAllowlistScopeHints,
     updateBlocklistModalModeLabels,
 } from './list-mode.js';
-import { countIOSScreenTimeSelectionItems } from './list-presentation.js';
-import { render, kickClockNow, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderScheduleAlwaysOnRow, renderScheduleVisibilityChips, renderWeekBlocks, renderBlocklistSelector, getCalendarSegmentLayout, layoutOverlappingBlocks } from './render.js';
-import { hasAnyEnforcedBlocks, isAndroidAllowlistUnsupported, isNonRepeatingSchedule, isOneOffBlockEnforced, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
-import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
+import { render, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderBlocklistSelector } from './render.js';
+import { dismissTopmostEscapeLayer } from './modal-manager.js';
 import {
     refreshUninstallButtonState,
-    setupGraceSetting, setupMaxOverrideWordsSetting, syncMaxOverrideWordsSetting, setupHelpMenuLinks, setupHelperSettings, setupInAppUninstall,
+    setupGraceSetting, setupMaxOverrideWordsSetting, syncMaxOverrideWordsSetting, setupHelpMenuLinks, setupInAppUninstall,
     setupOverrideAll, setupSettingsHelpButtons, setupSettingsInfoTooltips, setupWindowsUninstallGuidance,
-    syncUninstallConfirmModal, updateCleanHostsBtnState, updateHelperStatusIndicator,
-    updateManageSectionVisibility, updateOverrideAllButtonVisibility,
+    syncUninstallConfirmModal,
+    updateOverrideAllButtonVisibility,
 } from './settings.js';
-import { normalizeUnlockMinutes } from './unlock-duration.js';
+import { getLastBreakMinutes, rememberBreakMinutes } from './unlock-duration.js';
 import { turnFocusSpaceOn } from './focus-space-switch.js';
-import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, getEffectiveViewportWidth, bindUiZoomLayoutObserver } from './theme.js';
-import { checkForAppUpdate, getLatestVersionPlatformKey, isVersionHigher, resolveMicrosoftStorePackage, updateBannerWhatsNewButtonHtml } from './update-banner.js';
+import { setupTheme, setupUiZoomShortcuts } from './theme.js';
+import { checkForAppUpdate, updateBannerWhatsNewButtonHtml } from './update-banner.js';
 import { updateDownloadInProgress } from './update-banner.js';
 import { setupUsagePingToggle, startUsagePing } from './usage-ping.js';
 import { applyStoreReviewPromptCopy, startStoreReviewPrompt } from './store-review-prompt.js';
 import { applyStartWarningsLanguage, setupStartWarningsOnboarding, setupStartWarningsToggle, syncIOSStartWarnings } from './ios-start-warnings.js';
 import { getChallengeController } from './challenge-controller.js';
-import { getMaxOverrideCountForType, getOverrideEstimatedMinutes, getTypingCharsPerMinuteForType, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
-import { escapeHtml, cleanUrlForDisplay, parseRgbFromColorString, rgbToHex, rgbToHsl, hslToRgb, getRelativeLuminance, getEnteringChipColor, getContrastTextColor } from './utils.js';
-import { SETTINGS_TRANSLATIONS, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List, tSettings, tSettingsFmt, LANGUAGE_FLAG_SVG, LANGUAGE_NATIVE_LABELS, languageNativeLabel, SUPPORTED_LANGUAGE_CODES } from './i18n.js';
+import { DEFAULT_OVERRIDE_WORDS, normalizeOverrideType } from './override-challenge.js';
+import { escapeHtml } from './utils.js';
+import { getSettingsLanguage, tSettings, tSettingsFmt, LANGUAGE_FLAG_SVG, languageNativeLabel, SUPPORTED_LANGUAGE_CODES } from './i18n.js';
 
 // Where the current pointer press began. A drag that starts in a field and
 // ends elsewhere fires its click on the common ancestor, so outside-click
@@ -139,8 +92,6 @@ let lastPressTarget = null;
 /** Windows Settings → Apps → Installed apps (Apps & features). */
 export const WINDOWS_APPS_SETTINGS_URI = 'ms-settings:appsfeatures';
 
-
-
 /** Blocklist modal undo: session-scoped stack and "last" values for recording previous state. */
 
 export function pushModalUndo(type, undoFn) {
@@ -148,16 +99,12 @@ export function pushModalUndo(type, undoFn) {
     state.blocklistModalUndoStack.push({ type, undo: undoFn });
 }
 
-/** Reference to the removed Custom Text option so it can be re-added (getElementById returns null after remove()). */
-/** Blocklist id to pass to helper when confirming single-block override (set when opening modal). */
-let draggedBlocklistId = null; // Track which blocklist is being dragged
 let startupInitializationPromise = null; // Prevent duplicate post-onboarding startup runs
 /** Max length for blocklist display name (add/edit modal + persisted saves). */
 export const BLOCKLIST_NAME_MAX_LENGTH = 60;
 /** Past this length the card title row usually ellipsizes; use "in 11h" instead of "starts in 11h". */
 /** Collapse stop-button emoji+name this many px before measured overflow (iOS flex overlap). */
 export const IOS_STOP_BTN_META_COLLAPSE_SLACK_PX = 24;
-
 
 // Schedule mode state
 state.scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
@@ -171,41 +118,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
     await resetDevOnlyEulaAcceptance();
 
-    // Returning Android users already have complete persisted focus-space
-    // state. Paint it before *any* native IPC or listener wiring, then check
-    // Accessibility immediately afterwards. A revoked permission swaps this
-    // optimistic frame for the onboarding gate as soon as the IPC completes.
-    // Fresh installs and upgrades still wait for migration below because they
-    // do not yet have a safe, complete state to render.
-    const renderedAndroidFirstFrame = state.isAndroid
-        && hasAcceptedEula()
-        && state.appData.settings?.androidMigrationDone === true;
-    if (renderedAndroidFirstFrame) {
-        setupTheme();
-        render();
-        await new Promise((resolve) => {
-            requestAnimationFrame(() => {
-                setTimeout(() => {
-                    state.androidFirstFrameCommitted = true;
-                    resolve();
-                }, 0);
-            });
-        });
-    }
-
     setupHandsetModalScreens();
     setupMobileExternalLinkOpens();
-    if (state.isAndroid) {
-        listenForAndroidFrictionGate();
-        setupAndroidBackButtonHandling();
-    }
+
     setupEventListeners();
     setupAppBlockingWarningOverlay();
     initWelcomeDemoControls();
-    if (!renderedAndroidFirstFrame) setupTheme();
+    setupTheme();
     setupUiZoomShortcuts();
     setupHelpMenuLinks();
-    setupHelperSettings();
     setupUsagePingToggle();
     setupStartWarningsToggle();
     setupStartWarningsOnboarding();
@@ -220,18 +141,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupGraceSetting();
     setupMaxOverrideWordsSetting();
     setupSettingsEnforcementSection();
-    if (!state.isIOS && !state.isAndroid) {
+    if (!state.isIOS) {
         void wireEnforcementToggle();
     }
     await runInitialOnboardingSequence();
     if (state.isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
-    } else if (state.isAndroid && hasAcceptedEula()) {
-        // Deliberately after the optimistic persisted first frame above. The
-        // result is still required before Android reconciliation begins.
-        if (state.androidPermissionsGranted == null) {
-            await checkAndroidPermissions();
-        }
     }
 
     if (hasAcceptedEula()) {
@@ -248,18 +163,10 @@ export async function runPostAcceptanceStartup() {
     }
 
     startupInitializationPromise = (async () => {
-        await runExpiryOnce(); // Align in-memory state with Screen Time / helper (e.g. after app was closed)
+        await runExpiryOnce(); // Reconcile blocks and pauses that expired while the app was closed.
 
-        // Desktop reconciliation and returning-user Android initialization
-        // perform several native scans and IPC round-trips. None is needed to
-        // draw already-migrated persisted focus spaces, so paint those first
-        // and let the browser commit the frame before continuing startup.
-        // Android's one-time legacy migration deliberately remains ahead of
-        // the first render: it owns initial default/imported-space creation.
-        const androidDataReadyForEarlyRender = state.isAndroid
-            && state.appData.settings?.androidMigrationDone === true;
-        const renderedBeforeNativeStartup = state.androidFirstFrameCommitted || (!state.isIOS
-            && (!state.isAndroid || androidDataReadyForEarlyRender));
+        // Paint desktop state before native reconciliation; iOS waits for Screen Time.
+        const renderedBeforeNativeStartup = !state.isIOS;
         if (renderedBeforeNativeStartup) {
             render();
             startTickInterval();
@@ -273,21 +180,6 @@ export async function runPostAcceptanceStartup() {
             if (state.screentimeAuthorized) {
                 await initializeIOSBlockingState();
             }
-        } else if (state.isAndroid) {
-            // The normal startup and EULA-acceptance paths check this before
-            // entering post-acceptance startup. Avoid a duplicate native IPC;
-            // retain the fallback for direct/test callers.
-            if (state.androidPermissionsGranted == null) {
-                await checkAndroidPermissions();
-            }
-            // Not gated on the accessibility grant: migration must run
-            // before ANY set_schedules call, because Kotlin stores the
-            // synced schedules under the same legacy prefs key
-            // ("routines") that the migration reads — a pre-migration
-            // sync would overwrite the legacy data and then re-import
-            // our own schedules as duplicates. Neither command needs
-            // accessibility; enforcement simply stays off until granted.
-            await initializeAndroidBlockingState();
         } else {
             // Run first-launch migration off the legacy helper + check
             // Automation TCC (macOS) + extension compliance. Idempotent;
@@ -296,16 +188,9 @@ export async function runPostAcceptanceStartup() {
             setupWebAutomationUiAlerts();
             await ensureInstalledAppsCache();
             await runDesktopOnboarding();
-            await checkHelperStatus();
-            console.log('[startup-sync] Desktop startup helperAvailable:', state.helperAvailable);
-            // Reconcile manual blocks first so paused one-offs are removed from helper state after reinstall.
-            await syncActiveBlocksToHelper();
-            // Then sync schedules to helper so both enforcement sources are aligned.
-            await syncSchedulesToHelper();
-            console.log('[startup-sync] Startup helper reconciliation complete');
             // Push active schedule / block app sets into the in-process watcher
             // immediately — don't wait for the 1s tick interval.
-            await updateHostsFile();
+            await syncBlockingState();
             await updateBlockedApps();
             if (!state.migrationOnboardingActive) {
                 try {
@@ -329,7 +214,7 @@ export async function runPostAcceptanceStartup() {
 
         // Check for app updates (non-blocking, desktop only), and re-check
         // every 6 h: the app can stay open for days past a release.
-        if (!state.isIOS && !state.isAndroid) {
+        if (!state.isIOS) {
             checkForAppUpdate();
             setInterval(checkForAppUpdate, 6 * 60 * 60 * 1000);
         }
@@ -347,9 +232,6 @@ export async function runPostAcceptanceStartup() {
         }
     }
 }
-
-
-
 
 // Setup event listeners
 function setupEventListeners() {
@@ -463,44 +345,9 @@ function setupEventListeners() {
         btn.textContent = tSettings('iosScreentimeGrantBtn');
     });
 
-    document.getElementById('android-accessibility-grant-btn')?.addEventListener('click', async () => {
-        const btn = document.getElementById('android-accessibility-grant-btn');
-        const status = document.getElementById('android-accessibility-status');
-        if (!btn) return;
-
-        btn.disabled = true;
-        btn.textContent = tSettings('androidAccessibilityOpeningBtn');
-        if (status) {
-            status.textContent = tSettings('androidAccessibilityWaitingStatus');
-            status.classList.remove('hidden');
-        }
-
-        try {
-            await tauriAPI.androidOpenAccessibilitySettings();
-        } catch (err) {
-            console.error('Failed to open Android accessibility settings:', err);
-            if (status) {
-                status.textContent = tSettings('androidAccessibilityOpenFailedStatusFmt')
-                    .replace('{error}', String(err));
-            }
-        } finally {
-            btn.disabled = false;
-            btn.textContent = tSettings('androidAccessibilityGrantBtn');
-        }
-    });
-
-    if (state.isAndroid) {
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                void onAndroidResumed();
-            }
-        });
-    }
-
     if (state.isIOS) {
         // Screen Time access is granted and revoked in Settings, and there is no
-        // callback for "the user came back" — the same reason Android re-checks
-        // its Accessibility permission here. Without this the app keeps showing
+        // callback for "the user came back". Without this check the app keeps showing
         // focus spaces as on after access is revoked, until the next launch.
         document.addEventListener('visibilitychange', () => {
             // Also rebuilds start warnings: notification permission and the time zone
@@ -664,223 +511,13 @@ function setupEventListeners() {
     });
 }
 
-
-
-
-/** Set inside setupModalListeners, which owns the form's closure state. */
+/** Bound to the shared editor during listener setup. */
 let saveFocusSpaceEditorImpl = null;
 export async function saveFocusSpaceEditor() {
     if (saveFocusSpaceEditorImpl) await saveFocusSpaceEditorImpl();
 }
 
-// Modal listeners
 function setupModalListeners() {
-    let modalWebsites = [];
-    let modalApps = [];
-    let modalIOSScreenTimeSelection = null;
-
-    const getModalDisplayApps = () => {
-        const displayApps = modalApps.map(displayNameForBlockedApp);
-        const screenTimeLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
-        if (screenTimeLabel) {
-            displayApps.push(screenTimeLabel);
-        }
-        return displayApps;
-    };
-
-    const getModalLockedAppDisplayItems = () => {
-        const screenTimeLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
-        return [...(window.lockedApps || []), ...modalApps.filter(isAppLocked), ...(isAppLocked(screenTimeLabel) ? [screenTimeLabel] : [])]
-            .map((app) => (app === screenTimeLabel ? app : displayNameForBlockedApp(app)));
-    };
-
-    const modalWebsiteInput = document.getElementById('modal-website-input');
-    const modalAppInput = document.getElementById('modal-app-input');
-    const modalWebsitesTags = document.getElementById('modal-websites-tags');
-    const modalAppsTags = document.getElementById('modal-apps-tags');
-
-    // Email-to-field-style multi-selection. Track selection by VALUE so the
-    // sets stay valid across re-renders and modifications.
-    const selectedWebsites = new Set();
-    const selectedApps = new Set();
-
-    // Running allow mode (lockLastItems): only the last website/app and the iOS "N apps" tag are locked.
-    const isWebsiteLocked = (w) => (Array.isArray(window.lockedWebsites) && window.lockedWebsites.includes(w))
-        || (!!window.lockLastItems && modalWebsites.length === 1);
-    const isAppLocked = (a) => (Array.isArray(window.lockedApps) && window.lockedApps.includes(a))
-        || (!!window.lockLastItems && !!a && (a === formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection) || modalApps.length === 1));
-
-    const clearWebsiteSelection = () => {
-        if (selectedWebsites.size === 0) return false;
-        selectedWebsites.clear();
-        window.renderModalTags();
-        return true;
-    };
-    const clearAppSelection = () => {
-        if (selectedApps.size === 0) return false;
-        selectedApps.clear();
-        window.renderModalTags();
-        return true;
-    };
-
-    const selectAllUnlockedWebsites = () => {
-        selectedWebsites.clear();
-        modalWebsites.forEach(w => {
-            if (!isWebsiteLocked(w)) selectedWebsites.add(w);
-        });
-        window.renderModalTags();
-    };
-    const selectAllUnlockedApps = () => {
-        selectedApps.clear();
-        modalApps.forEach(a => {
-            if (!isAppLocked(a)) selectedApps.add(displayNameForBlockedApp(a));
-        });
-        // Also include the iOS Screen Time aggregate label if present.
-        const iosLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
-        if (iosLabel && !isAppLocked(iosLabel)) selectedApps.add(iosLabel);
-        window.renderModalTags();
-    };
-
-    // Bulk-delete every selected website. Pushes a single undo entry that
-    // restores all of them at once, matching the user's "select-all then
-    // backspace" mental model in a text editor.
-    const deleteSelectedWebsites = () => {
-        if (selectedWebsites.size === 0) return false;
-        const toDelete = modalWebsites.filter(w => selectedWebsites.has(w) && !isWebsiteLocked(w));
-        if (window.lockLastItems && toDelete.length === modalWebsites.length) toDelete.pop();
-        if (toDelete.length === 0) {
-            selectedWebsites.clear();
-            window.renderModalTags();
-            return false;
-        }
-        const restoreCopy = [...toDelete];
-        pushModalUndo('website-bulk', () => {
-            restoreCopy.forEach(w => {
-                if (!modalWebsites.includes(w)) modalWebsites.push(w);
-            });
-            window.renderModalTags();
-        });
-        toDelete.forEach(w => {
-            const i = modalWebsites.indexOf(w);
-            if (i !== -1) modalWebsites.splice(i, 1);
-        });
-        selectedWebsites.clear();
-        window.renderModalTags();
-        return true;
-    };
-
-    // Arrow-key navigation through chips, like an email-to field.
-    //   direction === -1  → ArrowLeft  (move selection left, or pull last chip
-    //                       into selection when selection is empty)
-    //   direction === +1  → ArrowRight (move selection right, deselect & return
-    //                       focus to the input if past the last chip)
-    // Returns:
-    //   'moved'      — selection changed
-    //   'deselected' — past the last chip; selection was cleared
-    //   false        — nothing happened
-    const moveSelectionInList = (list, lockedFn, selection, direction) => {
-        if (selection.size === 0) {
-            if (direction === -1) {
-                for (let i = list.length - 1; i >= 0; i--) {
-                    if (!lockedFn(list[i])) {
-                        selection.add(list[i]);
-                        return 'moved';
-                    }
-                }
-            }
-            return false;
-        }
-
-        const selectedIdx = [];
-        list.forEach((item, idx) => {
-            if (selection.has(item)) selectedIdx.push(idx);
-        });
-        if (selectedIdx.length === 0) return false;
-
-        if (direction === -1) {
-            let next = selectedIdx[0] - 1;
-            while (next >= 0 && lockedFn(list[next])) next--;
-            if (next < 0) {
-                // At the start: collapse a multi-selection onto the leftmost
-                // chip; otherwise nothing to do.
-                if (selectedIdx.length > 1) {
-                    selection.clear();
-                    selection.add(list[selectedIdx[0]]);
-                    return 'moved';
-                }
-                return false;
-            }
-            selection.clear();
-            selection.add(list[next]);
-            return 'moved';
-        }
-
-        // direction === +1 (ArrowRight)
-        let next = selectedIdx[selectedIdx.length - 1] + 1;
-        while (next < list.length && lockedFn(list[next])) next++;
-        if (next >= list.length) {
-            selection.clear();
-            return 'deselected';
-        }
-        selection.clear();
-        selection.add(list[next]);
-        return 'moved';
-    };
-
-    const moveWebsiteSelection = (direction) => {
-        const result = moveSelectionInList(modalWebsites, isWebsiteLocked, selectedWebsites, direction);
-        if (result) {
-            window.renderModalTags();
-            if (result === 'deselected') modalWebsiteInput.focus();
-        }
-        return result;
-    };
-    const moveAppSelection = (direction) => {
-        const displayApps = getModalDisplayApps();
-        const lockedDisplay = new Set(getModalLockedAppDisplayItems());
-        const isDisplayLocked = (displayName) => lockedDisplay.has(displayName);
-        const result = moveSelectionInList(displayApps, isDisplayLocked, selectedApps, direction);
-        if (result) {
-            window.renderModalTags();
-            if (result === 'deselected') modalAppInput.focus();
-        }
-        return result;
-    };
-
-    const deleteSelectedApps = () => {
-        if (selectedApps.size === 0) return false;
-        const iosLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
-        const toDeleteApps = modalApps.filter(
-            a => selectedApps.has(displayNameForBlockedApp(a)) && !isAppLocked(a),
-        );
-        if (window.lockLastItems && toDeleteApps.length === modalApps.length) toDeleteApps.pop();
-        const shouldDeleteIos = iosLabel && selectedApps.has(iosLabel) && !isAppLocked(iosLabel);
-        if (toDeleteApps.length === 0 && !shouldDeleteIos) {
-            selectedApps.clear();
-            window.renderModalTags();
-            return false;
-        }
-        const previousIosSelection = shouldDeleteIos ? cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection) : null;
-        const restoredApps = [...toDeleteApps];
-        pushModalUndo('app-bulk', () => {
-            restoredApps.forEach(a => {
-                if (!modalApps.includes(a)) modalApps.push(a);
-            });
-            if (previousIosSelection) {
-                modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(previousIosSelection);
-            }
-            window.renderModalTags();
-        });
-        toDeleteApps.forEach(a => {
-            const i = modalApps.indexOf(a);
-            if (i !== -1) modalApps.splice(i, 1);
-        });
-        if (shouldDeleteIos) modalIOSScreenTimeSelection = null;
-        selectedApps.clear();
-        window.renderModalTags();
-        return true;
-    };
-
     // A drag that starts inside a dialog (selecting text in a field) and ends
     // over the backdrop fires a click on the backdrop, which every overlay
     // treats as "close". Only a press that also began on the backdrop counts.
@@ -896,922 +533,21 @@ function setupModalListeners() {
         }
     });
 
-    // Make the tags+input area feel like a single email-to-field: clicking
-    // anywhere in the tags container (between chips, after the last chip,
-    // empty space) focuses the matching input so the user can immediately
-    // press Backspace to delete the last tag.
-    const focusInputOnTagAreaClick = (tagsContainer, input) => {
-        if (!tagsContainer || !input) return;
-        const wrapper = tagsContainer.closest('.tags-input-container');
-        if (!wrapper) return;
-        wrapper.addEventListener('click', (e) => {
-            if (e.target === input) return;
-            // Don't hijack clicks on chips, the X buttons, or the trailing
-            // browse/import button — they all have their own click semantics.
-            if (e.target.closest('.tag')) return;
-            if (e.target.closest('button')) return;
-            input.focus();
-        });
-    };
-    focusInputOnTagAreaClick(modalWebsitesTags, modalWebsiteInput);
-    focusInputOnTagAreaClick(modalAppsTags, modalAppInput);
-
-    function confirmModalWebsiteInputValue() {
-        const raw = modalWebsiteInput.value.trim();
-        if (!raw) return null;
-
-        const result = processWebsiteInput(raw);
-        const errorMsg = document.getElementById('website-input-error');
-
-        if (result.websiteInvalid) {
-            if (errorMsg) {
-                errorMsg.classList.remove('hidden');
-                setTimeout(() => errorMsg.classList.add('hidden'), 3000);
-            }
-        } else if (errorMsg) {
-            errorMsg.classList.add('hidden');
-        }
-
-        if (result.hadProtected) {
-            modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
-            modalWebsiteInput.classList.add('input-error');
-            setTimeout(() => {
-                modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
-                modalWebsiteInput.classList.remove('input-error');
-            }, 2000);
-        }
-
-        if (result.toAdd.length > 0) {
-            const toAddCopy = [...result.toAdd];
-            pushModalUndo('website', () => {
-                toAddCopy.forEach(w => {
-                    const i = modalWebsites.indexOf(w);
-                    if (i !== -1) modalWebsites.splice(i, 1);
-                });
-                window.renderModalTags();
-            });
-            result.toAdd.forEach(website => {
-                if (!modalWebsites.includes(website)) modalWebsites.push(website);
-            });
-            window.renderModalTags();
-        }
-        modalWebsiteInput.value = result.inputValueToSet;
-        return result;
-    }
-
-    function focusModalWebsiteInputFromNameField() {
-        modalWebsiteInput.focus({ preventScroll: true });
-        const pendingLen = modalWebsiteInput.value.length;
-        const caret = pendingLen > 0 ? pendingLen : 0;
-        modalWebsiteInput.setSelectionRange(caret, caret);
-    }
-
-    // Mobile: Name → websites. iOS shows plain Return (no default advance).
-    if (state.isIOS) {
-        const nameInput = document.getElementById('blocklist-name');
-        nameInput.setAttribute('enterkeyhint', 'next');
-        nameInput.addEventListener('keydown', (e) => {
-            if (e.key !== 'Enter' && e.keyCode !== 13) return;
-            e.preventDefault();
-            e.stopPropagation();
-            focusModalWebsiteInputFromNameField();
-        }, true);
-    }
-
-    // Touch: the tap that focuses the name puts the cursor at the end (iOS can land it at the start).
-    const nameInput = document.getElementById('blocklist-name');
-    let nameJustFocused = false;
-    nameInput.addEventListener('focus', () => { nameJustFocused = true; });
-    nameInput.addEventListener('click', () => {
-        if (!nameJustFocused) return;
-        nameJustFocused = false;
-        if (document.body.classList.contains('ios') || document.body.classList.contains('android')) {
-            nameInput.setSelectionRange(nameInput.value.length, nameInput.value.length);
-        }
-    });
-    nameInput.addEventListener('blur', () => { nameJustFocused = false; });
-    document.getElementById('blocklist-name').addEventListener('input', () => {
-        const nameInput = document.getElementById('blocklist-name');
-        nameInput.classList.remove('input-error');
-        const previous = state.lastBlocklistNameValue;
-        pushModalUndo('name', () => {
-            nameInput.value = previous;
-            state.lastBlocklistNameValue = previous;
-            nameInput.classList.remove('input-error');
-        });
-        state.lastBlocklistNameValue = nameInput.value;
-    });
-
-    modalWebsiteInput.addEventListener('keydown', (e) => {
-        const accel = e.metaKey || e.ctrlKey;
-
-        // Cmd/Ctrl-A in an empty input → select all unlocked website tags.
-        // Caret in input + text present keeps the native "select text" behaviour.
-        if (accel && (e.key === 'a' || e.key === 'A') && !modalWebsiteInput.value.length) {
-            e.preventDefault();
-            selectAllUnlockedWebsites();
-            return;
-        }
-
-        // Arrow navigation. ArrowLeft from an empty input pulls the last chip
-        // into selection; ArrowLeft/Right with an active selection walks the
-        // chip list. With caret-in-text, fall through to the default behaviour.
-        if (e.key === 'ArrowLeft' && !accel && !modalWebsiteInput.value.length && selectedWebsites.size === 0) {
-            if (moveWebsiteSelection(-1)) e.preventDefault();
-            return;
-        }
-        if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !accel && selectedWebsites.size > 0) {
-            if (moveWebsiteSelection(e.key === 'ArrowLeft' ? -1 : 1)) e.preventDefault();
-            return;
-        }
-
-        // Backspace/Delete with active selection → bulk delete.
-        if ((e.key === 'Backspace' || e.key === 'Delete') && selectedWebsites.size > 0) {
-            e.preventDefault();
-            deleteSelectedWebsites();
-            return;
-        }
-
-        // Backspace on empty input removes the last website tag (if not locked)
-        if (e.key === 'Backspace' && !modalWebsiteInput.value.length && modalWebsites.length > 0) {
-            const lastIdx = modalWebsites.length - 1;
-            const last = modalWebsites[lastIdx];
-            if (!isWebsiteLocked(last)) {
-                pushModalUndo('website', () => {
-                    modalWebsites.splice(lastIdx, 0, last);
-                    window.renderModalTags();
-                });
-                modalWebsites.splice(lastIdx, 1);
-                window.renderModalTags();
-                e.preventDefault();
-            }
-        }
-
-        // Any printable key with an active selection clears it so the user can
-        // keep typing without nuking their tags.
-        if (selectedWebsites.size > 0 && !accel && e.key.length === 1) {
-            clearWebsiteSelection();
-        }
-        // Enter or Space confirms the website(s) — supports multiple domains separated by space, newline, or comma
-        if ((e.key === 'Enter' || e.key === ' ') && modalWebsiteInput.value.trim()) {
-            e.preventDefault();
-            confirmModalWebsiteInputValue();
-        }
-    });
-
-    setupWebsitesImportMenu({
-        addDomainsToModal: (rawDomains) => {
-            // Validate, drop protected, drop dupes — same filtering rules as
-            // the manual input keydown path.
-            const cleaned = (rawDomains || [])
-                .map(d => cleanDomainInput(d))
-                .filter(d => isValidDomain(d) && !isProtectedDomain(d));
-            const newDomains = cleaned.filter(d => !modalWebsites.includes(d));
-            if (newDomains.length === 0) return;
-
-            const addedCopy = [...newDomains];
-            pushModalUndo('website', () => {
-                addedCopy.forEach(w => {
-                    const i = modalWebsites.indexOf(w);
-                    if (i !== -1) modalWebsites.splice(i, 1);
-                });
-                window.renderModalTags();
-            });
-            newDomains.forEach(w => modalWebsites.push(w));
-            window.renderModalTags();
-        }
-    });
-
-    modalAppInput.addEventListener('keydown', (e) => {
-        const accel = e.metaKey || e.ctrlKey;
-
-        if (accel && (e.key === 'a' || e.key === 'A') && !modalAppInput.value.length) {
-            e.preventDefault();
-            selectAllUnlockedApps();
-            return;
-        }
-
-        if (e.key === 'ArrowLeft' && !accel && !modalAppInput.value.length && selectedApps.size === 0) {
-            if (moveAppSelection(-1)) e.preventDefault();
-            return;
-        }
-        if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !accel && selectedApps.size > 0) {
-            if (moveAppSelection(e.key === 'ArrowLeft' ? -1 : 1)) e.preventDefault();
-            return;
-        }
-
-        if ((e.key === 'Backspace' || e.key === 'Delete') && selectedApps.size > 0) {
-            e.preventDefault();
-            deleteSelectedApps();
-            return;
-        }
-
-        // Backspace on empty input removes the last app tag (if not locked)
-        if (e.key === 'Backspace' && !modalAppInput.value.length && modalApps.length > 0) {
-            const lastIdx = modalApps.length - 1;
-            const last = modalApps[lastIdx];
-            if (!isAppLocked(last)) {
-                pushModalUndo('app', () => {
-                    modalApps.splice(lastIdx, 0, last);
-                    window.renderModalTags();
-                });
-                modalApps.splice(lastIdx, 1);
-                window.renderModalTags();
-                e.preventDefault();
-            }
-        }
-
-        if (selectedApps.size > 0 && !accel && e.key.length === 1) {
-            clearAppSelection();
-        }
-        if (e.key === 'Enter' && modalAppInput.value.trim()) {
-            e.preventDefault();
-            const app = modalAppInput.value.trim();
-            if (isProtectedApp(app)) {
-                // Show brief warning — ReDD Blocker cannot block itself
-                modalAppInput.value = '';
-                modalAppInput.placeholder = tSettings('cannotBlockSelfAppPlaceholder');
-                modalAppInput.classList.add('input-error');
-                setTimeout(() => {
-                    syncModalAppPlaceholder();
-                    modalAppInput.classList.remove('input-error');
-                }, 2000);
-                return;
-            }
-            if (!modalApps.includes(app)) {
-                pushModalUndo('app', () => {
-                    const i = modalApps.indexOf(app);
-                    if (i !== -1) modalApps.splice(i, 1);
-                    window.renderModalTags();
-                });
-                modalApps.push(app);
-                window.renderModalTags();
-            }
-            modalAppInput.value = '';
-        }
-    });
-
-    /**
-     * The saved Screen Time selection the picker may not go below, or null when
-     * it is free to replace outright.
-     *
-     * Recomputed on every Browse tap rather than cached at modal-open time: a
-     * block can end, or a schedule segment begin, while the modal sits open.
-     *
-     * Deliberately the *persisted* selection, not the modal's working copy — a
-     * token added earlier in this same editing session was never enforced, so
-     * dropping it again is not a loosening (and matches how a freshly added tag
-     * on desktop keeps its remove button).
-     */
-    const getEnforcedIOSSelectionFloor = () => {
-        if (!state.isIOS) return null;
-        if (!state.editingBlocklistId) return null;
-        // Allow mode is deliberately excluded — see
-        // mergeIOSScreenTimeSelectionAdditive.
-        if (getSelectedBlocklistModalMode() !== 'blocklist') return null;
-        if (!isBlocklistEditFrictionRequired(state.editingBlocklistId)) return null;
-        const saved = state.appData?.blocklists?.find(bl => bl.id === state.editingBlocklistId);
-        return saved ? getBlocklistIOSScreenTimeSelection(saved) : null;
-    };
-
-    // Browse button for modal
-    const modalBrowseBtn = document.getElementById('modal-browse-apps-btn');
-    if (state.isIOS && modalBrowseBtn) {
-        modalBrowseBtn.addEventListener('click', async () => {
-            try {
-                // Allow mode: the native picker expands category picks into
-                // their member app tokens (the only thing `.all(except:)` can
-                // enforce) and returns no category tokens.
-                const result = await tauriAPI.showActivityPicker({
-                    initialApplicationTokenData: modalIOSScreenTimeSelection?.applicationTokens || [],
-                    initialCategoryTokenData: modalIOSScreenTimeSelection?.categoryTokens || [],
-                    mode: getSelectedBlocklistModalMode()
-                });
-                // Running allow mode: only a narrowing (no new apps, never none).
-                if (window.lockLastItems && !result.cancelled) {
-                    const picked = normalizeIOSScreenTimeSelection({
-                        applicationTokens: result.applicationTokens || [],
-                        categoryTokens: result.categoryTokens || [],
-                    });
-                    if (!isIOSSelectionNarrowing(modalIOSScreenTimeSelection, picked)) {
-                        alert(tSettings(picked?.applicationTokens.length || picked?.categoryTokens.length ? 'allowlistPickerNoAdditions' : 'allowlistPickerKeepOne'));
-                        return;
-                    }
-                    pushModalUndo('ios-screentime-selection', ((previous) => () => {
-                        modalIOSScreenTimeSelection = previous;
-                        window.renderModalTags();
-                    })(cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection)));
-                    modalIOSScreenTimeSelection = picked;
-                    window.renderModalTags();
-                    return;
-                }
-                // Non-null while enforcing: the picker becomes add-only, so a
-                // deselection inside it is ignored rather than saved.
-                const floor = getEnforcedIOSSelectionFloor();
-                if (!result.cancelled && (result.applicationCount > 0 || result.categoryCount > 0)) {
-                    const previousSelection = cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection);
-                    pushModalUndo('ios-screentime-selection', () => {
-                        modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(previousSelection);
-                        window.renderModalTags();
-                    });
-                    const picked = normalizeIOSScreenTimeSelection({
-                        applicationTokens: result.applicationTokens || [],
-                        categoryTokens: result.categoryTokens || [],
-                        applicationCount: result.applicationCount || 0,
-                        categoryCount: result.categoryCount || 0,
-                        requiresReselection: false
-                    });
-                    modalIOSScreenTimeSelection = floor
-                        ? mergeIOSScreenTimeSelectionAdditive(floor, picked)
-                        : picked;
-                    window.renderModalTags();
-                } else if (!result.cancelled && modalIOSScreenTimeSelection) {
-                    // Deselecting everything and confirming — the fastest form
-                    // of the bypass. While enforcing it lands back on the floor
-                    // instead of clearing.
-                    const previousSelection = cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection);
-                    pushModalUndo('ios-screentime-selection-clear', () => {
-                        modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(previousSelection);
-                        window.renderModalTags();
-                    });
-                    modalIOSScreenTimeSelection = floor
-                        ? mergeIOSScreenTimeSelectionAdditive(floor, null)
-                        : null;
-                    window.renderModalTags();
-                }
-            } catch (err) {
-                console.error('Activity picker error:', err);
-                alert('Failed to open app picker: ' + err);
-            }
-        });
-    } else if (modalBrowseBtn) {
-        modalBrowseBtn.addEventListener('click', async () => {
-            // Open the in-app installed apps picker instead of the OS file picker
-            openInstalledAppsPicker();
-        });
-    }
-    // Override type
-    document.getElementById('override-type').addEventListener('change', (e) => {
-        const overrideTypeSelect = e.target;
-        const previousType = state.lastOverrideTypeValue;
-        pushModalUndo('override-type', () => {
-            overrideTypeSelect.value = previousType;
-            state.lastOverrideTypeValue = previousType;
-            overrideTypeSelect.dispatchEvent(new Event('change'));
-        });
-
-        const type = e.target.value;
-        const overrideCountInput = document.getElementById('override-count');
-        applyOverrideTypeUi(type);
-
-        overrideCountInput.value = normalizeOverrideCount(overrideCountInput.value, type);
-        state.lastOverrideTypeValue = overrideTypeSelect.value;
-    });
-    document.getElementById('custom-override-text').addEventListener('input', (e) => {
-        const customTextArea = e.target;
-        customTextArea.classList.remove('input-error');
-        document.getElementById('custom-override-text-error')?.classList.add('hidden');
-        const previous = state.lastCustomOverrideTextValue;
-        pushModalUndo('custom-override-text', () => {
-            customTextArea.value = previous;
-            state.lastCustomOverrideTextValue = previous;
-            customTextArea.classList.remove('input-error');
-            document.getElementById('custom-override-text-error')?.classList.add('hidden');
-            const warningEl = document.getElementById('override-count-warning');
-            const maxChars = getMaxOverrideCountForType('custom');
-            if (previous.length >= maxChars) {
-                const charsPerMinute = getTypingCharsPerMinuteForType('custom');
-                const estimatedMinutes = Math.ceil(maxChars / charsPerMinute);
-                warningEl.textContent = `Max is ${maxChars} characters so it's still possible to override in case of emergency (takes you ~${estimatedMinutes} minutes to type).`;
-                warningEl.classList.remove('hidden');
-            } else {
-                warningEl.classList.add('hidden');
-                warningEl.textContent = '';
-            }
-        });
-
-        const warningEl = document.getElementById('override-count-warning');
-        const maxChars = getMaxOverrideCountForType('custom');
-        const charsPerMinute = getTypingCharsPerMinuteForType('custom');
-        const estimatedMinutes = Math.ceil(maxChars / charsPerMinute);
-        e.target.maxLength = maxChars;
-
-        if (e.target.value.length > maxChars) {
-            e.target.value = e.target.value.slice(0, maxChars);
-        }
-
-        if (e.target.value.length >= maxChars) {
-            warningEl.textContent = `Max is ${maxChars} characters so it's still possible to override in case of emergency (takes you ~${estimatedMinutes} minutes to type).`;
-            warningEl.classList.remove('hidden');
-        } else {
-            warningEl.classList.add('hidden');
-            warningEl.textContent = '';
-        }
-        state.lastCustomOverrideTextValue = e.target.value;
-        updateOverridePreview();
-    });
-
-    // Words slider
-    document.getElementById('override-count').addEventListener('input', (e) => {
-        const overrideCountInput = e.target;
-        const previous = state.lastOverrideCountValue;
-        const current = overrideCountInput.value;
-        if (previous !== current) {
-            pushModalUndo('override-count', () => {
-                overrideCountInput.value = previous;
-                state.lastOverrideCountValue = previous;
-                updateOverridePreview();
-            });
-        }
-        state.lastOverrideCountValue = current;
-        updateOverridePreview();
-    });
-
-    document.querySelectorAll('.color-swatch').forEach(swatch => {
-        swatch.addEventListener('click', () => {
-            document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
-            swatch.classList.add('selected');
-            applyModalBlocklistTint(swatch.dataset.color);
-        });
-    });
-    document.getElementById('custom-color-input')?.addEventListener('input', (e) => {
-        const customSwatch = document.getElementById('custom-color-swatch');
-        const color = e.target.value;
-        customSwatch.style.background = color;
-        customSwatch.dataset.color = color;
-        document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
-        customSwatch.classList.add('selected');
-        syncColorSwatchInk();
-        applyModalBlocklistTint(color);
-    });
-
-    // Emoji swatches
-    document.querySelectorAll('.emoji-swatch').forEach(swatch => {
-        swatch.addEventListener('click', () => {
-            // Only handle non-custom swatches here, or custom swatches if they already have an emoji
-            if (!swatch.classList.contains('custom-emoji-swatch') || swatch.dataset.emoji) {
-                document.querySelectorAll('.emoji-swatch').forEach(s => s.classList.remove('selected'));
-                swatch.classList.add('selected');
-            }
-        });
-    });
-
-    // Custom emoji picker with emoji-picker-element popover
-    const customEmojiSwatch = document.getElementById('custom-emoji-swatch');
-    const emojiPickerPopover = document.getElementById('emoji-picker-popover');
-    const emojiPicker = emojiPickerPopover?.querySelector('emoji-picker');
-
-    if (customEmojiSwatch && emojiPickerPopover && emojiPicker) {
-        function readSafeAreaInsetTop() {
-            const probe = document.createElement('div');
-            probe.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px);';
-            document.body.appendChild(probe);
-            const inset = parseFloat(getComputedStyle(probe).paddingTop) || 0;
-            probe.remove();
-            return inset;
-        }
-
-        /** Lowest Y (viewport coords) the picker top may use without overlapping safe area / chrome. */
-        function getEmojiPickerMinTop(padding) {
-            const safeTop = readSafeAreaInsetTop();
-            const blocklistModal = document.getElementById('blocklist-modal');
-            if (blocklistModal && !blocklistModal.classList.contains('hidden')) {
-                const modalHeader = blocklistModal.querySelector('.mobile-modal-header');
-                if (modalHeader) {
-                    return modalHeader.getBoundingClientRect().bottom + padding;
-                }
-            }
-            const titleBar = document.querySelector('.title-bar');
-            const titleBarBottom = titleBar?.classList.contains('hidden')
-                ? 0
-                : (titleBar?.getBoundingClientRect().bottom ?? 0);
-            return Math.max(safeTop + padding, titleBarBottom + padding);
-        }
-
-        function positionEmojiPickerPopover() {
-            const gap = 8;
-            const padding = 8;
-
-            emojiPickerPopover.style.top = '';
-            emojiPickerPopover.style.bottom = '';
-            emojiPickerPopover.style.left = '';
-            emojiPickerPopover.style.right = '';
-
-            // Escape modal overflow clipping while open
-            if (emojiPickerPopover.parentElement !== document.body) {
-                document.body.appendChild(emojiPickerPopover);
-            }
-
-            emojiPickerPopover.classList.remove('hidden');
-
-            const rect = customEmojiSwatch.getBoundingClientRect();
-            const popoverRect = emojiPickerPopover.getBoundingClientRect();
-            const popoverHeight = popoverRect.height;
-            const popoverWidth = popoverRect.width;
-
-            const minTop = getEmojiPickerMinTop(padding);
-            const aboveTop = rect.top - popoverHeight - gap;
-            const belowTop = rect.bottom + gap;
-            // Place above only when the picker's top edge stays below the safe/chrome line.
-            let top = aboveTop >= minTop ? aboveTop : belowTop;
-            top = Math.max(minTop, Math.min(top, window.innerHeight - popoverHeight - padding));
-
-            let left = rect.right - popoverWidth;
-            left = Math.max(padding, Math.min(left, window.innerWidth - popoverWidth - padding));
-
-            emojiPickerPopover.style.top = `${top}px`;
-            emojiPickerPopover.style.left = `${left}px`;
-        }
-
-        // Toggle popover on swatch click
-        customEmojiSwatch.addEventListener('click', async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            // The picker carries a sizeable emoji database. Load it only
-            // when somebody opens the custom picker instead of parsing it on
-            // every app launch (especially costly in Android WebView).
-            if (!customElements.get('emoji-picker')) {
-                await import('emoji-picker-element');
-            }
-
-            if (emojiPickerPopover.classList.contains('hidden')) {
-                positionEmojiPickerPopover();
-            } else {
-                emojiPickerPopover.classList.add('hidden');
-            }
-        });
-
-        // Handle emoji selection
-        emojiPicker.addEventListener('emoji-click', (e) => {
-            const emoji = e.detail.unicode;
-            customEmojiSwatch.innerHTML = emoji;
-            customEmojiSwatch.dataset.emoji = emoji;
-
-            // Select the custom swatch
-            document.querySelectorAll('.emoji-swatch').forEach(s => s.classList.remove('selected'));
-            customEmojiSwatch.classList.add('selected');
-
-            // Hide popover
-            emojiPickerPopover.classList.add('hidden');
-        });
-
-        // Close popover when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!emojiPickerPopover.classList.contains('hidden') &&
-                !emojiPickerPopover.contains(e.target) &&
-                !customEmojiSwatch.contains(e.target)) {
-                emojiPickerPopover.classList.add('hidden');
-            }
-        });
-    }
+    const tags = setupFocusSpaceTagEditors();
+    setupFocusSpaceOverrideFields();
+    setupFocusSpaceAppearanceFields();
 
     // Cancel button
     document.getElementById('cancel-blocklist-btn').addEventListener('click', () => {
         closeBlocklistModal();
     });
 
-    // Save (create modal's Save button and the panel's Save changes both land here).
-    saveFocusSpaceEditorImpl = async () => {
-        const nameInput = document.getElementById('blocklist-name');
-        const name = truncateBlocklistName(nameInput.value.trim());
-        const nameEmpty = !name;
-        if (nameEmpty) {
-            nameInput.classList.add('input-error');
-        } else {
-            nameInput.classList.remove('input-error');
-        }
-
-        // Auto-confirm any pending website input using the same validation flow as Enter/Space.
-        let websiteInvalid = false;
-        const pendingWebsiteRaw = modalWebsiteInput.value.trim();
-        if (pendingWebsiteRaw) {
-            const result = confirmModalWebsiteInputValue();
-            if (result?.hadProtected) return;
-            if (result?.websiteInvalid) websiteInvalid = true;
-        }
-
-        const overrideType = document.getElementById('override-type').value;
-        const customTextArea = document.getElementById('custom-override-text');
-        const customText = normalizeCustomOverrideText(customTextArea.value);
-        customTextArea.value = customText;
-        const customEmpty = overrideType === 'custom' && !customText;
-        const customErrorEl = document.getElementById('custom-override-text-error');
-        if (customEmpty) {
-            customTextArea.classList.add('input-error');
-            if (customErrorEl) {
-                customErrorEl.textContent = tSettings('customOverrideEmptyError');
-                customErrorEl.classList.remove('hidden');
-            }
-        } else {
-            customTextArea.classList.remove('input-error');
-            customErrorEl?.classList.add('hidden');
-        }
-
-        if (nameEmpty || websiteInvalid || customEmpty) return;
-
-        nameInput.value = name;
-
-        const pendingApp = modalAppInput.value.trim();
-        if (pendingApp && !isProtectedApp(pendingApp) && !modalApps.includes(pendingApp)) {
-            pushModalUndo('app', () => {
-                const i = modalApps.indexOf(pendingApp);
-                if (i !== -1) modalApps.splice(i, 1);
-                window.renderModalTags();
-            });
-            modalApps.push(pendingApp);
-            modalAppInput.value = '';
-            window.renderModalTags();
-        } else {
-            modalAppInput.value = '';
-        }
-
-        const mode = getSelectedBlocklistModalMode();
-        const overrideCountInput = document.getElementById('override-count');
-        const overrideCount = normalizeOverrideCount(overrideCountInput.value, 'random-words');
-        overrideCountInput.value = overrideCount;
-        const selectedSwatch = document.querySelector('.color-swatch.selected');
-        const color = selectedSwatch ? selectedSwatch.dataset.color : null;
-        const selectedEmoji = document.querySelector('.emoji-swatch.selected');
-        const emoji = selectedEmoji ? selectedEmoji.dataset.emoji : '📱';
-
-        const showItemDetails = document.getElementById('show-item-details-checkbox').checked;
-        // Preserve the blocklist's existing schedule visibility (toggled via the chips above the
-        // schedule); default to true for new blocklists.
-        const existingBlocklistForSave = state.editingBlocklistId
-            ? state.appData.blocklists.find(bl => bl.id === state.editingBlocklistId)
-            : null;
-        const alwaysShowInSchedule = existingBlocklistForSave?.alwaysShowInSchedule !== false;
-
-        const overrideDifficultyPayload = {
-            type: normalizeOverrideType(overrideType),
-            count: overrideCount,
-            customText: customText
-        };
-
-        // Save is the authoritative enforcement boundary. The picker and undo
-        // can leave a candidate that was valid while paused or between schedule
-        // segments; recompute friction now so a later resume/start cannot turn
-        // that stale candidate into a removal.
-        const iosScreenTimeSelectionForSave = resolveIOSScreenTimeSelectionForSave(
-            getBlocklistIOSScreenTimeSelection(existingBlocklistForSave),
-            modalIOSScreenTimeSelection,
-            {
-                mode,
-                editFrictionRequired: state.isIOS
-                    && !!state.editingBlocklistId
-                    && isBlocklistEditFrictionRequired(state.editingBlocklistId),
-            },
-        );
-
-        // IMPORTANT: Create copies of the arrays, not references!
-        const blocklist = {
-            id: state.editingBlocklistId || generateId(),
-            name,
-            mode,
-            color,
-            emoji,
-            websites: [...modalWebsites],
-            apps: [...modalApps],
-            iosScreenTimeSelection: iosScreenTimeSelectionForSave,
-            showItemDetails,
-            alwaysShowInSchedule,
-            overrideDifficulty: overrideDifficultyPayload,
-            unlockMinutes: normalizeUnlockMinutes(document.getElementById('unlock-duration-select')?.value),
-        };
-        // Daily / Weekly spaces activate on save, so the same platform checks
-        // that used to guard "Start schedule" apply here.
-        if (getWhenToBlockKind() !== 'manual') {
-            if (isAndroidAllowlistUnsupported(blocklist)) {
-                alert(tSettings('androidAllowlistUnsupported'));
-                return;
-            }
-            if (!ensureIOSBlocklistSelectionReady(blocklist, 'saving this schedule')) return;
-            if (!await ensureIOSAllowlistStartable(blocklist)) return;
-        }
-
-        if (state.editingBlocklistId) {
-            const idx = state.appData.blocklists.findIndex(bl => bl.id === state.editingBlocklistId);
-            if (idx !== -1) {
-                state.appData.blocklists[idx] = blocklist;
-            }
-        } else {
-            // New spaces go to the top of the focus list.
-            state.appData.blocklists.unshift(blocklist);
-        }
-
-        applyEditorScheduleForBlocklist(blocklist.id);
-
-        await saveData();
-        if (existingBlocklistForSave && normalizeUnlockMinutes(existingBlocklistForSave.unlockMinutes) !== blocklist.unlockMinutes) {
-            await restopForNewStrictness(blocklist.id);
-        }
-
-        // If this blocklist is active (block or schedule), update blocking rules immediately
-        const now = Date.now();
-        const hasActiveBlock = state.appData.activeBlocks.some(
-            b => b.blocklistId === blocklist.id && b.startTime <= now && b.endTime > now
-        );
-        const hasActiveSchedule = state.appData.schedules?.some(
-            s => s.blocklistId === blocklist.id && s.segments && s.segments.length > 0
-        );
-
-        if (hasActiveBlock || hasActiveSchedule) {
-            // Awaited, not fired and forgotten. On Android syncSchedulesToHelper
-            // is the only path that pushes edited apps/websites to Kotlin
-            // (updateBlockedApps is a no-op there), so racing it leaves a
-            // just-removed app still enforced until the next sync.
-            await updateHostsFile();
-            await syncSchedulesToHelper();
-            await updateBlockedApps();
-        } else if (state.isIOS) {
-            // Switched to Manual: its old schedule's monitors and start warnings go now.
-            await syncSchedulesToHelper();
-        }
-
-        // Keep live preview while editing, but don't revert after a confirmed save.
-        state.blocklistModalPreviewSnapshot = null;
-        const wasNewBlocklist = !state.editingBlocklistId;
-        if (isEditorInCreateModal()) {
-            closeBlocklistModal();
-        } else {
-            // Saving is not a reset: keep the section the user is working in.
-            // Populating closes every section, which on a narrow window also
-            // changes the sheet's height and can bounce it shut.
-            const openSection = state.openEditorSection;
-            populateFocusSpaceEditor(blocklist);
-            setOpenEditorSection(openSection);
-        }
-
-        // Only update blocklist display without resetting schedule segments
-        renderBlocklists();
-        renderBlocklistSelector();
-        renderWeekBlocks(); // Refresh calendar so colour / emoji / name changes propagate
-        renderScheduleAlwaysOnRow();
-
-        if (wasNewBlocklist) {
-            // Land back on the list, not in the editor we just left: the new
-            // card carries its own switch, and a scheduled space needs no start.
-            deselectBlocklist();
-            requestAnimationFrame(() => {
-                const card = document.querySelector(`.blocklist-card[data-id="${blocklist.id}"]`);
-                if (!card) return;
-                card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-                card.classList.add('blocklist-card-just-created');
-                card.addEventListener('animationend', () => card.classList.remove('blocklist-card-just-created'), { once: true });
-            });
-        } else if (isEnterSchedulerModalOpen()) {
-            deselectBlocklist();
-            expandBlocklistCard(blocklist.id);
-        } else if (state.selectedBlocklistId) {
-            // Edit existing: refresh controls only, never auto-open enter.
-            const dropdown = document.getElementById('blocklist-select');
-            if (dropdown) {
-                dropdown.value = state.selectedBlocklistId;
-                // handleBlocklistSelect defaults openEnterUi to false, and the
-                // sheet sync reads "not opening" as "close it" — which on a
-                // narrow window shut the editor and landed the user back on the
-                // list every time they saved. Keep whatever state it is in.
-                handleBlocklistSelect({ target: dropdown }, { openEnterUi: isEnterSchedulerModalOpen() });
-            }
-        }
-    };
+    saveFocusSpaceEditorImpl = () => saveFocusSpace(tags);
     document.getElementById('save-blocklist-btn').addEventListener('click', () => {
         void saveFocusSpaceEditorImpl();
     });
 
-    // Store references for modal functions. Keep both the refactor-era getter
-    // and the original direct array bridge so extracted modules like the app
-    // picker still share the same mutable selection state.
-    window.getModalApps = () => modalApps;
-    window.getModalWebsites = () => modalWebsites;
-    window.getModalIOSScreenTimeSelection = () => modalIOSScreenTimeSelection;
-    window.lockedWebsites = [];
-    window.lockedApps = [];
-    window.clearModalTagSelections = () => {
-        selectedWebsites.clear();
-        selectedApps.clear();
-    };
-
-    const renderModalTags = () => {
-        // Websites and apps are added from surfaces outside #focus-space-editor —
-        // the app picker is its own overlay — so the editor's own input/change
-        // listener never fires and the footer stayed clean until something else
-        // was touched. Every add and remove path comes through here.
-        notifyEditorChanged();
-        renderTags(modalWebsitesTags, modalWebsites, (idx) => {
-            const value = modalWebsites[idx];
-            if (isWebsiteLocked(value)) {
-                return; // Do not remove locked items; do not push undo.
-            }
-            pushModalUndo('website', () => {
-                modalWebsites.splice(idx, 0, value);
-                window.renderModalTags();
-            });
-            modalWebsites.splice(idx, 1);
-            window.renderModalTags();
-        }, modalWebsites.filter(isWebsiteLocked), {
-            selectedItems: selectedWebsites,
-            onTagClick: (idx) => {
-                const value = modalWebsites[idx];
-                if (!value || isWebsiteLocked(value)) return;
-                if (selectedWebsites.has(value)) {
-                    selectedWebsites.delete(value);
-                } else {
-                    selectedWebsites.add(value);
-                }
-                window.renderModalTags();
-                // Keep keyboard focus on the input so Backspace works immediately.
-                modalWebsiteInput.focus();
-            }
-        });
-
-        const displayApps = getModalDisplayApps();
-        const screenTimeLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
-        renderTags(modalAppsTags, displayApps, (idx) => {
-            if (displayApps[idx] === screenTimeLabel) {
-                if (isAppLocked(screenTimeLabel)) return;
-                const previousSelection = cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection);
-                pushModalUndo('ios-screentime-selection-remove', () => {
-                    modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(previousSelection);
-                    window.renderModalTags();
-                });
-                modalIOSScreenTimeSelection = null;
-            } else {
-                const processName = modalApps[idx];
-                if (!processName || isAppLocked(processName)) return;
-                const appIdx = modalApps.indexOf(processName);
-                if (appIdx === -1) return;
-                pushModalUndo('app', () => {
-                    modalApps.splice(appIdx, 0, processName);
-                    window.renderModalTags();
-                });
-                modalApps.splice(appIdx, 1);
-            }
-            window.renderModalTags();
-        }, getModalLockedAppDisplayItems(), {
-            selectedItems: selectedApps,
-            onTagClick: (idx) => {
-                const value = displayApps[idx];
-                if (!value) return;
-                if (value === screenTimeLabel) {
-                    if (isAppLocked(screenTimeLabel)) return;
-                } else if (isAppLocked(modalApps[idx])) {
-                    return;
-                }
-                if (selectedApps.has(value)) {
-                    selectedApps.delete(value);
-                } else {
-                    selectedApps.add(value);
-                }
-                window.renderModalTags();
-                modalAppInput.focus();
-            }
-        });
-
-        syncModalWebsitePlaceholder();
-        syncModalAppPlaceholder();
-        const appCount = modalApps.length + countIOSScreenTimeSelectionItems(
-            modalIOSScreenTimeSelection,
-            true,
-        );
-        updateAllowlistScopeHints(modalWebsites.length, appCount);
-    };
-    window.getModalAllowlistScopeCounts = () => ({
-        websites: modalWebsites.length,
-        apps: modalApps.length + countIOSScreenTimeSelectionItems(
-            modalIOSScreenTimeSelection,
-            true,
-        ),
-    });
-    window.restoreBlocklistModalTagBridges = () => {
-        window.modalApps = modalApps;
-        window.renderModalTags = renderModalTags;
-    };
-    window.restoreBlocklistModalTagBridges();
-
-    // Esc inside the modal clears any active tag selection (it does NOT close
-    // the modal in that case — only when no selection is active).
-    document.getElementById('blocklist-modal').addEventListener('keydown', (e) => {
-        if (e.key !== 'Escape') return;
-        const clearedWebsites = clearWebsiteSelection();
-        const clearedApps = clearAppSelection();
-        if (clearedWebsites || clearedApps) e.stopPropagation();
-    });
-
-    window.setModalData = (websites, apps, iosScreenTimeSelection = null, lockedWebsitesList = [], lockedAppsList = []) => {
-        modalWebsites.length = 0;
-        modalApps.length = 0;
-        selectedWebsites.clear();
-        selectedApps.clear();
-        modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(iosScreenTimeSelection);
-        window.lockedWebsites = lockedWebsitesList;
-        window.lockedApps = lockedAppsList;
-
-        websites.forEach(w => modalWebsites.push(w));
-        apps.forEach(a => modalApps.push(a));
-        window.renderModalTags();
-    };
+    installFocusSpaceTagBridges(tags);
 }
 
 // Override modal listeners
@@ -1845,15 +581,23 @@ function setupOverrideModalListeners() {
         if (blocklistId) await turnFocusSpaceOn(blocklistId);
     });
 
+    document.getElementById('unlock-duration-select').addEventListener('change', updatePauseDialogDuration);
     document.getElementById('confirm-override-btn').addEventListener('click', async () => {
+        if (state.pauseSubmitting) return;
+        const currentSpace = state.appData.blocklists.find(bl => bl.id === state.pendingPauseSpaceId);
+        if (!currentSpace) return;
+        const difficulty = currentSpace.overrideDifficulty || { type: 'random-words', count: DEFAULT_OVERRIDE_WORDS };
+        const skipChallenge = !isBlocklistEditFrictionRequired(currentSpace.id);
+        if (JSON.stringify({ difficulty, skipChallenge }) !== state.pauseChallengeSnapshot) {
+            initializeOverrideModalChallenge(difficulty, currentSpace.color, { skipChallenge });
+            return;
+        }
         const result = getChallengeController('override').handleConfirm();
         // A correct but non-final word: the controller already advanced the UI.
         if (result.status !== 'ok') return;
 
-        // Stop a running Manual block or a Daily / Weekly schedule. What "stop"
-        // does is the space's temporary unlock duration: a timed pause it comes
-        // back from on its own, or with Never the block is removed / the
-        // schedule switched off open-ended (stopFocusSpaceTarget).
+        // Apply only the duration chosen in this confirmation. Never keeps the
+        // existing manual-removal / indefinite schedule-off semantics.
         const block = state.overrideBlockId
             ? state.appData.activeBlocks.find(b => b.id === state.overrideBlockId) || null
             : null;
@@ -1863,8 +607,28 @@ function setupOverrideModalListeners() {
             : null;
         if (!block && !schedule) return;
 
-        await stopFocusSpaceTarget({ block, schedule });
-        state.overrideBlocklistIdForHelper = null;
+        // A stale dialog must never extend a pause that was already confirmed.
+        if ((block || schedule).isPaused || (block && block.endTime <= Date.now())) return;
+        const minutes = Number(document.getElementById('unlock-duration-select').value);
+        state.pauseSubmitting = true;
+        try {
+            const outcome = await stopFocusSpaceTarget({ block, schedule, minutes });
+            if (!outcome) {
+                initializeOverrideModalChallenge(difficulty, currentSpace.color, { skipChallenge });
+                return;
+            }
+            const previous = getLastBreakMinutes(state.appData.settings);
+            rememberBreakMinutes(state.appData.settings, minutes);
+            try { await saveData(); } catch (error) {
+                state.appData.settings.lastBreakMinutes = previous;
+                console.error('Could not remember pause duration:', error);
+            }
+        } catch (error) {
+            console.error('Could not apply pause:', error);
+            initializeOverrideModalChallenge(difficulty, currentSpace.color, { skipChallenge });
+            alert(tSettings('pauseFailed'));
+            return;
+        } finally { state.pauseSubmitting = false; }
         delete window.overrideScheduleId;
 
         const keepSelectedId = state.selectedBlocklistId;
@@ -1873,7 +637,6 @@ function setupOverrideModalListeners() {
         // Keep the focus space selected so the scheduler panel stays open; only
         // its lock state is resynced, so in-flight edits survive the stop.
         refreshSelectedBlocklistUi(keepSelectedId);
-        await refreshOpenHelperUi();
 
         closeOverrideModal();
     });
@@ -1888,54 +651,11 @@ function setupOverrideModalListeners() {
 }
 
 // Render tags
-function renderTags(container, items, onRemove, lockedItems = [], options = {}) {
-    const selectedItems = options.selectedItems instanceof Set ? options.selectedItems : null;
-    const onTagClick = typeof options.onTagClick === 'function' ? options.onTagClick : null;
-
-    container.innerHTML = items.map((item, idx) => {
-        const isLocked = lockedItems.includes(item);
-        const isSelected = !isLocked && selectedItems?.has(item);
-        const classes = ['tag'];
-        if (isLocked) classes.push('locked');
-        if (isSelected) classes.push('selected');
-        const removeBtn = !isLocked ? `<button class="tag-remove" data-idx="${idx}">×</button>` : '';
-
-        return `
-    <span class="${classes.join(' ')}" data-idx="${idx}">
-      ${escapeHtml(item)}
-      ${removeBtn}
-    </span>
-  `;
-    }).join('');
-
-    container.querySelectorAll('.tag-remove').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const idx = parseInt(btn.dataset.idx);
-            if (onRemove) onRemove(idx);
-        });
-    });
-
-    if (onTagClick) {
-        container.querySelectorAll('.tag').forEach(tagEl => {
-            tagEl.addEventListener('click', (e) => {
-                // Don't toggle when the user clicks the inline ✕ — that path
-                // is handled by .tag-remove above and removes the chip outright.
-                if (e.target.closest('.tag-remove')) return;
-                const idx = parseInt(tagEl.dataset.idx);
-                if (Number.isFinite(idx)) onTagClick(idx);
-            });
-        });
-    }
-}
 // Track current selected end time only (start is always 'now')
 
 // Pad number with leading zero
 
 // Show schedule confirmation modal
-
-
-
 
 // Utility functions
 export function generateId() {
@@ -2009,8 +729,6 @@ export function formatBlockTimeRemainingShort(totalMins) {
     if (hrs > 0) return `${hrs}h left`;
     return `${mins}m left`;
 }
-
-
 
 // Clean up URL for display (remove protocol, www, trailing slash)
 
@@ -2124,7 +842,7 @@ function switchLanguageSetting(next) {
     state.appData.settings.language = next;
     applySettingsLanguage();
     saveData();
-    if (!state.isIOS && !state.isAndroid) void refreshBehaviourBannerIfStale({ force: true });
+    if (!state.isIOS) void refreshBehaviourBannerIfStale({ force: true });
     if (state.isIOS) void syncIOSStartWarnings(); // the booked wording is in the old language
     closeAllLanguagePickers();
 }
@@ -2263,24 +981,21 @@ export function applyEulaOnboardingLanguage() {
     const agreeInner = document.getElementById('eula-agree-line-inner');
     if (agreeInner) agreeInner.innerHTML = tSettings('eulaAgreeLineHtml');
 
-    // "Private by design". Android sends no usage ping, so it gets the
-    // "sends nothing" line and no "How we count".
     const privacyTitle = document.getElementById('eula-privacy-title');
     if (privacyTitle) privacyTitle.textContent = tSettings('eulaPrivacyTitle');
     const privacyLead = document.getElementById('eula-privacy-lead');
-    if (privacyLead) privacyLead.textContent = tSettings(state.isAndroid ? 'eulaPrivacyLeadNoPing' : 'eulaPrivacyLead');
+    if (privacyLead) privacyLead.textContent = tSettings('eulaPrivacyLead');
     const howWeCountSummary = document.getElementById('eula-how-we-count-summary');
     if (howWeCountSummary) howWeCountSummary.textContent = tSettings('eulaHowWeCount');
     const howWeCountBody = document.getElementById('eula-how-we-count-body');
     if (howWeCountBody) howWeCountBody.innerHTML = tSettings('eulaHowWeCountHtml');
-    document.getElementById('eula-how-we-count')?.classList.toggle('hidden', !!state.isAndroid);
+    document.getElementById('eula-how-we-count')?.classList.remove('hidden');
 
     const blurb = document.getElementById('eula-project-blurb');
     if (blurb) blurb.innerHTML = tSettings('eulaProjectBlurb');
 
     const footer1 = document.getElementById('eula-onboarding-footer-1');
     if (footer1) footer1.innerHTML = tSettings('welcomeFooter1Html');
-
 
     const cb = document.getElementById('eula-agree-checkbox');
     if (cb) cb.setAttribute('aria-label', tSettings('eulaAgreeAria'));
@@ -2312,33 +1027,6 @@ export function applyIosScreentimeOnboardingLanguage() {
     }
 
     const note = document.getElementById('ios-screentime-onboarding-note');
-    if (note) note.innerHTML = tSettings('eulaProjectBlurb');
-}
-
-/** Android Accessibility permission onboarding — localized from current UI language. */
-export function applyAndroidPermissionsOnboardingLanguage() {
-    const icon = document.getElementById('android-permissions-onboarding-app-icon');
-    if (icon) icon.setAttribute('alt', tSettings('eulaWelcomeIconAlt'));
-
-    const title = document.getElementById('android-permissions-onboarding-title');
-    if (title) title.innerHTML = tSettings('welcomeOnboardingTitle');
-
-    const body = document.getElementById('android-permissions-onboarding-body');
-    if (body) body.textContent = tSettings('androidPermissionsOnboardingBody');
-
-    const grantBtn = document.getElementById('android-accessibility-grant-btn');
-    if (grantBtn && !grantBtn.disabled) {
-        grantBtn.textContent = tSettings('androidAccessibilityGrantBtn');
-    }
-
-    const status = document.getElementById('android-accessibility-status');
-    if (status) {
-        status.textContent = status.classList.contains('hidden')
-            ? tSettings('androidAccessibilityReturnStatus')
-            : tSettings('androidAccessibilityWaitingStatus');
-    }
-
-    const note = document.getElementById('android-permissions-onboarding-note');
     if (note) note.innerHTML = tSettings('eulaProjectBlurb');
 }
 
@@ -2421,10 +1109,7 @@ export function applyWelcomeOnboardingLanguage() {
 
         let step2TitleKey = 'welcomeStep2TitleHtml';
         let step2BodyKey = 'welcomeStep2BodyHtml';
-        if (state.isAndroid) {
-            step2TitleKey = 'welcomeStep2TitleAndroidHtml';
-            step2BodyKey = 'welcomeStep2BodyAndroidHtml';
-        } else if (state.isIOS) {
+        if (state.isIOS) {
             step2TitleKey = 'welcomeStep2TitleIosHtml';
             step2BodyKey = 'welcomeStep2BodyIosHtml';
         }
@@ -2450,7 +1135,6 @@ export function applyWelcomeOnboardingLanguage() {
     const demoCaption = document.getElementById('welcome-demo-video-caption');
     if (demoCaption) demoCaption.textContent = tSettings('welcomeDemoVideoCaption');
 
-    const demoPlayBtn = document.getElementById('welcome-demo-play-btn');
     syncWelcomeDemoPlayLabel();
 
     const closeLabel = document.getElementById('welcome-demo-close-label');
@@ -2460,12 +1144,8 @@ export function applyWelcomeOnboardingLanguage() {
 
     syncWelcomeDemoFullscreenLabel();
 
-    // The demo video is desktop/iOS only — it can't play in the Android
-    // WebView (see initWelcomeDemoControls). Guarding the mp4 import behind
-    // the compile-time __ANDROID_BUILD__ flag lets Rollup drop this branch
-    // and tree-shake the ~1.7 MB asset out of the Android bundle entirely.
     const demoVideo = document.getElementById('welcome-demo-video');
-    if (!__ANDROID_BUILD__ && demoVideo && !demoVideo.src) {
+    if (demoVideo && !demoVideo.src) {
         import('./reddblock-video.mp4').then(({ default: welcomeDemoVideoUrl }) => {
             if (!demoVideo.src) demoVideo.src = welcomeDemoVideoUrl;
         });
@@ -2548,18 +1228,6 @@ export function resetWelcomeDemoPanel() {
 }
 
 function initWelcomeDemoControls() {
-    // Skip on Android: the welcome demo video is a large mp4 served
-    // through Tauri's custom-protocol asset handler, which doesn't
-    // support the HTTP Range requests Android WebView's <video> element
-    // needs — it 404/fails to load there even though it works fine in
-    // WKWebView on iOS. Hide the whole toggle/panel rather than show a
-    // permanently-broken video player.
-    if (state.isAndroid) {
-        document.getElementById('welcome-demo-toggle')?.classList.add('hidden');
-        document.getElementById('welcome-demo-panel')?.classList.add('hidden');
-        return;
-    }
-
     const toggle = document.getElementById('welcome-demo-toggle');
     const panel = document.getElementById('welcome-demo-panel');
     const videoWrap = document.getElementById('welcome-demo-video-wrap');
@@ -2799,7 +1467,7 @@ export function applySettingsLanguage() {
     setText('override-modal-instruction', tSettings('overrideInstruction'));
     setText('override-modal-word-instruction', tSettings('challengeWordInstruction'));
     setText('cancel-override-btn', tSettings('cancel'));
-    setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
+    updatePauseDialogDuration();
     setText('confirm-override-header', tSettings('startBlockHoldHeader'));
     setText('start-confirm-blocking-label', tSettings('startConfirmBlockingLabel'));
     setText('start-confirm-show-all-blocking', tSettings('showAll'));
@@ -2957,10 +1625,6 @@ export function applySettingsLanguage() {
     refreshUninstallButtonState();
     updateOverrideAllButtonVisibility();
     void updateAllEnforcementToggleLocks();
-    setText('settings-helper-service-label', tSettings('helperService'));
-    setText('settings-update-helper-label', tSettings('updateHelper'));
-    setText('settings-clean-hosts-label', tSettings('cleanHostsFile'));
-    setText('settings-helper-hint', tSettings('helperHint'));
     setText('close-settings-btn', tSettings('settingsDone'));
     setText('grace-period-label-text', tSettings('gracePeriodLabel'));
     setText('grace-period-hint-text', tSettings('gracePeriodHint'));
@@ -2973,30 +1637,6 @@ export function applySettingsLanguage() {
     updateGraceSettingLock();
     refreshSettingsVersionLabels();
 
-    const helperStatusText = document.getElementById('settings-helper-status-text');
-    if (helperStatusText) {
-        const raw = (helperStatusText.textContent || '').trim();
-        const statusMap = {
-            'Checking...': tSettings('helperStatusChecking'),
-            'Active': tSettings('helperStatusActive'),
-            'Idle': tSettings('helperStatusIdle'),
-            'Installed, not reachable': tSettings('helperStatusInstalledNotReachable'),
-            'Update available': tSettings('helperStatusUpdateAvailable'),
-            'Not installed': tSettings('helperStatusNotInstalled'),
-            'Unknown': tSettings('helperStatusUnknown'),
-            'Tjekker...': tSettings('helperStatusChecking'),
-            'Aktiv': tSettings('helperStatusActive'),
-            'Inaktiv': tSettings('helperStatusIdle'),
-            'Installeret, men ikke tilgaengelig': tSettings('helperStatusInstalledNotReachable'),
-            'Installeret, men ikke tilgængelig': tSettings('helperStatusInstalledNotReachable'),
-            'Opdatering tilgaengelig': tSettings('helperStatusUpdateAvailable'),
-            'Opdatering tilgængelig': tSettings('helperStatusUpdateAvailable'),
-            'Ikke installeret': tSettings('helperStatusNotInstalled'),
-            'Ukendt': tSettings('helperStatusUnknown'),
-        };
-        if (statusMap[raw]) helperStatusText.textContent = statusMap[raw];
-    }
-
     applyMigrationOverlayStaticCopy();
     applyEulaOnboardingLanguage();
     applyWelcomeOnboardingLanguage();
@@ -3004,7 +1644,6 @@ export function applySettingsLanguage() {
     applySafariFdaOnboardingLanguage();
     applyIosScreentimeOnboardingLanguage();
     applyStartWarningsLanguage();
-    applyAndroidPermissionsOnboardingLanguage();
 
     if (state.migrationOnboardingActive && state.lastMigrationBrowserState) {
         renderBrowserInstallButtons(state.lastMigrationBrowserState, { force: true });

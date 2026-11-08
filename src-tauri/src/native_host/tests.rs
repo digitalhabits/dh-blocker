@@ -582,7 +582,7 @@ fn pause_without_end_time_does_not_suppress_enforcement() {
 /// This is the one shape where schedules and one-off blocks deliberately
 /// differ. The card switch turns a Daily / Weekly space off by writing
 /// exactly this (through the override challenge), and the frontend engine,
-/// Android (`BlockerPlugin.kt`) and iOS (`ScheduleData.swift`) all read it
+/// iOS (`ScheduleData.swift`) all read it
 /// as "paused until turned on again". Desktop must agree, or a space the
 /// user switched off would keep blocking on macOS/Windows only.
 #[test]

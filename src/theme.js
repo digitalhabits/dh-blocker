@@ -5,7 +5,6 @@ import { tauriAPI } from './tauri-api.js';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { resolveMicrosoftStorePackage, isVersionHigher, getLatestVersionPlatformKey } from './update-banner.js';
 import { updateOverrideAllButtonVisibility, refreshUninstallButtonState } from './settings.js';
-import { stopHelperUiRefreshLoop } from './modal-manager.js';
 import { saveData } from './persistence.js';
 import { getLiveTimePickerContainer, syncEnterSchedulerSheetLayout } from './confirm-modals.js';
 import { wireEnforcementToggle, wireBlockingMethodSettings, resetSettingsEnforcementSection } from './enforcement.js';
@@ -122,7 +121,6 @@ export function setupTheme() {
         closeSettingsBtn.addEventListener('click', () => {
             setLanguagePickerOpen(false);
             settingsModal.classList.add('hidden');
-            stopHelperUiRefreshLoop();
         });
     }
 
@@ -132,7 +130,6 @@ export function setupTheme() {
             if (e.target === settingsModal) {
                 setLanguagePickerOpen(false);
                 settingsModal.classList.add('hidden');
-                stopHelperUiRefreshLoop();
             }
         });
     }
@@ -223,7 +220,7 @@ export function usesNativeWebviewZoom() {
 
 let handsetViewportGuardBound = false;
 
-/** Unstick phone/Android webview scroll after keyboard or modal dismiss. */
+/** Unstick phone webview scroll after keyboard or modal dismiss. */
 function resetHandsetViewport() {
     document.activeElement?.blur?.();
     window.scrollTo(0, 0);
@@ -234,10 +231,10 @@ function resetHandsetViewport() {
     }
 }
 
-/** Pin document scroll + heal viewport after inputs/modals (iPhone + Android only). */
+/** Pin document scroll + heal viewport after inputs/modals (iPhone only). */
 export function setupHandsetViewportGuard() {
     if (handsetViewportGuardBound) return;
-    const isPhone = document.body.classList.contains('ios-phone') || state.isAndroid;
+    const isPhone = document.body.classList.contains('ios-phone');
     if (!isPhone) return;
     handsetViewportGuardBound = true;
 
@@ -596,19 +593,6 @@ export function resetUiZoom(options = {}) {
 
 export function setupUiZoomShortcuts() {
     setupFooterZoomControl();
-
-    // One-time zoom reset on Android. Early Android builds inherited the
-    // desktop default zoom (1.2) and PERSISTED it into settings.uiZoom, so
-    // just changing the default doesn't heal existing installs. CSS zoom
-    // above 1.0 on Android WebView shrinks the effective viewport (~327px
-    // on a 393dp phone → horizontal overflow) and triggers paint bugs
-    // (duplicated/offset text). Reset once; the user can still zoom
-    // manually afterwards and that choice sticks.
-    if (state.isAndroid && state.appData.settings?.uiZoom !== undefined && !state.appData.settings.androidZoomReset) {
-        state.appData.settings.uiZoom = DEFAULT_UI_ZOOM;
-        state.appData.settings.androidZoomReset = true;
-        saveData();
-    }
 
     applyUiZoom(getSavedUiZoom());
     bindUiZoomLayoutObserver();

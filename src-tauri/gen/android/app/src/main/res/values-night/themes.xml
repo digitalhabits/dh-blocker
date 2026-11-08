@@ -1,7 +1,0 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Theme.redd_block" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <!-- Dark app canvas (#14202c) so system-bar inset padding matches. -->
-        <item name="android:windowBackground">#14202c</item>
-    </style>
-</resources>

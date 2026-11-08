@@ -6,6 +6,9 @@
 // Module-private state stays as plain `let` inside its own module.
 // Leaf module: must not import from any other app module.
 export const state = {
+    pendingPauseSpaceId: null,
+    pauseChallengeSnapshot: null,
+    pauseSubmitting: false,
     appData: {
         blocklists: [],
         activeBlocks: [],
@@ -21,9 +24,7 @@ export const state = {
     userExplicitlyDeselected: false,
     /** True while the hidden blocklist <select> is being rebuilt programmatically. */
     suppressBlocklistSelectChange: false,
-    helperAvailable: false, // Track if the privileged helper daemon is running
     isIOS: false, // Track if running on iOS
-    isAndroid: false, // Track if running on Android
     // True on macOS desktop (i.e. Mac platform AND not the iOS Tauri
     // runtime). Set in `detectPlatform`. Used to gate macOS-only Tauri
     // commands and onboarding copy.
@@ -35,22 +36,12 @@ export const state = {
     screentimeAuthorized: false, // Track if Screen Time is authorized (iOS)
     /// False until the first authorization check answers. The grant screen
     /// waits for it, so a cold start does not flash the prompt while the
-    /// authorization centre is still resolving (Android does the same with a
-    /// null androidPermissionsGranted).
+    /// authorization centre is still resolving.
     screentimeAuthChecked: false,
     /** iOS notification permission for start warnings: 'notDetermined', 'denied', 'authorized', … or null before the first check. */
     notificationPermission: null,
     /** True from a Screen Time grant until the start-warnings screen is answered. Not saved: every grant shows it. */
     iosNotificationOnboardingPending: false,
-    // null = not checked yet. Avoid showing the Android Accessibility
-    // onboarding screen during startup before the native permission check
-    // has had a chance to answer.
-    androidPermissionsGranted: null,
-    // The returning Android UI is rendered optimistically from persisted data
-    // before the asynchronous Accessibility IPC completes. If that check says
-    // access was revoked, updateOnboardingVisibility immediately replaces it
-    // with the native-permissions gate.
-    androidFirstFrameCommitted: false,
     installedAppsCache: null, // Cache the installed-apps list so we don't re-scan every open
     /** Focus-space editor: Daily / Weekly / Manual choice shown in the form. */
     editorKind: 'manual',
@@ -62,8 +53,8 @@ export const state = {
     activeScheduleSegmentCount: 0, // Number of segments locked in the active schedule (new segments can be added)
     /** Draft for allowEditsBetweenBlocks before a schedule is started (opt-in, default off). */
     draftAllowEditsBetweenBlocks: false,
-    lastBlockedDomains: new Set(), // Track what's currently blocked to avoid re-prompting
-    activatedBlockIds: new Set(), // Track blocks that have already triggered host updates
+    lastBlockedDomains: new Set(), // Track the domains used by the last blocking sync
+    activatedBlockIds: new Set(), // Track blocks that have already triggered activation
     scheduleSegments: null, // Array of time segments with per-segment days (set at startup)
     scheduleRepeatDate: null, // Date object when repeatType is 'date'
     appBlockingActiveStartOverlay: null, // Custom start-overlay config for the active schedule warning session
@@ -79,7 +70,6 @@ export const state = {
     lastOverrideTypeValue: '',
     overrideBlockId: null,
     pendingStartBlocklistId: null, // Space waiting in the start confirmation modal
-    overrideBlocklistIdForHelper: null,
     startupInitializationComplete: false, // Track whether post-onboarding startup already ran
     migrationOnboardingActive: false,
     migrationOnboardingDismissed: false,

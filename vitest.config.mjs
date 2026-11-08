@@ -3,7 +3,7 @@ import { defineConfig } from 'vitest/config';
 // Tier 0: plain unit tests over the pure helpers in `src/`.
 //
 // Deliberately NOT `vite.config.js` — that config carries the index.html
-// rewriting, PurgeCSS and Android asset-pruning plugins, none of which mean
+// rewriting plugins, none of which mean
 // anything when the entry point is a test file rather than the app shell.
 // The only thing Tier 0 needs from the build is the platform/build-flavor
 // compile-time constants, so the modules under test resolve the same branches
@@ -12,7 +12,6 @@ import { defineConfig } from 'vitest/config';
 // folded-away branch.
 export default defineConfig({
     define: {
-        __ANDROID_BUILD__: false,
         __SYSTEM_TEST_BUILD__: false,
     },
     test: {

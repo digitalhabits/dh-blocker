@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+root="$(dirname "$scripts")"
+# Tauri filters custom environment variables before invoking Xcode. Resolve
+# the worktree from this wrapper so every nested invocation has a local path.
+for arg do
+    if [[ "$arg" == archive ]]; then
+        exec "$scripts/xcodebuild" "$@" -derivedDataPath "$root/artifacts/ios-test/derived-data/native"
+    fi
+done
+exec "$scripts/xcodebuild" "$@"

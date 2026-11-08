@@ -2,7 +2,7 @@
 // Extracted verbatim from app.js.
 import { state } from './state.js';
 import { LEGACY_MAX_OVERRIDE_WORDS, getMaxOverrideWords, migrateOverrideDifficultyToWords } from './override-challenge.js';
-import { getBlocklistUnlockMinutes, normalizeUnlockMinutes } from './unlock-duration.js';
+import { normalizeUnlockMinutes } from './unlock-duration.js';
 import { confirmDiscardEditorEdits, editorHasUnsavedEdits, formatScheduleWhenSummary } from './focus-space-editor.js';
 import { deriveWhenToBlockKind } from './when-to-block.js';
 import { BaseDirectory } from '@tauri-apps/api/path';
@@ -11,10 +11,10 @@ import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { escapeHtml, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
 import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, healWwwWebsiteEntries, isAllowlistBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist } from './blocklist-utils.js';
-import { computeNextOneShotOccurrenceMs, computeNextRepeatingOccurrenceMs, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow, syncSchedulesToHelper } from './schedule-engine.js';
-import { saveData, updateHostsFile } from './persistence.js';
+import { computeNextOneShotOccurrenceMs, computeNextRepeatingOccurrenceMs, isNonRepeatingSchedule, isSchedulePausedNow, syncIOSSchedules } from './schedule-engine.js';
+import { saveData, syncBlockingState } from './persistence.js';
 import { render, renderScheduleVisibilityChips } from './render.js';
-import { isFocusSpaceOn, setFocusSpaceEnabled } from './focus-space-switch.js';
+import { isFocusSpaceOn, getFocusSpaceOffUntil, turnFocusSpaceOn, setFocusSpaceEnabled } from './focus-space-switch.js';
 import { canEditScheduleBetweenBlocks, commitSegmentDelete, isScheduleSegmentActiveNow } from './schedule-editor.js';
 import {
     BLOCKLIST_NAME_MAX_LENGTH,
@@ -102,7 +102,7 @@ function buildBlocklistCardStatusLine(bl, now = Date.now()) {
     ) || null;
     const nowLabel = tSettings(isAllowlistBlocklist(bl) ? 'cardStatusAllowingNow' : 'cardStatusBlockingNow');
     const kind = deriveWhenToBlockKind(schedule);
-    const manualAutoStarts = kind === 'manual' && !!block && getBlocklistUnlockMinutes(bl) > 0;
+    const manualAutoStarts = kind === 'manual' && !!block?.pauseEndTime;
     const timing = manualAutoStarts ? tSettings('whenManualShort') : formatScheduleWhenSummary(kind, schedule);
     const fullTiming = manualAutoStarts ? timing : formatScheduleWhenSummary(kind, schedule, { full: true });
     // 24-hour HH:MM, matching the schedule times on the same line. Strictness caps a pause at 24 h, so it ends today or tomorrow.
@@ -113,7 +113,7 @@ function buildBlocklistCardStatusLine(bl, now = Date.now()) {
         return tSettingsFmt(key, { time: hhmm });
     };
 
-    let status = null;
+    let status = !block && !schedule ? tSettings('cardStatusOff') : null;
     let tone = '';
     if (block && !isOneOffPauseActive(block, now)) {
         status = nowLabel; tone = ' is-blocking';
@@ -795,7 +795,7 @@ export async function deleteBlocklist(id) {
     expandedBlocklistCardIds.delete(id);
     void saveData();
     // iOS: drop the space's monitors and start warnings now, not on the next tick.
-    if (state.isIOS) void syncSchedulesToHelper();
+    if (state.isIOS) void syncIOSSchedules();
 
     // If the deleted blocklist was the selected one, reset the scheduler UI
     if (state.selectedBlocklistId === id) {
@@ -828,7 +828,7 @@ export function commitDelete() {
     // Only once undo is gone: an undone delete keeps its stopped space's restart.
     pendingDelete.activeBlocks.forEach((block) => void cancelIOSRestart(block));
     if (pendingDelete.activeBlocks.length > 0) {
-        updateHostsFile();
+        syncBlockingState();
     }
 
     dismissUndoToast();
@@ -960,6 +960,8 @@ export function renderBlocklists() {
 
         const switchOn = isFocusSpaceOn(bl.id, now);
         const switchLabel = tSettingsFmt(switchOn ? 'switchTurnOffFmt' : 'switchTurnOnFmt', { name: bl.name });
+        const pauseEnd = getFocusSpaceOffUntil(bl.id, now);
+        const resumeHtml = pauseEnd ? '<button type="button" class="blocklist-resume-btn">' + escapeHtml(tSettings('pauseResumeNow')) + '</button>' : '';
         const switchHtml = `<button type="button" class="blocklist-switch${switchOn ? ' on' : ''}" role="switch" aria-checked="${switchOn ? 'true' : 'false'}" title="${escapeHtml(switchLabel)}" aria-label="${escapeHtml(switchLabel)}" data-id="${bl.id}"><span class="blocklist-switch-knob" aria-hidden="true"></span></button>`;
 
         return `
@@ -979,6 +981,7 @@ export function renderBlocklists() {
             </div>
             <div class="blocklist-meta">${metaHtml}</div>
             ${statusLineHtml}
+            ${resumeHtml}
           </div>
           ${detailsHtml}
         </div>
@@ -1006,18 +1009,21 @@ export function renderBlocklists() {
     // Add event listeners
     container.querySelectorAll('.blocklist-card').forEach(card => {
         const id = card.dataset.id;
-        const isActive = card.dataset.active === 'true';
 
         // Everywhere on the card except the switch selects the space, which
         // shows its editor: inline on desktop, as a full-screen sheet on phones and
         // single-column desktop windows.
         card.addEventListener('click', (e) => {
             if (e.target.closest('.blocklist-meta-items-btn')) return;
-            if (e.target.closest('.blocklist-actions')) return;
+            if (e.target.closest('.blocklist-actions') || e.target.closest('.blocklist-resume-btn')) return;
             closeAllBlocklistMenus();
             void openBlocklistEnterFromCard(id);
         });
 
+        card.querySelector('.blocklist-resume-btn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            void turnFocusSpaceOn(id);
+        });
         // The switch: on is immediate, off goes through the override challenge.
         card.querySelector('.blocklist-switch')?.addEventListener('click', (e) => {
             e.stopPropagation();

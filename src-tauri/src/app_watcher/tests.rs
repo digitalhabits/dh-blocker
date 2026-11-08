@@ -516,3 +516,34 @@ fn a_window_title_loses_its_elevation_prefix() {
         "Zoom: Meeting"
     );
 }
+
+#[test]
+fn warning_layer_decrement_saturates_after_force_dismissal() {
+    let layers = AtomicU32::new(2);
+    assert_eq!(decrement_warning_layers(&layers), 2);
+    assert_eq!(decrement_warning_layers(&layers), 1);
+    assert_eq!(decrement_warning_layers(&layers), 0);
+    assert_eq!(layers.load(Ordering::SeqCst), 0);
+
+    layers.store(3, Ordering::SeqCst);
+    layers.store(0, Ordering::SeqCst); // Force dismissal precedes late PID exits.
+    assert_eq!(decrement_warning_layers(&layers), 0);
+    assert_eq!(layers.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn concurrent_warning_exits_release_the_last_layer_once() {
+    let layers = AtomicU32::new(4);
+    let released = AtomicU32::new(0);
+    std::thread::scope(|scope| {
+        for _ in 0..8 {
+            scope.spawn(|| {
+                if decrement_warning_layers(&layers) == 1 {
+                    released.fetch_add(1, Ordering::SeqCst);
+                }
+            });
+        }
+    });
+    assert_eq!(layers.load(Ordering::SeqCst), 0);
+    assert_eq!(released.load(Ordering::SeqCst), 1);
+}

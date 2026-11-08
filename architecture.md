@@ -58,12 +58,11 @@ This section explains the **current** runtime:
 | Area | Files |
 |---|---|
 | Frontend orchestration | `src/app.js` (entry: init sequence + event wiring), `src/index.html`, `src/styles.css` |
-| Frontend shared state | `src/state.js` (mutable cross-module state object), `src/tauri-api.js` (Tauri command compat layer) |
-| Frontend hubs | `src/persistence.js` (load/save/hosts sync), `src/render.js` (render cycle + tick loop), `src/schedule-engine.js` (occurrence math + helper sync) |
+| Frontend shared state | `src/state.js` (mutable cross-module state object), `src/tauri-api.js` (Tauri command and plugin wrappers) |
+| Frontend hubs | `src/persistence.js` (load/save and platform blocking sync), `src/render.js` (render cycle + tick loop), `src/schedule-engine.js` (occurrence calculations and iOS schedule sync) |
 | Frontend features | `src/blocklists.js`, `src/confirm-modals.js`, `src/schedule-editor.js`, `src/schedule-overlay.js`, `src/enforcement.js`, `src/onboarding.js`, `src/blocking-platform.js`, `src/settings.js`, `src/update-banner.js`, `src/theme.js`, `src/override-challenge.js`, `src/challenge-controller.js`, `src/time-inputs.js`, `src/website-input.js`, `src/apps-picker.js`, `src/modal-manager.js`, `src/focus-space-editor.js`, `src/focus-space-switch.js`, `src/when-to-block.js`, `src/allowlist-ios.js` (iOS allow-mode start gate + effective-policy resolvers), `src/schedule-overlay-message-editor.js`, `src/custom-select.js`, `src/changelog.js` |
 | Frontend leaf utilities | `src/utils.js`, `src/i18n.js`, `src/blocklist-utils.js`, `src/list-mode.js`, `src/list-presentation.js`, `src/unlock-duration.js`, `src/calendar-layout.js`, `src/ios-gesture.js`, `src/dev-internals.js` (test surface: `window.__REDDBLOCK_INTERNALS__`) |
 | App data persistence | `src-tauri/src/commands/data.rs` |
-| Legacy command names (shim) | `src-tauri/src/commands/helper_shim.rs` |
 | macOS Automation blocking | `src-tauri/src/web_automation.rs`, `src-tauri/src/commands/web_automation.rs` |
 | macOS per-browser method (Automation default, opt-in extension) | `src-tauri/src/blocking_method.rs`, `src-tauri/src/commands/blocking_method_cmd.rs`, `src-tauri/src/app_group.rs` (Safari extension mode), `src-tauri/src/commands/safari_bridge.rs`, `src-tauri/src/safari_services.rs` |
 | Windows + macOS Firefox extension host | `src-tauri/src/native_host.rs`, `src-tauri/src/native_host_install.rs` |
@@ -87,10 +86,8 @@ startup sequence lives in the `DOMContentLoaded` handler in `src/app.js`.
 The `window.__REDDBLOCK_INTERNALS__` keys in `src/dev-internals.js` are a
 contract with the in-app test scripts — never rename them.
 
-There is **no** `helper-daemon/` in the repo and **no** live IPC to a
-privileged helper. Frontend calls like `start_block_via_helper` are kept for
-historical reasons and route through `helper_shim.rs` (mostly no-ops for
-website blocking; app blocking goes to `app_watcher`).
+The legacy helper and hosts-file commands are migration entry points.
+Desktop blocking uses the saved app data and the in-process app watcher.
 
 ---
 
@@ -438,9 +435,7 @@ stays the default, so existing installs are unaffected.
 
 - **Reads** take `AXWebArea`'s `AXURL` — the document's real URL — rather than
   the address-bar string, which is a display form with the scheme hidden,
-  `www.` sometimes trimmed and IDN rendered for humans. This is the parsing
-  hazard `BrowserUrlParserTest` exists for on Android, avoided rather than
-  parsed.
+  `www.` sometimes trimmed and IDN rendered for humans. Using the document URL avoids parsing those display-only variations.
 - **The active tab only.** Accessibility exposes the laid-out document, so a
   blocked page in a background tab is caught when the user switches to it.
 - **Redirects** press Firefox's "Open Location" menu item and type the URL,
@@ -527,8 +522,8 @@ Per blocked-app PID state machine:
 4. **SIGKILL** — 10 s after polite quit if PID still alive
 
 Protected apps (Digital Habits: Blocker itself, Finder, shell processes) are never targeted.
-Schedule and manual app lists merge in the frontend; `set_blocked_apps_via_helper`
-(shim) forwards to `app_blocking::set_blocked_apps` with the full mode-aware
+Schedule and manual app lists merge in the frontend, which sends
+`app_blocking::set_blocked_apps` the full mode-aware
 policy: `apps`, `newly_added`, `allowed_apps`, `allowlist_active`,
 `allowlist_newly_started`.
 
@@ -580,24 +575,28 @@ countdown can float over third-party fullscreen Spaces without stealing focus.
 ### 9.2 How enforcement picks up changes
 
 1. Frontend computes intent and calls `save_data`.
-2. Legacy shims acknowledge (`start_block_via_helper`, `set_schedules_via_helper`
-   — no separate daemon to sync to).
-3. Backends re-read canonical data:
+2. The frontend sends the effective app policy to the watcher.
+3. Desktop enforcement reads the canonical data:
    - Automation watcher: every tick
    - Native host: on connect, 2 s file-change poll, 30 s poll
    - App watcher: on `set_blocked_apps` and each poll
    - Enforcer: every 5 s via `derive_payload`
 
-### 9.3 Stop = temporary unlock
+### 9.3 Pauses and automatic resumption
 
-Every focus space carries `unlockMinutes` (0 = Never, else one of
-5/10/15/30/60/120/240/480/1440; helpers in `src/unlock-duration.js`, default 24 h
-— also applied to records saved before the field existed). Stopping a running
-space — the card switch, the now-blocking chip, the editor banner's "Turn off",
-or the Android friction gate — first passes the override challenge
-(`openOverrideModal` / `openScheduleOverrideModal`; waived for a Flexible
-schedule sitting between its blocks) and then `stopFocusSpaceTarget` applies the
-duration:
+The shared pause dialog chooses the duration for that confirmation, independently
+of the editor: 5/10/30/60/120/240/480/1440 minutes or Never. A successful timed
+pause remembers `settings.lastBreakMinutes` globally; missing/invalid preferences
+start at **10 minutes**. Cancellation, failure and Never leave the last timed
+choice unchanged. Legacy per-space `unlockMinutes` no longer controls this flow.
+Existing pause deadlines, including 15-minute pauses, are preserved.
+
+The existing typing challenge gates confirmation (waived for Flexible schedules
+between blocks). Changing duration never resets typing. Active random-word
+requirements may increase, but saving cannot lower the saved requirement or
+change the method/custom text while enforcement requires friction.
+
+`stopFocusSpaceTarget` receives the chosen duration explicitly:
 
 - unlock > 0: a **timed pause** — `isPaused` + `pauseEndTime` on the block or
   schedule; the render tick clears it at expiry, iOS additionally registers a
@@ -608,11 +607,10 @@ duration:
 
 While paused, domains/apps from that source are excluded from `derive_payload`
 and app-watcher effective sets, and a schedule pause suppresses upcoming
-segments until it ends. Turning a space back on never asks anything.
-
-Android's native gate (`UnlockActivity`) still prefills its own pause length from
-Kotlin prefs (fallback 10 min); the webview no longer writes that pref, and the
-plugin does not read `unlockMinutes` yet.
+segments until it ends. Paused cards show their return time and Resume now.
+There is no end-time editor; changing challenge settings never reschedules a
+confirmed pause. Turning a space back on never requires a challenge. iOS resume
+registration must succeed before a timed pause commits; failure retains blocking.
 
 ### 9.4 Merge semantics
 
@@ -637,14 +635,13 @@ relies on backends to observe the file change — no helper IPC.
 Persisted on each blocklist as `overrideDifficulty`:
 
 - `type`: `random-words` | `custom`
-- `count`: a number of **words** on every platform (1–1000 desktop, 1–100 iOS/Android; five-letter words), chosen with the "To stop early" slider; the desktop slider tops out at `settings.maxOverrideWords` (50–1000, default 300)
+- `count`: a number of **words** on every platform (1–1000 desktop, 1–100 iOS; five-letter words), chosen with the "To stop early" slider; the desktop slider tops out at `settings.maxOverrideWords` (50–1000, default 300)
 - `customText`: typed verbatim for `custom`
 
 `appData.settings.overrideCountUnit === 'words'` marks a store that has been
 migrated; before v3.9 desktop stored a character target and offered gibberish
 and a "max difficulty" flag, all folded into word counts on load by
-`migrateOverrideDifficultyToWords` (`src/override-challenge.js`). Android's
-native gate maps `count` straight onto `frictionWordCount`.
+`migrateOverrideDifficultyToWords` (`src/override-challenge.js`).
 
 ### 10.2 Blocklist duplication
 
@@ -664,8 +661,6 @@ never active. Naming: “X” → “X copy” → “X copy 2” …
 4. macOS: start Automation watcher after EULA (`web_automation` auto-start)
 5. Reconcile launch-at-login (release builds only); Windows leaves legacy watchdog tasks untouched
 6. Frontend: EULA gate → browser setup (Automation rows + Firefox extension)
-
-`check_helper_status()` always reports ready — the app **is** the runtime.
 
 ### 11.2 App close vs quit
 
@@ -857,16 +852,13 @@ desktop `current_blocking` state and shows nothing on iOS).
 
 Desktop surfaces include:
 
-- app version and backend mode (`automation` on macOS, `extension` on Windows)
+- app version, build mode, operating system and architecture
 - Automation permission status per browser (macOS)
 - extension scan summary (Firefox on macOS; all browsers on Windows)
 - current enforcement snapshot (`current_blocking`): per-block breakdown with
   mode, plus allowlist state (`allowlist_active`, allowed website/app unions)
-- hosts file contents (should be clean post-migration)
+- legacy migration residue and completion status
 - relevant paths and logs
-
-`get_helper_diagnostics()` (shim) returns app version + backend label — not
-legacy helper daemon status.
 
 ---
 
@@ -986,7 +978,7 @@ flowchart TD
 - **Install:** required admin/UAC for helper registration
 
 Primary historical code lived in `helper-daemon/src/main.rs` and
-`src-tauri/src/commands/helper.rs` (since replaced by `helper_shim.rs`).
+`src-tauri/src/commands/helper.rs`.
 
 ## v1 helper internals
 

@@ -35,7 +35,7 @@ platform limits on the bullet.
 
 ## Platform tags
 
-Supported platforms: **macOS**, **Windows**, **iOS**, and **Android**.
+Supported platforms: **macOS**, **Windows**, and **iOS**.
 Desktop means macOS + Windows.
 
 Optional tags go at the start of the bullet:
@@ -46,7 +46,7 @@ Optional tags go at the start of the bullet:
 | `[macos]` | macOS only |
 | `[windows]` | Windows only |
 | `[ios]` | iOS only |
-| `[android]` | Android only |
+| `[android]` | Historical Android-only notes; retained for filtering old releases |
 
 Rules:
 
@@ -198,7 +198,7 @@ allowed. Store automation may replace it with the standard intro.
 | --- | --- |
 | **GitHub Release** | Exact `## vX.Y.Z` section as markdown: update intro line, all non-empty headings, platform tags, and **Internal** |
 | **Any app-store “What’s New”** | Update intro line + non-empty user-facing sections with headings; **exclude Internal** |
-| **Platform store (Windows / macOS / iOS / Android)** | Untagged bullets + bullets tagged for that platform + parent tags (e.g. macOS store: untagged + `[macos]` + `[desktop]`) |
+| **Platform store (Windows / macOS / iOS)** | Untagged bullets + bullets tagged for that platform + parent tags (e.g. macOS store: untagged + `[macos]` + `[desktop]`) |
 | **Platform-specific store text** | Platform tags removed; plain sentences (no `*` / other markdown) |
 
 ### Update intro line (required in `changelog.md`)

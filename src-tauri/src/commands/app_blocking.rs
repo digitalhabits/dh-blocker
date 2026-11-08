@@ -1,6 +1,4 @@
 // Tauri commands that drive the in-process app watcher.
-// These replace the helper-mediated `set_blocked_apps_via_helper`
-// path once the migration lands.
 
 use std::collections::HashSet;
 use std::sync::Mutex;
@@ -29,7 +27,7 @@ impl Default for AppWatcherState {
 /// first-sighting takes: names in `newly_added` raise the Let's-go
 /// warning, names that were already blocked get the silent SIGTERM
 /// mid-block path. The frontend is responsible for computing the
-/// diff — `app_blocking.js` tracks the previous set across
+/// diff — `blocking-platform.js` tracks the previous set across
 /// `updateBlockedApps` calls.
 #[tauri::command]
 pub fn set_blocked_apps(

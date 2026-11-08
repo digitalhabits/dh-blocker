@@ -56,7 +56,7 @@ export function buildStartWarningsPayload(now = Date.now()) {
 
 /** Rebuilds the booked warnings. Called after every schedule sync and on its own triggers. */
 export async function syncIOSStartWarnings() {
-    if (__ANDROID_BUILD__ || !state.isIOS) return;
+    if (!state.isIOS) return;
     try {
         const result = await tauriAPI.screentimeSetStartWarnings(buildStartWarningsPayload());
         if (result?.status) state.notificationPermission = result.status;
@@ -68,7 +68,7 @@ export async function syncIOSStartWarnings() {
 }
 
 export async function refreshNotificationPermission() {
-    if (__ANDROID_BUILD__ || !state.isIOS) return;
+    if (!state.isIOS) return;
     try {
         state.notificationPermission = (await tauriAPI.screentimeCheckNotificationPermission())?.status ?? null;
     } catch (e) {
@@ -113,7 +113,7 @@ function renderStartWarningsRow() {
 export function setupStartWarningsToggle() {
     const input = document.getElementById('settings-start-warnings-input');
     if (!input) return;
-    if (__ANDROID_BUILD__ || !state.isIOS) {
+    if (!state.isIOS) {
         document.getElementById('settings-start-warnings-row')?.classList.add('hidden');
         return;
     }
@@ -133,7 +133,6 @@ export function setupStartWarningsToggle() {
 
 /** The onboarding screen shown straight after Screen Time is granted. */
 export function setupStartWarningsOnboarding() {
-    if (__ANDROID_BUILD__) return;
     const finish = () => {
         state.iosNotificationOnboardingPending = false;
         updateOnboardingVisibility();

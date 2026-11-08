@@ -404,22 +404,22 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
     // extension, starting a grace timer and revealing the window for a
     // browser that is fine. The next tick picks up the change.
     #[cfg(target_os = "macos")]
-    let extension_browsers = running
-        .iter()
-        .copied()
-        .filter(|key| {
-            judged_by_extension(
-                key.uses_automation_on_macos(app),
-                key.uses_accessibility_on_macos(app),
-            )
-        })
-        .collect::<std::collections::HashSet<_>>();
+    let extension_browsers = extension_browsers(&running, |key| {
+        !judged_by_extension(
+            key.uses_automation_on_macos(app),
+            key.uses_accessibility_on_macos(app),
+        )
+    });
+    #[cfg(target_os = "windows")]
+    let extension_browsers = extension_browsers(&running, |key| {
+        crate::blocking_method::uses_automation(app, key.setting_key())
+    });
 
-    // Only scan browsers we actually judge by the extension. On macOS
-    // that's Firefox alone — scanning a Chromium/Safari profile dir
-    // triggers Sequoia's per-app data-access TCC prompt, and we don't
-    // need it anyway (those are judged by `query_automation_permission`,
-    // which reads the decision without touching disk or prompting).
+    // Only scan browsers we actually judge by the extension. On macOS,
+    // scanning a Chromium/Safari profile dir triggers Sequoia's per-app
+    // data-access TCC prompt. On Windows, besides profile/manifest I/O,
+    // each scan repeats process lookups. Neither result is used by the
+    // grant-based compliance paths.
     let scan_result = profile_scan::scan_filter(|label| {
         let key = match label {
             "firefox" => BrowserKey::Firefox,
@@ -432,11 +432,11 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
         if !running.contains(&key) {
             return false;
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         {
             extension_browsers.contains(&key)
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
             true
         }
@@ -467,7 +467,7 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
             key,
             &scan_result,
             is_running,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             extension_browsers.contains(&key),
         ) {
             None => {
@@ -843,7 +843,7 @@ fn compliance_issue(
     key: BrowserKey,
     scan: &profile_scan::ScanResult,
     is_running: bool,
-    #[cfg(target_os = "macos")] uses_extension: bool,
+    #[cfg(any(target_os = "macos", target_os = "windows"))] uses_extension: bool,
 ) -> Option<ExtensionIssue> {
     #[cfg(target_os = "macos")]
     {
@@ -890,7 +890,7 @@ fn compliance_issue(
         }
     }
     #[cfg(target_os = "windows")]
-    if crate::blocking_method::uses_automation(app, key.setting_key()) {
+    if !uses_extension {
         return None;
     }
     let b = key.for_status(scan);
@@ -972,6 +972,23 @@ fn judged_by_extension(uses_automation: bool, uses_accessibility: bool) -> bool 
 }
 
 // ---- Process detection + quit -----------------------------------------
+
+/// The running browsers judged by the extension, resolved once per tick.
+/// `uses_grant_method` is true for a browser on a method judged by its grant
+/// instead (Automation, Accessibility, Windows UI Automation); on Windows it
+/// is the normal method resolver, including the policy fallback. Closed
+/// browsers are never asked about.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn extension_browsers(
+    running: &std::collections::HashSet<BrowserKey>,
+    uses_grant_method: impl Fn(BrowserKey) -> bool,
+) -> std::collections::HashSet<BrowserKey> {
+    running
+        .iter()
+        .copied()
+        .filter(|key| !uses_grant_method(*key))
+        .collect()
+}
 
 #[cfg(target_os = "macos")]
 fn running_browsers() -> std::collections::HashSet<BrowserKey> {

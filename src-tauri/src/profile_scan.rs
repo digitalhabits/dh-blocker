@@ -483,6 +483,7 @@ fn firefox_install_hash(exe_dir: &Path) -> u64 {
 /// Where macOS's app register (Launch Services) has the app with this bundle
 /// id, whatever it is called or wherever it sits. None if never seen or gone.
 #[cfg(target_os = "macos")]
+#[allow(deprecated)] // Cocoa FFI pending migration to objc2.
 fn app_path_for_bundle_id(bundle_id: &str) -> Option<PathBuf> {
     use cocoa::base::{id, nil};
     use cocoa::foundation::NSString;

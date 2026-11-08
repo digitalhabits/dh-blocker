@@ -22,7 +22,7 @@ fn main() {
     // into the stdio loop before Tauri tries to start a UI. The flag
     // is passed to the binary by the browser when it spawns us via the
     // native-messaging manifest.
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    #[cfg(not(target_os = "ios"))]
     if redd_block_lib::native_host::is_native_host_invocation() {
         #[cfg(target_os = "windows")]
         redd_block_lib::windows_process::set_native_host_process_directory();
@@ -34,7 +34,7 @@ fn main() {
     // Task, and any leftover legacy-helper artefacts, then exits.
     // Called from the NSIS pre-uninstall hook on Windows; also useful
     // for an `Uninstall.app` shim or a manual `redd-block --uninstall`.
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    #[cfg(not(target_os = "ios"))]
     if std::env::args().skip(1).any(|a| a == "--uninstall") {
         let _ = redd_block_lib::native_host_install::uninstall();
         let _ = redd_block_lib::extension_install::uninstall();

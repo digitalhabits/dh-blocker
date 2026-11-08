@@ -1,62 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import {
-    ANDROID_DAY_NAMES_MON0,
-    ANDROID_DEFAULT_FRICTION_WORD_COUNT,
-    androidDayNamesFromMon0,
-    androidFrictionChallengeFields,
-    dayIndexMonday0FromDate,
-    getRepeatScheduleLastDayInclusiveMs,
-    isNonRepeatingSchedule,
-    isOneOffBlockEnforced,
-    isOneOffBlockStillActive,
-    isSchedulePausedNow,
-} from '../../src/schedule-engine.js';
-
-describe('Android payload mapping', () => {
-    // These build the payload the Kotlin plugin enforces from. A wrong day
-    // index or word count does not error — the block just fires on the wrong
-    // day, or the friction gate asks for the wrong thing.
-
-    test('Monday-zero day indices map to Kotlin DayOfWeek names', () => {
-        expect(androidDayNamesFromMon0([0, 6])).toEqual(['MONDAY', 'SUNDAY']);
-        expect(androidDayNamesFromMon0([0, 1, 2, 3, 4, 5, 6])).toEqual(ANDROID_DAY_NAMES_MON0);
-    });
-
-    test('out-of-range and non-integer days are dropped', () => {
-        expect(androidDayNamesFromMon0([-1, 7, 1.5, null, '2', 3])).toEqual(['THURSDAY']);
-        expect(androidDayNamesFromMon0(null)).toEqual([]);
-        expect(androidDayNamesFromMon0('MONDAY')).toEqual([]);
-    });
-
-    test('custom friction text is sent verbatim with a matching word count', () => {
-        const fields = androidFrictionChallengeFields({ type: 'custom', customText: '  I choose to focus  ' });
-        expect(fields.frictionCustomText).toBe('I choose to focus');
-        expect(fields.frictionWordCount).toBe(4);
-    });
-
-    test('a blank custom text falls back to the default word count', () => {
-        // Regression guard: a custom difficulty with no usable text must not
-        // send frictionCustomText, or the gate asks the user to type nothing.
-        const fields = androidFrictionChallengeFields({ type: 'custom', customText: '   ' });
-        expect(fields.frictionCustomText).toBeNull();
-        expect(fields.frictionWordCount).toBe(ANDROID_DEFAULT_FRICTION_WORD_COUNT);
-    });
-
-    test('a word-count difficulty passes its count through', () => {
-        expect(androidFrictionChallengeFields({ type: 'words', count: 30 })).toEqual({
-            frictionWordCount: 30,
-            frictionCustomText: null,
-        });
-        expect(androidFrictionChallengeFields({ type: 'words', count: '25' }).frictionWordCount).toBe(25);
-    });
-
-    test('a missing or nonsensical count falls back to the default', () => {
-        for (const difficulty of [undefined, {}, { type: 'words' }, { type: 'words', count: 0 }, { type: 'words', count: 'abc' }]) {
-            expect(androidFrictionChallengeFields(difficulty).frictionWordCount)
-                .toBe(ANDROID_DEFAULT_FRICTION_WORD_COUNT);
-        }
-    });
-});
+import { buildPersistedAppData, dayIndexMonday0FromDate, getRepeatScheduleLastDayInclusiveMs, isNonRepeatingSchedule, isOneOffBlockEnforced, isOneOffBlockStillActive, isSchedulePausedNow } from '../../src/schedule-engine.js';
+import { state } from '../../src/state.js';
 
 describe('schedule repeat classification', () => {
     test('forever and dated repeats are repeating', () => {
@@ -79,6 +23,35 @@ describe('schedule repeat classification', () => {
         expect(endDate.getMinutes()).toBe(59);
         expect(getRepeatScheduleLastDayInclusiveMs({ repeatType: 'forever' })).toBeNull();
         expect(getRepeatScheduleLastDayInclusiveMs({ repeatType: 'date' })).toBeNull();
+    });
+});
+
+describe('schedule persistence', () => {
+    test('date-limited schedules send a string to Rust without changing the local cutoff day', () => {
+        const date = new Date(2026, 10, 6);
+        const repeatDate = date.getTime();
+        const schedule = { repeatType: 'date', repeatDate, segments: [] };
+        const previousAppData = state.appData;
+        try {
+            state.appData = {
+                schedules: [
+                    schedule,
+                    { ...schedule, repeatDate: date.toISOString() },
+                    { ...schedule, repeatType: 'forever', repeatDate: null },
+                ],
+            };
+
+            const [dated, alreadyEncoded, forever] = buildPersistedAppData().schedules;
+            expect(dated.repeatDate).toBe(date.toISOString());
+            expect(getRepeatScheduleLastDayInclusiveMs(dated)).toBe(new Date(2026, 10, 6, 23, 59, 59, 999).getTime());
+            expect(alreadyEncoded.repeatDate).toBe(dated.repeatDate);
+            expect(forever.repeatDate).toBeNull();
+            expect(schedule.repeatDate).toBe(repeatDate);
+            schedule.repeatDate = Infinity;
+            expect(() => buildPersistedAppData()).toThrow(RangeError);
+        } finally {
+            state.appData = previousAppData;
+        }
     });
 });
 

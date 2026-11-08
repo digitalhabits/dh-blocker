@@ -1,6 +1,5 @@
 // Website input: domain validation/parsing and the Edit Blocklist
 // websites-import menu. Extracted verbatim from app.js.
-import { state } from './state.js';
 import { getActiveUiZoomScale, isIosTablet } from './theme.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { readTextFile } from '@tauri-apps/plugin-fs';

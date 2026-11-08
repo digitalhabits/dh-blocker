@@ -62,7 +62,6 @@ Other stores use the same script with different filters:
 
 - `--platform windows` → untagged + `[desktop]` + `[windows]`
 - `--platform macos` → untagged + `[desktop]` + `[macos]`
-- `--platform android` → untagged + `[android]`
 
 If a release has **no** iOS-facing bullets (desktop-only release), the
 Publish (App Store) job logs a notice and skips submission instead of

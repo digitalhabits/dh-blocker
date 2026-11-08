@@ -34,7 +34,7 @@ if (!fs.existsSync(svg)) {
 function getMtime(filePath) {
   try {
     return fs.statSync(filePath).mtimeMs;
-  } catch (e) {
+  } catch {
     return 0;
   }
 }

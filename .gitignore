@@ -54,10 +54,6 @@ assets/appx/
 
 # Tauri build artifacts
 src-tauri/target/
-# Kotlin build-tools session caches. Any Android build drops these into
-# src-tauri/gen/android/ and its buildSrc/, and the generated project's own
-# .gitignore (which Tauri owns) does not cover them.
-.kotlin/
 # Accidental nested target dirs when build tooling runs from subdirectories
 src-tauri/src-tauri/target/
 

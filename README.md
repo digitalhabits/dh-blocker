@@ -60,4 +60,6 @@ You can [report a problem or suggest an improvement](https://github.com/digitalh
 
 ## For developers
 
+The Android app is developed separately in [digitalhabits/dh-blocker-android](https://github.com/digitalhabits/dh-blocker-android).
+
 See the [developer guide](DEVELOPMENT.md) for local setup and builds, the [architecture guide](architecture.md) for implementation details, and the [testing guide](testing.md) for checks and test instructions.

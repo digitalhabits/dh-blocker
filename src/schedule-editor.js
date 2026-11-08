@@ -3,7 +3,6 @@
 import { state } from './state.js';
 import { tSettings, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
 import { isNonRepeatingSchedule, isSchedulePausedNow, resolveOneShotOccurrences } from './schedule-engine.js';
-import { saveData } from './persistence.js';
 import { commitDelete, dismissUndoToast, pendingDelete, showUndoToast, undoDelete } from './blocklists.js';
 import { handleTimeChange } from './confirm-modals.js';
 import { formatTimeOfDay, pad, parseTimeOfDay, scrollPopoverOptionIntoView } from './time-inputs.js';
