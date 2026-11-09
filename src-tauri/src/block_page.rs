@@ -511,6 +511,18 @@ pub(crate) fn address_bar_text_to_url(text: &str) -> Option<String> {
         .trim_start_matches(INVISIBLE_PREFIXES)
         .trim_end_matches(INVISIBLE_PREFIXES)
         .trim();
+    // Firefox shows a local path with real spaces; anywhere else a space means a search.
+    let b = text.as_bytes();
+    let local = text
+        .get(..5)
+        .is_some_and(|s| s.eq_ignore_ascii_case("file:"))
+        || (b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1..3] == *b":/");
+    let encoded = if local {
+        text.replace(' ', "%20")
+    } else {
+        text.to_string()
+    };
+    let text = encoded.as_str();
     if text.is_empty() || text.chars().any(char::is_whitespace) {
         return None;
     }
@@ -690,6 +702,20 @@ mod tests {
         let yt = blocklist(&["youtube.com"]);
         assert!(
             plan_address_bar_action("youtube.com/#blocked/blocked.html", &yt, BLOCK_PAGE).is_some()
+        );
+    }
+
+    #[test]
+    fn firefox_display_of_the_block_page_restores() {
+        // Firefox shows the local path with real spaces, unlike the stored URL.
+        let shown = "file:///C:/Program Files/Digital Habits Blocker/blocked/blocked.html?u=https%3A%2F%2Fyoutube.com%2Fwatch%3Fv%3D1";
+        assert_eq!(
+            plan_address_bar_action(shown, &[], BLOCK_PAGE).as_deref(),
+            Some("https://youtube.com/watch?v=1")
+        );
+        assert_eq!(
+            address_bar_text_to_url("C:/My Files/a.html").as_deref(),
+            Some("file:///C:/My%20Files/a.html")
         );
     }
 
