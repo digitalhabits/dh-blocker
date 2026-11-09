@@ -907,7 +907,8 @@ export function syncEnterSchedulerSheetLayout() {
 
     if (changed) {
         renderBlocklists();
-        if (state.selectedBlocklistId) {
+        // Not behind the pause dialog: closing it should land on the list, not the editor.
+        if (state.selectedBlocklistId && document.getElementById('override-modal')?.classList.contains('hidden')) {
             const blocklist = state.appData.blocklists.find((bl) => bl.id === state.selectedBlocklistId);
             if (blocklist) {
                 syncEnterSchedulerModalTitle(blocklist);
