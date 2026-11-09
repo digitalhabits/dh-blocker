@@ -24,6 +24,7 @@ import {
     formatMinutesAsHHMM, generateId,
     snapMinutesToInterval,
 } from './app.js';
+import { stopAppBlockingLetsGoVoice } from './schedule-overlay.js';
 import { getLastBreakMinutes, PAUSE_MINUTE_OPTIONS, applyStopToTarget, timedStopLostOwnPause } from './unlock-duration.js';
 import { deriveWhenToBlockKind } from './when-to-block.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
@@ -1514,6 +1515,7 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
         unlockMinutes,
     );
     if (!outcome) return null;
+    stopAppBlockingLetsGoVoice();
     console.log('[stop] Applying stop', { blocklistId, kind: outcome.kind, until: outcome.until || null });
     let restoreTimedIOSBlocking = null;
 

@@ -749,6 +749,10 @@ export async function playAppBlockingLetsGoVoice() {
     }
 }
 
+export function stopAppBlockingLetsGoVoice() {
+    appBlockingLetsGoVoiceAudio?.pause();
+}
+
 export function getActiveScheduleForSelectedBlocklist() {
     if (!state.editingBlocklistId || !state.appData.schedules) return null;
     return state.appData.schedules.find((s) => s.blocklistId === state.editingBlocklistId) || null;
