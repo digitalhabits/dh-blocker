@@ -369,7 +369,7 @@ function setupEventListeners() {
         '.blocklist-card', '.scheduler-section', '.time-picker-container', '.schedule-block-panel',
         '.repeat-dropdown-wrapper', '.repeat-dropdown-menu', '.modal-overlay', '.section-header',
         '.footer', '.title-bar', '.week-calendar-section', '.time-popover', '.segment-time-field',
-        '.undo-toast', '.zoom-toast',
+        '.undo-toast', '.zoom-toast', '.update-banner',
     ].join(',');
     document.addEventListener('click', (e) => {
         // Don't deselect if the click — or the press it came from — was on
