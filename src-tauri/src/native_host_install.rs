@@ -300,13 +300,88 @@ fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) -> std::io:
     Ok(())
 }
 
+/// A running host's exe refuses writers but allows renames, so a copy that
+/// hits the lock (os error 32) parks the old file as `<name>.<ms>.old` and
+/// copies again. Returns the processes that were running the parked file.
+#[cfg(target_os = "windows")]
+fn copy_over_running(
+    src: &std::path::Path,
+    dest: &std::path::Path,
+) -> std::io::Result<Vec<sysinfo::Pid>> {
+    match copy_if_newer(src, dest) {
+        Err(e) if e.raw_os_error() == Some(32) => {
+            let holders = processes_running(dest);
+            let ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis());
+            let name = dest.file_name().unwrap_or_default().to_string_lossy();
+            std::fs::rename(dest, dest.with_file_name(format!("{name}.{ms}.old")))?;
+            std::fs::copy(src, dest)?;
+            Ok(holders)
+        }
+        other => other.map(|()| Vec::new()),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn processes_running(exe: &std::path::Path) -> Vec<sysinfo::Pid> {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+    );
+    let want = exe.to_string_lossy();
+    sys.processes()
+        .iter()
+        .filter(|(_, p)| {
+            p.exe()
+                .is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case(&want))
+        })
+        .map(|(pid, _)| *pid)
+        .collect()
+}
+
+/// Stops hosts still running a parked exe. The extension reconnects on
+/// disconnect, which launches the freshly staged copy. Only processes whose
+/// exe lives in the stage dir are touched, in case a PID was reused.
+#[cfg(target_os = "windows")]
+fn stop_parked_hosts(pids: &[sysinfo::Pid], stage_dir: &std::path::Path) {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(pids),
+        true,
+        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+    );
+    for pid in pids {
+        if let Some(p) = sys.process(*pid) {
+            if p.exe()
+                .and_then(|e| e.parent())
+                .is_some_and(|d| d == stage_dir)
+                && p.kill()
+            {
+                log::info!("native-host: stopped outdated host pid={pid}");
+            }
+        }
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn sync_install_dir_to_stage(
     source_dir: &std::path::Path,
     dest_dir: &std::path::Path,
 ) -> std::io::Result<()> {
     std::fs::create_dir_all(dest_dir)?;
+    // Parked exes from an earlier pass; ones still running stay until next time.
+    for entry in std::fs::read_dir(dest_dir)?.flatten() {
+        if entry.file_name().to_string_lossy().ends_with(".old") {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
     let mut copied = 0usize;
+    let mut holders = Vec::new();
     for entry in std::fs::read_dir(source_dir)? {
         let entry = entry?;
         let ft = entry.file_type()?;
@@ -318,7 +393,7 @@ fn sync_install_dir_to_stage(
             copy_dir_recursive(&entry.path(), &dest)?;
             copied += 1;
         } else if ft.is_file() {
-            copy_if_newer(&entry.path(), &dest)?;
+            holders.extend(copy_over_running(&entry.path(), &dest)?);
             copied += 1;
         }
     }
@@ -327,6 +402,7 @@ fn sync_install_dir_to_stage(
         source_dir.display(),
         dest_dir.display()
     );
+    stop_parked_hosts(&holders, dest_dir);
     Ok(())
 }
 
@@ -1052,6 +1128,61 @@ mod tests {
         assert!(stage_is_stale(&install, &stage), "missing resource dir");
 
         assert!(stage_is_stale(&root.join("no-such-install"), &stage));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_running_staged_exe_is_parked_and_replaced() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let root = std::env::temp_dir().join(format!(
+            "native-host-locked-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let (install, stage) = (root.join("install"), root.join("stage"));
+        std::fs::create_dir_all(&install).unwrap();
+        std::fs::create_dir_all(&stage).unwrap();
+        std::fs::write(install.join(STAGED_NATIVE_HOST_EXE), b"new host").unwrap();
+        std::fs::write(stage.join(STAGED_NATIVE_HOST_EXE), b"old").unwrap();
+        let parked = || {
+            std::fs::read_dir(&stage)
+                .unwrap()
+                .flatten()
+                .filter(|e| e.file_name().to_string_lossy().ends_with(".old"))
+                .count()
+        };
+
+        // How Windows holds a running exe: readers and renames allowed, writers not.
+        let running = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0x1 | 0x4) // FILE_SHARE_READ | FILE_SHARE_DELETE
+            .open(stage.join(STAGED_NATIVE_HOST_EXE))
+            .unwrap();
+        assert_eq!(
+            std::fs::copy(
+                install.join(STAGED_NATIVE_HOST_EXE),
+                stage.join(STAGED_NATIVE_HOST_EXE)
+            )
+            .unwrap_err()
+            .raw_os_error(),
+            Some(32),
+            "the lock reproduces the update failure"
+        );
+        sync_install_dir_to_stage(&install, &stage).unwrap();
+        assert_eq!(
+            std::fs::read(stage.join(STAGED_NATIVE_HOST_EXE)).unwrap(),
+            b"new host"
+        );
+        assert!(!stage_is_stale(&install, &stage));
+        assert_eq!(parked(), 1);
+
+        drop(running);
+        std::fs::write(install.join("other.dll"), b"dll").unwrap();
+        sync_install_dir_to_stage(&install, &stage).unwrap();
+        assert_eq!(parked(), 0, "a parked exe no longer running is removed");
         std::fs::remove_dir_all(&root).unwrap();
     }
 
