@@ -143,10 +143,11 @@ function buildBlocklistCardStatusLine(bl, now = Date.now()) {
     const fullText = lineText(fullTiming);
     // Both forms ride along when they differ; fitBlocklistStatusLines picks the
     // full one whenever it fits on the line.
+    // The tooltip only earns its place when the line may show the short form.
     const fitAttrs = fullText !== text
-        ? ` data-full="${escapeHtml(fullText)}" data-compact="${escapeHtml(text)}"`
+        ? ` title="${escapeHtml(fullText)}" data-full="${escapeHtml(fullText)}" data-compact="${escapeHtml(text)}"`
         : '';
-    return `<div class="blocklist-status-line${tone}" title="${escapeHtml(fullText)}"${fitAttrs}>${escapeHtml(text)}</div>`;
+    return `<div class="blocklist-status-line${tone}"${fitAttrs}>${escapeHtml(text)}</div>`;
 }
 
 /**
