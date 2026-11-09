@@ -27,6 +27,9 @@ export default [
             'src-tauri/target/**',
             'src-tauri/gen/**',
             'browser-ext-migration/**',
+            // MSIX staging copies (scripts/build-msix.ps1), including the block page.
+            'msix-build/**',
+            'msix-build-test/**',
         ],
     },
 
