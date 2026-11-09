@@ -75,11 +75,18 @@ pub(crate) struct Tab {
 // ---- Block-page URL + matching (ported from background.js) ----------------
 
 /// True if the tab is already showing our block page. Primary check is
-/// the resolved `file://` prefix; the path fallback guards against
-/// browser-specific file-URL normalization that could otherwise cause
-/// an infinite redirect loop.
+/// the resolved `file://` prefix; the fallback, for browsers that display
+/// file URLs differently, accepts only a local file (`file:` or `C:/`) whose
+/// path ends in `blocked/blocked.html`, so `site.com/#blocked/blocked.html`
+/// cannot pass for it.
 pub(crate) fn is_block_page_url(url: &str, block_page_url: &str) -> bool {
-    url.starts_with(block_page_url) || url.contains("blocked/blocked.html")
+    let path = url.split(['?', '#']).next().unwrap_or("");
+    let b = path.as_bytes();
+    let local = path
+        .get(..5)
+        .is_some_and(|s| s.eq_ignore_ascii_case("file:"))
+        || (b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1..3] == *b":/");
+    url.starts_with(block_page_url) || (local && path.ends_with("/blocked/blocked.html"))
 }
 
 /// Pull the original site URL back out of a block-page URL's `u` param.
@@ -659,6 +666,30 @@ mod tests {
         assert_eq!(
             plan_address_bar_action(shown, &blocklist(&["example.com"]), BLOCK_PAGE),
             None
+        );
+    }
+
+    #[test]
+    fn only_a_local_file_passes_for_the_block_page() {
+        for page in [
+            "file:///C:/Users/t/AppData/Local/x/blocked/blocked.html?u=a",
+            "file:///C:/Program Files/Digital Habits Blocker/blocked/blocked.html?u=a",
+            "C:/Users/t/AppData/Local/x/blocked/blocked.html?u=a",
+            "file:///Applications/Digital%20Habits%20Blocker.app/Contents/Resources/blocked/blocked.html?u=a",
+        ] {
+            assert!(is_block_page_url(page, BLOCK_PAGE), "{page}");
+        }
+        for site in [
+            "https://youtube.com/#blocked/blocked.html",
+            "https://youtube.com/?a=blocked/blocked.html",
+            "https://example.com/blocked/blocked.html",
+            "youtube.com/#blocked/blocked.html",
+        ] {
+            assert!(!is_block_page_url(site, BLOCK_PAGE), "{site}");
+        }
+        let yt = blocklist(&["youtube.com"]);
+        assert!(
+            plan_address_bar_action("youtube.com/#blocked/blocked.html", &yt, BLOCK_PAGE).is_some()
         );
     }
 
