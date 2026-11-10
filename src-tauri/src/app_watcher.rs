@@ -41,7 +41,7 @@
 // loginwindow, Finder, etc.
 
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
@@ -449,6 +449,7 @@ impl Handle {
             log::info!(
                 "app_watcher::set_policy: policy changed (allowlist_active={allowlist_active}); waking sweep"
             );
+            reset_kill_failures();
             notify_wake(&self.wake);
         }
     }
@@ -729,6 +730,40 @@ fn emit_warning_hide(app: Option<&AppHandle>, pid: u32, name: &str, reason: Hide
 }
 
 // ---- Per-PID state machine ------------------------------------------------
+
+/// Kills that keep failing (an app running as administrator cannot be closed
+/// by a normal one) stop after a few tries instead of retrying every tick for
+/// the whole block. Cleared whenever the policy changes, so a new or changed
+/// block tries again.
+static KILL_FAILURES: Mutex<BTreeMap<u32, u8>> = Mutex::new(BTreeMap::new());
+const MAX_KILL_FAILURES: u8 = 3;
+
+fn kill_allowed(pid: sysinfo::Pid) -> bool {
+    KILL_FAILURES.lock().map_or(true, |m| {
+        m.get(&pid.as_u32()).copied().unwrap_or(0) < MAX_KILL_FAILURES
+    })
+}
+
+fn note_kill_failure(pid: sysinfo::Pid, name: &str) {
+    let Ok(mut m) = KILL_FAILURES.lock() else {
+        return;
+    };
+    let failures = m.entry(pid.as_u32()).or_default();
+    *failures += 1;
+    if *failures < MAX_KILL_FAILURES {
+        log::warn!("app_watcher: SIGKILL failed for pid={pid} name='{name}' — will retry");
+    } else {
+        log::warn!(
+            "app_watcher: giving up on pid={pid} name='{name}' after {MAX_KILL_FAILURES} failed kills (it may run as administrator); retrying when the blocks change"
+        );
+    }
+}
+
+fn reset_kill_failures() {
+    if let Ok(mut m) = KILL_FAILURES.lock() {
+        m.clear();
+    }
+}
 
 #[derive(Debug)]
 enum PidPhase {
@@ -1207,6 +1242,7 @@ fn sweep(
                         kill_at: now + POSTQUIT_GRACE,
                     };
                 }
+                PidStep::ForceKill if !kill_allowed(*pid) => {}
                 PidStep::ForceKill => {
                     let matched_name = slot.get().matched_name.clone();
                     let warning_raised = slot.get().warning_raised;
@@ -1228,10 +1264,8 @@ fn sweep(
                         slot.remove();
                         continue;
                     }
-                    log::warn!(
-                        "app_watcher: SIGKILL failed for pid={pid} name='{name}' — will retry"
-                    );
-                    // Phase unchanged: retry on the next tick.
+                    note_kill_failure(*pid, &name);
+                    // Phase unchanged: retry on the next tick, up to MAX_KILL_FAILURES.
                 }
             },
         }
@@ -1362,6 +1396,7 @@ fn advance_pid_entry(
                 kill_at: now + POSTQUIT_GRACE,
             };
         }
+        PidStep::ForceKill if !kill_allowed(pid) => {}
         PidStep::ForceKill => {
             log::info!(
                 "app_watcher: PostQuit grace elapsed for pid={pid} name='{proc_name}'; SIGKILL"
@@ -1372,8 +1407,8 @@ fn advance_pid_entry(
                 }
                 return true;
             }
-            log::warn!("app_watcher: SIGKILL failed for pid={pid} name='{proc_name}' — will retry");
-            // Phase unchanged: retry on the next tick.
+            note_kill_failure(pid, proc_name);
+            // Phase unchanged: retry on the next tick, up to MAX_KILL_FAILURES.
         }
     }
     false

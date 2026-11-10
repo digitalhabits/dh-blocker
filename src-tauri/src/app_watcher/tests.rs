@@ -547,3 +547,18 @@ fn concurrent_warning_exits_release_the_last_layer_once() {
     assert_eq!(layers.load(Ordering::SeqCst), 0);
     assert_eq!(released.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn repeated_kill_failures_stop_until_the_policy_changes() {
+    let pid = sysinfo::Pid::from_u32(4_000_001);
+    assert!(kill_allowed(pid));
+    for _ in 0..MAX_KILL_FAILURES {
+        note_kill_failure(pid, "elevated.exe");
+    }
+    assert!(
+        !kill_allowed(pid),
+        "gives up after {MAX_KILL_FAILURES} failures"
+    );
+    reset_kill_failures();
+    assert!(kill_allowed(pid), "a policy change tries again");
+}
