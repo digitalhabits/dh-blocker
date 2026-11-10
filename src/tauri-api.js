@@ -94,6 +94,7 @@ export const tauriAPI = {
     onWebAutomationPermissionNeeded: (callback) => listen('web-automation://permission-needed', callback),
     onWebAutomationPermissionResolved: (callback) => listen('web-automation://permission-resolved', callback),
     webAutomationStart: () => invoke('web_automation_start'),
+    firefoxAxStart: () => invoke('firefox_ax_start'),
     webAutomationPermissionStatus: (opts) => invoke('web_automation_permission_status', {
         launchProbe: opts?.launchProbe ?? false,
         launchProbeBrowser: opts?.launchProbeBrowser ?? null,

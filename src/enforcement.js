@@ -2554,6 +2554,8 @@ export async function startWebAutomationWatcher() {
     } catch (e) {
         console.warn('[web-automation] web_automation_start failed:', e);
     }
+    // The Firefox Accessibility watcher starts paused behind the same onboarding gate.
+    await tauriAPI.firefoxAxStart().catch((e) => console.warn('[firefox-ax] firefox_ax_start failed:', e));
 }
 
 export function setupWebAutomationUiAlerts() {
