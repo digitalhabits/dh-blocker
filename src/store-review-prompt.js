@@ -56,6 +56,7 @@ function wire(url) {
     };
     if (link) {
         link.href = url;
+        link.dataset.opensItself = '';
         link.addEventListener('click', (event) => {
             event.preventDefault();
             optOut();

@@ -899,7 +899,8 @@ export async function openExternal(target) {
 export function setupMobileExternalLinkOpens() {
     if (!state.isIOS) return;
     document.addEventListener('click', (event) => {
-        const anchor = event.target.closest('a[href]');
+        // `data-opens-itself`: the link's own handler opens it and has more to do.
+        const anchor = event.target.closest('a[href]:not([data-opens-itself])');
         if (!anchor) return;
         const url = getExternalLinkTarget(anchor.dataset.externalUrl || anchor.getAttribute('href'));
         if (!url) return;
