@@ -4,6 +4,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Not Get-FileHash: Windows PowerShell started from pwsh (as on CI) can fail to load it.
+function Test-SameFile([string]$A, [string]$B) {
+    [Convert]::ToBase64String([IO.File]::ReadAllBytes($A)) -ceq [Convert]::ToBase64String([IO.File]::ReadAllBytes($B))
+}
 $sourceRoot = [IO.Path]::GetFullPath((Join-Path $ProjectRoot 'src-tauri'))
 $destinationRoot = [IO.Path]::GetFullPath($StagingDir)
 $config = Get-Content -LiteralPath (Join-Path $sourceRoot 'tauri.conf.json') -Raw | ConvertFrom-Json
@@ -46,7 +50,7 @@ foreach ($required in @('blocked/blocked.html', 'blocked/blocked.js', 'blocked/r
 foreach ($file in $files) {
     New-Item -ItemType Directory -Path (Split-Path -Parent $file.Destination) -Force | Out-Null
     Copy-Item -LiteralPath $file.Source -Destination $file.Destination -Force
-    if ((Get-FileHash -LiteralPath $file.Source).Hash -ne (Get-FileHash -LiteralPath $file.Destination).Hash) {
+    if (-not (Test-SameFile $file.Source $file.Destination)) {
         throw "MSIX resource verification failed: $($file.Destination)"
     }
 }

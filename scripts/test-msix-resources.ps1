@@ -1,5 +1,9 @@
 # Run without a compiler, SDK, Store credentials, or Pester.
 $ErrorActionPreference = 'Stop'
+# Not Get-FileHash: Windows PowerShell started from pwsh (as on CI) can fail to load it.
+function Test-SameFile([string]$A, [string]$B) {
+    [Convert]::ToBase64String([IO.File]::ReadAllBytes($A)) -ceq [Convert]::ToBase64String([IO.File]::ReadAllBytes($B))
+}
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $StageScript = Join-Path $PSScriptRoot 'stage-msix-resources.ps1'
 $TestRoot = Join-Path ([IO.Path]::GetTempPath()) ('dh-msix-resources-' + [guid]::NewGuid())
@@ -25,7 +29,7 @@ try {
         $source = Join-Path $Fixture "src-tauri/blocked/$file"
         $dest = Join-Path $Stage "blocked/$file"
         if (-not (Test-Path -LiteralPath $dest -PathType Leaf)) { throw "Missing runtime resource: $dest" }
-        if ((Get-FileHash -LiteralPath $source).Hash -ne (Get-FileHash -LiteralPath $dest).Hash) {
+        if (-not (Test-SameFile $source $dest)) {
             throw "Wrong contents: $dest"
         }
     }
