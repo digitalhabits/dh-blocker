@@ -217,6 +217,17 @@ export function syncBlockingMethodSelects(methods = getBlockingMethodsMap()) {
             : (methods[key] || methodDefaultForKey(key));
         select.value = value;
         select.disabled = false;
+        // A saved Extension choice outranks the policy fallback, so say why nothing blocks.
+        const copy = select.closest('.settings-row')?.querySelector('.settings-row-copy');
+        const blocked = state.isWindowsDesktop && value === 'extension' && key !== 'firefox'
+            && lastSettingsBlockingMethodBrowsers?.[key]?.nativeHostBlockedByPolicy;
+        let note = copy?.querySelector('.blocking-method-policy-note');
+        if (blocked && copy && !note) {
+            note = Object.assign(document.createElement('p'), { className: 'form-hint warning blocking-method-policy-note' });
+            copy.appendChild(note);
+        }
+        note?.classList.toggle('hidden', !blocked);
+        if (blocked && note) note.textContent = tSettingsFmt('settingsBlockingMethodPolicyNote', { browser: BROWSER_STORE_LINKS[key]?.label || key });
     }
 }
 
@@ -1750,10 +1761,18 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
 
         row.appendChild(header);
 
-        if (!viaAddressBar && status === 'policy-blocked') {
+        if (viaAddressBar && browsers[key]?.nativeHostBlockedByPolicy) {
             const hint = document.createElement('div');
             hint.className = 'migration-browser-hint migration-browser-after-hint';
-            hint.textContent = tSettingsFmt('migrationPolicyBlockedHint', { browser: entry.label });
+            hint.textContent = tSettingsFmt('migrationPolicyUsingAutomation', { browser: entry.label });
+            row.appendChild(hint);
+        } else if (!viaAddressBar && status === 'policy-blocked') {
+            // Windows Chromium can still block through Automation, so offer that switch here.
+            // `state` here is the browser scan, not the app state, so read the platform off the page.
+            const canSwitch = document.body.classList.contains('windows') && key !== 'firefox';
+            const hint = document.createElement('div');
+            hint.className = 'migration-browser-hint migration-browser-after-hint';
+            hint.textContent = tSettingsFmt(canSwitch ? 'migrationPolicyBlockedHintAutomation' : 'migrationPolicyBlockedHint', { browser: entry.label });
             row.appendChild(hint);
             const btn = document.createElement('button');
             btn.type = 'button';
@@ -1762,6 +1781,20 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
             btn.addEventListener('click', () => void openUrl(tSettings('managedComputerHelpUrl')).catch(e => console.warn('[policy] open help failed:', e)));
             const actionsRow = document.createElement('div');
             actionsRow.className = 'migration-actions-row';
+            if (canSwitch) {
+                const switchBtn = Object.assign(document.createElement('button'), {
+                    type: 'button', className: 'migration-browser-copy', textContent: tSettings('migrationPolicySwitchToAutomation'),
+                });
+                // Same path as the Settings dropdown, which also re-renders this screen.
+                switchBtn.addEventListener('click', () => {
+                    const select = document.getElementById(`blocking-method-${key}`);
+                    if (!select) return;
+                    switchBtn.disabled = true;
+                    select.value = 'automation';
+                    void onBlockingMethodChange(key, select);
+                });
+                actionsRow.appendChild(switchBtn);
+            }
             actionsRow.appendChild(btn);
             row.appendChild(actionsRow);
         } else if (status === 'needs-fda') {

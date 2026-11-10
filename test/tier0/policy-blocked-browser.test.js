@@ -109,6 +109,19 @@ describe('policy-blocked browsers on Windows', () => {
         }
     });
 
+    test('a saved Extension choice under a blocking policy shows a note', async () => {
+        const { syncBlockingMethodRowVisibility, syncBlockingMethodSelects } = await setUpWindows(false);
+        const { state } = await import('../../src/state.js');
+        const note = () => document.querySelector('.blocking-method-policy-note:not(.hidden)')?.textContent ?? null;
+        document.body.innerHTML = '<div class="settings-row"><div class="settings-row-copy"></div><select id="blocking-method-chrome"><option value="extension">Extension</option><option value="automation">Automation</option></select></div>';
+        syncBlockingMethodRowVisibility({ chrome: edge({ profiles: [], nativeHostBlockedByPolicy: true }) });
+        for (const [saved, shown] of [[{ chrome: 'extension' }, true], [{ chrome: 'automation' }, false], [{}, false]]) {
+            state.appData.settings.blockingMethods = saved;
+            syncBlockingMethodSelects();
+            expect(note() !== null).toBe(shown);
+        }
+    });
+
     test('default Windows onboarding still shows the extension checklist', async () => {
         await setUpWindows(false);
         const { state } = await import('../../src/state.js');
@@ -204,13 +217,13 @@ describe('policy-blocked browsers on Windows', () => {
         expect(browserBlockingMethod('chrome')).toBe('extension');
     });
 
-    test('the row explains the address-bar blocking instead of the policy warning', async () => {
+    test('the row explains the address-bar blocking and why Automation is used', async () => {
         const { renderBrowserInstallButtons } = await setUpWindows();
         document.body.innerHTML = '<div id="migration-browser-buttons"></div>';
         renderBrowserInstallButtons({ browsers: { edge: edge({ nativeHostBlockedByPolicy: true }) } }, { force: true });
         const text = document.getElementById('migration-browser-buttons').textContent;
         expect(text).toContain('address bar');
+        expect(text).toContain('uses Automation instead');
         expect(text).not.toContain("won't work");
-        expect(text).not.toContain('organisation');
     });
 });
