@@ -7,7 +7,7 @@ import { resolveMicrosoftStorePackage, isVersionHigher, getLatestVersionPlatform
 import { updateOverrideAllButtonVisibility, refreshUninstallButtonState } from './settings.js';
 import { saveData } from './persistence.js';
 import { getLiveTimePickerContainer, syncEnterSchedulerSheetLayout } from './confirm-modals.js';
-import { wireEnforcementToggle, wireBlockingMethodSettings, resetSettingsEnforcementSection } from './enforcement.js';
+import { wireEnforcementToggle, wireBlockingMethodSettings, resetSettingsEnforcementSection, openPendingExtensionSetup } from './enforcement.js';
 import { applyEnforcementDescCopy } from './onboarding.js';
 import {
     setLanguagePickerOpen,
@@ -121,6 +121,7 @@ export function setupTheme() {
         closeSettingsBtn.addEventListener('click', () => {
             setLanguagePickerOpen(false);
             settingsModal.classList.add('hidden');
+            openPendingExtensionSetup();
         });
     }
 
@@ -130,6 +131,7 @@ export function setupTheme() {
             if (e.target === settingsModal) {
                 setLanguagePickerOpen(false);
                 settingsModal.classList.add('hidden');
+                openPendingExtensionSetup();
             }
         });
     }

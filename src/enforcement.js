@@ -605,6 +605,19 @@ export async function requestAccessibilityGrant() {
     await pollAccessibilityUntilGranted();
 }
 
+let setupPendingAfterSettings = null;
+
+/** After Settings closes: set up the browser just switched to Extension. Drawn from
+ * the scan taken at the switch so it appears with no wait; the screen's own polling
+ * refreshes it. */
+export function openPendingExtensionSetup() {
+    const pending = setupPendingAfterSettings;
+    setupPendingAfterSettings = null;
+    if (!pending || browserBlockingMethod(pending.key) !== 'extension') return;
+    state.migrationOnboardingDismissed = false;
+    void showMigrationOnboarding('post', pending.fresh, { mode: 'fresh' });
+}
+
 export async function onBlockingMethodChange(key, select) {
     const previous = browserBlockingMethod(key);
     // Only methods this browser can actually enforce with: Firefox has no
@@ -645,15 +658,10 @@ export async function onBlockingMethodChange(key, select) {
             } catch (e) {
                 console.warn('[blocking-method] onboarding_state failed:', e);
             }
-            const needsSetup = fresh
-                && effectiveBrowserComplianceStatus(key, fresh.browsers || {}) !== 'compliant';
-            if (needsSetup) {
-                document.getElementById('settings-modal')?.classList.add('hidden');
-                setLanguagePickerOpen(false);
-                await openExtensionSetupOverlay();
-            } else if (fresh) {
-                await updateBehaviourChangeBanner(fresh);
-            }
+            // Setup waits until the user leaves Settings (openPendingExtensionSetup).
+            setupPendingAfterSettings = fresh
+                && effectiveBrowserComplianceStatus(key, fresh.browsers || {}) !== 'compliant' ? { key, fresh } : null;
+            if (fresh) await updateBehaviourChangeBanner(fresh);
             if (key === 'safari') syncSafariFdaSettingsRow();
             if (key === 'firefox') await syncFirefoxAxSettingsRow();
         } else if (key === 'safari') {
