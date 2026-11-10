@@ -311,8 +311,35 @@ export function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) 
         html += '</div></div>';
     }
 
-    // Automation (macOS)
-    if (d.automation?.applicable) {
+    // Automation (Windows): each browser's method and what the address-bar watcher last saw.
+    if (d.automation?.applicable && d.automation.watcher_running !== undefined) {
+        const at = (ms) => (ms ? new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+        const rows = d.automation.browsers.filter((b) => d.browsers?.[b.label]?.installed);
+        const anyAutomation = rows.some((b) => b.method === 'automation');
+        const status = !anyAutomation ? 'diagnosticsAutomationNotNeeded' : (d.automation.watcher_running ? 'diagnosticsAutomationWatcherOn' : 'diagnosticsAutomationWatcherOff');
+        html += '<div class="diagnostics-section">';
+        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsAutomationSectionWindows'))}</div>`;
+        html += `<p class="diagnostics-section-desc">${e(tSettings(status))}</p>`;
+        html += '<div class="diagnostics-card diagnostics-table-wrap"><table class="diagnostics-table diagnostics-table-labeled-status"><thead><tr>';
+        html += `<th>${e(tSettings('diagnosticsThBrowser'))}</th><th>${e(tSettings('diagnosticsThMethod'))}</th><th>${e(tSettings('diagnosticsThAddressBar'))}</th><th>${e(tSettings('diagnosticsThLastAction'))}</th>`;
+        html += '</tr></thead><tbody>';
+        for (const b of rows) {
+            const auto = b.method === 'automation';
+            const found = b.state === 'found', missing = b.state === 'not_found';
+            const bar = `${tSettings(found ? 'diagnosticsAddressBarFound' : (missing ? 'diagnosticsAddressBarMissing' : 'diagnosticsNotCheckedYet'))} ${at(b.checked_at)}`.trim();
+            const action = b.last_action ? `${tSettings(b.last_action === 'block' ? 'diagnosticsActionBlock' : 'diagnosticsActionRestore')} ${at(b.last_action_at)}` : '—';
+            const policy = b.policy ? ` <span class="diag-muted">· ${e(tSettings('diagnosticsSetByPolicy'))}</span>` : '';
+            html += '<tr>';
+            html += `<td><div class="diagnostics-browser-cell"><img class="diagnostics-browser-icon" src="${browserIconUrl(b.label)}" alt="" width="20" height="20">${e(BROWSER_STORE_LINKS[b.label]?.label || b.label)}${policy}</div></td>`;
+            html += `<td><span class="diag-muted">${e(tSettings(auto ? 'diagnosticsMethodAutomation' : 'diagnosticsMethodExtension'))}</span></td>`;
+            html += auto
+                ? `<td><span class="diagnostics-status-cell">${diagnosticsStatusDot(found ? 'ok' : (missing ? 'off' : 'na'))}<span class="diag-muted">${e(bar)}</span></span></td><td><span class="diag-muted">${e(action)}</span></td>`
+                : '<td><span class="diag-muted">—</span></td><td><span class="diag-muted">—</span></td>';
+            html += '</tr>';
+        }
+        html += '</tbody></table></div></div>';
+    } else if (d.automation?.applicable) {
+        // Automation (macOS)
         html += '<div class="diagnostics-section">';
         html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsAutomationSection'))}</div>`;
         html += `<p class="diagnostics-section-desc">${e(tSettings('diagnosticsAutomationSectionHint'))}</p>`;

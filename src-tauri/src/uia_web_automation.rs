@@ -23,10 +23,11 @@
 // page's own form and submitting it, which is worse than a missed block on
 // a browser the extension cannot reach anyway.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod activity;
 mod pending;
@@ -99,6 +100,43 @@ fn automation_wanted(path: &Path) -> bool {
     blocking_method::WINDOWS_BLOCKING_METHOD_KEYS
         .iter()
         .any(|key| blocking_method::method_for_key_at_path(path, key) == Method::Automation)
+}
+
+/// For Diagnostics: the last address-bar lookup and the last redirect or
+/// restore per browser key, in Unix ms, plus when the watcher last ticked.
+#[derive(Clone, Copy, Default)]
+pub struct BrowserHealth {
+    pub address_bar_found: Option<bool>,
+    pub checked_at: Option<u64>,
+    pub last_action: Option<&'static str>,
+    pub last_action_at: Option<u64>,
+}
+static HEALTH: Mutex<BTreeMap<&'static str, BrowserHealth>> = Mutex::new(BTreeMap::new());
+static LAST_TICK: AtomicU64 = AtomicU64::new(0);
+
+fn unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
+}
+
+fn note(browser: UiaBrowser, update: impl FnOnce(&mut BrowserHealth)) {
+    if let Ok(mut all) = HEALTH.lock() {
+        update(all.entry(browser.setting_key()).or_default());
+    }
+}
+
+pub fn browser_health(key: &str) -> BrowserHealth {
+    HEALTH
+        .lock()
+        .ok()
+        .and_then(|all| all.get(key).copied())
+        .unwrap_or_default()
+}
+
+/// Ticks come every second while any browser is on Automation.
+pub fn watcher_running() -> bool {
+    unix_ms().saturating_sub(LAST_TICK.load(Ordering::Relaxed)) < 10_000
 }
 
 /// Same cadence as the macOS Automation watcher.
@@ -227,6 +265,7 @@ pub fn start(app: AppHandle, block_page_url: String) {
                 continue;
             }
             activity.wait_for_tick(TICK);
+            LAST_TICK.store(unix_ms(), Ordering::Relaxed);
             if method_changed_within(Duration::ZERO) || checked.elapsed() >= METHOD_RECHECK {
                 wanted = automation_wanted(&path);
                 checked = Instant::now();
@@ -324,15 +363,16 @@ impl Watcher {
             Ok(()) => {
                 self.pending
                     .navigated(&restore_key, &target, &self.block_page_url);
+                let blocked = block_page::is_block_page_url(&target, &self.block_page_url);
+                note(browser, |h| {
+                    h.last_action = Some(if blocked { "block" } else { "restore" });
+                    h.last_action_at = Some(unix_ms());
+                });
                 log::info!(
-                "uia_web_automation: sent {} window to {} (redirect to / restore from block page)",
-                browser.label(),
-                if block_page::is_block_page_url(&target, &self.block_page_url) {
-                    "the block page"
-                } else {
-                    "its original site"
-                }
-            );
+                    "uia_web_automation: sent {} window to {} (redirect to / restore from block page)",
+                    browser.label(),
+                    if blocked { "the block page" } else { "its original site" }
+                );
             }
             Err(e) => log::warn!(
                 "uia_web_automation: navigating {} window failed: {e}",
@@ -348,7 +388,12 @@ impl Watcher {
                 return Some(element.clone());
             }
         }
-        match find_omnibox(&self.automation, hwnd, browser) {
+        let found = find_omnibox(&self.automation, hwnd, browser);
+        note(browser, |h| {
+            h.address_bar_found = Some(found.is_ok());
+            h.checked_at = Some(unix_ms());
+        });
+        match found {
             Ok(element) => {
                 self.omnibox = Some((key, element.clone()));
                 self.missing_omnibox_logged.remove(&key);

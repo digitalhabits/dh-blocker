@@ -48,11 +48,25 @@ pub struct AutostartInfo {
 /// macOS Automation (Apple Events) permission snapshot for Safari and
 /// Chromium-family browsers. Inert on other platforms so the JSON shape
 /// is stable.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct AutomationBrowserInfo {
     pub label: String,
-    /// `granted`, `denied`, or `unknown`
+    /// macOS: `granted`, `denied`, `unknown`. Windows: the last address-bar
+    /// lookup, `found`, `not_found` or `unknown`; empty for extension rows.
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub state: String,
+    /// Windows only: `automation` or `extension`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+    /// Windows only: Automation came from the policy fallback, not a choice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checked_at: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_action_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -60,6 +74,9 @@ pub struct AutomationInfo {
     pub applicable: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub browsers: Vec<AutomationBrowserInfo>,
+    /// Windows only: the UI Automation watcher ticked in the last 10 s.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub watcher_running: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -311,6 +328,7 @@ fn assemble_system_diagnostics_minimal() -> SystemDiagnostics {
         automation: AutomationInfo {
             applicable: false,
             browsers: vec![],
+            watcher_running: None,
         },
         #[cfg(target_os = "windows")]
         watchdog: WatchdogInfo {
@@ -653,6 +671,7 @@ fn collect_automation_info_cached(app: &tauri::AppHandle) -> AutomationInfo {
                     web_automation::PermState::Unknown => "unknown",
                 }
                 .to_string(),
+                ..Default::default()
             }
         })
         .collect();
@@ -660,14 +679,73 @@ fn collect_automation_info_cached(app: &tauri::AppHandle) -> AutomationInfo {
     AutomationInfo {
         applicable: true,
         browsers,
+        watcher_running: None,
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Each browser's method and, for those on UI Automation, what the watcher
+/// last saw. Always applicable, so support can see which path a browser uses.
+#[cfg(target_os = "windows")]
+fn collect_automation_info_cached(app: &tauri::AppHandle) -> AutomationInfo {
+    use crate::blocking_method::{self, Method};
+    use crate::uia_web_automation as uia;
+
+    let path = crate::commands::canonical_data_path(app);
+    let saved = path
+        .as_deref()
+        .map(blocking_method::read_map_from_path)
+        .unwrap_or_default();
+    let browsers = blocking_method::WINDOWS_BLOCKING_METHOD_KEYS
+        .iter()
+        .map(|key| {
+            let automation = path.as_deref().is_some_and(|p| {
+                blocking_method::method_for_key_at_path(p, key) == Method::Automation
+            });
+            let method = Some(
+                if automation {
+                    "automation"
+                } else {
+                    "extension"
+                }
+                .to_string(),
+            );
+            if !automation {
+                return AutomationBrowserInfo {
+                    label: key.to_string(),
+                    method,
+                    ..Default::default()
+                };
+            }
+            let h = uia::browser_health(key);
+            AutomationBrowserInfo {
+                label: key.to_string(),
+                state: match h.address_bar_found {
+                    Some(true) => "found",
+                    Some(false) => "not_found",
+                    None => "unknown",
+                }
+                .to_string(),
+                method,
+                policy: Some(!saved.contains_key(*key)),
+                checked_at: h.checked_at,
+                last_action: h.last_action.map(String::from),
+                last_action_at: h.last_action_at,
+            }
+        })
+        .collect();
+    AutomationInfo {
+        applicable: true,
+        browsers,
+        watcher_running: Some(uia::watcher_running()),
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn collect_automation_info_cached(_app: &tauri::AppHandle) -> AutomationInfo {
     AutomationInfo {
         applicable: false,
         browsers: vec![],
+        watcher_running: None,
     }
 }
 
