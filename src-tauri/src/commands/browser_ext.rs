@@ -979,11 +979,33 @@ pub fn open_browser_extension_settings(browser: String) -> Result<(), String> {
                 use windows::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
                 let _ = AllowSetForegroundWindow(ASFW_ANY);
             }
-            return std::fs::write(
-                path.with_file_name(crate::native_host::OPEN_SETTINGS_FILE),
-                &normalized,
-            )
-            .map_err(|e| e.to_string());
+            let request = path.with_file_name(crate::native_host::OPEN_SETTINGS_FILE);
+            let process = match normalized.as_str() {
+                "edge" => "msedge.exe",
+                "brave" => "brave.exe",
+                _ => "chrome.exe",
+            };
+            if crate::native_host::wait_for_host(process, std::time::Duration::ZERO) {
+                return std::fs::write(request, &normalized).map_err(|e| e.to_string());
+            }
+            // No host to read the request (browser closed, or only running in the
+            // background), and a host ignores one written before it started.
+            // Start the browser and ask once its host is up.
+            let exe = profile_scan::find_browser_exe(&normalized)
+                .ok_or_else(|| format!("Could not find {browser} executable"))?;
+            std::process::Command::new(&exe)
+                .spawn()
+                .map_err(|e| format!("launch {}: {e}", exe.display()))?;
+            std::thread::spawn(move || {
+                if crate::native_host::wait_for_host(process, std::time::Duration::from_secs(20)) {
+                    // Let the new host's watcher take its baseline first.
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    let _ = std::fs::write(request, &normalized);
+                } else {
+                    log::warn!("open extension settings: no {process} host started after launch");
+                }
+            });
+            return Ok(());
         }
         // Reuse the same exe-path lookup that profile_scan uses for
         // install detection.  Launching the browser directly (instead

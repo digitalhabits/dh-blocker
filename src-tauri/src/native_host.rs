@@ -178,6 +178,43 @@ fn launching_browser() -> String {
     "unknown".into()
 }
 
+/// Waits until `browser` (e.g. "chrome.exe") runs a host for our extension; a zero
+/// timeout checks once.
+/// Matched by the extension origin Chromium passes, so other extensions' hosts don't count.
+#[cfg(target_os = "windows")]
+pub fn wait_for_host(browser: &str, timeout: Duration) -> bool {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    let origins: Vec<String> = crate::native_host_install::chromium_extension_ids()
+        .iter()
+        .map(|id| format!("chrome-extension://{id}/"))
+        .collect();
+    let deadline = std::time::Instant::now() + timeout;
+    let mut sys = System::new();
+    loop {
+        sys.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing().with_cmd(UpdateKind::OnlyIfNotSet),
+        );
+        let named = |pid: Option<sysinfo::Pid>, name: &str| {
+            pid.and_then(|p| sys.process(p))
+                .is_some_and(|p| p.name().eq_ignore_ascii_case(name))
+        };
+        let found = sys.processes().values().any(|p| {
+            !p.name().eq_ignore_ascii_case("cmd.exe")
+                && p.cmd()
+                    .iter()
+                    .any(|a| origins.iter().any(|o| a.to_string_lossy() == *o))
+                && named(p.parent(), "cmd.exe")
+                && named(p.parent().and_then(|c| sys.process(c)?.parent()), browser)
+        });
+        if found || std::time::Instant::now() >= deadline {
+            return found;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn exe_version(exe: Option<&std::path::Path>) -> String {
     use windows::core::{w, PCWSTR};
