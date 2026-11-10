@@ -140,3 +140,24 @@ describe('Firefox setup status on the Accessibility method', () => {
         expect(ext.migrationExtHeaderCopy({ browsers }).subtitleHtml).toContain('Focus extension');
     });
 });
+
+describe('Firefox Accessibility warning', () => {
+    beforeEach(() => vi.resetModules());
+
+    // A missing Accessibility grant is a permission problem, not an extension one:
+    // the warning must say so, and its button must open Accessibility, not add-ons.
+    test('names Accessibility and opens its settings, not Firefox add-ons', async () => {
+        const e = await load({ methods: { firefox: 'accessibility' } });
+        const payload = { label: 'Firefox', issue: 'accessibility', remaining_secs: 30, total_secs: 60 };
+        for (const copy of [e.enforcerCopy(payload), e.enforcerClosedCopy(payload)]) {
+            expect(`${copy.headline} ${copy.instruction}`).toContain('Accessibility');
+            expect(`${copy.headline} ${copy.instruction}`).not.toMatch(/extension/i);
+        }
+        const { invoke } = await import('@tauri-apps/api/core');
+        invoke.mockClear();
+        await e.openEnforcerFix(payload);
+        const calls = invoke.mock.calls.map(([cmd]) => cmd);
+        expect(calls).toContain('accessibility_request');
+        expect(calls).not.toContain('open_browser_extension_settings');
+    });
+});

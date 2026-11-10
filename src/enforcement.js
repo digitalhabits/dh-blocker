@@ -2850,6 +2850,18 @@ export function enforcerCopy(payload) {
             screenshotSteps: automationScreenshotSteps(),
         };
     }
+    if (issue === 'accessibility') {
+        // macOS Firefox on Accessibility: the grant is missing, so no extension fix applies.
+        return {
+            headline: tSettingsFmt('enforcerHeadlineAccessibility', { browser }),
+            countdownHeadline: closeHeadline,
+            countdownInstruction: tSettings('enforcerCountdownInstrAccessibility'),
+            countdown: countdownStr(),
+            instruction: tSettings('enforcerInstrAccessibility'),
+            action: tSettings('firefoxAxSettingsGrantBtn'),
+            hideUrlChip: true,
+        };
+    }
     return {
         headline: tSettingsFmt('enforcerHeadlineDefault', { browser }),
         countdownHeadline: closeHeadline,
@@ -3276,6 +3288,14 @@ export function enforcerClosedCopy(payload) {
             screenshotSteps: automationScreenshotSteps(),
         };
     }
+    if (issue === 'accessibility') {
+        return {
+            headline: tSettingsFmt('enforcerClosedAccessibility', { browser }),
+            instruction: tSettings('enforcerClosedInstrAccessibility'),
+            action: tSettings('firefoxAxSettingsGrantBtn'),
+            hideUrlChip: true,
+        };
+    }
     return {
         headline: tSettingsFmt('enforcerClosedDefault', { browser }),
         instruction: tSettingsFmt('enforcerClosedInstrDefault', { browser }),
@@ -3289,6 +3309,10 @@ export async function openEnforcerFix(payload) {
     try {
         if (payload.issue === 'automation') {
             await tauriAPI.openAutomationSettings();
+            return;
+        }
+        if (payload.issue === 'accessibility') {
+            await requestAccessibilityGrant();
             return;
         }
         if (payload.issue === 'missing' && key && BROWSER_STORE_LINKS[key]?.url) {
@@ -3508,6 +3532,7 @@ export function closedIssueCopyKey(issue) {
         case 'websiteaccess': return 'enforcerClosedCombinedWebsiteAccess';
         case 'access': return 'enforcerClosedCombinedAccess';
         case 'automation': return 'enforcerClosedCombinedAutomation';
+        case 'accessibility': return 'enforcerClosedAccessibility';
         default: return 'enforcerClosedCombinedDefault';
     }
 }
@@ -3520,6 +3545,7 @@ export function closedInstructionCopyKey(issue) {
         case 'websiteaccess': return 'enforcerClosedInstrWebsiteAccess';
         case 'access': return 'enforcerClosedInstrDefault';
         case 'automation': return 'enforcerClosedInstrAutomationGeneric';
+        case 'accessibility': return 'enforcerClosedInstrAccessibility';
         default: return 'enforcerClosedInstrDefault';
     }
 }
