@@ -299,9 +299,9 @@ body.ios {
     --app-footer-pad-top: 10px;
     --app-footer-pad-bottom: 10px;
     --app-footer-text-line: calc(13px * 1.25);
-    --app-footer-chrome-height: calc(
-        var(--app-footer-pad-top) + var(--app-footer-text-line) + var(--app-footer-pad-bottom)
-    );
+    /* The footer is hidden (see .footer), so it takes no room: only the
+       home-indicator inset stays in --app-footer-height. */
+    --app-footer-chrome-height: 0px;
     --app-footer-height: calc(
         var(--app-footer-chrome-height) + env(safe-area-inset-bottom, 0px)
     );
@@ -426,7 +426,8 @@ body.handset-device #settings-modal .language-picker-trigger .language-picker-co
     display: flex;
     flex-direction: column;
     background: var(--container-bg);
-    padding-bottom: 38px;
+    /* A margin under the content; this was 38px while the footer sat here. */
+    padding-bottom: 16px;
     overflow: hidden;
 }
 
@@ -12248,14 +12249,17 @@ body.ios .override-challenge .challenge-input:focus{
 }
 
 /* Schedule override options */
-/* Footer */
+/* Footer: "Made with ♥ by digitalhabits.org". Hidden in the app, as in
+   To-Do; the welcome and EULA screens keep their own footers. The room it
+   took is gone too (.app-container's bottom padding, and on iOS
+   --app-footer-chrome-height). */
 .footer{
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
     z-index: 10;
-    display: flex;
+    display: none;
     justify-content: center;
     align-items: center;
     padding: 0 8px 2px;
