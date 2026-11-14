@@ -4535,8 +4535,10 @@ body.ios:not(.ios-phone) .main-content .when-times{
 
 .segment-time-field{
     box-sizing: border-box;
-    /* Exactly "00:00" (tabular digits) plus the padding and border: no dead space after the time. */
-    width: calc(5ch + 22px);
+    /* "00:00" (tabular digits) plus the padding and border: no dead space
+       after the time. 5ch counts the colon as a digit; Schibsted Grotesk's
+       colon is a touch wider, hence the 0.3ch, or the last digit clips. */
+    width: calc(5.3ch + 22px);
     max-width: 100%;
     height: var(--segment-field-h);
     margin: 0;
