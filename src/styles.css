@@ -2,13 +2,18 @@
    Schibsted Grotesk, the Centre for Digital Habits' text face (the design
    system), as in To-Do and Mail: the two weights the website ships, so 500
    falls to 400 and 700 to 600. SIL Open Font License,
-   fonts/OFL-SchibstedGrotesk.txt. */
+   fonts/OFL-SchibstedGrotesk.txt.
+   size-adjust: at the same px, Schibsted Grotesk's x-height and capitals
+   are 3.5% smaller than Inter's, which every font-size here was set for.
+   104% puts the text back at the size it was; only this face scales, so
+   Georgia headings and monospace are untouched. */
 @font-face {
     font-family: 'Schibsted Grotesk';
     font-style: normal;
     font-weight: 400;
     font-display: swap;
     src: url('fonts/SchibstedGrotesk-Regular.woff') format('woff');
+    size-adjust: 104%;
 }
 
 @font-face {
@@ -17,6 +22,7 @@
     font-weight: 600;
     font-display: swap;
     src: url('fonts/SchibstedGrotesk-SemiBold.woff') format('woff');
+    size-adjust: 104%;
 }
 
 /* ========================================
