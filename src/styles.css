@@ -1,21 +1,28 @@
-/* Bundled fonts — locally hosted so the app works offline.
-   Inter ships latin + latin-ext (covers English, Danish, and other Western European). */
+/* Bundled fonts, locally hosted so the app works offline (fonts/).
+   Schibsted Grotesk, the Centre for Digital Habits' text face (the design
+   system), as in To-Do and Mail: the two weights the website ships, so 500
+   falls to 400 and 700 to 600. SIL Open Font License,
+   fonts/OFL-SchibstedGrotesk.txt.
+   size-adjust: at the same px, Schibsted Grotesk's x-height and capitals
+   are 3.5% smaller than Inter's, which every font-size here was set for.
+   104% puts the text back at the size it was; only this face scales, so
+   Georgia headings and monospace are untouched. */
 @font-face {
-    font-family: 'Inter';
+    font-family: 'Schibsted Grotesk';
     font-style: normal;
-    font-weight: 400 700;
+    font-weight: 400;
     font-display: swap;
-    src: url('fonts/inter-latin.woff2') format('woff2');
-    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    src: url('fonts/SchibstedGrotesk-Regular.woff') format('woff');
+    size-adjust: 104%;
 }
 
 @font-face {
-    font-family: 'Inter';
+    font-family: 'Schibsted Grotesk';
     font-style: normal;
-    font-weight: 400 700;
+    font-weight: 600;
     font-display: swap;
-    src: url('fonts/inter-latin-ext.woff2') format('woff2');
-    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+    src: url('fonts/SchibstedGrotesk-SemiBold.woff') format('woff');
+    size-adjust: 104%;
 }
 
 /* ========================================
@@ -27,47 +34,49 @@
     color-scheme: light;
     --ui-zoom: 1;
 
-    /* --- Canonical ReDD brand tokens (palette, fonts, shadows, radii) --- */
-    --redd-cream: #F7F5F0;
-    --redd-warm-grey: #f1eee9;
+    /* --- Brand tokens: the Centre for Digital Habits design system, as in
+       To-Do and Mail: cream page, white cards, ink text, the brand green.
+       The names are the old ReDD ones; the values are the system's. --- */
+    --redd-cream: #f5f1ea;
+    --redd-warm-grey: #efeae2;
     --redd-card: #ffffff;
-    --redd-navy: #1e2d3e;
-    --redd-body: #2c2c35;
-    --redd-muted: #696977;
-    --redd-border: #e1dcd6;
-    --redd-coral: #d4605a;
-    --redd-coral-soft: #faebea;
-    --redd-teal: #2a9d8f;
-    --redd-teal-hover: #21806f;
-    --redd-teal-soft: #e5f5f3;
+    --redd-navy: #1b3d4a;
+    --redd-body: #1b3d4a;
+    --redd-muted: #586f77;
+    --redd-border: #d2d4d0;
+    --redd-coral: #b4432e;
+    --redd-coral-soft: #f6e8e6;
+    --redd-teal: #005d53;
+    --redd-teal-hover: #004d45;
+    --redd-teal-soft: #dbf0ea;
     --redd-teal-soft-border: color-mix(in srgb, var(--redd-teal) 20%, transparent);
-    /* Text sitting on a --redd-teal-soft surface. Much darker than
-       --redd-teal-hover: mid-green on the pale mint fill reads as washed-out
-       even where it technically clears AA (the hover teal is only ~4.27:1).
-       This lands at ~7.2:1 — comfortably readable while still teal, not black.
+    /* Text sitting on a --redd-teal-soft surface. The brand green is dark
+       enough to read on the pale fill as it is (~6.6:1).
        Dark theme keeps its lifted teal (see body.dark-mode). */
-    --redd-teal-on-soft: #155a4b;
-    --schedule-pending-bg: rgba(42, 157, 143, 0.08);
-    --schedule-pending-border: rgba(42, 157, 143, 0.35);
+    --redd-teal-on-soft: #005d53;
+    --schedule-pending-bg: rgba(0, 93, 83, 0.08);
+    --schedule-pending-border: rgba(0, 93, 83, 0.35);
     --redd-blue: #4a90e2;
     --redd-blue-soft: #e8f1fa;
     --redd-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.08);
-    --redd-shadow-card-hover: 0 8px 24px rgba(30, 45, 62, 0.10);
+    --redd-shadow-card-hover: 0 8px 24px rgba(27, 61, 74, 0.10);
+    /* The ink and the green as bare channels, for the translucent shadows,
+       washes and focus rings in rules both themes share. Dark mode sets
+       its own (see body.dark-mode). */
+    --ink-rgb: 27, 61, 74;
+    --accent-rgb: 0, 93, 83;
 
     --font-heading: Georgia, 'Times New Roman', serif;
-    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, Arial, Helvetica, sans-serif;
+    --font-body: 'Schibsted Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, Arial, Helvetica, sans-serif;
     --font-section-label: Arial, Helvetica, sans-serif;
 
     --radius-sm: 8px;
     --radius-card: 12px;
 
-    /* In-product primary action button: navy. The design-tokens spec lists
-       teal as the canonical brand primary, but inside the product surface
-       full-width teal slabs read as too loud — navy lets the strongest action
-       sit as a calm slab while teal stays reserved for inviting entry-points
-       (EULA / onboarding CTAs scope themselves to teal locally). */
-    --primary-btn-bg: var(--redd-navy);
-    --primary-btn-bg-hover: #2c3f55;
+    /* In-product primary action button: the design system's main button,
+       the brand green with ink under the pointer, as in To-Do. */
+    --primary-btn-bg: var(--redd-teal);
+    --primary-btn-bg-hover: var(--redd-navy);
     --primary-btn-text: #ffffff;
 
     /* Status (used sparingly for warnings, danger, success badges). */
@@ -75,9 +84,9 @@
     --success: var(--redd-teal);
     --warning: #f59e0b;
 
-    /* Title bar: slightly cooler / greyer than `--redd-cream` (#F7F5F0) so the
+    /* Title bar: the system's sand, a step down from `--redd-cream`, so the
        strip reads as its own band without going flat white. */
-    --title-bar-bg: #efede8;
+    --title-bar-bg: #efeae2;
     /* Slim drag strip; tall enough for the traffic lights / Windows controls. */
     --title-bar-height: 30px;
     /* Stacked top banners (desktop):
@@ -100,10 +109,10 @@
     --text-primary: var(--redd-navy);
     --text-secondary: var(--redd-body);
     --text-muted: var(--redd-muted);
-    --text-subtle: #8a8a96;
+    --text-subtle: #7b8e94;
     --border-color: var(--redd-border);
     --element-bg: var(--redd-card);
-    --element-hover-bg: rgba(30, 45, 62, 0.06);
+    --element-hover-bg: rgba(27, 61, 74, 0.06);
     --accent-color: var(--redd-teal);
     --accent-hover: var(--redd-teal-hover);
     --header-text: var(--redd-muted);
@@ -114,12 +123,12 @@
     --input-border: var(--redd-border);
     --icon-btn-color: var(--redd-muted);
     --icon-btn-hover-color: var(--redd-navy);
-    --timeline-message: #8a8a96;
+    --timeline-message: #7b8e94;
     --separator-color: var(--redd-border);
     /* Dim behind every modal. Dark needs far more than light: a translucent
        navy over an already-navy page barely registers, and the stop challenge
        in particular has to stand clear of what is behind it. */
-    --modal-scrim: rgba(30, 45, 62, 0.5);
+    --modal-scrim: rgba(27, 61, 74, 0.5);
     --segmented-quiet-active-bg: var(--redd-card);
     --popover-bg: var(--redd-card);
     --popover-border: var(--redd-border);
@@ -178,6 +187,9 @@ body.dark-mode{
     --redd-blue-soft: rgba(106, 169, 234, 0.14);
     --redd-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2);
     --redd-shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.35);
+    /* The channels dark mode has always used in the shared rules. */
+    --ink-rgb: 30, 45, 62;
+    --accent-rgb: 42, 157, 143;
 
     --primary-btn-bg: var(--redd-teal);
     --primary-btn-bg-hover: var(--redd-teal-hover);
@@ -266,6 +278,8 @@ h1,
 h2,
 h3{
     font-family: var(--font-heading);
+    /* Georgia headings at 500, never bold (the design system). */
+    font-weight: 500;
     letter-spacing: -0.01em;
 }
 
@@ -285,9 +299,9 @@ body.ios {
     --app-footer-pad-top: 10px;
     --app-footer-pad-bottom: 10px;
     --app-footer-text-line: calc(13px * 1.25);
-    --app-footer-chrome-height: calc(
-        var(--app-footer-pad-top) + var(--app-footer-text-line) + var(--app-footer-pad-bottom)
-    );
+    /* The footer is hidden (see .footer), so it takes no room: only the
+       home-indicator inset stays in --app-footer-height. */
+    --app-footer-chrome-height: 0px;
     --app-footer-height: calc(
         var(--app-footer-chrome-height) + env(safe-area-inset-bottom, 0px)
     );
@@ -412,7 +426,8 @@ body.handset-device #settings-modal .language-picker-trigger .language-picker-co
     display: flex;
     flex-direction: column;
     background: var(--container-bg);
-    padding-bottom: 38px;
+    /* A margin under the content; this was 38px while the footer sat here. */
+    padding-bottom: 16px;
     overflow: hidden;
 }
 
@@ -424,7 +439,7 @@ body.handset-device #settings-modal .language-picker-trigger .language-picker-co
     height: var(--title-bar-height);
     background: var(--title-bar-bg);
     /* Visually separate from the warmer body (`--container-bg`). */
-    box-shadow: inset 0 -1px 0 rgba(30, 45, 62, 0.08);
+    box-shadow: inset 0 -1px 0 rgba(var(--ink-rgb), 0.08);
     user-select: none;
     display: grid;
     grid-template-columns: auto max-content;
@@ -722,8 +737,8 @@ body.dark-mode .title-bar{
     margin: 10px 0 0;
     padding: 14px 16px 16px;
     background: var(--container-bg, #fff);
-    color: var(--text-primary, #1e2d3e);
-    border-radius: 10px;
+    color: var(--text-primary, #1b3d4a);
+    border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
     overflow: hidden;
     max-height: 520px;
@@ -770,7 +785,7 @@ body.dark-mode .title-bar{
     font-size: 15px;
     font-weight: 700;
     line-height: 1.35;
-    color: var(--text-primary, #1e2d3e);
+    color: var(--text-primary, #1b3d4a);
 }
 
 .update-banner-notes-summary-emoji{
@@ -793,7 +808,7 @@ body.dark-mode .title-bar{
 .update-banner-notes-group-label{
     margin: 0;
     padding-bottom: 6px;
-    border-bottom: 1px solid var(--border-color, rgba(30, 45, 62, 0.12));
+    border-bottom: 1px solid var(--border-color, rgba(var(--ink-rgb), 0.12));
     font-family: var(--font-section-label, inherit);
     font-size: 11px;
     font-weight: 700;
@@ -824,7 +839,7 @@ body.dark-mode .title-bar{
     gap: 8px;
     margin-left: 10px;
     padding-left: 10px;
-    border-left: 2px solid var(--border-color, rgba(30, 45, 62, 0.1));
+    border-left: 2px solid var(--border-color, rgba(var(--ink-rgb), 0.1));
 }
 
 .update-banner-notes-subsubgroup-label{
@@ -848,7 +863,7 @@ body.dark-mode .title-bar{
     padding-left: 14px;
     font-size: 13px;
     line-height: 1.45;
-    color: var(--text-primary, #1e2d3e);
+    color: var(--text-primary, #1b3d4a);
 }
 
 .update-banner-notes-item::before{
@@ -859,7 +874,7 @@ body.dark-mode .title-bar{
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--accent-color, #2a9d8f);
+    background: var(--accent-color, #005d53);
     transform: translateY(-50%);
 }
 
@@ -932,7 +947,7 @@ body.dark-mode .title-bar{
     background: var(--setup-bg);
     color: var(--setup-text);
     border: 1px solid var(--setup-border);
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 14px var(--stacked-banner-padding-x);
     margin-top: calc(var(--title-bar-height) + var(--stacked-banner-margin-y));
     margin-left: var(--stacked-banner-margin-x);
@@ -1484,7 +1499,7 @@ body.dark-mode .app-blocking-closedown-banner{
     font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
     font-size: 12px;
     padding: 2px 7px;
-    border-radius: 5px;
+    border-radius: 4px;
     cursor: pointer;
     font-weight: 700;
     transition: background 0.15s, border-color 0.15s, color 0.15s;
@@ -1579,7 +1594,7 @@ body.dark-mode .app-blocking-closedown-banner{
     padding: 3px 8px;
     background: rgba(127, 29, 29, 0.38);
     border: 1px solid rgba(255, 255, 255, 0.45);
-    border-radius: 5px;
+    border-radius: 4px;
     color: #ffffff;
     font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
     font-size: 11px;
@@ -2050,14 +2065,14 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
     body.ios:not(.ios-phone) .main-content .time-picker-container{
         gap: 18px;
         margin-bottom: 12px;
-        border-radius: 14px;
+        border-radius: 12px;
         padding: 16px 20px 20px;
     }
 
     body.ios:not(.ios-phone) .main-content .now-btn{
         padding: 10px 18px;
         font-size: 16px;
-        border-radius: 10px;
+        border-radius: 8px;
     }
 
     body.ios:not(.ios-phone) .main-content .time-select{
@@ -2130,7 +2145,7 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
         gap: 14px;
         padding: 10px 14px;
         font-size: 14px;
-        border-radius: 10px;
+        border-radius: 8px;
     }
 
     body.ios:not(.ios-phone) .main-content .schedule-pending-discard,
@@ -2239,7 +2254,7 @@ body.ios:not(.ios-phone) .main-content .always-on-chip svg{
     }
 
     body.ios:not(.ios-phone) .main-content .week-calendar-container{
-        border-radius: 10px;
+        border-radius: 8px;
     }
 
     body.ios:not(.ios-phone) .main-content .grid-header-row{
@@ -3559,7 +3574,7 @@ body.dark-mode .blocklists-create-btn--secondary .blocklists-create-btn-icon{
 }
 
 .day-row.today{
-    background: rgba(42, 157, 143, 0.05);
+    background: rgba(var(--accent-rgb), 0.05);
 }
 
 body.dark-mode .day-row.today{
@@ -3883,7 +3898,7 @@ body.dark-mode .calendar-lane-overflow{
     width: 2px;
     background: var(--accent-color);
     z-index: 5;
-    box-shadow: 0 0 4px rgba(42, 157, 143, 0.5);
+    box-shadow: 0 0 4px rgba(var(--accent-rgb), 0.5);
     pointer-events: none;
 }
 
@@ -3983,7 +3998,7 @@ body.dark-mode .no-active-blocks.clickable:hover{
     background: var(--accent-color);
     border-radius: 12px;
     color: white;
-    box-shadow: 0 4px 12px rgba(42, 157, 143, 0.3);
+    box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.3);
     position: relative;
     overflow: hidden;
 }
@@ -4003,7 +4018,7 @@ body.dark-mode .no-active-blocks.clickable:hover{
     margin-top: -8px;
     margin-left: 12px;
     margin-right: 12px;
-    box-shadow: 0 4px 12px rgba(42, 157, 143, 0.2);
+    box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.2);
 }
 
 .entry-icon{
@@ -4109,7 +4124,7 @@ body.dark-mode .no-active-blocks.clickable:hover{
 .blocklist-dropdown:focus{
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.1);
 }
 
 /* Block Preview */
@@ -4124,7 +4139,7 @@ body.dark-mode .no-active-blocks.clickable:hover{
 
 .block-preview .calendar-entry{
     opacity: 0.7;
-    box-shadow: 0 2px 8px rgba(42, 157, 143, 0.2);
+    box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.2);
 }
 
 /* Time Pickers */
@@ -4225,7 +4240,7 @@ body.dark-mode .no-active-blocks.clickable:hover{
 
 .time-select:focus{
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
 }
 
 .time-input{
@@ -4246,7 +4261,7 @@ body.dark-mode .no-active-blocks.clickable:hover{
 
 .time-input:focus{
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.15);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
 }
 
 .start-time-badge{
@@ -4527,8 +4542,10 @@ body.ios:not(.ios-phone) .main-content .when-times{
 
 .segment-time-field{
     box-sizing: border-box;
-    /* Exactly "00:00" (tabular digits) plus the padding and border: no dead space after the time. */
-    width: calc(5ch + 22px);
+    /* "00:00" (tabular digits) plus the padding and border: no dead space
+       after the time. 5ch counts the colon as a digit; Schibsted Grotesk's
+       colon is a touch wider, hence the 0.3ch, or the last digit clips. */
+    width: calc(5.3ch + 22px);
     max-width: 100%;
     height: var(--segment-field-h);
     margin: 0;
@@ -4558,7 +4575,7 @@ body.dark-mode .segment-time-field:hover:not(:disabled){
 .segment-time-field:focus{
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
 }
 
 .segment-time-field:disabled{
@@ -4851,11 +4868,11 @@ body.ios .segment-day-toggle{
 }
 
 .strictness-option:hover{
-    background: rgba(42, 157, 143, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
 }
 
 .strictness-option.active{
-    background: rgba(42, 157, 143, 0.12);
+    background: rgba(var(--accent-rgb), 0.12);
 }
 
 .strictness-option-title{
@@ -4959,7 +4976,7 @@ body.dark-mode .schedule-panel-overlay-group .repeat-label.repeat-label-disabled
 
 .repeat-dropdown-btn:hover{
     border-color: var(--accent-color);
-    background: rgba(42, 157, 143, 0.05);
+    background: rgba(var(--accent-rgb), 0.05);
 }
 
 .repeat-dropdown-btn.repeat-dropdown-disabled{
@@ -5024,7 +5041,7 @@ body.dark-mode .schedule-panel-overlay-group .repeat-label.repeat-label-disabled
 }
 
 .repeat-option:hover{
-    background: rgba(42, 157, 143, 0.1);
+    background: rgba(var(--accent-rgb), 0.1);
     color: var(--accent-color);
 }
 
@@ -5082,7 +5099,7 @@ body.dark-mode .schedule-panel-overlay-group .repeat-label.repeat-label-disabled
 .repeat-date-input:focus{
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
 }
 
 .repeat-date-input::-webkit-calendar-picker-indicator{
@@ -5210,7 +5227,7 @@ body.ios .day-toggle {
 
 .until-dropdown-btn:hover{
     border-color: var(--accent-color);
-    background: rgba(42, 157, 143, 0.05);
+    background: rgba(var(--accent-rgb), 0.05);
 }
 
 .until-dropdown-menu{
@@ -5288,7 +5305,7 @@ body.ios .day-toggle {
 .until-date-input:focus{
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
 }
 
 /* Hide the native calendar icon */
@@ -5568,7 +5585,7 @@ body.ios .blocklists-container {
     border: var(--blocklist-card-border) solid transparent;
     border-left-width: 0;
     background: var(--element-bg);
-    border-radius: 10px;
+    border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     transition: all 0.2s ease;
     cursor: grab;
@@ -5630,8 +5647,8 @@ body.ios .blocklists-container {
     width: 7px;
     align-self: stretch;
     margin-block: calc(-1 * (var(--blocklist-card-border) + var(--blocklist-card-padding-y)));
-    border-top-left-radius: 10px;
-    border-bottom-left-radius: 10px;
+    border-top-left-radius: 8px;
+    border-bottom-left-radius: 8px;
 }
 
 /* Status text on blocklist cards — "14H 49M LEFT", "IN 13H", "Always", etc.
@@ -6204,7 +6221,7 @@ body.mac #rebrand-onboarding .eula-title-bar > div[data-tauri-drag-region] {
     width: 100%;
     padding: 12px;
     border: none;
-    border-radius: 10px;
+    border-radius: 8px;
     background: var(--button-bg);
     color: #ffffff;
     font-family: inherit;
@@ -6261,7 +6278,7 @@ body.mac #rebrand-onboarding .eula-title-bar > div[data-tauri-drag-region] {
     padding: 18px 20px 16px;
     border: none;
     border-left: 4px solid var(--rebrand-card-border);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--rebrand-card-bg);
     text-align: left;
 }
@@ -6285,7 +6302,7 @@ body.dark-mode .rebrand-definition-card {
 .rebrand-definition-word {
     font-family: var(--font-heading);
     font-size: 22px;
-    font-weight: 700;
+    font-weight: 500;
     line-height: 26px;
     color: var(--text-primary);
 }
@@ -6441,7 +6458,7 @@ body.ios .eula-welcome-title-ios {
     margin: 0;
     font-family: var(--font-heading);
     font-size: 24px;
-    font-weight: 700;
+    font-weight: 500;
     line-height: 1.2;
     letter-spacing: -0.01em;
     color: var(--text-secondary);
@@ -6551,8 +6568,8 @@ body.ios #eula-onboarding .legal-onboarding-note {
 
 body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
     background: var(--redd-card);
-    border: 1px solid rgba(30, 45, 62, 0.06);
-    border-radius: 16px;
+    border: 1px solid rgba(var(--ink-rgb), 0.06);
+    border-radius: 12px;
     box-shadow: var(--redd-shadow-card-hover);
     padding: 18px var(--onboarding-align-inset) 16px;
     margin: 0;
@@ -6691,8 +6708,8 @@ body:not(.ios) .welcome-onboarding-title-text > .welcome-onboarding-subtitle {
 
 .welcome-onboarding-card{
     background: var(--redd-card);
-    border: 1px solid rgba(30, 45, 62, 0.06);
-    border-radius: 16px;
+    border: 1px solid rgba(var(--ink-rgb), 0.06);
+    border-radius: 12px;
     box-shadow: var(--redd-shadow-card-hover);
     padding: 18px var(--onboarding-align-inset) 16px;
 }
@@ -6843,7 +6860,7 @@ body.dark-mode .welcome-apple-inline-logo{
     position: relative;
     border-radius: 12px;
     overflow: hidden;
-    background: #1e2d3e;
+    background: #1b3d4a;
     aspect-ratio: 16 / 9;
 }
 
@@ -6914,7 +6931,7 @@ body.dark-mode .welcome-apple-inline-logo{
     width: 100%;
     height: 100%;
     object-fit: cover;
-    background: #1e2d3e;
+    background: #1b3d4a;
     cursor: pointer;
 }
 
@@ -7143,7 +7160,7 @@ body.dark-mode .welcome-demo-toggle:hover{
    equal specificity + later cascade and force weight 700). */
 .onboarding-screen:not(#rebrand-onboarding) .onboarding-content h1:not(#migration-post-header-title){
     font-size: 24px;
-    font-weight: 700;
+    font-weight: 500;
     color: var(--text-secondary);
     margin-bottom: 8px;
 }
@@ -7164,7 +7181,7 @@ body.dark-mode .welcome-demo-toggle:hover{
 .onboarding-focus-card{
     background: rgba(255, 255, 255, 0.92);
     border: 1px solid rgba(10, 45, 123, 0.08);
-    border-radius: 18px;
+    border-radius: 12px;
     box-shadow: 0 10px 30px rgba(10, 45, 123, 0.08);
     padding: 30px 40px;
     margin: 20px 0 18px;
@@ -7608,7 +7625,7 @@ body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:d
     width: 100%;
     height: auto;
     margin-top: 14px;
-    border-radius: 10px;
+    border-radius: 8px;
 }
 
 .settings-enforcement-subsection-toggle .settings-enforcement-chevron{
@@ -7656,7 +7673,7 @@ body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:d
 .migration-howto h3{
     margin: 0 0 6px 0;
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 500;
     color: var(--text-primary);
     letter-spacing: 0.02em;
     text-transform: uppercase;
@@ -7845,7 +7862,7 @@ body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:d
 
 .safari-duplicate-instructions{
     padding: 14px;
-    border-radius: 10px;
+    border-radius: 8px;
     border: 1px solid rgba(10, 45, 123, 0.1);
     background: var(--redd-card, #fff);
     display: flex;
@@ -8247,7 +8264,7 @@ body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:d
     padding: 14px 16px;
     background: rgba(10, 45, 123, 0.04);
     border: 1px solid rgba(10, 45, 123, 0.10);
-    border-radius: 10px;
+    border-radius: 8px;
     --enforcement-toggle-body-size: 12.5px;
 }
 
@@ -8964,7 +8981,7 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     margin: 0 0 6px;
     font-family: var(--font-heading);
     font-size: 19px;
-    font-weight: 700;
+    font-weight: 500;
     line-height: 1.25;
     color: var(--redd-navy);
 }
@@ -9008,7 +9025,7 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
 .eula-how-we-count summary:focus-visible{
     outline: 2px solid var(--accent-color);
     outline-offset: 2px;
-    border-radius: 3px;
+    border-radius: 4px;
 }
 
 .eula-how-we-count p{
@@ -9108,7 +9125,7 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
 .form-input:focus{
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.1);
 }
 
 #blocklist-name.input-error,
@@ -9168,7 +9185,7 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
 .form-select:focus{
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.1);
 }
 
 .form-select.form-select-disabled{
@@ -9240,7 +9257,7 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
 .form-textarea:focus{
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.1);
 }
 
 .form-hint{
@@ -9365,7 +9382,7 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
 
 .tags-input-container:focus-within{
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.1);
 }
 
 /* Inside the Edit Blocklist modal, websites/apps wells use the same inset
@@ -9454,7 +9471,7 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
 
 #focus-space-editor .tags-input-stacked .form-input:focus{
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.1);
 }
 
 #focus-space-editor .tags-input-stacked .browse-btn{
@@ -9466,6 +9483,12 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     border-radius: 8px;
     padding: 8px 12px;
     white-space: nowrap;
+    /* A button does not inherit the page font: without this "Lists" fell
+       back to the browser's 13px system face. 14px keeps it a step under
+       Add App (15px) below. */
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
 }
 
 body:not(.ios) #focus-space-editor .tags-input-stacked .browse-btn,
@@ -9885,7 +9908,7 @@ body.ios .modal-content {
 
 .modal-content{
     background: var(--popover-bg);
-    border-radius: 16px;
+    border-radius: 12px;
     padding: 24px;
     width: 100%;
     max-width: 400px;
@@ -10060,7 +10083,7 @@ body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .mob
 body.desktop-compact-layout .mobile-fullscreen-modal .mobile-modal-header-title{
     font-family: var(--font-heading);
     font-size: 1.25rem;
-    font-weight: 700;
+    font-weight: 500;
     line-height: 1.2;
     color: var(--text-primary);
     min-width: 0;
@@ -10230,7 +10253,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
            and sits too tall in the desktop sheet's 6px header. */
         font-family: var(--font-heading);
         font-size: 1.25rem;
-        font-weight: 700;
+        font-weight: 500;
         line-height: 1.2;
         color: var(--text-primary);
     }
@@ -10261,7 +10284,7 @@ body.desktop-compact-layout #schedule-overlay-customise-modal.mobile-fullscreen-
     body:not(.handset-device):not(.ios) .mobile-fullscreen-modal .mobile-modal-header-title{
         font-family: var(--font-heading);
         font-size: 1.25rem;
-        font-weight: 700;
+        font-weight: 500;
         line-height: 1.2;
         color: var(--text-primary);
         min-width: 0;
@@ -10584,7 +10607,7 @@ body.handset-device .mobile-fullscreen-modal .mobile-modal-header-title{
     text-align: left;
     font-family: var(--font-heading);
     font-size: 1.45rem;
-    font-weight: 700;
+    font-weight: 500;
     line-height: 1.2;
     color: var(--text-primary);
 }
@@ -10812,7 +10835,7 @@ body.handset-device #blocklist-modal.mobile-fullscreen-modal .mobile-modal-scrol
 
 .modal-content h3{
     font-size: 22px;
-    font-weight: 700;
+    font-weight: 500;
     color: var(--text-primary);
     margin-bottom: 12px;
 }
@@ -10952,7 +10975,7 @@ body:not(.handset-device) .start-confirm-modal{
     margin: 0 0 0;
     font-family: var(--font-heading);
     font-size: 1.45rem;
-    font-weight: 700;
+    font-weight: 500;
     line-height: 1.25;
     color: var(--redd-navy);
 }
@@ -10963,7 +10986,7 @@ body:not(.handset-device) .start-confirm-modal{
     grid-template-columns: fit-content(50%) minmax(0, 1fr);
     margin-bottom: 16px;
     border: 1px solid var(--border-color);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--app-bg);
     overflow: hidden;
     --start-confirm-content-size: 14px;
@@ -11210,7 +11233,7 @@ body:not(.handset-device) .start-confirm-modal{
     min-width: 0;
     font-family: var(--font-heading);
     font-size: 1.45rem;
-    font-weight: 700;
+    font-weight: 500;
     line-height: 1.25;
     color: var(--redd-navy);
 }
@@ -11324,7 +11347,7 @@ body.dark-mode .start-confirm-blocking-text{
     margin: 0 0 6px;
     font-family: var(--font-heading);
     font-size: 1.45rem;
-    font-weight: 700;
+    font-weight: 500;
     line-height: 1.25;
     color: var(--redd-navy);
 }
@@ -11509,7 +11532,7 @@ body.dark-mode .schedule-overlay-badge--unsaved{
 
 .schedule-overlay-message-editor-wrap{
     border: 1px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: 8px;
     overflow: hidden;
     background: var(--surface-primary);
 }
@@ -11618,7 +11641,7 @@ body.dark-mode .schedule-overlay-badge--unsaved{
 .schedule-overlay-image-dropzone-preview{
     width: 56px;
     height: 56px;
-    border-radius: 10px;
+    border-radius: 8px;
     background: var(--surface-primary);
     display: flex;
     align-items: center;
@@ -11806,7 +11829,7 @@ body.dark-mode .schedule-overlay-record-level-bar.is-active{
     display: flex;
     justify-content: center;
     padding: 12px 16px;
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--app-bg);
 }
 
@@ -11817,7 +11840,7 @@ body.dark-mode .schedule-overlay-record-level-bar.is-active{
     margin: 0 auto;
     padding: 24px 20px 20px;
     gap: 14px;
-    border-radius: 18px;
+    border-radius: 12px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
@@ -11992,22 +12015,15 @@ body.dark-mode .schedule-overlay-record-level-bar.is-active{
 }
 
 /* Black button (shadcn primary style) */
+/* The main action in a modal (Start, Pause, Save alert): the design
+   system's main button in both themes, as --primary-btn-bg sets it. */
 .modal-btn.black-btn{
-    background: var(--redd-navy);
-    color: hsl(210, 40%, 98%);
+    background: var(--primary-btn-bg);
+    color: var(--primary-btn-text);
     border: none;
 }
 
 .modal-btn.black-btn:hover{
-    background: hsla(222.2, 47.4%, 11.2%, 0.9);
-}
-
-body.dark-mode .modal-btn.black-btn{
-    background: var(--primary-btn-bg);
-    color: var(--primary-btn-text);
-}
-
-body.dark-mode .modal-btn.black-btn:hover{
     background: var(--primary-btn-bg-hover);
 }
 
@@ -12058,7 +12074,7 @@ body.dark-mode .modal-btn.black-btn:hover{
 .challenge-current-word .error-char{
     color: #ef4444;
     background: rgba(239, 68, 68, 0.18);
-    border-radius: 2px;
+    border-radius: 4px;
     white-space: pre;
 }
 
@@ -12146,7 +12162,7 @@ body.dark-mode .modal-btn.black-btn:hover{
     background: var(--redd-warm-grey);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 14px 16px;
     margin: -4px 0 16px;
     text-align: center;
@@ -12239,14 +12255,17 @@ body.ios .override-challenge .challenge-input:focus{
 }
 
 /* Schedule override options */
-/* Footer */
+/* Footer: "Made with ♥ by digitalhabits.org". Hidden in the app, as in
+   To-Do; the welcome and EULA screens keep their own footers. The room it
+   took is gone too (.app-container's bottom padding, and on iOS
+   --app-footer-chrome-height). */
 .footer{
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
     z-index: 10;
-    display: flex;
+    display: none;
     justify-content: center;
     align-items: center;
     padding: 0 8px 2px;
@@ -12499,7 +12518,7 @@ body.windows .settings-panel-rows > #settings-override-all-row:not(.hidden) ~ #w
     font-weight: 400;
     line-height: 1.45;
     text-align: left;
-    box-shadow: 0 8px 24px rgba(30, 45, 62, 0.12);
+    box-shadow: 0 8px 24px rgba(var(--ink-rgb), 0.12);
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -12765,7 +12784,7 @@ body.dark-mode #settings-modal .settings-select{
     width: 22px;
     height: 14px;
     flex-shrink: 0;
-    border-radius: 3px;
+    border-radius: 4px;
     overflow: hidden;
 }
 
@@ -13045,7 +13064,7 @@ body.handset-device #settings-modal.mobile-fullscreen-modal .mobile-modal-header
 #settings-modal-title{
     font-family: var(--font-heading);
     font-size: 1.45rem;
-    font-weight: 700;
+    font-weight: 500;
     line-height: 1.25;
     color: var(--redd-navy);
 }
@@ -13136,7 +13155,7 @@ body.dark-mode #settings-modal-title{
     padding: 12px 14px;
     background: #e9f0ed;
     border: 1px solid #ccd8d2;
-    border-radius: 10px;
+    border-radius: 8px;
     color: #2d5a4c;
 }
 
@@ -13148,7 +13167,7 @@ body.dark-mode #settings-modal-title{
     padding: 12px 14px;
     background: #e9f0ed;
     border: 1px solid #ccd8d2;
-    border-radius: 10px;
+    border-radius: 8px;
     color: #2d5a4c;
 }
 
@@ -13576,7 +13595,7 @@ body:not(.ios) .settings-override-all-contents:not(.hidden){
     box-sizing: border-box;
     width: 100%;
     padding: 14px 10px;
-    border-radius: 10px;
+    border-radius: 8px;
     font-size: 13px;
     font-weight: 500;
     line-height: 1.2;
@@ -13609,7 +13628,7 @@ body.dark-mode #settings-modal .settings-help-btn{
     width: 18px;
     height: 18px;
     margin: 0;
-    border-color: rgba(30, 45, 62, 0.18);
+    border-color: rgba(var(--ink-rgb), 0.18);
     border-top-color: var(--text-primary);
 }
 
@@ -13694,13 +13713,13 @@ body.dark-mode #settings-modal .settings-help-btn .diagnostics-btn-spinner{
 #uninstall-confirm-modal .modal-content{
     max-width: 520px;
     padding: 28px 28px 24px;
-    box-shadow: 0 16px 48px rgba(30, 45, 62, 0.14);
+    box-shadow: 0 16px 48px rgba(var(--ink-rgb), 0.14);
 }
 
 #uninstall-confirm-modal h3{
     font-family: var(--font-heading);
     font-size: 24px;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: -0.02em;
     line-height: 1.15;
     margin-bottom: 12px;
@@ -13830,7 +13849,7 @@ body.dark-mode #settings-modal .settings-help-btn .diagnostics-btn-spinner{
 
 #uninstall-confirm-modal .modal-btn{
     padding: 12px 16px;
-    border-radius: 10px;
+    border-radius: 8px;
     font-size: 15px;
 }
 
@@ -13936,7 +13955,7 @@ body.dark-mode #uninstall-confirm-modal .modal-btn.cancel-btn:hover{
 #mac-automation-intro-modal h3{
     font-family: var(--font-heading);
     font-size: 26px;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: -0.02em;
     line-height: 1.15;
     margin: 0 0 12px;
@@ -14067,7 +14086,7 @@ body.dark-mode #uninstall-confirm-modal .modal-btn.cancel-btn:hover{
 
 #mac-automation-intro-modal .modal-btn{
     padding: 12px 16px;
-    border-radius: 10px;
+    border-radius: 8px;
     font-size: 15px;
 }
 
@@ -14165,7 +14184,7 @@ body.dark-mode #mac-automation-intro-modal .modal-btn.cancel-btn:hover{
 #editor-discard-modal .modal-content{
     max-width: 520px;
     padding: 28px 28px 24px;
-    box-shadow: 0 16px 48px rgba(30, 45, 62, 0.14);
+    box-shadow: 0 16px 48px rgba(var(--ink-rgb), 0.14);
 }
 
 #editor-discard-modal .modal-content{
@@ -14185,7 +14204,7 @@ body.dark-mode #mac-automation-intro-modal .modal-btn.cancel-btn:hover{
 #editor-discard-modal h3{
     font-family: var(--font-heading);
     font-size: 24px;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: -0.02em;
     line-height: 1.15;
     margin-bottom: 12px;
@@ -14207,7 +14226,7 @@ body.dark-mode #mac-automation-intro-modal .modal-btn.cancel-btn:hover{
 #schedule-overlay-delete-modal .modal-btn,
 #editor-discard-modal .modal-btn{
     padding: 12px 16px;
-    border-radius: 10px;
+    border-radius: 8px;
     font-size: 15px;
 }
 
@@ -14547,7 +14566,7 @@ body.handset-device .main-content .now-btn{
     padding: 10px 18px;
     font-size: 16px;
     min-height: 44px;
-    border-radius: 10px;
+    border-radius: 8px;
     box-sizing: border-box;
 }
 
@@ -14561,7 +14580,7 @@ body.handset-device .main-content .popover-option{
 body.handset-device .main-content .blocklist-menu{
     min-width: 148px;
     padding: 6px;
-    border-radius: 10px;
+    border-radius: 8px;
 }
 
 body.handset-device .main-content .blocklist-menu-item{
@@ -14586,7 +14605,7 @@ body.handset-device .main-content .repeat-option{
 body.handset-device .modal-overlay .websites-import-menu{
     min-width: 220px;
     padding: 6px;
-    border-radius: 10px;
+    border-radius: 8px;
 }
 
 body.handset-device .modal-overlay .websites-import-menu-item{
@@ -14943,15 +14962,15 @@ body.ios-phone #blocklist-modal .custom-swatch .custom-icon{
     left: 50%;
     transform: translateX(-50%);
     background: #ffffff;
-    color: #2c2c35;
+    color: #1b3d4a;
     padding: 12px;
-    border: 1px solid #e1dcd6;
-    border-radius: 14px;
+    border: 1px solid #d2d4d0;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     gap: 16px;
-    box-shadow: 0 8px 24px rgba(30, 45, 62, 0.12);
-    font-family: var(--font-body, 'Inter', sans-serif);
+    box-shadow: 0 8px 24px rgba(var(--ink-rgb), 0.12);
+    font-family: var(--font-body, 'Schibsted Grotesk', sans-serif);
     font-size: 16px;
     line-height: 1.3;
     font-weight: 400;
@@ -14988,7 +15007,7 @@ body.dark-mode .undo-toast{
 
 #undo-toast-message strong{
     font-weight: 600;
-    color: #1e2d3e;
+    color: #1b3d4a;
 }
 
 body.dark-mode #undo-toast-message strong{
@@ -15001,10 +15020,10 @@ body.dark-mode #undo-toast-message strong{
     gap: 12px;
     margin: 0;
     padding: 8px 14px 8px 16px;
-    border: 1px solid #bfe3dd;
+    border: 1px solid rgba(0, 93, 83, 0.25);
     border-radius: 8px;
-    background: #e5f5f3;
-    color: #1f7a70;
+    background: #dbf0ea;
+    color: #005d53;
     font-family: inherit;
     font-size: 16px;
     line-height: 1.3;
@@ -15020,7 +15039,7 @@ body.dark-mode .undo-btn{
 }
 
 .undo-btn:hover{
-    background: #d5efeb;
+    background: #cde9e2;
 }
 
 body.dark-mode .undo-btn:hover{
@@ -15043,7 +15062,7 @@ body.dark-mode .undo-btn:hover{
 
 .undo-btn:focus-visible{
     outline: none;
-    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.2);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.2);
 }
 
 /* Zoom Toast */
@@ -15744,7 +15763,7 @@ body.dark-mode .diagnostics-pre{
     align-items: center;
     justify-content: center;
     padding: 24px;
-    background: rgba(30, 45, 62, 0.72);
+    background: rgba(var(--ink-rgb), 0.72);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
 }
@@ -15827,7 +15846,7 @@ body.app-blocking-warning-window-mode #app-blocking-warning-overlay.hidden{
     box-sizing: border-box;
     overflow: hidden;
     background: var(--element-bg);
-    border-radius: 24px;
+    border-radius: 12px;
     box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
     padding: 56px 48px 44px;
     text-align: center;
@@ -16099,7 +16118,7 @@ body.dark-mode .app-blocking-warning-card{
 .app-picker-modal-content h3{
     margin: 0 0 12px 0;
     font-size: 18px;
-    font-weight: 700;
+    font-weight: 500;
 }
 
 .app-picker-search-wrap{
@@ -16442,7 +16461,7 @@ body.dark-mode .app-blocking-warning-card{
     display: flex;
     gap: 2px;
     padding: 3px;
-    border-radius: 10px;
+    border-radius: 8px;
     background: var(--redd-warm-grey);
 }
 
@@ -16470,7 +16489,7 @@ body.dark-mode .app-blocking-warning-card{
 .editor-segmented-btn.active{
     background: var(--primary-btn-bg);
     color: var(--primary-btn-text);
-    box-shadow: 0 1px 3px rgba(30, 45, 62, 0.18);
+    box-shadow: 0 1px 3px rgba(var(--ink-rgb), 0.18);
 }
 
 .editor-segmented-btn:disabled{
@@ -16502,7 +16521,7 @@ body.ios:not(.ios-phone) .editor-segmented--compact .editor-segmented-btn{
 .editor-segmented--compact .editor-segmented-btn.active{
     background: var(--segmented-quiet-active-bg);
     color: var(--text-primary);
-    box-shadow: 0 1px 2px rgba(30, 45, 62, 0.12), inset 0 0 0 1px var(--redd-border);
+    box-shadow: 0 1px 2px rgba(var(--ink-rgb), 0.12), inset 0 0 0 1px var(--redd-border);
 }
 
 .editor-hint{
@@ -16903,7 +16922,7 @@ body:not(.handset-device) #enter-scheduler-modal .editor-panel-back-btn:hover{
     border-radius: 50%;
     background: #ffffff;
     border: 2px solid var(--accent-color);
-    box-shadow: 0 1px 3px rgba(30, 45, 62, 0.18);
+    box-shadow: 0 1px 3px rgba(var(--ink-rgb), 0.18);
     cursor: pointer;
 }
 
@@ -16913,7 +16932,7 @@ body:not(.handset-device) #enter-scheduler-modal .editor-panel-back-btn:hover{
     border-radius: 50%;
     background: #ffffff;
     border: 2px solid var(--accent-color);
-    box-shadow: 0 1px 3px rgba(30, 45, 62, 0.18);
+    box-shadow: 0 1px 3px rgba(var(--ink-rgb), 0.18);
     cursor: pointer;
 }
 
@@ -16927,7 +16946,7 @@ body:not(.handset-device) #enter-scheduler-modal .editor-panel-back-btn:hover{
 #override-modal .unlock-duration-select { max-width: 100%; }
 /* Sits 8px under the select (row padding + margin is 24px), like other hints. */
 #override-modal #pause-never-warning { margin: -16px 0 0; color: var(--text-secondary); }
-.blocklist-resume-btn { align-self: flex-start; margin-top: 8px; padding: 4px 12px; border: 0; border-radius: 999px; background: rgba(42, 157, 143, 0.12); background: color-mix(in srgb, var(--redd-teal) 14%, transparent); color: var(--redd-teal); font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1.35; cursor: pointer; transition: background-color 0.15s ease; }
+.blocklist-resume-btn { align-self: flex-start; margin-top: 8px; padding: 4px 12px; border: 0; border-radius: 999px; background: rgba(var(--accent-rgb), 0.12); background: color-mix(in srgb, var(--redd-teal) 14%, transparent); color: var(--redd-teal); font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1.35; cursor: pointer; transition: background-color 0.15s ease; }
 .blocklist-resume-btn:hover { background: color-mix(in srgb, var(--redd-teal) 24%, transparent); }
 .blocklist-resume-btn:focus-visible { outline: 2px solid var(--redd-teal); outline-offset: 2px; }
 
