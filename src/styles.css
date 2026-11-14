@@ -9483,6 +9483,12 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     border-radius: 8px;
     padding: 8px 12px;
     white-space: nowrap;
+    /* A button does not inherit the page font: without this "Lists" fell
+       back to the browser's 13px system face. 14px keeps it a step under
+       Add App (15px) below. */
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
 }
 
 body:not(.ios) #focus-space-editor .tags-input-stacked .browse-btn,
