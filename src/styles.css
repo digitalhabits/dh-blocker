@@ -731,7 +731,7 @@ body.dark-mode .title-bar{
     padding: 14px 16px 16px;
     background: var(--container-bg, #fff);
     color: var(--text-primary, #1b3d4a);
-    border-radius: 10px;
+    border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
     overflow: hidden;
     max-height: 520px;
@@ -940,7 +940,7 @@ body.dark-mode .title-bar{
     background: var(--setup-bg);
     color: var(--setup-text);
     border: 1px solid var(--setup-border);
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 14px var(--stacked-banner-padding-x);
     margin-top: calc(var(--title-bar-height) + var(--stacked-banner-margin-y));
     margin-left: var(--stacked-banner-margin-x);
@@ -1492,7 +1492,7 @@ body.dark-mode .app-blocking-closedown-banner{
     font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
     font-size: 12px;
     padding: 2px 7px;
-    border-radius: 5px;
+    border-radius: 4px;
     cursor: pointer;
     font-weight: 700;
     transition: background 0.15s, border-color 0.15s, color 0.15s;
@@ -1587,7 +1587,7 @@ body.dark-mode .app-blocking-closedown-banner{
     padding: 3px 8px;
     background: rgba(127, 29, 29, 0.38);
     border: 1px solid rgba(255, 255, 255, 0.45);
-    border-radius: 5px;
+    border-radius: 4px;
     color: #ffffff;
     font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
     font-size: 11px;
@@ -2058,14 +2058,14 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
     body.ios:not(.ios-phone) .main-content .time-picker-container{
         gap: 18px;
         margin-bottom: 12px;
-        border-radius: 14px;
+        border-radius: 12px;
         padding: 16px 20px 20px;
     }
 
     body.ios:not(.ios-phone) .main-content .now-btn{
         padding: 10px 18px;
         font-size: 16px;
-        border-radius: 10px;
+        border-radius: 8px;
     }
 
     body.ios:not(.ios-phone) .main-content .time-select{
@@ -2138,7 +2138,7 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
         gap: 14px;
         padding: 10px 14px;
         font-size: 14px;
-        border-radius: 10px;
+        border-radius: 8px;
     }
 
     body.ios:not(.ios-phone) .main-content .schedule-pending-discard,
@@ -2247,7 +2247,7 @@ body.ios:not(.ios-phone) .main-content .always-on-chip svg{
     }
 
     body.ios:not(.ios-phone) .main-content .week-calendar-container{
-        border-radius: 10px;
+        border-radius: 8px;
     }
 
     body.ios:not(.ios-phone) .main-content .grid-header-row{
@@ -5576,7 +5576,7 @@ body.ios .blocklists-container {
     border: var(--blocklist-card-border) solid transparent;
     border-left-width: 0;
     background: var(--element-bg);
-    border-radius: 10px;
+    border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     transition: all 0.2s ease;
     cursor: grab;
@@ -5638,8 +5638,8 @@ body.ios .blocklists-container {
     width: 7px;
     align-self: stretch;
     margin-block: calc(-1 * (var(--blocklist-card-border) + var(--blocklist-card-padding-y)));
-    border-top-left-radius: 10px;
-    border-bottom-left-radius: 10px;
+    border-top-left-radius: 8px;
+    border-bottom-left-radius: 8px;
 }
 
 /* Status text on blocklist cards — "14H 49M LEFT", "IN 13H", "Always", etc.
@@ -6212,7 +6212,7 @@ body.mac #rebrand-onboarding .eula-title-bar > div[data-tauri-drag-region] {
     width: 100%;
     padding: 12px;
     border: none;
-    border-radius: 10px;
+    border-radius: 8px;
     background: var(--button-bg);
     color: #ffffff;
     font-family: inherit;
@@ -6269,7 +6269,7 @@ body.mac #rebrand-onboarding .eula-title-bar > div[data-tauri-drag-region] {
     padding: 18px 20px 16px;
     border: none;
     border-left: 4px solid var(--rebrand-card-border);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--rebrand-card-bg);
     text-align: left;
 }
@@ -6560,7 +6560,7 @@ body.ios #eula-onboarding .legal-onboarding-note {
 body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
     background: var(--redd-card);
     border: 1px solid rgba(var(--ink-rgb), 0.06);
-    border-radius: 16px;
+    border-radius: 12px;
     box-shadow: var(--redd-shadow-card-hover);
     padding: 18px var(--onboarding-align-inset) 16px;
     margin: 0;
@@ -6700,7 +6700,7 @@ body:not(.ios) .welcome-onboarding-title-text > .welcome-onboarding-subtitle {
 .welcome-onboarding-card{
     background: var(--redd-card);
     border: 1px solid rgba(var(--ink-rgb), 0.06);
-    border-radius: 16px;
+    border-radius: 12px;
     box-shadow: var(--redd-shadow-card-hover);
     padding: 18px var(--onboarding-align-inset) 16px;
 }
@@ -7172,7 +7172,7 @@ body.dark-mode .welcome-demo-toggle:hover{
 .onboarding-focus-card{
     background: rgba(255, 255, 255, 0.92);
     border: 1px solid rgba(10, 45, 123, 0.08);
-    border-radius: 18px;
+    border-radius: 12px;
     box-shadow: 0 10px 30px rgba(10, 45, 123, 0.08);
     padding: 30px 40px;
     margin: 20px 0 18px;
@@ -7616,7 +7616,7 @@ body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:d
     width: 100%;
     height: auto;
     margin-top: 14px;
-    border-radius: 10px;
+    border-radius: 8px;
 }
 
 .settings-enforcement-subsection-toggle .settings-enforcement-chevron{
@@ -7853,7 +7853,7 @@ body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:d
 
 .safari-duplicate-instructions{
     padding: 14px;
-    border-radius: 10px;
+    border-radius: 8px;
     border: 1px solid rgba(10, 45, 123, 0.1);
     background: var(--redd-card, #fff);
     display: flex;
@@ -8255,7 +8255,7 @@ body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:d
     padding: 14px 16px;
     background: rgba(10, 45, 123, 0.04);
     border: 1px solid rgba(10, 45, 123, 0.10);
-    border-radius: 10px;
+    border-radius: 8px;
     --enforcement-toggle-body-size: 12.5px;
 }
 
@@ -9016,7 +9016,7 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
 .eula-how-we-count summary:focus-visible{
     outline: 2px solid var(--accent-color);
     outline-offset: 2px;
-    border-radius: 3px;
+    border-radius: 4px;
 }
 
 .eula-how-we-count p{
@@ -9893,7 +9893,7 @@ body.ios .modal-content {
 
 .modal-content{
     background: var(--popover-bg);
-    border-radius: 16px;
+    border-radius: 12px;
     padding: 24px;
     width: 100%;
     max-width: 400px;
@@ -10971,7 +10971,7 @@ body:not(.handset-device) .start-confirm-modal{
     grid-template-columns: fit-content(50%) minmax(0, 1fr);
     margin-bottom: 16px;
     border: 1px solid var(--border-color);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--app-bg);
     overflow: hidden;
     --start-confirm-content-size: 14px;
@@ -11517,7 +11517,7 @@ body.dark-mode .schedule-overlay-badge--unsaved{
 
 .schedule-overlay-message-editor-wrap{
     border: 1px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: 8px;
     overflow: hidden;
     background: var(--surface-primary);
 }
@@ -11626,7 +11626,7 @@ body.dark-mode .schedule-overlay-badge--unsaved{
 .schedule-overlay-image-dropzone-preview{
     width: 56px;
     height: 56px;
-    border-radius: 10px;
+    border-radius: 8px;
     background: var(--surface-primary);
     display: flex;
     align-items: center;
@@ -11814,7 +11814,7 @@ body.dark-mode .schedule-overlay-record-level-bar.is-active{
     display: flex;
     justify-content: center;
     padding: 12px 16px;
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--app-bg);
 }
 
@@ -11825,7 +11825,7 @@ body.dark-mode .schedule-overlay-record-level-bar.is-active{
     margin: 0 auto;
     padding: 24px 20px 20px;
     gap: 14px;
-    border-radius: 18px;
+    border-radius: 12px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
@@ -12066,7 +12066,7 @@ body.dark-mode .modal-btn.black-btn:hover{
 .challenge-current-word .error-char{
     color: #ef4444;
     background: rgba(239, 68, 68, 0.18);
-    border-radius: 2px;
+    border-radius: 4px;
     white-space: pre;
 }
 
@@ -12154,7 +12154,7 @@ body.dark-mode .modal-btn.black-btn:hover{
     background: var(--redd-warm-grey);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 14px 16px;
     margin: -4px 0 16px;
     text-align: center;
@@ -12773,7 +12773,7 @@ body.dark-mode #settings-modal .settings-select{
     width: 22px;
     height: 14px;
     flex-shrink: 0;
-    border-radius: 3px;
+    border-radius: 4px;
     overflow: hidden;
 }
 
@@ -13144,7 +13144,7 @@ body.dark-mode #settings-modal-title{
     padding: 12px 14px;
     background: #e9f0ed;
     border: 1px solid #ccd8d2;
-    border-radius: 10px;
+    border-radius: 8px;
     color: #2d5a4c;
 }
 
@@ -13156,7 +13156,7 @@ body.dark-mode #settings-modal-title{
     padding: 12px 14px;
     background: #e9f0ed;
     border: 1px solid #ccd8d2;
-    border-radius: 10px;
+    border-radius: 8px;
     color: #2d5a4c;
 }
 
@@ -13584,7 +13584,7 @@ body:not(.ios) .settings-override-all-contents:not(.hidden){
     box-sizing: border-box;
     width: 100%;
     padding: 14px 10px;
-    border-radius: 10px;
+    border-radius: 8px;
     font-size: 13px;
     font-weight: 500;
     line-height: 1.2;
@@ -13838,7 +13838,7 @@ body.dark-mode #settings-modal .settings-help-btn .diagnostics-btn-spinner{
 
 #uninstall-confirm-modal .modal-btn{
     padding: 12px 16px;
-    border-radius: 10px;
+    border-radius: 8px;
     font-size: 15px;
 }
 
@@ -14075,7 +14075,7 @@ body.dark-mode #uninstall-confirm-modal .modal-btn.cancel-btn:hover{
 
 #mac-automation-intro-modal .modal-btn{
     padding: 12px 16px;
-    border-radius: 10px;
+    border-radius: 8px;
     font-size: 15px;
 }
 
@@ -14215,7 +14215,7 @@ body.dark-mode #mac-automation-intro-modal .modal-btn.cancel-btn:hover{
 #schedule-overlay-delete-modal .modal-btn,
 #editor-discard-modal .modal-btn{
     padding: 12px 16px;
-    border-radius: 10px;
+    border-radius: 8px;
     font-size: 15px;
 }
 
@@ -14555,7 +14555,7 @@ body.handset-device .main-content .now-btn{
     padding: 10px 18px;
     font-size: 16px;
     min-height: 44px;
-    border-radius: 10px;
+    border-radius: 8px;
     box-sizing: border-box;
 }
 
@@ -14569,7 +14569,7 @@ body.handset-device .main-content .popover-option{
 body.handset-device .main-content .blocklist-menu{
     min-width: 148px;
     padding: 6px;
-    border-radius: 10px;
+    border-radius: 8px;
 }
 
 body.handset-device .main-content .blocklist-menu-item{
@@ -14594,7 +14594,7 @@ body.handset-device .main-content .repeat-option{
 body.handset-device .modal-overlay .websites-import-menu{
     min-width: 220px;
     padding: 6px;
-    border-radius: 10px;
+    border-radius: 8px;
 }
 
 body.handset-device .modal-overlay .websites-import-menu-item{
@@ -14954,7 +14954,7 @@ body.ios-phone #blocklist-modal .custom-swatch .custom-icon{
     color: #1b3d4a;
     padding: 12px;
     border: 1px solid #d2d4d0;
-    border-radius: 14px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     gap: 16px;
@@ -15835,7 +15835,7 @@ body.app-blocking-warning-window-mode #app-blocking-warning-overlay.hidden{
     box-sizing: border-box;
     overflow: hidden;
     background: var(--element-bg);
-    border-radius: 24px;
+    border-radius: 12px;
     box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
     padding: 56px 48px 44px;
     text-align: center;
@@ -16450,7 +16450,7 @@ body.dark-mode .app-blocking-warning-card{
     display: flex;
     gap: 2px;
     padding: 3px;
-    border-radius: 10px;
+    border-radius: 8px;
     background: var(--redd-warm-grey);
 }
 
