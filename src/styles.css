@@ -12000,22 +12000,15 @@ body.dark-mode .schedule-overlay-record-level-bar.is-active{
 }
 
 /* Black button (shadcn primary style) */
+/* The main action in a modal (Start, Pause, Save alert): the design
+   system's main button in both themes, as --primary-btn-bg sets it. */
 .modal-btn.black-btn{
-    background: var(--redd-navy);
-    color: hsl(210, 40%, 98%);
+    background: var(--primary-btn-bg);
+    color: var(--primary-btn-text);
     border: none;
 }
 
 .modal-btn.black-btn:hover{
-    background: hsla(222.2, 47.4%, 11.2%, 0.9);
-}
-
-body.dark-mode .modal-btn.black-btn{
-    background: var(--primary-btn-bg);
-    color: var(--primary-btn-text);
-}
-
-body.dark-mode .modal-btn.black-btn:hover{
     background: var(--primary-btn-bg-hover);
 }
 
