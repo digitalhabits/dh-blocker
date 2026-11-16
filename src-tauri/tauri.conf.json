@@ -31,7 +31,9 @@
     "resources": {
       "blocked/blocked.html": "blocked/blocked.html",
       "blocked/blocked.js": "blocked/blocked.js",
-      "blocked/reddblock-icon.svg": "blocked/reddblock-icon.svg"
+      "blocked/reddblock-icon.svg": "blocked/reddblock-icon.svg",
+      "blocked/SchibstedGrotesk-Variable-latin.woff2": "blocked/SchibstedGrotesk-Variable-latin.woff2",
+      "blocked/SchibstedGrotesk-Variable-latin-ext.woff2": "blocked/SchibstedGrotesk-Variable-latin-ext.woff2"
     },
     "icon": [
       "icons/32x32.png",

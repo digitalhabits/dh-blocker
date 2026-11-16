@@ -31,6 +31,8 @@ checkedConfig.bundle.resources = {
   [source('blocked/blocked.html')]: 'blocked/blocked.html',
   [source('blocked/blocked.js')]: 'blocked/blocked.js',
   [source('blocked/reddblock-icon.svg')]: 'blocked/reddblock-icon.svg',
+  [source('blocked/SchibstedGrotesk-Variable-latin.woff2')]: 'blocked/SchibstedGrotesk-Variable-latin.woff2',
+  [source('blocked/SchibstedGrotesk-Variable-latin-ext.woff2')]: 'blocked/SchibstedGrotesk-Variable-latin-ext.woff2',
 };
 checkedConfig.bundle.icon = checkedConfig.bundle.icon.map((entry) => source(entry));
 checkedConfig.bundle.macOS.entitlements = source(checkedConfig.bundle.macOS.entitlements);
