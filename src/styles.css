@@ -3451,6 +3451,15 @@ body.dark-mode .blocklists-create-btn--secondary .blocklists-create-btn-icon{
     display: none;
 }
 
+/* When both groups show, start the "Always on (not shown):" group on its own line
+   instead of wrapping it in after the visibility chips. The pseudo-element of a
+   display: contents wrapper is still a flex item of .schedule-status-row. */
+.schedule-visibility-chips:not(.hidden) + .schedule-always-on-row:not(.hidden)::before{
+    content: "";
+    flex-basis: 100%;
+    height: 0;
+}
+
 .always-on-label{
     font-size: 13px;
 }
