@@ -14,6 +14,7 @@ import { installFocusSpaceTagBridges, setupFocusSpaceTagEditors } from './focus-
 import { handlePopoverOutsideClick } from './time-inputs.js';
 import { applyFocusSpaceEditorLanguage, confirmDiscardEditorEdits, editorHasUnsavedEdits, setupFocusSpaceEditor } from './focus-space-editor.js';
 import { loadData, saveData, syncBlockingState } from './persistence.js';
+import { isBackgroundClick } from './background-click.js';
 import { updateBlockedApps, acceptEula, checkScreentimeAuth, detectPlatform, ensureInstalledAppsCache, initializeIOSBlockingState, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility } from './blocking-platform.js';
 import { applyEnforcementDescCopy, applyMacAutomationIntroCopy, ensureExtensionSetupOnboardingShown, hasAcceptedEula, resetDevOnlyEulaAcceptance, returnToWelcomeFromEula, runDesktopOnboarding, runInitialOnboardingSequence, setupMacAutomationIntroModal, syncMigrationPostBackButtonVisibility, syncSetupBannerHeadline, welcomeFirefoxInstalled } from './onboarding.js';
 import {
@@ -365,17 +366,8 @@ function setupEventListeners() {
     document.addEventListener('pointerdown', (e) => { lastPressTarget = e.target; }, true);
 
     // Click on background to deselect blocklists
-    const KEEP_SELECTION_WITHIN = [
-        '.blocklist-card', '.scheduler-section', '.time-picker-container', '.schedule-block-panel',
-        '.repeat-dropdown-wrapper', '.repeat-dropdown-menu', '.modal-overlay', '.section-header',
-        '.footer', '.title-bar', '.week-calendar-section', '.time-popover', '.segment-time-field',
-        '.undo-toast', '.zoom-toast', '.update-banner',
-    ].join(',');
     document.addEventListener('click', (e) => {
-        // Don't deselect if the click — or the press it came from — was on
-        // interactive elements
-        if (e.target.closest(KEEP_SELECTION_WITHIN)) return;
-        if (lastPressTarget instanceof Element && lastPressTarget.closest(KEEP_SELECTION_WITHIN)) return;
+        if (!isBackgroundClick(e.target, lastPressTarget)) return;
 
         // Deselect blocklist if one is selected (asks first when there are unsaved edits)
         if (state.selectedBlocklistId) {
