@@ -315,7 +315,6 @@ pub fn is_protected_app_name(name: &str) -> bool {
 /// "Android Studio") while `sysinfo` reports the bundle executable
 /// (e.g. "studio") — also accept processes whose path lives inside
 /// `/Applications/<label>.app/`.
-#[cfg_attr(not(target_os = "macos"), allow(unused_variables))] // macOS-only branch below
 fn process_matches_app_label(
     label: &str,
     proc_name: &str,
@@ -324,18 +323,16 @@ fn process_matches_app_label(
     let label = strip_invisible_marks(label);
     let proc_name = strip_invisible_marks(proc_name);
     let stem = strip_exe_suffix(&proc_name);
-    if label.eq_ignore_ascii_case(&proc_name) || label.eq_ignore_ascii_case(stem) {
-        return true;
-    }
-    #[cfg(target_os = "macos")]
-    if let Some(exe) = proc_exe {
-        let exe_lower = exe.to_string_lossy().to_ascii_lowercase();
-        let needle = format!("/{}.app", label.to_ascii_lowercase());
-        if exe_lower.contains(&format!("{needle}/")) || exe_lower.ends_with(&needle) {
-            return true;
-        }
-    }
-    false
+    // One expression: with the macOS branch compiled out, an early `return true`
+    // followed by `false` trips clippy::needless_bool on Windows.
+    label.eq_ignore_ascii_case(&proc_name)
+        || label.eq_ignore_ascii_case(stem)
+        || (cfg!(target_os = "macos")
+            && proc_exe.is_some_and(|exe| {
+                let exe_lower = exe.to_string_lossy().to_ascii_lowercase();
+                let needle = format!("/{}.app", label.to_ascii_lowercase());
+                exe_lower.contains(&format!("{needle}/")) || exe_lower.ends_with(&needle)
+            }))
 }
 
 fn process_matches_blocked(
