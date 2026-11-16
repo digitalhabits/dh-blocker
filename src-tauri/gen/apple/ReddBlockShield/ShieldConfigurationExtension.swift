@@ -16,25 +16,38 @@ private enum ShieldSnapshotPresenter {
         return UIImage(named: "ShieldBrand", in: bundle, compatibleWith: nil) ?? UIImage(named: "ShieldBrand")
     }()
 
+    /// Palette of the website block page (`src-tauri/blocked/blocked.html`): light / dark per colour. If the shield
+    /// process cannot keep a dynamic colour, UIKit archives it resolved for the current appearance.
+    private static func themed(_ light: UInt32, _ dark: UInt32) -> UIColor {
+        func rgb(_ hex: UInt32) -> UIColor {
+            UIColor(red: CGFloat(hex >> 16 & 0xFF) / 255, green: CGFloat(hex >> 8 & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+        }
+        return UIColor { $0.userInterfaceStyle == .dark ? rgb(dark) : rgb(light) }
+    }
+
+    private static let pageBackground = themed(0xF5F1EA, 0x14202C)
+    private static let titleColor = themed(0x1B3D4A, 0xF5F0E8)
+    private static let subtitleColor = themed(0x1B3D4A, 0xE6E2D8)
+    /// Main-button green, as the app's main buttons in each theme; white title.
+    private static let brandPrimaryActionFill = themed(0x005D53, 0x399E90)
+    private static let brandPrimaryActionTitle = UIColor.white
+
     private static let titleLabel = ShieldConfiguration.Label(
         text: "Blocked by Digital Habits: Blocker",
-        color: .label
+        color: titleColor
     )
 
     private static let fallbackSubtitle = ShieldConfiguration.Label(
         text: "This content is restricted by Digital Habits: Blocker.",
-        color: .label
+        color: subtitleColor
     )
-
-    /// Brand primary action on the system shield (`#2A9D8F` fill, `#FFFFFF` title). iOS may soften at rest on material.
-    private static let brandPrimaryActionFill = UIColor(red: 42 / 255, green: 157 / 255, blue: 143 / 255, alpha: 1)
-    private static let brandPrimaryActionTitle = UIColor(red: 1, green: 1, blue: 1, alpha: 1)
 
     private static let fallbackConfiguration = shieldChromeConfiguration(subtitle: fallbackSubtitle)
 
     private static func shieldChromeConfiguration(subtitle: ShieldConfiguration.Label) -> ShieldConfiguration {
-        let backgroundBlurStyle: UIBlurEffect.Style? = .systemMaterial
-        let backgroundColor: UIColor? = .systemGroupedBackground
+        // Flat page colour like the block page, not frosted material over the blocked app.
+        let backgroundBlurStyle: UIBlurEffect.Style? = nil
+        let backgroundColor: UIColor? = pageBackground
         let icon: UIImage? = brandIcon
         let title: ShieldConfiguration.Label? = titleLabel
         let primaryButtonLabel: ShieldConfiguration.Label? = ShieldConfiguration.Label(
@@ -135,7 +148,7 @@ private enum ShieldSnapshotPresenter {
 
     private static func buildConfiguration(blockedName: String, attribution: ShieldAttribution, isApp: Bool) -> ShieldConfiguration {
         let subtitleText = truncate(makeSubtitle(blockedName: blockedName, attribution: attribution, isApp: isApp))
-        let subtitle = ShieldConfiguration.Label(text: subtitleText, color: .label)
+        let subtitle = ShieldConfiguration.Label(text: subtitleText, color: subtitleColor)
         return shieldChromeConfiguration(subtitle: subtitle)
     }
 
