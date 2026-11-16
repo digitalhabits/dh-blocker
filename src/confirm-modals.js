@@ -36,6 +36,15 @@ import {
 export const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
 export const START_CONFIRM_ICON_APP = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M10 4v4"></path><path d="M2 8h20"></path><path d="M6 4v4"></path></svg>`;
 export const START_FOCUS_SPACE_PLAY_ICON = `<svg class="start-block-btn-play-icon start-block-btn-leading" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`;
+// Inner shapes for #confirm-override-btn's icon, which follows its label: pause or stop.
+const OVERRIDE_ICON_PAUSE = '<rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect>';
+const OVERRIDE_ICON_STOP = '<rect x="3" y="3" width="18" height="18" rx="2"></rect>';
+
+function setOverrideConfirmIcon(shapes) {
+    const icon = document.querySelector('#confirm-override-btn .start-confirm-primary-icon');
+    if (icon) icon.innerHTML = shapes;
+}
+
 export const STOP_ACTION_SQUARE_ICON = `<svg class="start-block-btn-stop-icon start-block-btn-leading hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect></svg>`;
 
 export function setStartBlockBtnLeadingIcon(btn, mode) {
@@ -1433,6 +1442,7 @@ export function closeOverrideModal() {
     getChallengeController('override').reset();
     delete window.overrideScheduleId;
     setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
+    setOverrideConfirmIcon(OVERRIDE_ICON_STOP);
     const confirmBtn = document.getElementById('confirm-override-btn');
     if (confirmBtn) confirmBtn.disabled = false;
 }
@@ -1740,4 +1750,6 @@ export function updatePauseDialogDuration() {
     getChallengeController('override').setConfirmLabel(never
         ? tSettingsFmt('switchTurnOffFmt', { name: space?.name || '' })
         : tSettingsFmt('pauseForDuration', { duration: formatUnlockDurationLabel(Number(select.value)) }));
+    // "Pause for …" shows pause bars; "Turn off …" (never) keeps the stop square.
+    setOverrideConfirmIcon(never ? OVERRIDE_ICON_STOP : OVERRIDE_ICON_PAUSE);
 }
