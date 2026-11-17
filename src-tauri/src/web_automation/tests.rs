@@ -2,10 +2,6 @@ use super::*;
 use crate::block_page::*;
 use std::collections::VecDeque;
 
-/// One planned tab action: `(window_index, tab_index, url)` — the tuple
-/// `plan_actions` returns and `apply_actions` consumes.
-type TabAction = (u32, u32, String);
-
 struct FakeIo {
     blocks: Option<Vec<BlockInfo>>,
     events: bool,
@@ -79,7 +75,7 @@ impl AutomationIo for FakeIo {
     fn apply_actions(
         &mut self,
         browser: SupportedBrowser,
-        actions: &[(u32, u32, String)],
+        actions: &[TabAction],
     ) -> Result<(), AutomationError> {
         self.apply_calls.push((browser, actions.to_vec()));
         self.applies
@@ -109,7 +105,7 @@ fn tick_shared() -> Arc<Mutex<Shared>> {
 
 fn parked_tab(base: &str, original: &str) -> Tab {
     Tab {
-        window_index: 1,
+        window_id: "1".to_string(),
         tab_index: 1,
         url: build_blocked_url(base, original, &[]),
     }
@@ -163,7 +159,7 @@ fn pause_restore_retries_until_a_pass_finds_nothing_left_parked() {
     io.queue_read(
         browser,
         Ok(vec![Tab {
-            window_index: 1,
+            window_id: "1".to_string(),
             tab_index: 1,
             url: original.to_string(),
         }]),
@@ -689,19 +685,19 @@ fn plan_actions_restores_parked_tab_when_original_no_longer_blocked() {
     let original = "https://www.youtube.com/watch?v=1";
     let parked = build_blocked_url(base, original, &[]);
     let tabs = vec![Tab {
-        window_index: 1,
+        window_id: "1".to_string(),
         tab_index: 1,
         url: parked,
     }];
 
     // No active website enforcement → restore.
     let actions = plan_actions(&tabs, &[], base);
-    assert_eq!(actions, vec![(1, 1, original.to_string())]);
+    assert_eq!(actions, vec![("1".to_string(), 1, original.to_string())]);
 
     // Another blocklist still active for a different site → still restore youtube.
     let other = vec![block("other", "blocklist", &["reddit.com"], 10, 500)];
     let actions = plan_actions(&tabs, &other, base);
-    assert_eq!(actions, vec![(1, 1, original.to_string())]);
+    assert_eq!(actions, vec![("1".to_string(), 1, original.to_string())]);
 
     // Youtube itself still blocked → do not restore.
     let still = vec![block("yt", "blocklist", &["youtube.com"], 10, 500)];
@@ -782,21 +778,214 @@ fn file_url_encodes_spaces() {
 #[test]
 fn parse_tab_rows_keeps_empty_urls_and_skips_malformed_rows() {
     // The joined output has no trailing linefeed, and Safari's empty
-    // tabs come back as an empty third field.
-    let tabs =
-        parse_tab_rows("1\t1\thttps://a.example/\n1\t2\t\nnot a row\n2\t1\thttps://b.example/?q=1");
-    let got: Vec<(u32, u32, &str)> = tabs
+    // tabs come back as an empty third field. The first field is the
+    // window's AppleScript id, kept as text.
+    let tabs = parse_tab_rows(
+        "7\t1\thttps://a.example/\n7\t2\t\nnot a row\n\t1\thttps://no-window.example/\n3\t1\thttps://b.example/?q=1",
+    );
+    let got: Vec<(&str, u32, &str)> = tabs
         .iter()
-        .map(|t| (t.window_index, t.tab_index, t.url.as_str()))
+        .map(|t| (t.window_id.as_str(), t.tab_index, t.url.as_str()))
         .collect();
     assert_eq!(
         got,
         vec![
-            (1, 1, "https://a.example/"),
-            (1, 2, ""),
-            (2, 1, "https://b.example/?q=1"),
+            ("7", 1, "https://a.example/"),
+            ("7", 2, ""),
+            ("3", 1, "https://b.example/?q=1"),
         ]
     );
+}
+
+#[test]
+fn redirects_address_windows_by_id_not_stacking_position() {
+    // `window 2` means "second in the stacking order right now", and each
+    // `set URL` raises the window it navigates. Addressing by position
+    // sent later redirects in a batch (and on later ticks) to whichever
+    // window had moved into that slot, so multi-window Brave/Chrome kept
+    // swapping the front window.
+    let script = apply_actions_script(
+        SupportedBrowser::Brave,
+        &[
+            ("12".to_string(), 3, "file:///blocked.html?a".to_string()),
+            ("5".to_string(), 1, "file:///blocked.html?b".to_string()),
+            ("12".to_string(), 1, "file:///blocked.html?c".to_string()),
+        ],
+    );
+    assert!(
+        !script.contains("of window 12") && !script.contains("of window 5"),
+        "redirects must not address a window by position:\n{script}"
+    );
+    assert!(script.contains("id of every window"), "{script}");
+    // Both of window 12's tabs sit under one id match, ahead of window 5's.
+    let w12 = script
+        .find("if _key is \"12\" then")
+        .expect("window 12 matched by id");
+    let w5 = script
+        .find("if _key is \"5\" then")
+        .expect("window 5 matched by id");
+    assert!(w12 < w5);
+    assert_eq!(script.matches("if _key is \"12\" then").count(), 1);
+    let w12_block = &script[w12..w5];
+    assert!(w12_block.contains("set URL of tab 3 of window id _wid to \"file:///blocked.html?a\""));
+    assert!(w12_block.contains("set URL of tab 1 of window id _wid to \"file:///blocked.html?c\""));
+    assert!(
+        script[w5..].contains("set URL of tab 1 of window id _wid to \"file:///blocked.html?b\"")
+    );
+}
+
+#[test]
+fn apply_script_resolves_window_ids_before_iterating() {
+    // `repeat with _ref in (id of every window)` hands the loop lazy
+    // references like `item 1 of id of every window`. Safari resolves
+    // `contents of _ref`; Brave fails with -1700 ("Can't make item 1 of id
+    // of every window into type specifier"), which aborted the whole batch
+    // so no blocked tab was redirected. Binding the list to a variable
+    // first makes the browser return concrete ids.
+    let script = apply_actions_script(
+        SupportedBrowser::Brave,
+        &[("12".to_string(), 1, "file:///blocked.html".to_string())],
+    );
+    assert!(
+        !script.contains("repeat with _ref in (id of every window)"),
+        "{script}"
+    );
+    let bind = script
+        .find("set _ids to id of every window")
+        .expect("window ids bound to a variable");
+    let repeat = script
+        .find("repeat with _ref in _ids")
+        .expect("loop iterates the bound list");
+    assert!(bind < repeat, "{script}");
+}
+
+/// Live round trip against a real browser: `setup` opens two throwaway
+/// windows (A at example.com, B at example.org, B in front) and returns
+/// their ids joined by "|". `tab` inside a browser's `tell` block is its
+/// tab class, not a tab character, hence the "|". The real read script
+/// must report both windows by id, the real apply script must redirect
+/// background window A only, and both windows are closed even when an
+/// assertion is about to fail.
+fn assert_live_background_redirect(browser: SupportedBrowser, setup: &str) {
+    let app = browser.applescript_name();
+    // Not `run_osascript`: its 8s limit is shorter than a cold browser
+    // launch plus two page loads.
+    let out = std::process::Command::new("osascript")
+        .args(["-e", setup])
+        .output()
+        .expect("osascript runs");
+    assert!(out.status.success(), "browser opens two windows: {out:?}");
+    let out = String::from_utf8(out.stdout).expect("utf-8 ids");
+    let (id_a, id_b) = out.trim().split_once('|').expect("two ids");
+    let (id_a, id_b) = (id_a.to_string(), id_b.to_string());
+    let read = run_osascript(&read_tabs_script(browser)).map(|o| parse_tab_rows(&o));
+    let applied = run_osascript(&apply_actions_script(
+        browser,
+        &[(
+            id_a.clone(),
+            1,
+            "https://example.net/?redirected".to_string(),
+        )],
+    ));
+    std::thread::sleep(Duration::from_secs(2));
+    // Windows are matched as text so the same script works whether the
+    // browser types ids as numbers (Safari) or text (Chromium).
+    let check = format!(
+        r#"tell application "{app}"
+  set _a to ""
+  set _b to ""
+  repeat with _w in (get every window)
+    set _k to (id of _w) as text
+    if _k is "{id_a}" then
+      set _a to URL of tab 1 of _w
+      close _w
+    else if _k is "{id_b}" then
+      set _b to URL of tab 1 of _w
+      close _w
+    end if
+  end repeat
+  return _a & "|" & _b
+end tell"#
+    );
+    let urls = run_osascript(&check).expect("browser reports and closes the windows");
+    let tabs = read.expect("read script runs against the browser");
+    for (id, url) in [
+        (&id_a, "https://example.com/?A"),
+        (&id_b, "https://example.org/?B"),
+    ] {
+        assert!(
+            tabs.iter()
+                .any(|t| &t.window_id == id && t.tab_index == 1 && t.url == url),
+            "read script reports window {id} at {url}: {tabs:?}"
+        );
+    }
+    applied.expect("apply script runs against the browser");
+    let (url_a, url_b) = urls.trim().split_once('|').expect("two urls");
+    assert_eq!(url_a, "https://example.net/?redirected");
+    assert_eq!(url_b, "https://example.org/?B");
+}
+
+#[test]
+#[ignore = "drives real Brave windows; run by hand on a Mac with Brave installed"]
+fn live_brave_redirects_a_background_window_by_id() {
+    // Iterating `(id of every window)` directly failed here with -1700.
+    assert_live_background_redirect(
+        SupportedBrowser::Brave,
+        r#"tell application "Brave Browser"
+  set wA to make new window
+  set URL of active tab of wA to "https://example.com/?A"
+  set wB to make new window
+  set URL of active tab of wB to "https://example.org/?B"
+  delay 2
+  return ((id of wA) as text) & "|" & ((id of wB) as text)
+end tell"#,
+    );
+}
+
+#[test]
+#[ignore = "drives real Safari windows; run by hand on a Mac"]
+fn live_safari_redirects_a_background_window_by_id() {
+    // Safari types window ids as integers, unlike Chromium's text ids.
+    assert_live_background_redirect(
+        SupportedBrowser::Safari,
+        // A cold launch also opens Safari's own start window, so `front
+        // window` is racy; each new window is the id that was not there
+        // before.
+        r#"on newWindowId(_before)
+  tell application "Safari"
+    repeat 20 times
+      repeat with _i in (get id of every window)
+        if _before does not contain (contents of _i) then return contents of _i
+      end repeat
+      delay 0.25
+    end repeat
+  end tell
+  error "no new Safari window"
+end newWindowId
+tell application "Safari"
+  launch
+  delay 1
+  set _before to id of every window
+  make new document with properties {URL:"https://example.com/?A"}
+end tell
+set idA to newWindowId(_before)
+tell application "Safari"
+  set _before to id of every window
+  make new document with properties {URL:"https://example.org/?B"}
+end tell
+set idB to newWindowId(_before)
+delay 2
+return (idA as text) & "|" & (idB as text)"#,
+    );
+}
+
+#[test]
+fn apply_script_escapes_the_window_id() {
+    let script = apply_actions_script(
+        SupportedBrowser::Safari,
+        &[("a\"b".to_string(), 1, "https://x.example/".to_string())],
+    );
+    assert!(script.contains(r#"if _key is "a\"b" then"#), "{script}");
 }
 
 #[test]
@@ -827,6 +1016,20 @@ fn read_tabs_script_runs_against_safari() {
     let out = run_osascript(&read_tabs_script(SupportedBrowser::Safari))
         .expect("read script compiles and runs against Safari's dictionary");
     assert!(parse_tab_rows(&out).is_empty());
+}
+
+#[test]
+fn apply_script_runs_against_safari() {
+    // Same guard as the read test: compiles the `window id` addressing
+    // against a real dictionary without sending Safari an Apple Event.
+    if running_supported_browsers().contains(&SupportedBrowser::Safari) {
+        return;
+    }
+    let script = apply_actions_script(
+        SupportedBrowser::Safari,
+        &[("1".to_string(), 1, "https://a.example/?q=1&r=2".to_string())],
+    );
+    run_osascript(&script).expect("apply script compiles and runs against Safari's dictionary");
 }
 
 #[test]
