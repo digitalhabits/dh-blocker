@@ -859,48 +859,124 @@ fn apply_script_resolves_window_ids_before_iterating() {
     assert!(bind < repeat, "{script}");
 }
 
-#[test]
-#[ignore = "drives a real Brave window; run by hand on a Mac with Brave open"]
-fn apply_script_redirects_a_background_brave_window() {
-    // Opens two throwaway windows, redirects the background one through
-    // the real apply script, and closes both. Needs Automation consent for
-    // the test runner to control Brave.
-    // `tab` inside a Brave `tell` block is its tab class, not a tab
-    // character, so these scripts join their results with "|".
-    let setup = r#"tell application "Brave Browser"
-  set wA to make new window
-  set URL of active tab of wA to "https://example.com/?A"
-  set wB to make new window
-  set URL of active tab of wB to "https://example.org/?B"
-  delay 1
-  return ((id of wA) as text) & "|" & ((id of wB) as text)
-end tell"#;
-    let out = run_osascript(setup).expect("Brave opens two windows");
+/// Live round trip against a real browser: `setup` opens two throwaway
+/// windows (A at example.com, B at example.org, B in front) and returns
+/// their ids joined by "|". `tab` inside a browser's `tell` block is its
+/// tab class, not a tab character, hence the "|". The real read script
+/// must report both windows by id, the real apply script must redirect
+/// background window A only, and both windows are closed even when an
+/// assertion is about to fail.
+fn assert_live_background_redirect(browser: SupportedBrowser, setup: &str) {
+    let app = browser.applescript_name();
+    // Not `run_osascript`: its 8s limit is shorter than a cold browser
+    // launch plus two page loads.
+    let out = std::process::Command::new("osascript")
+        .args(["-e", setup])
+        .output()
+        .expect("osascript runs");
+    assert!(out.status.success(), "browser opens two windows: {out:?}");
+    let out = String::from_utf8(out.stdout).expect("utf-8 ids");
     let (id_a, id_b) = out.trim().split_once('|').expect("two ids");
     let (id_a, id_b) = (id_a.to_string(), id_b.to_string());
+    let read = run_osascript(&read_tabs_script(browser)).map(|o| parse_tab_rows(&o));
     let applied = run_osascript(&apply_actions_script(
-        SupportedBrowser::Brave,
+        browser,
         &[(
             id_a.clone(),
             1,
             "https://example.net/?redirected".to_string(),
         )],
     ));
-    std::thread::sleep(Duration::from_secs(1));
+    std::thread::sleep(Duration::from_secs(2));
+    // Windows are matched as text so the same script works whether the
+    // browser types ids as numbers (Safari) or text (Chromium).
     let check = format!(
-        r#"tell application "Brave Browser"
-  set _a to URL of tab 1 of window id "{id_a}"
-  set _b to URL of tab 1 of window id "{id_b}"
-  close window id "{id_a}"
-  close window id "{id_b}"
+        r#"tell application "{app}"
+  set _a to ""
+  set _b to ""
+  repeat with _w in (get every window)
+    set _k to (id of _w) as text
+    if _k is "{id_a}" then
+      set _a to URL of tab 1 of _w
+      close _w
+    else if _k is "{id_b}" then
+      set _b to URL of tab 1 of _w
+      close _w
+    end if
+  end repeat
   return _a & "|" & _b
 end tell"#
     );
-    let urls = run_osascript(&check).expect("Brave reports and closes the windows");
-    applied.expect("apply script runs against Brave");
+    let urls = run_osascript(&check).expect("browser reports and closes the windows");
+    let tabs = read.expect("read script runs against the browser");
+    for (id, url) in [
+        (&id_a, "https://example.com/?A"),
+        (&id_b, "https://example.org/?B"),
+    ] {
+        assert!(
+            tabs.iter()
+                .any(|t| &t.window_id == id && t.tab_index == 1 && t.url == url),
+            "read script reports window {id} at {url}: {tabs:?}"
+        );
+    }
+    applied.expect("apply script runs against the browser");
     let (url_a, url_b) = urls.trim().split_once('|').expect("two urls");
     assert_eq!(url_a, "https://example.net/?redirected");
     assert_eq!(url_b, "https://example.org/?B");
+}
+
+#[test]
+#[ignore = "drives real Brave windows; run by hand on a Mac with Brave installed"]
+fn live_brave_redirects_a_background_window_by_id() {
+    // Iterating `(id of every window)` directly failed here with -1700.
+    assert_live_background_redirect(
+        SupportedBrowser::Brave,
+        r#"tell application "Brave Browser"
+  set wA to make new window
+  set URL of active tab of wA to "https://example.com/?A"
+  set wB to make new window
+  set URL of active tab of wB to "https://example.org/?B"
+  delay 2
+  return ((id of wA) as text) & "|" & ((id of wB) as text)
+end tell"#,
+    );
+}
+
+#[test]
+#[ignore = "drives real Safari windows; run by hand on a Mac"]
+fn live_safari_redirects_a_background_window_by_id() {
+    // Safari types window ids as integers, unlike Chromium's text ids.
+    assert_live_background_redirect(
+        SupportedBrowser::Safari,
+        // A cold launch also opens Safari's own start window, so `front
+        // window` is racy; each new window is the id that was not there
+        // before.
+        r#"on newWindowId(_before)
+  tell application "Safari"
+    repeat 20 times
+      repeat with _i in (get id of every window)
+        if _before does not contain (contents of _i) then return contents of _i
+      end repeat
+      delay 0.25
+    end repeat
+  end tell
+  error "no new Safari window"
+end newWindowId
+tell application "Safari"
+  launch
+  delay 1
+  set _before to id of every window
+  make new document with properties {URL:"https://example.com/?A"}
+end tell
+set idA to newWindowId(_before)
+tell application "Safari"
+  set _before to id of every window
+  make new document with properties {URL:"https://example.org/?B"}
+end tell
+set idB to newWindowId(_before)
+delay 2
+return (idA as text) & "|" & (idB as text)"#,
+    );
 }
 
 #[test]
