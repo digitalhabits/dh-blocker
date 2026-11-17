@@ -692,12 +692,12 @@ fn plan_actions_restores_parked_tab_when_original_no_longer_blocked() {
 
     // No active website enforcement → restore.
     let actions = plan_actions(&tabs, &[], base);
-    assert_eq!(actions, vec![(1, 1, original.to_string())]);
+    assert_eq!(actions, vec![("1".to_string(), 1, original.to_string())]);
 
     // Another blocklist still active for a different site → still restore youtube.
     let other = vec![block("other", "blocklist", &["reddit.com"], 10, 500)];
     let actions = plan_actions(&tabs, &other, base);
-    assert_eq!(actions, vec![(1, 1, original.to_string())]);
+    assert_eq!(actions, vec![("1".to_string(), 1, original.to_string())]);
 
     // Youtube itself still blocked → do not restore.
     let still = vec![block("yt", "blocklist", &["youtube.com"], 10, 500)];
