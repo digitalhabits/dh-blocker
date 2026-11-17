@@ -934,7 +934,10 @@ fn apply_actions_script(browser: SupportedBrowser, actions: &[TabAction]) -> Str
     format!(
         r#"if application "{app}" is running then
   tell application "{app}"
-    repeat with _ref in (id of every window)
+    -- Bind the ids first: iterating `(id of every window)` directly
+    -- yields lazy references Brave cannot resolve (-1700).
+    set _ids to id of every window
+    repeat with _ref in _ids
       set _wid to contents of _ref
       set _key to _wid as text
 {body}    end repeat

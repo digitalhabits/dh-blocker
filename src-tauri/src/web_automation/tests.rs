@@ -835,6 +835,75 @@ fn redirects_address_windows_by_id_not_stacking_position() {
 }
 
 #[test]
+fn apply_script_resolves_window_ids_before_iterating() {
+    // `repeat with _ref in (id of every window)` hands the loop lazy
+    // references like `item 1 of id of every window`. Safari resolves
+    // `contents of _ref`; Brave fails with -1700 ("Can't make item 1 of id
+    // of every window into type specifier"), which aborted the whole batch
+    // so no blocked tab was redirected. Binding the list to a variable
+    // first makes the browser return concrete ids.
+    let script = apply_actions_script(
+        SupportedBrowser::Brave,
+        &[("12".to_string(), 1, "file:///blocked.html".to_string())],
+    );
+    assert!(
+        !script.contains("repeat with _ref in (id of every window)"),
+        "{script}"
+    );
+    let bind = script
+        .find("set _ids to id of every window")
+        .expect("window ids bound to a variable");
+    let repeat = script
+        .find("repeat with _ref in _ids")
+        .expect("loop iterates the bound list");
+    assert!(bind < repeat, "{script}");
+}
+
+#[test]
+#[ignore = "drives a real Brave window; run by hand on a Mac with Brave open"]
+fn apply_script_redirects_a_background_brave_window() {
+    // Opens two throwaway windows, redirects the background one through
+    // the real apply script, and closes both. Needs Automation consent for
+    // the test runner to control Brave.
+    // `tab` inside a Brave `tell` block is its tab class, not a tab
+    // character, so these scripts join their results with "|".
+    let setup = r#"tell application "Brave Browser"
+  set wA to make new window
+  set URL of active tab of wA to "https://example.com/?A"
+  set wB to make new window
+  set URL of active tab of wB to "https://example.org/?B"
+  delay 1
+  return ((id of wA) as text) & "|" & ((id of wB) as text)
+end tell"#;
+    let out = run_osascript(setup).expect("Brave opens two windows");
+    let (id_a, id_b) = out.trim().split_once('|').expect("two ids");
+    let (id_a, id_b) = (id_a.to_string(), id_b.to_string());
+    let applied = run_osascript(&apply_actions_script(
+        SupportedBrowser::Brave,
+        &[(
+            id_a.clone(),
+            1,
+            "https://example.net/?redirected".to_string(),
+        )],
+    ));
+    std::thread::sleep(Duration::from_secs(1));
+    let check = format!(
+        r#"tell application "Brave Browser"
+  set _a to URL of tab 1 of window id "{id_a}"
+  set _b to URL of tab 1 of window id "{id_b}"
+  close window id "{id_a}"
+  close window id "{id_b}"
+  return _a & "|" & _b
+end tell"#
+    );
+    let urls = run_osascript(&check).expect("Brave reports and closes the windows");
+    applied.expect("apply script runs against Brave");
+    let (url_a, url_b) = urls.trim().split_once('|').expect("two urls");
+    assert_eq!(url_a, "https://example.net/?redirected");
+    assert_eq!(url_b, "https://example.org/?B");
+}
+
+#[test]
 fn apply_script_escapes_the_window_id() {
     let script = apply_actions_script(
         SupportedBrowser::Safari,
