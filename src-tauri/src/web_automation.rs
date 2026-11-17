@@ -40,7 +40,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use crate::block_page::{plan_actions, Tab};
+use crate::block_page::{plan_actions, Tab, TabAction};
 pub use crate::block_page::{url_is_blocked, web_enforcement_active};
 use crate::native_host::{self, BlockInfo};
 
@@ -457,7 +457,7 @@ trait AutomationIo {
     fn apply_actions(
         &mut self,
         browser: SupportedBrowser,
-        actions: &[(u32, u32, String)],
+        actions: &[TabAction],
     ) -> Result<(), AutomationError>;
     fn set_permission(
         &mut self,
@@ -504,7 +504,7 @@ impl AutomationIo for ProductionAutomationIo<'_> {
     fn apply_actions(
         &mut self,
         browser: SupportedBrowser,
-        actions: &[(u32, u32, String)],
+        actions: &[TabAction],
     ) -> Result<(), AutomationError> {
         apply_actions(browser, actions)
     }
@@ -807,7 +807,16 @@ fn read_tabs_script(browser: SupportedBrowser) -> String {
     // round-trip per tab per tick — with many tabs open, by far the
     // dominant CPU/battery cost of this watcher, on both sides of the
     // event. Tab indices are positional in the returned list, matching
-    // the `tab <i> of window <w>` addressing `apply_actions` uses.
+    // the `tab <i> of window id <w>` addressing `apply_actions` uses.
+    //
+    // Windows are reported by `id`, never by position. `window <n>` means
+    // the n-th window in the current stacking order, which changes
+    // whenever the user switches windows, and in Chromium browsers a
+    // scripted `set URL` can itself raise the window it navigates. Positions
+    // read on one tick then name different windows by the time the
+    // redirects run: with several windows open, redirects landed in the
+    // wrong window, raised it, and reordered the windows again, so they
+    // took turns coming to the front. Ids stay fixed for a window's life.
     // Safari reports `missing value` for empty tabs; the `as text`
     // coercion is wrapped in `try` so those rows degrade to "".
     //
@@ -828,15 +837,16 @@ on run
   if application "{app}" is running then
     with timeout of {timeout} seconds
       tell application "{app}"
-        set _wi to 0
-        repeat with w in windows
-          set _wi to _wi + 1
+        set _ids to id of every window
+        repeat with _ref in _ids
+          set _wid to contents of _ref
           try
-            set _urls to URL of every tab of w
+            set _urls to URL of every tab of window id _wid
           on error _msg number _num
             if _num is -1712 then error _msg number _num
             set _urls to {{}}
           end try
+          set _wi to _wid as text
           set _ti to 0
           repeat with _u in _urls
             set _ti to _ti + 1
@@ -844,7 +854,7 @@ on run
             try
               set _u_text to _u as text
             end try
-            set end of _rows to (_wi as text) & _sep & _ti & _sep & _u_text
+            set end of _rows to _wi & _sep & _ti & _sep & _u_text
           end repeat
         end repeat
       end tell
@@ -865,12 +875,12 @@ fn parse_tab_rows(out: &str) -> Vec<Tab> {
             continue;
         }
         let mut parts = line.splitn(3, FIELD_SEP);
-        let wi = parts.next().and_then(|s| s.trim().parse::<u32>().ok());
+        let wi = parts.next().map(str::trim).filter(|s| !s.is_empty());
         let ti = parts.next().and_then(|s| s.trim().parse::<u32>().ok());
         let url = parts.next().unwrap_or("").to_string();
-        if let (Some(window_index), Some(tab_index)) = (wi, ti) {
+        if let (Some(window_id), Some(tab_index)) = (wi, ti) {
             tabs.push(Tab {
-                window_index,
+                window_id: window_id.to_string(),
                 tab_index,
                 url,
             });
@@ -884,31 +894,54 @@ fn read_tabs(browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
     Ok(parse_tab_rows(&out))
 }
 
-fn apply_actions(
-    browser: SupportedBrowser,
-    actions: &[(u32, u32, String)],
-) -> Result<(), AutomationError> {
-    let app_name = browser.applescript_name();
-    let mut body = String::new();
-    for (wi, ti, url) in actions {
-        // Each set is wrapped in `try` so one stale index (a tab the
-        // user closed mid-tick) doesn't abort the whole batch.
-        body.push_str(&format!(
-            "  try\n    set URL of tab {ti} of window {wi} to {url}\n  end try\n",
-            ti = ti,
-            wi = wi,
-            url = applescript_string_expr(url)
-        ));
+fn apply_actions(browser: SupportedBrowser, actions: &[TabAction]) -> Result<(), AutomationError> {
+    run_osascript(&apply_actions_script(browser, actions)).map(|_| ())
+}
+
+/// Build the redirect script for one browser's batch of tab actions.
+///
+/// Windows are matched by `id` (see `read_tabs_script` for why positions
+/// cannot be used). The id is compared as text but addressed with the
+/// value the browser itself returned, so the script never has to know
+/// whether a browser types its window ids as numbers or text: a text id
+/// handed to a browser that stores numbers would match no window and
+/// silently leave the tab unblocked. A window closed since the read has
+/// no matching id and its actions are skipped; the next tick re-plans.
+fn apply_actions_script(browser: SupportedBrowser, actions: &[TabAction]) -> String {
+    let mut by_window: Vec<(&str, Vec<(u32, &str)>)> = Vec::new();
+    for (wid, ti, url) in actions {
+        match by_window.iter_mut().find(|(w, _)| w == wid) {
+            Some((_, list)) => list.push((*ti, url)),
+            None => by_window.push((wid, vec![(*ti, url)])),
+        }
     }
-    let script = format!(
+    let mut body = String::new();
+    for (wid, list) in by_window {
+        body.push_str(&format!(
+            "      if _key is {key} then\n",
+            key = applescript_string_expr(wid)
+        ));
+        for (ti, url) in list {
+            // Each set is wrapped in `try` so one stale index (a tab the
+            // user closed mid-tick) doesn't abort the whole batch.
+            body.push_str(&format!(
+                "        try\n          set URL of tab {ti} of window id _wid to {url}\n        end try\n",
+                url = applescript_string_expr(url)
+            ));
+        }
+        body.push_str("      end if\n");
+    }
+    format!(
         r#"if application "{app}" is running then
   tell application "{app}"
-{body}  end tell
+    repeat with _ref in (id of every window)
+      set _wid to contents of _ref
+      set _key to _wid as text
+{body}    end repeat
+  end tell
 end if"#,
-        app = app_name,
-        body = body
-    );
-    run_osascript(&script).map(|_| ())
+        app = browser.applescript_name(),
+    )
 }
 
 /// Run an AppleScript via osascript, classifying the not-authorized

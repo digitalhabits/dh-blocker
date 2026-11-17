@@ -2,10 +2,6 @@ use super::*;
 use crate::block_page::*;
 use std::collections::VecDeque;
 
-/// One planned tab action: `(window_index, tab_index, url)` — the tuple
-/// `plan_actions` returns and `apply_actions` consumes.
-type TabAction = (u32, u32, String);
-
 struct FakeIo {
     blocks: Option<Vec<BlockInfo>>,
     events: bool,
@@ -79,7 +75,7 @@ impl AutomationIo for FakeIo {
     fn apply_actions(
         &mut self,
         browser: SupportedBrowser,
-        actions: &[(u32, u32, String)],
+        actions: &[TabAction],
     ) -> Result<(), AutomationError> {
         self.apply_calls.push((browser, actions.to_vec()));
         self.applies
@@ -109,7 +105,7 @@ fn tick_shared() -> Arc<Mutex<Shared>> {
 
 fn parked_tab(base: &str, original: &str) -> Tab {
     Tab {
-        window_index: 1,
+        window_id: "1".to_string(),
         tab_index: 1,
         url: build_blocked_url(base, original, &[]),
     }
@@ -163,7 +159,7 @@ fn pause_restore_retries_until_a_pass_finds_nothing_left_parked() {
     io.queue_read(
         browser,
         Ok(vec![Tab {
-            window_index: 1,
+            window_id: "1".to_string(),
             tab_index: 1,
             url: original.to_string(),
         }]),
@@ -689,7 +685,7 @@ fn plan_actions_restores_parked_tab_when_original_no_longer_blocked() {
     let original = "https://www.youtube.com/watch?v=1";
     let parked = build_blocked_url(base, original, &[]);
     let tabs = vec![Tab {
-        window_index: 1,
+        window_id: "1".to_string(),
         tab_index: 1,
         url: parked,
     }];
@@ -782,21 +778,69 @@ fn file_url_encodes_spaces() {
 #[test]
 fn parse_tab_rows_keeps_empty_urls_and_skips_malformed_rows() {
     // The joined output has no trailing linefeed, and Safari's empty
-    // tabs come back as an empty third field.
-    let tabs =
-        parse_tab_rows("1\t1\thttps://a.example/\n1\t2\t\nnot a row\n2\t1\thttps://b.example/?q=1");
-    let got: Vec<(u32, u32, &str)> = tabs
+    // tabs come back as an empty third field. The first field is the
+    // window's AppleScript id, kept as text.
+    let tabs = parse_tab_rows(
+        "7\t1\thttps://a.example/\n7\t2\t\nnot a row\n\t1\thttps://no-window.example/\n3\t1\thttps://b.example/?q=1",
+    );
+    let got: Vec<(&str, u32, &str)> = tabs
         .iter()
-        .map(|t| (t.window_index, t.tab_index, t.url.as_str()))
+        .map(|t| (t.window_id.as_str(), t.tab_index, t.url.as_str()))
         .collect();
     assert_eq!(
         got,
         vec![
-            (1, 1, "https://a.example/"),
-            (1, 2, ""),
-            (2, 1, "https://b.example/?q=1"),
+            ("7", 1, "https://a.example/"),
+            ("7", 2, ""),
+            ("3", 1, "https://b.example/?q=1"),
         ]
     );
+}
+
+#[test]
+fn redirects_address_windows_by_id_not_stacking_position() {
+    // `window 2` means "second in the stacking order right now", and each
+    // `set URL` raises the window it navigates. Addressing by position
+    // sent later redirects in a batch (and on later ticks) to whichever
+    // window had moved into that slot, so multi-window Brave/Chrome kept
+    // swapping the front window.
+    let script = apply_actions_script(
+        SupportedBrowser::Brave,
+        &[
+            ("12".to_string(), 3, "file:///blocked.html?a".to_string()),
+            ("5".to_string(), 1, "file:///blocked.html?b".to_string()),
+            ("12".to_string(), 1, "file:///blocked.html?c".to_string()),
+        ],
+    );
+    assert!(
+        !script.contains("of window 12") && !script.contains("of window 5"),
+        "redirects must not address a window by position:\n{script}"
+    );
+    assert!(script.contains("id of every window"), "{script}");
+    // Both of window 12's tabs sit under one id match, ahead of window 5's.
+    let w12 = script
+        .find("if _key is \"12\" then")
+        .expect("window 12 matched by id");
+    let w5 = script
+        .find("if _key is \"5\" then")
+        .expect("window 5 matched by id");
+    assert!(w12 < w5);
+    assert_eq!(script.matches("if _key is \"12\" then").count(), 1);
+    let w12_block = &script[w12..w5];
+    assert!(w12_block.contains("set URL of tab 3 of window id _wid to \"file:///blocked.html?a\""));
+    assert!(w12_block.contains("set URL of tab 1 of window id _wid to \"file:///blocked.html?c\""));
+    assert!(
+        script[w5..].contains("set URL of tab 1 of window id _wid to \"file:///blocked.html?b\"")
+    );
+}
+
+#[test]
+fn apply_script_escapes_the_window_id() {
+    let script = apply_actions_script(
+        SupportedBrowser::Safari,
+        &[("a\"b".to_string(), 1, "https://x.example/".to_string())],
+    );
+    assert!(script.contains(r#"if _key is "a\"b" then"#), "{script}");
 }
 
 #[test]
@@ -827,6 +871,20 @@ fn read_tabs_script_runs_against_safari() {
     let out = run_osascript(&read_tabs_script(SupportedBrowser::Safari))
         .expect("read script compiles and runs against Safari's dictionary");
     assert!(parse_tab_rows(&out).is_empty());
+}
+
+#[test]
+fn apply_script_runs_against_safari() {
+    // Same guard as the read test: compiles the `window id` addressing
+    // against a real dictionary without sending Safari an Apple Event.
+    if running_supported_browsers().contains(&SupportedBrowser::Safari) {
+        return;
+    }
+    let script = apply_actions_script(
+        SupportedBrowser::Safari,
+        &[("1".to_string(), 1, "https://a.example/?q=1&r=2".to_string())],
+    );
+    run_osascript(&script).expect("apply script compiles and runs against Safari's dictionary");
 }
 
 #[test]
