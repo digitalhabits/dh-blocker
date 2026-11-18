@@ -86,9 +86,12 @@ scrub_stale_autostart_plists_for_user() {
 scrub_stale_autostart_plists_for_user "$TARGET_USER" "$TARGET_UID"
 
 # launchctl asuser runs the command in the target user's bootstrap
-# domain so the GUI shows up on their session.
-launchctl asuser "$TARGET_UID" /usr/bin/open "$APP_PATH" || \
-    sudo -u "$TARGET_USER" /usr/bin/open "$APP_PATH"
+# domain so the GUI shows up on their session. `open` passes our
+# environment to the app, and the installer's TMPDIR points into a
+# PKInstallSandbox that is deleted when the install finishes; unset it
+# so the app falls back to the user's own temp dir.
+launchctl asuser "$TARGET_UID" /usr/bin/env -u TMPDIR /usr/bin/open "$APP_PATH" || \
+    sudo -u "$TARGET_USER" /usr/bin/env -u TMPDIR /usr/bin/open "$APP_PATH"
 
 echo "postinstall launched Digital Habits Blocker for $TARGET_USER"
 exit 0

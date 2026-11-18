@@ -92,6 +92,8 @@ pub mod commands;
 #[cfg(target_os = "macos")]
 pub mod cross_app_consent;
 pub mod product_identity;
+#[cfg(target_os = "macos")]
+pub mod temp_dir_repair;
 
 /// Custom NSPanel class for the main Digital Habits: Blocker window. Most of the time
 /// this behaves indistinguishably from a regular NSWindow — but having
