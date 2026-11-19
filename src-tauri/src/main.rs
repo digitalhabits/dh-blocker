@@ -7,6 +7,11 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 fn main() {
+    // Before anything spawns a thread or reads temp_dir(): a pkg-installer
+    // relaunch hands us a TMPDIR inside a sandbox that is already deleted.
+    #[cfg(target_os = "macos")]
+    redd_block_lib::temp_dir_repair::repair_inherited_tmpdir();
+
     // Debug builds load `.env` from the workspace root so dev-only
     // settings (REDD_DEV_EXT_ID, etc.) are picked up by `pnpm dev`,
     // direct `cargo run`, and the browser-spawned native-host process
