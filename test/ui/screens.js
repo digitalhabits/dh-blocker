@@ -829,30 +829,46 @@ export const screens = [
     },
 
     // ---- Remote notice banner (src/notices.js) ------------------------------
-    // Rendered directly rather than fetched: the harness has no notices server.
     ...[
         { severity: 'critical', platform: 'mac', viewport: DESKTOP },
         { severity: 'warning', platform: 'windows', viewport: DESKTOP, theme: 'dark' },
         { severity: 'info', platform: 'iphone', viewport: IPHONE },
-    ].map(({ severity, ...rest }) => ({
-        name: `notice-${severity}-${rest.platform}${rest.theme ? `-${rest.theme}` : ''}`,
+        { severity: 'critical', platform: 'mac', viewport: DESKTOP, theme: 'dark' },
+        { severity: 'warning', platform: 'mac', viewport: DESKTOP, stack: true },
+    ].map(({ severity, stack, ...rest }) => ({
+        name: `notice-${severity}-${rest.platform}${rest.theme ? `-${rest.theme}` : ''}${stack ? '-stacked' : ''}`,
         fixture: fixtures.crowdedWeek,
         ...rest,
         prepare: async (page) => {
-            await page.evaluate(async (sev) => {
-                const { normalizeNotice, renderNotice } = await import('/notices.js');
-                renderNotice(normalizeNotice({
+            // Serve notices.json and run the app's real check, so the shot shows
+            // what the fetch path renders, not a hand-drawn banner it could overwrite.
+            await page.route('**/notices.json*', (route) => route.fulfill({
+                contentType: 'application/json',
+                body: JSON.stringify({ notices: [{
                     id: 'preview',
-                    severity: sev,
+                    severity,
                     title: 'Updates may fail until you restart your Mac',
                     body: 'If installing an update shows an error, restart your Mac and try again. Your blocks keep working in the meantime. [Read more](https://digitalhabits.org)',
                     link: { label: 'Get the installer', url: 'https://github.com/digitalhabits/dh-blocker/releases/latest' },
                     expiresAt: '2099-01-01T00:00:00Z',
-                    dismissible: sev !== 'critical',
-                }));
-            }, severity);
-            // Let the banner's slideDown animation finish before the shot.
-            await page.waitForTimeout(500);
+                    dismissible: severity !== 'critical',
+                }] }),
+            }));
+            await page.evaluate(async () => (await import('/notices.js')).checkForNotices());
+            if (stack) {
+                // Alongside the update banner above and the setup banner below.
+                await page.evaluate(() => {
+                    document.getElementById('update-banner-version').textContent = '3.14.0';
+                    document.getElementById('update-banner').classList.remove('hidden');
+                    document.getElementById('behaviour-change-banner').classList.remove('hidden');
+                });
+            }
+            // Shoot only once the banners have finished sliding in.
+            await page.waitForFunction(() => {
+                const banner = document.getElementById('notice-banner');
+                return !banner.classList.contains('hidden')
+                    && document.getAnimations().every((a) => a.playState !== 'running');
+            });
         },
     })),
 ];
