@@ -827,6 +827,34 @@ export const screens = [
             await page.click('#editor-section-when-header');
         },
     },
+
+    // ---- Remote notice banner (src/notices.js) ------------------------------
+    // Rendered directly rather than fetched: the harness has no notices server.
+    ...[
+        { severity: 'critical', platform: 'mac', viewport: DESKTOP },
+        { severity: 'warning', platform: 'windows', viewport: DESKTOP, theme: 'dark' },
+        { severity: 'info', platform: 'iphone', viewport: IPHONE },
+    ].map(({ severity, ...rest }) => ({
+        name: `notice-${severity}-${rest.platform}${rest.theme ? `-${rest.theme}` : ''}`,
+        fixture: fixtures.crowdedWeek,
+        ...rest,
+        prepare: async (page) => {
+            await page.evaluate(async (sev) => {
+                const { normalizeNotice, renderNotice } = await import('/notices.js');
+                renderNotice(normalizeNotice({
+                    id: 'preview',
+                    severity: sev,
+                    title: 'Updates may fail until you restart your Mac',
+                    body: 'If installing an update shows an error, restart your Mac and try again. Your blocks keep working in the meantime. [Read more](https://digitalhabits.org)',
+                    link: { label: 'Get the installer', url: 'https://github.com/digitalhabits/dh-blocker/releases/latest' },
+                    expiresAt: '2099-01-01T00:00:00Z',
+                    dismissible: sev !== 'critical',
+                }));
+            }, severity);
+            // Let the banner's slideDown animation finish before the shot.
+            await page.waitForTimeout(500);
+        },
+    })),
 ];
 
 async function assertCompactPhonePause(page) {

@@ -603,6 +603,8 @@ body.dark-mode .title-bar{
 /* Inset card below another visible top banner: drop title-bar offset, use uniform stack gap. */
 #update-banner:not(.hidden) ~ .setup-banner:not(.hidden),
 #update-banner:not(.hidden) ~ .app-blocking-closedown-banner:not(.hidden),
+.notice-banner:not(.hidden) ~ .setup-banner:not(.hidden),
+.notice-banner:not(.hidden) ~ .app-blocking-closedown-banner:not(.hidden),
 .app-blocking-closedown-banner:not(.hidden) ~ .setup-banner:not(.hidden),
 .extension-enforcer-action-banner:not(.hidden) ~ .setup-banner:not(.hidden),
 .extension-enforcer-action-banner-closed:not(.hidden) ~ .setup-banner:not(.hidden){
@@ -1079,6 +1081,47 @@ body.dark-mode .setup-banner .update-banner-btn{
 
 body.dark-mode .setup-banner .update-banner-btn:hover{
     color: #ffffff;
+}
+
+/* ---- Remote notice banner (src/notices.js) ----------------------------- */
+/* An inset setup-banner card; severity only changes the palette. */
+.notice-banner[data-severity="warning"]{
+    --setup-bg: #fff7e6;
+    --setup-border: #e08a35;
+    --setup-accent: #d97706;
+    --setup-headline: #4a2a05;
+    --setup-text: #5b3a12;
+}
+
+.notice-banner[data-severity="critical"]{
+    --setup-bg: #fdecec;
+    --setup-border: #dc2626;
+    --setup-accent: #b91c1c;
+    --setup-headline: #4c0a0a;
+    --setup-text: #5f1414;
+}
+
+body.dark-mode .notice-banner[data-severity="warning"]{
+    --setup-border: rgba(245, 158, 11, 0.55);
+    --setup-accent: #f59e0b;
+}
+
+body.dark-mode .notice-banner[data-severity="critical"]{
+    --setup-border: rgba(248, 113, 113, 0.6);
+    --setup-accent: #f87171;
+}
+
+.notice-banner .setup-banner-body a{
+    color: inherit;
+    text-decoration: underline;
+}
+
+.notice-banner .update-banner-btn{
+    text-decoration: none;
+}
+
+.notice-banner .hidden{
+    display: none;
 }
 
 /* ---- App-blocking close-down banner (rose-tint, urgency variant) ------- */
