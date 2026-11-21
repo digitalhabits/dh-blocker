@@ -79,6 +79,7 @@ import { setupTheme, setupUiZoomShortcuts } from './theme.js';
 import { checkForAppUpdate, updateBannerWhatsNewButtonHtml } from './update-banner.js';
 import { updateDownloadInProgress } from './update-banner.js';
 import { setupUsagePingToggle, startUsagePing } from './usage-ping.js';
+import { startNotices } from './notices.js';
 import { applyStoreReviewPromptCopy, startStoreReviewPrompt } from './store-review-prompt.js';
 import { applyStartWarningsLanguage, setupStartWarningsOnboarding, setupStartWarningsToggle, syncIOSStartWarnings } from './ios-start-warnings.js';
 import { getChallengeController } from './challenge-controller.js';
@@ -219,6 +220,8 @@ export async function runPostAcceptanceStartup() {
             checkForAppUpdate();
             setInterval(checkForAppUpdate, 6 * 60 * 60 * 1000);
         }
+        // Remote notices about known problems (all platforms; see src/notices.js).
+        startNotices();
         // Anonymous daily usage ping (Mac, Windows, iOS; off in Settings).
         startUsagePing();
         state.startupInitializationComplete = true;
