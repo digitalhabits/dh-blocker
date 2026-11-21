@@ -18,7 +18,7 @@
 // The fetch is the webview's own `fetch`, not the Rust updater's HTTP client,
 // so a fault in the update download path does not also silence the notice
 // about it.
-import { tauriAPI } from './tauri-api.js';
+import { tauriAPI, openUrl } from './tauri-api.js';
 import { getSettingsLanguage } from './i18n.js';
 import { formatChangelogInlineHtml } from './changelog.js';
 import { isVersionHigher, getLatestVersionPlatformKey } from './update-banner.js';
@@ -187,6 +187,27 @@ function fillBanner(banner, notice, language) {
 }
 
 /**
+ * Open a notice's links (in the body, and the button) in the system browser
+ * on every platform. Desktop has no app-wide handler for target=_blank, and
+ * a link in an emergency notice must not depend on the web view's default.
+ * iOS's app-wide handler runs first, in the capture phase, and stops the
+ * event, so a link is never opened twice.
+ */
+function openNoticeLink(event) {
+    const anchor = event.target.closest?.('a[href]');
+    if (!anchor) return;
+    const url = anchor.dataset.externalUrl || anchor.getAttribute('href');
+    if (!/^(https?:\/\/|mailto:)/i.test(url || '')) return;
+    event.preventDefault();
+    Promise.resolve()
+        .then(() => openUrl(url))
+        .catch((err) => {
+            console.warn('[Notices] opener failed, falling back to window.open:', err);
+            window.open(url, '_blank', 'noopener,noreferrer');
+        });
+}
+
+/**
  * Show exactly `notices`, in order. Each banner is a clone of
  * #notice-banner-template inserted just before it, so the banners are
  * siblings of the update and setup banners and the stacking rules in
@@ -208,6 +229,7 @@ export function renderNotices(notices) {
             banner = template.content.firstElementChild.cloneNode(true);
             const id = notice.id;
             banner.querySelector('.notice-banner-dismiss').addEventListener('click', () => dismissNotice(id));
+            banner.addEventListener('click', openNoticeLink);
         }
         fillBanner(banner, notice, language);
         return banner;

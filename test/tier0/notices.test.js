@@ -6,7 +6,8 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 // typo fails exactly when it is needed.
 
 const tauriAPI = vi.hoisted(() => ({ getAppVersion: vi.fn(async () => '3.13.0') }));
-vi.mock('../../src/tauri-api.js', () => ({ tauriAPI }));
+const openUrl = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('../../src/tauri-api.js', () => ({ tauriAPI, openUrl }));
 vi.mock('../../src/update-banner.js', () => ({
     getLatestVersionPlatformKey: () => 'macos',
     isVersionHigher: (a, b) => {
@@ -195,6 +196,26 @@ test('a notice dropped from the file disappears on the next check', async () => 
     serve([{ ...base, id: 'b' }]);
     await checkForNotices();
     expect(shownIds()).toEqual(['b']);
+});
+
+test('body links and the button open in the system browser, not the web view', async () => {
+    serve([{
+        ...base,
+        body: 'See [the status page](https://example.org/status).',
+        link: { label: 'Get the installer', url: 'https://example.org/dl' },
+    }]);
+    await checkForNotices();
+    const [banner] = shown();
+    for (const [anchor, url] of [
+        [banner.querySelector('.notice-banner-body a'), 'https://example.org/status'],
+        [banner.querySelector('.notice-banner-link'), 'https://example.org/dl'],
+    ]) {
+        const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+        anchor.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(true);
+        await Promise.resolve();
+        expect(openUrl).toHaveBeenLastCalledWith(url);
+    }
 });
 
 test('localized title falls back to English', async () => {
