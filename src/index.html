@@ -127,32 +127,35 @@
             </div>
         </div>
 
-        <!-- Remote notice (src/notices.js, docs/notices.md): a message we
+        <!-- Remote notices (src/notices.js, docs/notices.md): messages we
              publish to installs of a given platform and version range for a
-             limited time, e.g. to explain how to get past a broken updater. -->
-        <div id="notice-banner" class="update-banner setup-banner notice-banner hidden" data-severity="info">
-            <div class="update-banner-content">
-                <svg class="setup-banner-info-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-                    <circle cx="12" cy="12" r="11" fill="currentColor"></circle>
-                    <rect x="11" y="5.5" width="2" height="8.5" rx="1" fill="white"></rect>
-                    <circle cx="12" cy="17.25" r="1.3" fill="white"></circle>
-                </svg>
-                <div class="setup-banner-message">
-                    <strong id="notice-banner-title" class="setup-banner-headline"></strong>
-                    <span id="notice-banner-body" class="setup-banner-body"></span>
-                    <div class="setup-banner-actions-row">
-                        <a id="notice-banner-link" class="update-banner-btn hidden" target="_blank" rel="noopener noreferrer"></a>
+             limited time, e.g. to explain how to get past a broken updater.
+             Each one is a clone of this template, inserted just before it. -->
+        <template id="notice-banner-template">
+            <div class="update-banner setup-banner notice-banner" data-severity="info">
+                <div class="update-banner-content">
+                    <svg class="setup-banner-info-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="11" fill="currentColor"></circle>
+                        <rect x="11" y="5.5" width="2" height="8.5" rx="1" fill="white"></rect>
+                        <circle cx="12" cy="17.25" r="1.3" fill="white"></circle>
+                    </svg>
+                    <div class="setup-banner-message">
+                        <strong class="setup-banner-headline notice-banner-title"></strong>
+                        <span class="setup-banner-body notice-banner-body"></span>
+                        <div class="setup-banner-actions-row">
+                            <a class="update-banner-btn notice-banner-link" target="_blank" rel="noopener noreferrer"></a>
+                        </div>
                     </div>
                 </div>
+                <button class="update-banner-dismiss notice-banner-dismiss" title="Dismiss" type="button">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
             </div>
-            <button id="notice-banner-dismiss" class="update-banner-dismiss" title="Dismiss" type="button">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-            </button>
-        </div>
+        </template>
 
         <!-- Persistent "set up the extension" reminder. Surfaces on
              every launch whenever any installed browser is missing

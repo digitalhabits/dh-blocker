@@ -834,7 +834,7 @@ export const screens = [
         { severity: 'warning', platform: 'windows', viewport: DESKTOP, theme: 'dark' },
         { severity: 'info', platform: 'iphone', viewport: IPHONE },
         { severity: 'critical', platform: 'mac', viewport: DESKTOP, theme: 'dark' },
-        { severity: 'warning', platform: 'mac', viewport: DESKTOP, stack: true },
+        { severity: 'critical', platform: 'mac', viewport: DESKTOP, stack: true },
     ].map(({ severity, stack, ...rest }) => ({
         name: `notice-${severity}-${rest.platform}${rest.theme ? `-${rest.theme}` : ''}${stack ? '-stacked' : ''}`,
         fixture: fixtures.crowdedWeek,
@@ -844,7 +844,13 @@ export const screens = [
             // what the fetch path renders, not a hand-drawn banner it could overwrite.
             await page.route('**/notices.json*', (route) => route.fulfill({
                 contentType: 'application/json',
-                body: JSON.stringify({ notices: [{
+                body: JSON.stringify({ notices: [...(stack ? [{
+                    id: 'second',
+                    severity: 'info',
+                    title: 'Scheduled maintenance on Saturday',
+                    body: 'Checking for updates may fail between 10:00 and 12:00 UTC.',
+                    expiresAt: '2099-01-01T00:00:00Z',
+                }] : []), {
                     id: 'preview',
                     severity,
                     title: 'Updates may fail until you restart your Mac',
@@ -856,7 +862,7 @@ export const screens = [
             }));
             await page.evaluate(async () => (await import('/notices.js')).checkForNotices());
             if (stack) {
-                // Alongside the update banner above and the setup banner below.
+                // Two notices, between the update banner above and the setup banner below.
                 await page.evaluate(() => {
                     document.getElementById('update-banner-version').textContent = '3.14.0';
                     document.getElementById('update-banner').classList.remove('hidden');
@@ -865,8 +871,7 @@ export const screens = [
             }
             // Shoot only once the banners have finished sliding in.
             await page.waitForFunction(() => {
-                const banner = document.getElementById('notice-banner');
-                return !banner.classList.contains('hidden')
+                return document.querySelector('.notice-banner')
                     && document.getAnimations().every((a) => a.playState !== 'running');
             });
         },

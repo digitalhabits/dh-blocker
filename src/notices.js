@@ -3,8 +3,8 @@
 // them (an updater that fails until the user logs out, say).
 //
 // The app fetches docs/notices.json from GitHub Pages, the same host as
-// latest-versions.json, at startup and hourly, and shows at most one notice in
-// a banner. A notice is matched by platform, by app version range and by a
+// latest-versions.json, at startup and hourly, and shows every applicable
+// notice as a banner, most severe first. A notice is matched by platform, by app version range and by a
 // time window; `expiresAt` is required, so a notice nobody remembers to take
 // down still goes away. The schema, and how to publish one, is in
 // docs/notices.md.
@@ -120,17 +120,16 @@ export function noticeApplies(notice, { platform, version, now }) {
 }
 
 /**
- * The notice to show, or null: the most severe one that applies and has not
- * been dismissed, the first listed winning a tie.
+ * The notices to show, most severe first; notices of equal severity keep
+ * their order in the file. Every applicable notice that has not been
+ * dismissed is shown, so one that cannot be closed never hides another.
  */
-export function selectNotice(notices, context, dismissedIds = []) {
-    let best = null;
-    for (const notice of notices) {
-        if (!noticeApplies(notice, context)) continue;
-        if (notice.dismissible && dismissedIds.includes(notice.id)) continue;
-        if (!best || SEVERITY_RANK[notice.severity] > SEVERITY_RANK[best.severity]) best = notice;
-    }
-    return best;
+export function selectNotices(notices, context, dismissedIds = []) {
+    return notices
+        .filter((n) => noticeApplies(n, context) && !(n.dismissible && dismissedIds.includes(n.id)))
+        .map((n, i) => [n, i])
+        .sort(([a, i], [b, j]) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] || i - j)
+        .map(([n]) => n);
 }
 
 export function parseNoticesManifest(manifest) {
@@ -161,54 +160,74 @@ function dismissedIds() {
     return [...new Set([...readDismissed(), ...sessionDismissed])];
 }
 
-export function renderNotice(notice) {
-    const banner = document.getElementById('notice-banner');
-    if (!banner) return;
-    if (!notice) {
-        banner.classList.add('hidden');
-        delete banner.dataset.noticeId;
-        return;
-    }
-    const language = getSettingsLanguage();
-    const titleEl = document.getElementById('notice-banner-title');
-    const bodyEl = document.getElementById('notice-banner-body');
-    const linkEl = document.getElementById('notice-banner-link');
-    const dismissBtn = document.getElementById('notice-banner-dismiss');
-
+function fillBanner(banner, notice, language) {
     banner.dataset.noticeId = notice.id;
     banner.dataset.severity = notice.severity;
     banner.setAttribute('role', notice.severity === 'info' ? 'status' : 'alert');
-    if (titleEl) titleEl.textContent = localizedText(notice.title, language);
-    if (bodyEl) {
-        const body = localizedText(notice.body, language);
-        // Escapes everything, then allows **bold**, *italics* and http(s)/mailto links.
-        bodyEl.innerHTML = body ? formatChangelogInlineHtml(body) : '';
-        bodyEl.classList.toggle('hidden', !body);
+    banner.querySelector('.notice-banner-title').textContent = localizedText(notice.title, language);
+
+    const bodyEl = banner.querySelector('.notice-banner-body');
+    const body = localizedText(notice.body, language);
+    // Escapes everything, then allows **bold**, *italics* and http(s)/mailto links.
+    bodyEl.innerHTML = body ? formatChangelogInlineHtml(body) : '';
+    bodyEl.classList.toggle('hidden', !body);
+
+    const linkEl = banner.querySelector('.notice-banner-link');
+    if (notice.link) {
+        linkEl.textContent = localizedText(notice.link.label, language);
+        linkEl.href = notice.link.url;
+        linkEl.dataset.externalUrl = notice.link.url;
+    } else {
+        linkEl.textContent = '';
+        linkEl.removeAttribute('href');
+        delete linkEl.dataset.externalUrl;
     }
-    if (linkEl) {
-        if (notice.link) {
-            linkEl.textContent = localizedText(notice.link.label, language);
-            linkEl.href = notice.link.url;
-            linkEl.dataset.externalUrl = notice.link.url;
-            linkEl.classList.remove('hidden');
-        } else {
-            linkEl.classList.add('hidden');
-            linkEl.removeAttribute('href');
-            delete linkEl.dataset.externalUrl;
+    linkEl.closest('.setup-banner-actions-row').classList.toggle('hidden', !notice.link);
+    banner.querySelector('.notice-banner-dismiss').classList.toggle('hidden', !notice.dismissible);
+}
+
+/**
+ * Show exactly `notices`, in order. Each banner is a clone of
+ * #notice-banner-template inserted just before it, so the banners are
+ * siblings of the update and setup banners and the stacking rules in
+ * styles.css apply to them. A banner already on screen is updated in place
+ * rather than rebuilt, so the hourly check does not replay its slide-in.
+ */
+export function renderNotices(notices) {
+    const template = document.getElementById('notice-banner-template');
+    if (!template?.parentNode) return;
+    const parent = template.parentNode;
+    const language = getSettingsLanguage();
+    const existing = new Map(
+        [...parent.querySelectorAll(':scope > .notice-banner')].map((el) => [el.dataset.noticeId, el]),
+    );
+    const banners = notices.map((notice) => {
+        let banner = existing.get(notice.id);
+        existing.delete(notice.id);
+        if (!banner) {
+            banner = template.content.firstElementChild.cloneNode(true);
+            const id = notice.id;
+            banner.querySelector('.notice-banner-dismiss').addEventListener('click', () => dismissNotice(id));
         }
-        linkEl.closest('.setup-banner-actions-row')?.classList.toggle('hidden', !notice.link);
+        fillBanner(banner, notice, language);
+        return banner;
+    });
+    for (const stale of existing.values()) stale.remove();
+    // Place them back to front, each just before its successor. A banner
+    // already in place is not moved: re-inserting it would replay its slide-in.
+    let next = template;
+    for (let i = banners.length - 1; i >= 0; i--) {
+        if (banners[i].nextElementSibling !== next) parent.insertBefore(banners[i], next);
+        next = banners[i];
     }
-    dismissBtn?.classList.toggle('hidden', !notice.dismissible);
-    banner.classList.remove('hidden');
 }
 
 function refresh(now = Date.now()) {
     if (!currentContext) return;
-    renderNotice(selectNotice(currentNotices, { ...currentContext, now }, dismissedIds()));
+    renderNotices(selectNotices(currentNotices, { ...currentContext, now }, dismissedIds()));
 }
 
-export function dismissCurrentNotice() {
-    const id = document.getElementById('notice-banner')?.dataset.noticeId;
+export function dismissNotice(id) {
     if (!id) return;
     sessionDismissed.push(id);
     // Keep only ids still in the manifest, so the stored list does not grow forever.
@@ -243,7 +262,6 @@ export async function checkForNotices() {
 export function startNotices() {
     if (started) return;
     started = true;
-    document.getElementById('notice-banner-dismiss')?.addEventListener('click', dismissCurrentNotice);
     void checkForNotices();
     setInterval(() => void checkForNotices(), CHECK_INTERVAL_MS);
     document.addEventListener('visibilitychange', () => {

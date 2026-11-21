@@ -46,12 +46,18 @@ than producing a notice that silently never shows.
 | `title` | yes | One line. |
 | `expiresAt` | yes | ISO 8601 time after which the notice is hidden. Required so a forgotten notice still goes away. |
 | `body` | no | Supports `**bold**`, `*italics*` and `[label](https://…)` links. Everything else is escaped. |
-| `severity` | no | `info` (default, blue-grey), `warning` (amber) or `critical` (red). With several applicable notices, the most severe is shown; ties go to the first listed. |
+| `severity` | no | `info` (default, blue-grey), `warning` (amber) or `critical` (red). |
 | `platforms` | no | Any of `macos`, `windows`, `ios`. Omit for all. Windows includes Microsoft Store installs. |
 | `minVersion`, `maxVersion` | no | Inclusive app version bounds, e.g. `"3.13.0"` (no `v`). |
 | `startsAt` | no | ISO 8601 time before which the notice is hidden. |
 | `link` | no | `{ "label", "url" }`; shown as a button. `https://` only. |
 | `dismissible` | no | Default `true`. `false` removes the close button, so the notice stays until it expires or is removed from the file. |
+
+Every notice that applies to an install is shown, each as its own banner,
+most severe first; notices of equal severity keep their order in the file.
+They sit below the update banner and above the browser-setup banner. Nothing
+caps how many show, so keep the number live at once small: if two notices
+would reach the same installs, consider merging them into one.
 
 `title`, `body` and `link.label` can also be objects keyed by language
 (`{ "en": "…", "da": "…", "zh-CN": "…" }`); English is the fallback.

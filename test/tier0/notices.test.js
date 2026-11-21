@@ -22,12 +22,12 @@ vi.mock('../../src/update-banner.js', () => ({
 import publishedNotices from '../../docs/notices.json?raw';
 import {
     checkForNotices,
-    dismissCurrentNotice,
+    dismissNotice,
     normalizeNotice,
     noticeApplies,
     parseNoticesManifest,
     resetNoticesForTests,
-    selectNotice,
+    selectNotices,
 } from '../../src/notices.js';
 
 const NOW = Date.parse('2026-11-20T12:00:00Z');
@@ -39,18 +39,23 @@ const base = {
 const ctx = { platform: 'macos', version: '3.13.0', now: NOW };
 const applies = (raw, context = ctx) => noticeApplies(normalizeNotice(raw), context);
 
-const el = (id) => document.getElementById(id);
+const shown = () => [...document.querySelectorAll('.notice-banner')];
+const shownIds = () => shown().map((b) => b.dataset.noticeId);
 
 beforeEach(() => {
     resetNoticesForTests();
     localStorage.clear();
     document.body.innerHTML = `
-        <div id="notice-banner" class="hidden">
-            <strong id="notice-banner-title"></strong>
-            <span id="notice-banner-body"></span>
-            <div class="setup-banner-actions-row"><a id="notice-banner-link" class="hidden"></a></div>
-            <button id="notice-banner-dismiss"></button>
-        </div>`;
+        <div id="update-banner"></div>
+        <template id="notice-banner-template">
+            <div class="notice-banner setup-banner">
+                <strong class="notice-banner-title"></strong>
+                <span class="notice-banner-body"></span>
+                <div class="setup-banner-actions-row"><a class="notice-banner-link"></a></div>
+                <button class="notice-banner-dismiss"></button>
+            </div>
+        </template>
+        <div id="behaviour-change-banner"></div>`;
 });
 
 afterEach(() => {
@@ -103,50 +108,97 @@ test('a notice shows only inside its time window and on its platforms', () => {
     expect(applies({ ...base, platforms: ['windows', 'macos'] })).toBe(true);
 });
 
-test('the most severe applicable notice wins; a dismissed one gives way to the next', () => {
+test('every applicable notice shows, most severe first, file order breaking ties', () => {
     const notices = parseNoticesManifest({
         notices: [
             { ...base, id: 'info', severity: 'info' },
+            { ...base, id: 'warn-1', severity: 'warning' },
             { ...base, id: 'crit', severity: 'critical' },
-            { ...base, id: 'warn', severity: 'warning' },
+            { ...base, id: 'warn-2', severity: 'warning' },
+            { ...base, id: 'other-platform', severity: 'critical', platforms: ['windows'] },
         ],
     });
-    expect(selectNotice(notices, ctx).id).toBe('crit');
-    expect(selectNotice(notices, ctx, ['crit']).id).toBe('warn');
+    expect(selectNotices(notices, ctx).map((n) => n.id)).toEqual(['crit', 'warn-1', 'warn-2', 'info']);
+    expect(selectNotices(notices, ctx, ['crit', 'info']).map((n) => n.id)).toEqual(['warn-1', 'warn-2']);
 });
 
-test('a non-dismissible notice ignores a stored dismissal and hides its close button', async () => {
+test('a notice that cannot be closed does not hide the others', async () => {
+    serve([
+        { ...base, id: 'stuck', severity: 'critical', dismissible: false },
+        { ...base, id: 'later', severity: 'info' },
+    ]);
+    await checkForNotices();
+    expect(shownIds()).toEqual(['stuck', 'later']);
+    expect(shown()[0].querySelector('.notice-banner-dismiss').classList.contains('hidden')).toBe(true);
+    expect(shown()[1].querySelector('.notice-banner-dismiss').classList.contains('hidden')).toBe(false);
+});
+
+test('banners sit between the update banner and the setup banner, as siblings', async () => {
+    serve([{ ...base, id: 'a' }, { ...base, id: 'b' }]);
+    await checkForNotices();
+    const order = [...document.body.children].map((e) => e.id || e.dataset.noticeId);
+    expect(order).toEqual(['update-banner', 'a', 'b', 'notice-banner-template', 'behaviour-change-banner']);
+});
+
+test('a re-check leaves banners on screen in place, so they do not slide in again', async () => {
+    serve([{ ...base, id: 'a' }, { ...base, id: 'b', severity: 'warning' }]);
+    await checkForNotices();
+    const [warning, info] = shown();
+    serve([{ ...base, id: 'a', title: 'Edited' }, { ...base, id: 'b', severity: 'warning' }]);
+    await checkForNotices();
+    const [warningAfter, infoAfter] = shown();
+    expect(warningAfter).toBe(warning);
+    expect(infoAfter).toBe(info);
+    expect(info.querySelector('.notice-banner-title').textContent).toBe('Edited');
+});
+
+test('a non-dismissible notice ignores a stored dismissal', async () => {
     localStorage.setItem('dismissedNotices', JSON.stringify(['n1']));
     serve([{ ...base, dismissible: false }]);
     await checkForNotices();
-    expect(el('notice-banner').classList.contains('hidden')).toBe(false);
-    expect(el('notice-banner-dismiss').classList.contains('hidden')).toBe(true);
+    expect(shownIds()).toEqual(['n1']);
 });
 
 test('title and body are escaped; only the body gets inline links', async () => {
     serve([{ ...base, title: '<img src=x onerror=alert(1)>', body: '<b>x</b> [help](https://example.org/h)' }]);
     await checkForNotices();
-    expect(el('notice-banner-title').textContent).toBe('<img src=x onerror=alert(1)>');
-    expect(el('notice-banner-body').querySelector('b')).toBeNull();
-    expect(el('notice-banner-body').querySelector('a').getAttribute('href')).toBe('https://example.org/h');
+    const [banner] = shown();
+    expect(banner.querySelector('.notice-banner-title').textContent).toBe('<img src=x onerror=alert(1)>');
+    expect(banner.querySelector('.notice-banner-body b')).toBeNull();
+    expect(banner.querySelector('.notice-banner-body a').getAttribute('href')).toBe('https://example.org/h');
 });
 
-test('dismissal persists, and a failed later fetch keeps the shown notice', async () => {
+test('closing one banner removes only it, and the dismissal persists', async () => {
     serve([{ ...base, id: 'a' }, { ...base, id: 'b', severity: 'warning' }]);
     await checkForNotices();
-    expect(el('notice-banner').dataset.noticeId).toBe('b');
+    expect(shownIds()).toEqual(['b', 'a']);
 
+    shown()[0].querySelector('.notice-banner-dismiss').click();
+    expect(shownIds()).toEqual(['a']);
+    expect(JSON.parse(localStorage.getItem('dismissedNotices'))).toEqual(['b']);
+
+    dismissNotice('a');
+    expect(shownIds()).toEqual([]);
+});
+
+test('a failed later fetch keeps the banners already shown', async () => {
+    serve([{ ...base, id: 'a' }]);
+    await checkForNotices();
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
     await checkForNotices();
-    expect(el('notice-banner').dataset.noticeId).toBe('b');
+    expect(shownIds()).toEqual(['a']);
+});
 
-    dismissCurrentNotice();
-    expect(el('notice-banner').dataset.noticeId).toBe('a');
-    expect(JSON.parse(localStorage.getItem('dismissedNotices'))).toEqual(['b']);
+test('a notice dropped from the file disappears on the next check', async () => {
+    serve([{ ...base, id: 'a' }, { ...base, id: 'b' }]);
+    await checkForNotices();
+    serve([{ ...base, id: 'b' }]);
+    await checkForNotices();
+    expect(shownIds()).toEqual(['b']);
 });
 
 test('localized title falls back to English', async () => {
     serve([{ ...base, title: { en: 'Broken', 'zh-CN': '坏了' } }]);
     await checkForNotices();
-    expect(el('notice-banner-title').textContent).toBe('Broken');
+    expect(shown()[0].querySelector('.notice-banner-title').textContent).toBe('Broken');
 });
