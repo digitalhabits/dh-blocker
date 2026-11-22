@@ -444,6 +444,128 @@ fn frontmost_browser_runs_each_tick_background_runs_on_full_cadence() {
     assert_eq!(io.running_calls, 2);
 }
 
+fn open_tab(tab_index: u32, url: &str) -> Tab {
+    Tab {
+        window_id: "1".to_string(),
+        tab_index,
+        url: url.to_string(),
+    }
+}
+
+/// Redirecting a background Chromium tab whose page has a beforeunload
+/// handler (Gmail) shows a "Leave site?" dialog that drags the browser in
+/// front of the app the user is in. Background browsers must wait until
+/// they are frontmost; the redirect then happens on the next tick.
+#[test]
+fn background_browser_redirect_waits_until_it_is_frontmost() {
+    let shared = tick_shared();
+    let brave = SupportedBrowser::Brave;
+    let base = "file:///blocked.html";
+    let gmail = "https://mail.google.com/mail/u/0/";
+    let mut io = FakeIo::new(
+        vec![block("mail", "blocklist", &["mail.google.com"], 0, 999)],
+        &[brave],
+    );
+    io.events = true;
+    io.frontmost = Some("com.apple.TextEdit".to_string());
+    io.queue_read(brave, Ok(vec![open_tab(1, gmail)]));
+    let mut needs_restore = false;
+    let mut last_full_pass = None;
+    let start = Instant::now();
+
+    tick_with_io(
+        &mut io,
+        &shared,
+        base,
+        &mut needs_restore,
+        &mut last_full_pass,
+        start,
+    );
+    assert_eq!(io.read_calls, vec![brave], "background browser still read");
+    assert!(io.apply_calls.is_empty(), "no redirect while in background");
+
+    io.frontmost = Some(brave.bundle_id().to_string());
+    io.queue_read(brave, Ok(vec![open_tab(1, gmail)]));
+    tick_with_io(
+        &mut io,
+        &shared,
+        base,
+        &mut needs_restore,
+        &mut last_full_pass,
+        start + Duration::from_secs(1),
+    );
+    assert_eq!(io.apply_calls.len(), 1, "redirected once frontmost");
+    assert!(is_block_page_url(&io.apply_calls[0].1[0].2, base));
+}
+
+/// Without a known frontmost app the watcher cannot tell whether the
+/// browser is in the background, so it fails closed and redirects.
+#[test]
+fn unknown_frontmost_app_still_redirects() {
+    let shared = tick_shared();
+    let brave = SupportedBrowser::Brave;
+    let base = "file:///blocked.html";
+    for events in [false, true] {
+        let mut io = FakeIo::new(
+            vec![block("mail", "blocklist", &["mail.google.com"], 0, 999)],
+            &[brave],
+        );
+        io.events = events;
+        io.frontmost = None;
+        io.queue_read(brave, Ok(vec![open_tab(1, "https://mail.google.com/")]));
+        let mut needs_restore = false;
+        let mut last_full_pass = None;
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut last_full_pass,
+            Instant::now(),
+        );
+        assert_eq!(io.apply_calls.len(), 1, "events={events}");
+    }
+}
+
+/// Mid-block restores (a site removed from the list) are not deferred:
+/// the block page has no beforeunload handler to raise the browser.
+#[test]
+fn background_browser_still_restores_unblocked_tabs_while_blocking() {
+    let shared = tick_shared();
+    let brave = SupportedBrowser::Brave;
+    let base = "file:///blocked.html";
+    let mut io = FakeIo::new(
+        vec![block("mail", "blocklist", &["mail.google.com"], 0, 999)],
+        &[brave],
+    );
+    io.events = true;
+    io.frontmost = Some("com.apple.TextEdit".to_string());
+    io.queue_read(
+        brave,
+        Ok(vec![
+            parked_tab(base, "https://example.com/"),
+            open_tab(2, "https://mail.google.com/"),
+        ]),
+    );
+    let mut needs_restore = false;
+    let mut last_full_pass = None;
+    tick_with_io(
+        &mut io,
+        &shared,
+        base,
+        &mut needs_restore,
+        &mut last_full_pass,
+        Instant::now(),
+    );
+    assert_eq!(
+        io.apply_calls,
+        vec![(
+            brave,
+            vec![("1".to_string(), 1, "https://example.com/".to_string())]
+        )]
+    );
+}
+
 #[test]
 fn extension_method_browser_is_excluded_from_automation() {
     let shared = tick_shared();

@@ -270,7 +270,13 @@ the active one, and need no system-wide input-synthesis grant. Safari's extensio
      active and the host is not in the allowed union (blocklist wins on
      overlap; `url_is_blocked` in `web_automation.rs`). Redirect sets
      `location` to the block page with the same query params the extension
-     uses (`url`, `blocklist`, `mode`, etc.).
+     uses (`url`, `blocklist`, `mode`, etc.). Redirects go only to the
+     frontmost browser: navigating a tab runs its beforeunload handler, and
+     a "Leave site?" dialog (Gmail, unsaved forms) makes a Chromium browser
+     activate itself over the app the user is in. A background browser's
+     blocked tabs are redirected on the first tick after it comes to the
+     front; when the frontmost app is unknown, every browser is redirected.
+     Restores off the block page are not deferred.
 3. All Apple Events serialize through a global mutex — concurrent osascript
    from the watcher, enforcer, and Tauri commands can deadlock macOS's
    AppleEvent manager.

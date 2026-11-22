@@ -40,7 +40,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use crate::block_page::{plan_actions, Tab, TabAction};
+use crate::block_page::{is_block_page_url, plan_actions, Tab, TabAction};
 pub use crate::block_page::{url_is_blocked, web_enforcement_active};
 use crate::native_host::{self, BlockInfo};
 
@@ -55,8 +55,9 @@ const TICK: Duration = Duration::from_millis(1000);
 /// every tick — the user can't see a background browser's tabs, and a
 /// blocked tab parked there is bounced within one tick of the browser
 /// being activated (the activation updates `frontmost_bundle_id`
-/// immediately). The slower full pass still catches background
-/// navigation (media/JS opening a blocked site in a hidden window).
+/// immediately). While blocking, the slower full pass reads background
+/// browsers but only restores tabs from the block page; redirects wait
+/// until the browser is frontmost (see `tick_with_io`).
 const BACKGROUND_BROWSER_TICK: Duration = Duration::from_secs(5);
 
 /// Once a browser's Automation permission is denied, stop hammering
@@ -585,6 +586,27 @@ fn tick_with_io<I: AutomationIo>(
         *last_full_pass = Some(now);
     }
 
+    // Redirects only go to the browser the user is looking at. Navigating a
+    // tab runs the page's beforeunload handler, and a page with unsaved
+    // state (Gmail, a half-written form) answers with a "Leave site?"
+    // dialog. Chromium browsers activate the tab, window and app to show
+    // it, so redirecting a background Brave pulled it over whatever the
+    // user was doing; Cancel reverted the URL and the next pass asked
+    // again. A blocked tab in a background browser is out of sight, and
+    // switching to the browser makes it frontmost, so its next tick
+    // (within TICK) redirects it.
+    //
+    // Failure direction: this defers only when the frontmost app is
+    // positively known to be something else. With workspace events off or
+    // the frontmost app unknown, every browser is redirected as before
+    // (fail closed). The accepted cost is that a blocked tab already open
+    // in a background browser keeps running — audio, notifications —
+    // until the user returns to that browser. Restores off the block page
+    // are not deferred: the block page has no beforeunload handler.
+    let known_background = |browser: SupportedBrowser| {
+        blocking_active && frontmost_bid.is_some() && frontmost_browser != Some(browser)
+    };
+
     let running = candidates
         .into_iter()
         .filter(|browser| io.uses_automation(*browser))
@@ -617,7 +639,18 @@ fn tick_with_io<I: AutomationIo>(
             Ok(tabs) => {
                 scanned += 1;
                 io.set_permission(shared, browser, PermState::Granted, Duration::ZERO, now);
-                let actions = plan_actions(&tabs, &blocks, block_page_url);
+                let mut actions = plan_actions(&tabs, &blocks, block_page_url);
+                if known_background(browser) {
+                    let before = actions.len();
+                    actions.retain(|(_, _, url)| !is_block_page_url(url, block_page_url));
+                    if actions.len() < before {
+                        log::debug!(
+                            "web_automation: {} is in the background — deferring {} redirect(s) until it is frontmost",
+                            browser.label(),
+                            before - actions.len()
+                        );
+                    }
+                }
                 if restore_pass {
                     restore_actions += actions.len();
                 }
