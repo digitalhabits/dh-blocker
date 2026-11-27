@@ -79,6 +79,13 @@ for a failure that silently allowed blocked sites.
 | [docs/ios-testing.md](docs/ios-testing.md) | Run iOS Simulator or connected-device checks; distinguish automated cases from remaining physical-device coverage. |
 | [testing.md](testing.md) | Add or debug a test. Has the full "What runs in CI" table with triggers and path filters. |
 
+## Pull requests
+
+Keep pull requests small enough to review in one sitting. Aim for no more than
+1,000 added lines per PR. Split larger changes into focused PRs and stack them
+when they depend on one another. If a change needs to land together, explain
+why in the PR description.
+
 ## Commands
 
 `package.json` is the reference for what exists; only the traps are listed here.

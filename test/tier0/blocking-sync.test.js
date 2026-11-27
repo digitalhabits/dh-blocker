@@ -191,6 +191,6 @@ test.each([0, 10])('a failed iOS Manual stop save retains the active block (paus
     expect(state.appData.activeBlocks).toEqual([block]);
     expect(block).not.toHaveProperty('isPaused');
     expect(clear).not.toHaveBeenCalled();
-    if (minutes > 0) expect(cancel).toHaveBeenCalledExactlyOnceWith('keep');
+    if (minutes > 0) expect(cancel).toHaveBeenCalledExactlyOnceWith('keep', false);
     else expect(cancel).not.toHaveBeenCalled();
 });

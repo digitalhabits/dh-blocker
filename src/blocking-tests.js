@@ -2386,7 +2386,10 @@
                 if (registrationThrows) throw new Error('registration threw');
                 return registrationResult;
             };
-            api.screentimeCancelResume = async (blockId) => { events.push(`cancel:${blockId}`); return { success: true }; };
+            api.screentimeCancelResume = async (id, isSchedule) => {
+                events.push(isSchedule ? `cancel-schedule:${id}` : `cancel:${id}`);
+                return { success: true };
+            };
             api.screentimeStartBlock = async () => { events.push('start-block'); return { success: true }; };
             api.screentimeClearBlock = async () => { events.push('clear-block'); return { success: true }; };
             api.screentimeClearManualBlock = async () => { events.push('clear-manual'); return { success: true }; };
@@ -2431,6 +2434,51 @@
             assertEqual(successfulSchedule.pauseEndTime, registeredDeadline, 'T69b: schedule commits registered deadline');
             assert(events.indexOf('register') < events.indexOf('schedule-sync') && !overlappingSchedule.isPaused,
                 'T69b: schedule registration precedes sync and preserves overlap');
+
+            const saveError = new Error('app data save rejected');
+            api.saveData = async () => { events.push('save'); throw saveError; };
+            const assertSaveRejected = async (target) => {
+                let caught;
+                try {
+                    await internals.stopFocusSpaceTarget(target);
+                } catch (error) {
+                    caught = error;
+                }
+                assert(caught === saveError, 'T69g: timed stop propagates the original save error');
+            };
+
+            const unsavedBlock = makeBlock();
+            setBlock(unsavedBlock);
+            events = [];
+            await assertSaveRejected({ block: unsavedBlock });
+            assert(!Object.hasOwn(unsavedBlock, 'isPaused') && !Object.hasOwn(unsavedBlock, 'pauseEndTime')
+                && events.includes(`cancel:${unsavedBlock.id}`) && !events.includes('clear-manual'),
+                'T69g: rejected manual pause restores the running block and cancels its restart');
+
+            const unsavedSchedule = createMockSchedule(scheduleBlocklist.id, [allDay]);
+            setSchedules(unsavedSchedule);
+            events = [];
+            await assertSaveRejected({ schedule: unsavedSchedule });
+            assert(!Object.hasOwn(unsavedSchedule, 'isPaused') && !Object.hasOwn(unsavedSchedule, 'pauseEndTime')
+                && events.includes(`cancel-schedule:${unsavedSchedule.id}`) && !events.includes('schedule-sync'),
+                'T69g: rejected schedule pause restores the running schedule and cancels its restart');
+
+            const previousDeadline = Date.now() + 60_000;
+            const previousPause = { isPaused: true, pauseEndTime: previousDeadline };
+            const previouslyPausedBlock = makeBlock(previousPause);
+            const previouslyPausedSchedule = createMockSchedule(scheduleBlocklist.id, [allDay], previousPause);
+            for (const [targetKind, target, setTarget] of [
+                ['block', previouslyPausedBlock, setBlock],
+                ['schedule', previouslyPausedSchedule, setSchedules],
+            ]) {
+                setTarget(target);
+                events = [];
+                await assertSaveRejected({ [targetKind]: target });
+                assert(target.isPaused && target.pauseEndTime === previousDeadline && registeredDeadline === previousDeadline
+                    && events.filter(event => event === 'register').length === 2,
+                    `T69g: rejected ${targetKind} pause replacement restores the prior pause and its restart`);
+            }
+            api.saveData = async () => { events.push('save'); return { success: true }; };
 
             // A native schedule-data persistence failure after registration must
             // restore the running schedule and report no successful stop.

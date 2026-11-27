@@ -11,6 +11,8 @@ import {
     migrateOverrideDifficultyToWords,
     normalizeMaxOverrideWordsSetting,
     normalizeOverrideCount,
+    normalizeCustomOverrideText,
+    sanitizeChallengeTargetText,
     renderChallengeReferenceText,
 } from '../../src/override-challenge.js';
 
@@ -190,4 +192,13 @@ describe('renderChallengeReferenceText typing progress', () => {
         expect(el.querySelector('.challenge-typed')).toBe(span);
         expect(span.textContent).toBe('chief');
     });
+});
+
+test('custom challenge length cap preserves complete emoji and drops a split pair', () => {
+    expect(normalizeCustomOverrideText('a'.repeat(7498) + '😀!')).toBe('a'.repeat(7498) + '😀');
+    expect(normalizeCustomOverrideText('a'.repeat(7499) + '😀')).toBe('a'.repeat(7499));
+});
+
+test('a legacy custom challenge with an isolated surrogate remains typeable', () => {
+    expect(sanitizeChallengeTargetText('type\ud83d this 😀')).toBe('type this 😀');
 });

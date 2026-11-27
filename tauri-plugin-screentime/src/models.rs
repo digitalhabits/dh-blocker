@@ -223,6 +223,7 @@ pub struct SetResumePayloadRequest {
 #[serde(rename_all = "camelCase")]
 pub struct CancelResumeRequest {
     pub block_id: String,
+    pub is_schedule: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
