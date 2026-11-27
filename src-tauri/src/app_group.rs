@@ -80,7 +80,8 @@ pub fn safari_extension_mirror_active(source: &Path) -> bool {
 
 #[cfg(all(target_os = "macos", not(feature = "system-test")))]
 pub fn safari_extension_mirror_active(source: &Path) -> bool {
-    !crate::blocking_method::uses_automation_at_path(source, "safari")
+    crate::cross_app_consent::has_accepted_eula_at_path(source)
+        && !crate::blocking_method::uses_automation_at_path(source, "safari")
 }
 
 #[cfg(target_os = "macos")]
@@ -141,24 +142,21 @@ pub fn ensure_sync_loop(source: PathBuf) {
 pub fn ensure_sync_loop(source: PathBuf) {
     SYNC_LOOP_STARTED.get_or_init(|| {
         std::thread::spawn(move || {
-            let mut last = mtime(&source);
-            if safari_extension_mirror_active(&source) {
-                if let Err(e) = sync_blocklist_from(&source) {
-                    log::warn!("initial App Group sync failed from {:?}: {e}", source);
-                }
-                last = mtime(&source);
-            }
+            let mut last = None;
             loop {
                 if safari_extension_mirror_active(&source) {
                     let current = mtime(&source);
-                    if current != last {
-                        last = current;
-                        if let Err(e) = sync_blocklist_from(&source) {
-                            log::warn!("App Group sync failed from {:?}: {e}", source);
+                    if last.is_none() || current != last {
+                        match sync_blocklist_from(&source) {
+                            Ok(()) => last = current,
+                            Err(e) => log::warn!("App Group sync failed from {:?}: {e}", source),
                         }
                     }
-                } else if blocklist_path().is_some_and(|p| p.exists()) {
-                    let _ = remove_blocklist_mirror();
+                } else {
+                    last = None;
+                    if blocklist_path().is_some_and(|p| p.exists()) {
+                        let _ = remove_blocklist_mirror();
+                    }
                 }
                 std::thread::sleep(Duration::from_secs(2));
             }
