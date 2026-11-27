@@ -816,6 +816,15 @@ export function firefoxHasReddFocusExtension(firefox) {
 
 export function applyUninstallConfirmModalStaticCopy() {
     syncUninstallDeleteDataCopy();
+    for (const [id, key] of [
+        ['uninstall-confirm-title', 'uninstallConfirmTitle'],
+        ['uninstall-delete-data-label', 'uninstallDeleteDataLabel'],
+        ['cancel-uninstall-confirm-btn', 'cancel'],
+        ['confirm-uninstall-confirm-btn', 'uninstallConfirmOk'],
+    ]) {
+        const element = document.getElementById(id);
+        if (element) element.textContent = tSettings(key);
+    }
 
     const finderText = document.getElementById('uninstall-finder-warning-text');
     if (finderText) finderText.innerHTML = tSettings('uninstallFinderWarningHtml');
@@ -904,9 +913,10 @@ export function closeUninstallConfirmModal(result) {
     }
 }
 
-export function setupInAppUninstall() {
-    const btn = document.getElementById('uninstall-app-btn');
+export function setupInAppUninstall({ recovery = false } = {}) {
+    const btn = document.getElementById(recovery ? 'startup-recovery-uninstall' : 'uninstall-app-btn');
     if (!btn) return;
+    if (recovery) btn.textContent = tSettings('uninstallAppBtn');
 
     const modal = document.getElementById('uninstall-confirm-modal');
     document.getElementById('cancel-uninstall-confirm-btn')
@@ -919,13 +929,15 @@ export function setupInAppUninstall() {
         if (e.target === modal) closeUninstallConfirmModal(false);
     });
 
-    refreshUninstallButtonState();
-    updateOverrideAllButtonVisibility();
+    if (!recovery) {
+        refreshUninstallButtonState();
+        updateOverrideAllButtonVisibility();
+    }
 
     btn.addEventListener('click', async () => {
-        // Re-check at click time so a schedule that fired between
-        // settings-open and click can still gate us out cleanly.
-        if (hasAnyBlockingStateToClear()) {
+        // A healthy startup checks for a block or schedule again at click
+        // time. The recovery screen is reached only when loading fails.
+        if (!recovery && hasAnyBlockingStateToClear()) {
             refreshUninstallButtonState();
             return;
         }
@@ -992,15 +1004,16 @@ export function refreshUninstallButtonState() {
     }
 }
 
-export function setupWindowsUninstallGuidance() {
+export function setupWindowsUninstallGuidance({ recovery = false } = {}) {
     if (state.isIOS) return;
-    const btn = document.getElementById('windows-uninstall-open-settings-btn');
+    const btn = document.getElementById(recovery ? 'startup-recovery-windows-settings' : 'windows-uninstall-open-settings-btn');
     if (!btn) return;
 
-    refreshUninstallButtonState();
+    if (recovery) btn.textContent = tSettings('windowsUninstallOpenSettingsBtn');
+    else refreshUninstallButtonState();
 
     btn.addEventListener('click', async () => {
-        if (hasAnyBlockingStateToClear()) {
+        if (!recovery && hasAnyBlockingStateToClear()) {
             refreshUninstallButtonState();
             return;
         }

@@ -32,7 +32,9 @@ const DEFAULT_GRACE_SECS: u64 = 60;
 /// range so the UI never shows a value the enforcer would override).
 #[tauri::command]
 pub fn get_extension_grace_seconds(app: tauri::AppHandle) -> u64 {
-    read_data(&app)
+    super::canonical_data_path(&app)
+        .as_deref()
+        .and_then(read_data)
         .and_then(|d| {
             d.get("settings")
                 .and_then(|s| s.get(SETTING_KEY))
@@ -50,7 +52,9 @@ pub fn set_extension_grace_seconds(app: tauri::AppHandle, seconds: u64) -> Resul
     let new = seconds.clamp(GRACE_MIN_SECS, GRACE_MAX_SECS);
 
     let path = super::canonical_data_path(&app).ok_or_else(|| "no app data path".to_string())?;
-    let mut data = read_data(&app).unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+    let transaction =
+        super::data::DataFileWrite::lock(&path).map_err(|e| format!("lock data: {e}"))?;
+    let mut data = read_data(&path).unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
     let current = data
         .get("settings")
@@ -79,7 +83,10 @@ pub fn set_extension_grace_seconds(app: tauri::AppHandle, seconds: u64) -> Resul
         );
     }
 
-    write_data(&path, &data).map_err(|e| format!("write data: {e}"))?;
+    let body = serde_json::to_vec_pretty(&data).map_err(|e| format!("write data: {e}"))?;
+    transaction
+        .write(&body)
+        .map_err(|e| format!("write data: {e}"))?;
     Ok(new)
 }
 
@@ -105,15 +112,9 @@ fn any_block_currently_active(data: &Value) -> bool {
     })
 }
 
-fn read_data(app: &tauri::AppHandle) -> Option<Value> {
-    let path = super::canonical_data_path(app)?;
-    let raw = std::fs::read_to_string(&path).ok()?;
+fn read_data(path: &std::path::Path) -> Option<Value> {
+    let raw = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&raw).ok()
-}
-
-fn write_data(path: &std::path::Path, data: &Value) -> std::io::Result<()> {
-    let body = serde_json::to_vec_pretty(data)?;
-    super::data::write_data_file_atomic(path, &body)
 }
 
 #[cfg(test)]

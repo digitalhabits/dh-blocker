@@ -20,7 +20,9 @@ const SETTING_KEY: &str = "enforcementEnabled";
 /// automatic browser force-closes.
 #[tauri::command]
 pub fn get_enforcement_enabled(app: tauri::AppHandle) -> bool {
-    read_data(&app)
+    super::canonical_data_path(&app)
+        .as_deref()
+        .and_then(read_data)
         .and_then(|d| {
             d.get("settings")
                 .and_then(|s| s.get(SETTING_KEY))
@@ -35,7 +37,9 @@ pub fn get_enforcement_enabled(app: tauri::AppHandle) -> bool {
 #[tauri::command]
 pub fn set_enforcement_enabled(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
     let path = super::canonical_data_path(&app).ok_or_else(|| "no app data path".to_string())?;
-    let mut data = read_data(&app).unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+    let transaction =
+        super::data::DataFileWrite::lock(&path).map_err(|e| format!("lock data: {e}"))?;
+    let mut data = read_data(&path).unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
     // Can't disable enforcement while a block is running.
     if !enabled && (any_block_currently_active(&data) || any_schedule_currently_active(&path)) {
@@ -54,7 +58,10 @@ pub fn set_enforcement_enabled(app: tauri::AppHandle, enabled: bool) -> Result<b
         s.insert(SETTING_KEY.to_string(), Value::Bool(enabled));
     }
 
-    write_data(&path, &data).map_err(|e| format!("write data: {e}"))?;
+    let body = serde_json::to_vec_pretty(&data).map_err(|e| format!("write data: {e}"))?;
+    transaction
+        .write(&body)
+        .map_err(|e| format!("write data: {e}"))?;
     log::info!("enforcement_toggle: set enforcementEnabled = {enabled}");
     Ok(enabled)
 }
@@ -94,15 +101,9 @@ fn any_schedule_currently_active(data_path: &std::path::Path) -> bool {
     blocks.iter().any(|b| b.source == "schedule")
 }
 
-fn read_data(app: &tauri::AppHandle) -> Option<Value> {
-    let path = super::canonical_data_path(app)?;
-    let raw = std::fs::read_to_string(&path).ok()?;
+fn read_data(path: &std::path::Path) -> Option<Value> {
+    let raw = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&raw).ok()
-}
-
-fn write_data(path: &std::path::Path, data: &Value) -> std::io::Result<()> {
-    let body = serde_json::to_vec_pretty(data)?;
-    super::data::write_data_file_atomic(path, &body)
 }
 
 #[cfg(test)]
