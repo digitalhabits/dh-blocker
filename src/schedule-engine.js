@@ -116,11 +116,11 @@ function buildPersistedSchedule(schedule) {
     };
 }
 
-export function buildPersistedAppData() {
+export function buildPersistedAppData(appData = state.appData) {
     return {
-        ...state.appData,
-        schedules: Array.isArray(state.appData.schedules)
-            ? state.appData.schedules.map(buildPersistedSchedule)
+        ...appData,
+        schedules: Array.isArray(appData.schedules)
+            ? appData.schedules.map(buildPersistedSchedule)
             : []
     };
 }
