@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { initializeIOSBlockingState, reconcileIOSManualBlockingState } from '../../src/blocking-platform.js';
-import { deleteBlocklist, pendingDelete, UNDO_TOAST_SECONDS, undoDelete } from '../../src/blocklists.js';
+import { commitDelete, deleteBlocklist, pendingDelete, UNDO_TOAST_SECONDS, undoDelete } from '../../src/blocklists.js';
 import { startManualBlock, stopFocusSpaceTarget } from '../../src/confirm-modals.js';
 import { turnFocusSpaceOn } from '../../src/focus-space-switch.js';
 import { runIOSManualOperation, saveData, syncBlockingState } from '../../src/persistence.js';
@@ -416,4 +416,82 @@ test('iOS Undo claims the delete before waiting for the queue or a slow save', a
     expect(state.appData.activeBlocks).toEqual([block]);
     expect(save).toHaveBeenCalledTimes(2);
     expect(cancel).not.toHaveBeenCalled();
+});
+
+function useIOSDeleteFixture() {
+    state.isIOS = true;
+    const pauseEndTime = Date.now() + 300_000;
+    const block = { id: 'paused', blocklistId: 'space', startTime: 0, endTime: pauseEndTime + 300_000, isPaused: true, pauseEndTime };
+    const schedule = { id: 'schedule', blocklistId: 'space', repeatType: 'forever', segments: [], isPaused: true };
+    state.appData.blocklists = [{ id: 'space', name: 'Paused space', websites: ['keep.invalid'] }];
+    state.appData.activeBlocks = [block];
+    state.appData.schedules = [schedule];
+    vi.spyOn(renderModule, 'render').mockImplementation(() => {});
+    vi.spyOn(tauriAPI, 'screentimeClearManualBlock').mockResolvedValue({ success: true });
+    vi.spyOn(tauriAPI, 'screentimeSetStartWarnings').mockResolvedValue({ success: true });
+    return {
+        block,
+        schedule,
+        cancel: vi.spyOn(tauriAPI, 'screentimeCancelResume').mockResolvedValue({ success: true }),
+        schedules: vi.spyOn(tauriAPI, 'setSchedulesPlugin').mockResolvedValue({ success: true }),
+        save: vi.spyOn(tauriAPI, 'saveData').mockResolvedValue(),
+        alert: vi.spyOn(window, 'alert').mockImplementation(() => {}),
+    };
+}
+
+test('failed iOS deletion leaves all three live arrays intact for later saves and can be retried', async () => {
+    const { block, schedule, cancel, schedules, save, alert } = useIOSDeleteFixture();
+    save.mockImplementationOnce(async draft => {
+        expect(draft).toMatchObject({ blocklists: [], activeBlocks: [], schedules: [] });
+        expect(state.appData).toMatchObject({ activeBlocks: [block], schedules: [schedule] });
+        throw new Error('Delete save failed');
+    });
+
+    try {
+        await expect(deleteBlocklist('space')).resolves.toBe(false);
+        expect(pendingDelete).toBeNull();
+        expect(schedules).not.toHaveBeenCalled();
+        expect(cancel).not.toHaveBeenCalled();
+        expect(alert).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('Delete save failed'));
+
+        await saveData();
+        expect(save).toHaveBeenNthCalledWith(2, expect.objectContaining({
+            blocklists: [expect.objectContaining({ id: 'space' })], activeBlocks: [block], schedules: [schedule],
+        }));
+        await expect(deleteBlocklist('space')).resolves.toBe(true);
+        expect(state.appData).toMatchObject({ blocklists: [], activeBlocks: [], schedules: [] });
+    } finally {
+        commitDelete();
+        await runIOSManualOperation(() => {});
+    }
+});
+
+test('failed iOS Undo keeps the deletion saved and offers a retry without cancelling the wake', async () => {
+    const { block, schedule, cancel, save, alert } = useIOSDeleteFixture();
+    try {
+        await deleteBlocklist('space');
+        expect(state.appData).toMatchObject({ blocklists: [], activeBlocks: [], schedules: [] });
+        save.mockImplementationOnce(async draft => {
+            expect(draft).toMatchObject({ activeBlocks: [block], schedules: [schedule] });
+            expect(state.appData).toMatchObject({ blocklists: [], activeBlocks: [], schedules: [] });
+            throw new Error('Undo save failed');
+        });
+
+        await expect(undoDelete()).resolves.toBe(false);
+        expect(pendingDelete?.activeBlocks).toEqual([block]);
+        expect(cancel).not.toHaveBeenCalled();
+        expect(alert).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('Undo save failed'));
+
+        await saveData();
+        expect(save).toHaveBeenNthCalledWith(3, expect.objectContaining({ blocklists: [], activeBlocks: [], schedules: [] }));
+        await expect(undoDelete()).resolves.toBe(true);
+        expect(pendingDelete).toBeNull();
+        expect(state.appData).toMatchObject({
+            blocklists: [expect.objectContaining({ id: 'space' })], activeBlocks: [block], schedules: [schedule],
+        });
+        expect(cancel).not.toHaveBeenCalled();
+    } finally {
+        commitDelete();
+        await runIOSManualOperation(() => {});
+    }
 });
