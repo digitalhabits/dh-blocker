@@ -586,27 +586,6 @@ fn tick_with_io<I: AutomationIo>(
         *last_full_pass = Some(now);
     }
 
-    // Redirects only go to the browser the user is looking at. Navigating a
-    // tab runs the page's beforeunload handler, and a page with unsaved
-    // state (Gmail, a half-written form) answers with a "Leave site?"
-    // dialog. Chromium browsers activate the tab, window and app to show
-    // it, so redirecting a background Brave pulled it over whatever the
-    // user was doing; Cancel reverted the URL and the next pass asked
-    // again. A blocked tab in a background browser is out of sight, and
-    // switching to the browser makes it frontmost, so its next tick
-    // (within TICK) redirects it.
-    //
-    // Failure direction: this defers only when the frontmost app is
-    // positively known to be something else. With workspace events off or
-    // the frontmost app unknown, every browser is redirected as before
-    // (fail closed). The accepted cost is that a blocked tab already open
-    // in a background browser keeps running — audio, notifications —
-    // until the user returns to that browser. Restores off the block page
-    // are not deferred: the block page has no beforeunload handler.
-    let known_background = |browser: SupportedBrowser| {
-        blocking_active && frontmost_bid.is_some() && frontmost_browser != Some(browser)
-    };
-
     let running = candidates
         .into_iter()
         .filter(|browser| io.uses_automation(*browser))
@@ -640,7 +619,18 @@ fn tick_with_io<I: AutomationIo>(
                 scanned += 1;
                 io.set_permission(shared, browser, PermState::Granted, Duration::ZERO, now);
                 let mut actions = plan_actions(&tabs, &blocks, block_page_url);
-                if known_background(browser) {
+                // Focus can change while read_tabs waits for Apple Events.
+                // Defer redirects when another app has since taken focus:
+                // a beforeunload dialog can bring the browser forward.
+                // Background tabs can keep playing until focus returns.
+                // Unknown focus or unavailable events keep enforcement fail-closed.
+                if blocking_active
+                    && events
+                    && !actions.is_empty()
+                    && io
+                        .frontmost_bundle_id()
+                        .is_some_and(|bid| bid != browser.bundle_id())
+                {
                     let before = actions.len();
                     actions.retain(|(_, _, url)| !is_block_page_url(url, block_page_url));
                     if actions.len() < before {

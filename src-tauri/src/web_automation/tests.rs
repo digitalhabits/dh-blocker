@@ -6,6 +6,7 @@ struct FakeIo {
     blocks: Option<Vec<BlockInfo>>,
     events: bool,
     frontmost: Option<String>,
+    focus_during_next_read: Option<String>,
     running: Vec<SupportedBrowser>,
     methods: HashMap<SupportedBrowser, bool>,
     reads: HashMap<SupportedBrowser, VecDeque<Result<Vec<Tab>, AutomationError>>>,
@@ -22,6 +23,7 @@ impl FakeIo {
             blocks: Some(blocks),
             events: false,
             frontmost: None,
+            focus_during_next_read: None,
             running: running.to_vec(),
             methods: HashMap::new(),
             reads: HashMap::new(),
@@ -66,6 +68,9 @@ impl AutomationIo for FakeIo {
 
     fn read_tabs(&mut self, browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
         self.read_calls.push(browser);
+        if let Some(bundle_id) = self.focus_during_next_read.take() {
+            self.frontmost = Some(bundle_id);
+        }
         self.reads
             .get_mut(&browser)
             .and_then(VecDeque::pop_front)
@@ -496,6 +501,41 @@ fn background_browser_redirect_waits_until_it_is_frontmost() {
     );
     assert_eq!(io.apply_calls.len(), 1, "redirected once frontmost");
     assert!(is_block_page_url(&io.apply_calls[0].1[0].2, base));
+}
+
+#[test]
+fn switching_focus_while_reading_brave_tabs_defers_only_redirects() {
+    let brave = SupportedBrowser::Brave;
+    let base = "file:///blocked.html";
+    let original = "https://example.com/";
+    let mut io = FakeIo::new(
+        vec![block("mail", "blocklist", &["mail.google.com"], 0, 999)],
+        &[brave],
+    );
+    io.events = true;
+    io.frontmost = Some(brave.bundle_id().to_string());
+    io.focus_during_next_read = Some("com.apple.TextEdit".to_string());
+    io.queue_read(
+        brave,
+        Ok(vec![
+            parked_tab(base, original),
+            open_tab(2, "https://mail.google.com/"),
+        ]),
+    );
+
+    tick_with_io(
+        &mut io,
+        &tick_shared(),
+        base,
+        &mut false,
+        &mut None,
+        Instant::now(),
+    );
+
+    assert_eq!(
+        io.apply_calls,
+        vec![(brave, vec![("1".into(), 1, original.into())])]
+    );
 }
 
 /// Without a known frontmost app the watcher cannot tell whether the
