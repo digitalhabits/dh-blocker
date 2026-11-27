@@ -320,7 +320,7 @@ fn is_windows_upgrade_install_or_accessibility_tool(
 
     let parent = executable.and_then(Path::parent);
     match stem {
-        "narrator" | "magnify" => {
+        "narrator" | "magnify" | "osk" => {
             // When the path cannot be queried, favour keeping the in-box
             // assistive tool running. A known path must be in System32.
             executable.is_none()

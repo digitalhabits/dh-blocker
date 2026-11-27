@@ -637,6 +637,7 @@ fn windows_upgrade_installer_and_accessibility_tools_are_exempt_in_allow_mode() 
     let cases = [
         system_root.join("System32").join("Narrator.exe"),
         system_root.join("System32").join("Magnify.exe"),
+        system_root.join("System32").join("osk.exe"),
         windows_drive.join(r"$WINDOWS.~BT\Sources\SetupHost.exe"),
         windows_drive.join(r"$WINDOWS.~BT\Sources\setup.exe"),
         own_exe.with_file_name("uninstall.exe"),
@@ -675,6 +676,7 @@ fn windows_upgrade_installer_and_accessibility_tools_are_exempt_in_allow_mode() 
         r"C:\Downloads\setup.exe",
         r"C:\Downloads\uninstall.exe",
         r"C:\Downloads\magnify.exe",
+        r"C:\Downloads\osk.exe",
         r"C:\Downloads\OtherApp\~nsu.tmp\Au_.exe",
         r"C:\Downloads\Digital-Habits-Blocker_unrelated_x64-setup.exe",
         r"C:\Downloads\Digital-Habits-Blocker_3.13.0_x64-setup.exe.backup",
