@@ -6,14 +6,16 @@
 // unrelated to what this module does; scoping the allow here keeps the
 // `-D warnings` clippy gate meaningful for every other lint.
 
-use std::path::Path;
+use std::future::Future;
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use serde::Deserialize;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
@@ -216,7 +218,7 @@ async fn download_file(
     client: &reqwest::Client,
     app: &AppHandle,
     url: &str,
-    dest: &Path,
+    mut file: tokio::fs::File,
 ) -> Result<(), String> {
     let response = client
         .get(url)
@@ -232,10 +234,6 @@ async fn download_file(
     }
 
     let total_bytes = response.content_length();
-    let mut file = tokio::fs::File::create_new(dest)
-        .await
-        .map_err(|e| format!("Could not write installer to disk: {e}"))?;
-
     let mut stream = response.bytes_stream();
     let mut bytes_received: u64 = 0;
     let mut last_emit = Instant::now();
@@ -260,7 +258,7 @@ async fn download_file(
     Ok(())
 }
 
-async fn verify_file_sha256(path: &Path, expected: &str) -> Result<(), String> {
+async fn file_matches_sha256(path: &Path, expected: &str) -> Result<bool, String> {
     let mut file = tokio::fs::File::open(path)
         .await
         .map_err(|e| format!("Could not read downloaded installer: {e}"))?;
@@ -280,14 +278,131 @@ async fn verify_file_sha256(path: &Path, expected: &str) -> Result<(), String> {
     }
 
     let actual = format!("{:x}", hasher.finalize());
-    if actual.eq_ignore_ascii_case(expected) {
-        Ok(())
+    Ok(actual.eq_ignore_ascii_case(expected))
+}
+
+#[cfg(target_os = "windows")]
+fn cache_entry_is_link(metadata: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+
+    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cache_entry_is_link(metadata: &std::fs::Metadata) -> bool {
+    metadata.is_symlink()
+}
+
+fn create_private_cache_directory(path: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    let created = {
+        use std::os::unix::fs::DirBuilderExt;
+
+        std::fs::DirBuilder::new().mode(0o700).create(path)
+    };
+    // The Windows cache is under the account's LocalAppData and inherits its
+    // access control from that directory.
+    #[cfg(not(unix))]
+    let created = std::fs::create_dir(path);
+    if let Err(error) = created {
+        if error.kind() != ErrorKind::AlreadyExists {
+            return Err(format!("Could not create the installer cache: {error}"));
+        }
+    }
+
+    let metadata = std::fs::symlink_metadata(path)
+        .map_err(|error| format!("Could not inspect the installer cache: {error}"))?;
+    if !metadata.is_dir() || cache_entry_is_link(&metadata) {
+        return Err("Installer cache must be a directory without redirection".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        if metadata.uid() != unsafe { libc::geteuid() } || metadata.mode() & 0o077 != 0 {
+            return Err("Installer cache must be private to the current user".into());
+        }
+    }
+    Ok(())
+}
+
+enum CachedInstaller {
+    Missing,
+    Verified,
+    Corrupt,
+}
+
+async fn inspect_cached_installer(path: &Path, expected: &str) -> Result<CachedInstaller, String> {
+    let metadata = match tokio::fs::symlink_metadata(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(CachedInstaller::Missing),
+        Err(error) => return Err(format!("Could not inspect the cached installer: {error}")),
+    };
+    if !metadata.is_file() || cache_entry_is_link(&metadata) {
+        return Err("Cached installer must be a regular file".into());
+    }
+    if file_matches_sha256(path, expected).await? {
+        Ok(CachedInstaller::Verified)
     } else {
-        Err(
+        Ok(CachedInstaller::Corrupt)
+    }
+}
+
+async fn cache_installer<F>(
+    cache_root: &Path,
+    filename: &str,
+    expected: &str,
+    download: impl FnOnce(tokio::fs::File) -> F,
+) -> Result<PathBuf, String>
+where
+    F: Future<Output = Result<(), String>>,
+{
+    let digest = validate_sha256(expected)?.to_ascii_lowercase();
+    create_private_cache_directory(cache_root)?;
+    let directory = cache_root.join(&digest);
+    create_private_cache_directory(&directory)?;
+    let mut destination = directory.join(filename);
+    let mut repair_number = 0_u64;
+    loop {
+        match inspect_cached_installer(&destination, &digest).await? {
+            CachedInstaller::Missing => break,
+            CachedInstaller::Verified => return Ok(destination),
+            CachedInstaller::Corrupt => {
+                // An existing installer may still have this path open. Publish
+                // the replacement in a stable slot shared by concurrent retries.
+                repair_number += 1;
+                let repair_directory = directory.join(format!("repair-{repair_number}"));
+                create_private_cache_directory(&repair_directory)?;
+                destination = repair_directory.join(filename);
+            }
+        }
+    }
+
+    // Each in-flight download owns its staging file. Publish verified bytes
+    // once per digest without replacing any file an installer could be using.
+    let (file, staging) = tempfile::Builder::new()
+        .prefix("download-")
+        .tempfile_in(&directory)
+        .map_err(|error| format!("Could not stage the installer: {error}"))?
+        .into_parts();
+    download(tokio::fs::File::from_std(file)).await?;
+    if !file_matches_sha256(&staging, &digest).await? {
+        return Err(
             "Download failed verification — the installer file may be corrupted or tampered with"
                 .into(),
-        )
+        );
     }
+    if let Err(error) = staging.persist_noclobber(&destination) {
+        // A concurrent download may have published the same installer first.
+        if !matches!(
+            inspect_cached_installer(&destination, &digest).await?,
+            CachedInstaller::Verified
+        ) {
+            return Err(format!("Could not publish the installer: {}", error.error));
+        }
+    }
+    Ok(destination)
 }
 
 fn emit_progress(app: &AppHandle, bytes_received: u64, total_bytes: Option<u64>) {
@@ -566,22 +681,23 @@ pub async fn download_and_run_update(app: AppHandle, version: String) -> Result<
     let expected_sha256 =
         fetch_expected_sha256(&client, installer, version, &tag, &filename).await?;
 
-    // Separate staging directories keep interrupted or concurrent updates away
-    // from a verified installer. The guard cleans up failures automatically.
-    let staging = tempfile::Builder::new()
-        .prefix("redd-block-update-")
-        .tempdir()
-        .map_err(|e| format!("Could not stage the installer: {e}"))?;
-    let dest = staging.path().join(&filename);
+    let user_cache = app
+        .path()
+        .cache_dir()
+        .map_err(|error| format!("Could not locate the user's installer cache: {error}"))?;
+    tokio::fs::create_dir_all(&user_cache)
+        .await
+        .map_err(|error| format!("Could not open the user's installer cache: {error}"))?;
+    let cache_root = user_cache.join(format!("{}.update-installers", app.config().identifier));
     let url = format!("{GITHUB_RELEASES}/{tag}/{filename}");
-    log::info!("update: downloading {url} -> {}", dest.display());
-    download_file(&client, &app, &url, &dest).await?;
-    verify_file_sha256(&dest, &expected_sha256).await?;
+    let dest = cache_installer(&cache_root, &filename, &expected_sha256, |file| async {
+        log::info!("update: downloading {url}");
+        download_file(&client, &app, &url, file).await
+    })
+    .await?;
     log::info!("update: installer checksum verified");
 
     launch_installer(&app, &dest)?;
-    // The system installer can still be reading the file after launch returns.
-    let _ = staging.keep();
 
     log::info!("update: opened installer at {}", dest.display());
     Ok(())
@@ -593,6 +709,8 @@ mod tests {
 
     const X64_SHA256: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const ARM64_SHA256: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const FIXTURE_INSTALLER: &[u8] = b"signed installer";
+    const FIXTURE_SHA256: &str = "be2ce2dd28b0293e480f9d7443bc99b442ae06348b010a6f8043c667b15d4a5a";
 
     #[test]
     fn validates_the_release_version_before_it_becomes_a_path_component() {
@@ -683,12 +801,148 @@ mod tests {
 
     #[test]
     fn verifies_installer_bytes_and_rejects_a_changed_file() {
-        const EXPECTED: &str = "be2ce2dd28b0293e480f9d7443bc99b442ae06348b010a6f8043c667b15d4a5a";
         let staging = tempfile::tempdir().unwrap();
         let file = staging.path().join("installer.exe");
-        std::fs::write(&file, b"signed installer").unwrap();
-        assert!(tauri::async_runtime::block_on(verify_file_sha256(&file, EXPECTED)).is_ok());
+        std::fs::write(&file, FIXTURE_INSTALLER).unwrap();
+        assert_eq!(
+            tauri::async_runtime::block_on(file_matches_sha256(&file, FIXTURE_SHA256)),
+            Ok(true)
+        );
         std::fs::write(&file, b"changed installer").unwrap();
-        assert!(tauri::async_runtime::block_on(verify_file_sha256(&file, EXPECTED)).is_err());
+        assert_eq!(
+            tauri::async_runtime::block_on(file_matches_sha256(&file, FIXTURE_SHA256)),
+            Ok(false)
+        );
+    }
+
+    async fn write_fixture(mut file: tokio::fs::File, bytes: &[u8]) -> Result<(), String> {
+        file.write_all(bytes).await.unwrap();
+        file.flush().await.unwrap();
+        Ok(())
+    }
+
+    #[test]
+    fn concurrent_downloads_and_retries_reuse_one_verified_installer() {
+        let staging = tempfile::tempdir().unwrap();
+        let cache = staging.path().join("cache");
+        tauri::async_runtime::block_on(async {
+            let both_downloading = tokio::sync::Barrier::new(2);
+            let download = |file| {
+                let barrier = &both_downloading;
+                async move {
+                    barrier.wait().await;
+                    write_fixture(file, FIXTURE_INSTALLER).await
+                }
+            };
+            let installer = "installer.exe";
+            let first = cache_installer(&cache, installer, FIXTURE_SHA256, download);
+            let second = cache_installer(&cache, installer, FIXTURE_SHA256, download);
+            let (first, second) = tokio::time::timeout(
+                Duration::from_secs(10),
+                futures_util::future::join(first, second),
+            )
+            .await
+            .unwrap();
+            let dest = first.unwrap();
+            assert_eq!(dest, second.unwrap());
+
+            // The previous installer may still be reading its executable.
+            let running = std::fs::File::open(&dest).unwrap();
+            let retry = cache_installer(&cache, installer, FIXTURE_SHA256, |_| async {
+                panic!("retry should reuse the verified installer")
+            })
+            .await
+            .unwrap();
+            assert_eq!(retry, dest);
+            assert_eq!(std::fs::read(&dest).unwrap(), FIXTURE_INSTALLER);
+            assert_eq!(
+                std::fs::read_dir(dest.parent().unwrap()).unwrap().count(),
+                1
+            );
+            drop(running);
+        });
+    }
+
+    #[test]
+    fn failed_download_leaves_no_installer_and_a_retry_repairs_corrupt_cache() {
+        let staging = tempfile::tempdir().unwrap();
+        let cache = staging.path().join("cache");
+        tauri::async_runtime::block_on(async {
+            let filename = "installer.exe";
+            let result = cache_installer(&cache, filename, FIXTURE_SHA256, |file| {
+                write_fixture(file, b"changed installer")
+            })
+            .await;
+            assert!(result.is_err());
+            let digest_dir = cache.join(FIXTURE_SHA256);
+            assert_eq!(std::fs::read_dir(&digest_dir).unwrap().count(), 0);
+
+            let corrupt = digest_dir.join(filename);
+            std::fs::write(&corrupt, b"changed cached installer").unwrap();
+            let running = std::fs::File::open(&corrupt).unwrap();
+            let repaired = cache_installer(&cache, filename, FIXTURE_SHA256, |file| {
+                write_fixture(file, FIXTURE_INSTALLER)
+            })
+            .await
+            .unwrap();
+            assert_ne!(repaired, corrupt);
+            assert_eq!(std::fs::read(&repaired).unwrap(), FIXTURE_INSTALLER);
+            assert_eq!(
+                std::fs::read(&corrupt).unwrap(),
+                b"changed cached installer"
+            );
+            drop(running);
+
+            let retry = cache_installer(&cache, filename, FIXTURE_SHA256, |_| async {
+                panic!("retry should reuse the repaired installer")
+            })
+            .await
+            .unwrap();
+            assert_eq!(retry, repaired);
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_to_a_valid_installer_is_rejected_instead_of_repaired() {
+        let staging = tempfile::tempdir().unwrap();
+        let mirror = staging.path().join("outside-installer.exe");
+        std::fs::write(&mirror, FIXTURE_INSTALLER).unwrap();
+        let cache = staging.path().join("cache");
+        create_private_cache_directory(&cache).unwrap();
+        let directory = cache.join(FIXTURE_SHA256);
+        create_private_cache_directory(&directory).unwrap();
+        let filename = "installer.exe";
+        std::os::unix::fs::symlink(&mirror, directory.join(filename)).unwrap();
+
+        let result = tauri::async_runtime::block_on(cache_installer(
+            &cache,
+            filename,
+            FIXTURE_SHA256,
+            |_| async { panic!("a redirection must not trigger a repair download") },
+        ));
+        assert_eq!(
+            result,
+            Err("Cached installer must be a regular file".into())
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cache_directory_requires_private_permissions_and_refuses_links() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+
+        let staging = tempfile::tempdir().unwrap();
+        let directory = staging.path().join("cache");
+        create_private_cache_directory(&directory).unwrap();
+        let mode = std::fs::metadata(&directory).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
+
+        let link = staging.path().join("symlink");
+        symlink(&directory, &link).unwrap();
+        assert!(create_private_cache_directory(&link).is_err());
+
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(create_private_cache_directory(&directory).is_err());
     }
 }
