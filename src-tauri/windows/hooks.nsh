@@ -4,26 +4,94 @@
 ; windows/ — so File would miss legacy-preinstall.ps1 at makensis time.
 !define LEGACY_PREINSTALL_PS1 "${__FILEDIR__}\legacy-preinstall.ps1"
 
-!macro NSIS_HOOK_PREINSTALL
-  ; Best-effort cleanup of a legacy direct-install app so the direct
-  ; Digital Habits Blocker installer leaves only one desktop app installed.
-  ; Intentionally scoped to direct NSIS installs; MSIX does not run these
-  ; hooks. We do NOT touch shared ProgramData storage here.
-  ;
-  ; Why this exists: Tauri NSIS keys install dir / shortcuts / Uninstall
-  ; registry by productName. After the rename to "Digital Habits Blocker",
-  ; the built-in upgrade path never finds "ReDD Blocker" and would leave
-  ; the old app behind. This hook runs the old uninstaller (when present)
-  ; and falls back to deleting known legacy install dirs / shortcuts /
-  ; Run values. See windows/legacy-preinstall.ps1.
+; Tauri's maintenance page may run an older same-product NSIS or WiX
+; uninstaller before NSIS_HOOK_PREINSTALL. MUI calls this before all
+; installer pages, including passive-mode callbacks. Silent setup
+; skips both GUI init and the maintenance page.
+Var HostsSnapshotFile
+!define MUI_CUSTOMFUNCTION_GUIINIT SnapshotHostsBeforeMaintenance
+Function SnapshotHostsBeforeMaintenance
+  Call FindWixInstall
+  ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Digital Habits Blocker" "UninstallString"
+  ReadRegStr $1 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Digital Habits Blocker" "UninstallString"
+  ${If} $0 == ""
+  ${AndIf} $1 == ""
+  ${AndIf} $R6 == ""
+    Return
+  ${EndIf}
+  ; Pinned Tauri bypasses NSIS maintenance uninstall for /UPDATE,
+  ; but its WiX migration branch takes precedence over /UPDATE.
+  ${If} $R6 == ""
+    ClearErrors
+    ${GetOptions} $CMDLINE "/UPDATE" $2
+    ${IfNot} ${Errors}
+      Return
+    ${EndIf}
+  ${EndIf}
+
+  StrCpy $2 ""
+  ${If} $R6 != ""
+    StrCpy $2 "-ProtectOlderUninstaller"
+  ${EndIf}
+  ${If} $0 != ""
+    ReadRegDWORD $3 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Digital Habits Blocker" "HostsCleanupSafeguards"
+    ${If} $3 <> 1
+      StrCpy $2 "-ProtectOlderUninstaller"
+    ${EndIf}
+  ${EndIf}
+  ${If} $1 != ""
+    ReadRegDWORD $3 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Digital Habits Blocker" "HostsCleanupSafeguards"
+    ${If} $3 <> 1
+      StrCpy $2 "-ProtectOlderUninstaller"
+    ${EndIf}
+  ${EndIf}
+  ${If} $2 == ""
+    Return
+  ${EndIf}
+
   InitPluginsDir
   File "/oname=$PLUGINSDIR\legacy-preinstall.ps1" "${LEGACY_PREINSTALL_PS1}"
-  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\legacy-preinstall.ps1"'
+  StrCpy $HostsSnapshotFile "$PLUGINSDIR\hosts-recovery.json"
+  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\legacy-preinstall.ps1" -BeforeMaintenance -SnapshotFile "$HostsSnapshotFile" $2'
+  Pop $0
+  ${If} $0 == "2"
+    ${If} $R6 == ""
+      MessageBox MB_OK|MB_ICONEXCLAMATION "The previous uninstaller can overwrite Windows hosts. To install in place, run this installer with /UPDATE. Setup saved recovery copies under %APPDATA%\Digital Habits Blocker\backups." /SD IDOK
+    ${Else}
+      MessageBox MB_OK|MB_ICONEXCLAMATION "Setup needs to remove the older MSI installation, which can overwrite Windows hosts. Ask an administrator to review the legacy hosts entries and helper before retrying. Recovery copies are under %APPDATA%\Digital Habits Blocker\backups." /SD IDOK
+    ${EndIf}
+    SetErrorLevel 1
+    Abort
+  ${ElseIf} $0 != "0"
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Setup could not verify that the previous uninstaller can run safely. Review the installer details before retrying." /SD IDOK
+    SetErrorLevel 1
+    Abort
+  ${EndIf}
+FunctionEnd
+
+!macro NSIS_HOOK_PREINSTALL
+  ; Verify after same-product maintenance, then clean known renamed
+  ; installs without executing their old uninstallers.
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\legacy-preinstall.ps1" "${LEGACY_PREINSTALL_PS1}"
+  ${If} $HostsSnapshotFile == ""
+    nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\legacy-preinstall.ps1"'
+  ${Else}
+    nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\legacy-preinstall.ps1" -SnapshotFile "$HostsSnapshotFile"'
+  ${EndIf}
   Pop $0
   Delete "$PLUGINSDIR\legacy-preinstall.ps1"
+  ${If} $0 != "0"
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Setup could not verify Windows hosts. Check the current hosts file and the recovery copies under %APPDATA%\Digital Habits Blocker\backups before retrying." /SD IDOK
+    SetErrorLevel 1
+    Abort
+  ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
+  ; Future maintenance can trust this version's guarded uninstaller.
+  WriteRegDWORD SHCTX "${UNINSTKEY}" "HostsCleanupSafeguards" 1
+
   ; Always launch after install completes. The MUI finish page also has
   ; a "Run …" checkbox (default checked); if the user leaves it checked
   ; we'd briefly run the app twice — the tauri-plugin-single-instance

@@ -695,13 +695,21 @@ running regardless.
 - The macOS package installs the app and leaves legacy cleanup to onboarding.
 - Prepare an edit from the live hosts file, removing complete ReDD Block
   sections. Save the original bytes to `Digital Habits Blocker/backups`
-  under `~/Library/Application Support` on macOS or `%LOCALAPPDATA%` on Windows.
+  under `~/Library/Application Support` on macOS or `%APPDATA%` on Windows.
   Keep `hosts.redd-backup` as a recovery copy.
 - The elevated script stops the helper, checks that hosts still matches the
   snapshot, and replaces it if needed. It removes only daemon-specific files
   and leaves shared blocklist data for per-user import (§3.2).
 - The app stamps `migrationRanAtVersion` after verification. Cleanup failures
   leave migration pending for retry and halt uninstall before app removal.
+- Windows setup saves recovery copies at the start of a same-product upgrade
+  wizard, before maintenance can run the older uninstaller. Legacy hosts and
+  helper artefacts cause setup to block unguarded uninstallers before launch.
+  `/UPDATE` allows an in-place NSIS upgrade. An older MSI requires administrator
+  review because Tauri invokes its uninstaller even in update mode. If the
+  live hosts file changes before installation, setup stops and leaves the file
+  and recovery copies for review. Setup removes known renamed-product
+  installations directly and preserves registrations for custom paths.
 
 ---
 
