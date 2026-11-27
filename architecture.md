@@ -231,11 +231,14 @@ Windows connects the selected browser to its native-messaging host when the
 user chooses Extension or clicks Install or Connect in browser setup. New
 setups install Focus through the browser's extension store. After EULA
 acceptance, startup repairs registered hosts for explicit Extension choices.
-It also recovers older browser setups when the old installation marker,
-completed onboarding and saved website rules are all present. That recovery
-restores missing extension policies only on direct installs, for installed
-browsers that still use Extension. Profile scans only report registration
-status. They do not install a host or write browser policy.
+It also recovers native hosts for older setups when the old installation
+marker, completed onboarding and saved website rules are all present. For
+direct installs, startup records per-browser ownership when an explicit
+Extension choice and a matching legacy policy are both present. A later
+launch can restore a recorded policy for a browser that still uses
+Extension. If an earlier upgrade erased the policy without such a record,
+the browser setup screen lets the user install the extension from its store.
+Profile scans report registration status without writing hosts or policies.
 
 ---
 

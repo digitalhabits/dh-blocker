@@ -625,6 +625,16 @@ async function saveBrowserBlockingMethod(key, method) {
     syncBlockingMethodSelects(methods);
 }
 
+async function prepareBrowserExtensionInstall(key) {
+    if (!state.isWindowsDesktop) return;
+    try {
+        await saveBrowserBlockingMethod(key, 'extension');
+    } catch (e) {
+        // The user can still install now and retry the connection from Setup.
+        console.warn('[setup] Could not connect the browser to Blocker:', e);
+    }
+}
+
 export async function onBlockingMethodChange(key, select) {
     const previous = browserBlockingMethod(key);
     // Only methods this browser can actually enforce with: Firefox has no
@@ -1865,14 +1875,7 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
             installBtn.textContent = tSettings('migrationInstallButton');
             installBtn.title = tSettingsFmt('migrationInstallStoreTitle', { browser: entry.label });
             installBtn.addEventListener('click', async () => {
-                if (appState.isWindowsDesktop) {
-                    try {
-                        await saveBrowserBlockingMethod(key, 'extension');
-                    } catch (e) {
-                        console.warn('[migration] Could not connect the browser to Blocker:', e);
-                        // The user can still install now and retry the connection from Setup.
-                    }
-                }
+                await prepareBrowserExtensionInstall(key);
                 try {
                     await invoke('open_url_in_browser', { browser: key, url: entry.url });
                     installBtn.textContent = tSettings('migrationInstallOpened');
@@ -3346,6 +3349,7 @@ export async function openEnforcerFix(payload) {
             return;
         }
         if (payload.issue === 'missing' && key && BROWSER_STORE_LINKS[key]?.url) {
+            await prepareBrowserExtensionInstall(key);
             try {
                 await invoke('open_url_in_browser', { browser: key, url: BROWSER_STORE_LINKS[key].url });
             } catch {

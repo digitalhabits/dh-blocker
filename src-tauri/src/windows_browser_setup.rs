@@ -18,7 +18,7 @@ pub(crate) fn require_current_eula(app: &tauri::AppHandle) -> Result<(), String>
 
 /// Older versions wrote this marker even when users skipped browser setup.
 /// Combine it with completed onboarding and saved website rules before
-/// treating it as evidence of a previously managed browser setup.
+/// using it to recover native hosts.
 #[cfg(any(target_os = "windows", test))]
 fn legacy_website_setup(data: &Value, has_legacy_marker: bool) -> bool {
     has_legacy_marker
@@ -36,11 +36,19 @@ fn legacy_website_setup(data: &Value, has_legacy_marker: bool) -> bool {
 }
 
 #[cfg(any(target_os = "windows", test))]
+struct BrowserRegistration {
+    installed: bool,
+    host_blocked: bool,
+    managed_policy_recorded: bool,
+    managed_policy_matches: bool,
+}
+
+#[cfg(any(target_os = "windows", test))]
 fn reconcile_registration(
     data: &Value,
     has_legacy_marker: bool,
     direct_install: bool,
-    browser_state: impl Fn(&str) -> (bool, bool),
+    browser_state: impl Fn(&str, bool) -> BrowserRegistration,
     repair_host: impl Fn(&str) -> std::io::Result<()>,
     repair_policy: impl Fn(&str) -> std::io::Result<()>,
 ) -> Result<(), String> {
@@ -57,10 +65,10 @@ fn reconcile_registration(
         if !explicitly_selected && !legacy_setup {
             continue;
         }
-        let (browser_installed, policy_blocked) = browser_state(browser);
-        let legacy_browser = legacy_setup && browser_installed;
+        let registration = browser_state(browser, explicitly_selected);
+        let legacy_browser = legacy_setup && registration.installed;
         if !(explicitly_selected || legacy_browser)
-            || blocking_method::windows_method(&methods, browser, policy_blocked)
+            || blocking_method::windows_method(&methods, browser, registration.host_blocked)
                 != Method::Extension
         {
             continue;
@@ -69,7 +77,10 @@ fn reconcile_registration(
             errors.push(format!("native host for {browser}: {error}"));
             continue;
         }
-        if direct_install && legacy_browser {
+        if direct_install
+            && (registration.managed_policy_recorded
+                || (explicitly_selected && registration.managed_policy_matches))
+        {
             if let Err(error) = repair_policy(browser) {
                 errors.push(format!("extension policy for {browser}: {error}"));
             }
@@ -100,33 +111,42 @@ pub async fn repair_windows_browser_setup(app: tauri::AppHandle) -> Result<(), S
 
 #[cfg(target_os = "windows")]
 fn repair(app: &tauri::AppHandle) -> Result<(), String> {
-    use crate::native_host_install;
+    use crate::{extension_install, native_host_install};
 
     let Some(data) =
         crate::commands::canonical_data_path(app).and_then(|path| crate::data_cache::read(&path))
     else {
         return Ok(());
     };
-    let has_legacy_marker = dirs::data_local_dir().is_some_and(|base| {
-        base.join("com.reddblock")
-            .join("extension-hints-installed.v1")
-            .is_file()
-    });
+    let local_app_data = dirs::data_local_dir().map(|base| base.join("com.reddblock"));
+    let has_legacy_marker = local_app_data
+        .as_ref()
+        .is_some_and(|base| base.join("extension-hints-installed.v1").is_file());
     let direct_install = !native_host_install::is_msix_packaged_exe_path(
         &std::env::current_exe().map_err(|error| error.to_string())?,
     );
     let target = |browser: &str| {
         blocking_method::native_host_target(browser).expect("supported Windows browser")
     };
+    // Keep the verified choice across a direct uninstall and reinstall.
+    let policy_marker = |browser: &str| {
+        local_app_data
+            .as_ref()
+            .map(|base| base.join("managed-extension-policies.v1").join(browser))
+    };
     reconcile_registration(
         &data,
         has_legacy_marker,
         direct_install,
-        |browser| {
-            (
-                crate::profile_scan::find_browser_exe(browser).is_some(),
-                crate::browser_policy::read(target(browser)).is_some_and(|policy| policy.blocked),
-            )
+        |browser, explicitly_selected| BrowserRegistration {
+            installed: crate::profile_scan::find_browser_exe(browser).is_some(),
+            host_blocked: crate::browser_policy::read(target(browser))
+                .is_some_and(|policy| policy.blocked),
+            managed_policy_recorded: direct_install
+                && policy_marker(browser).is_some_and(|marker| marker.is_file()),
+            managed_policy_matches: direct_install
+                && explicitly_selected
+                && extension_install::matches_windows_hint(target(browser)),
         },
         |browser| {
             let target = target(browser);
@@ -136,7 +156,17 @@ fn repair(app: &tauri::AppHandle) -> Result<(), String> {
                 native_host_install::install_native_host_for(target)
             }
         },
-        |browser| crate::extension_install::install_windows_hint_for(target(browser)),
+        |browser| {
+            extension_install::install_windows_hint_for(target(browser))?;
+            if let Some(marker) = policy_marker(browser).filter(|marker| !marker.is_file()) {
+                if let Some(parent) = marker.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                crate::commands::write_data_file_atomic(&marker, b"")
+            } else {
+                Ok(())
+            }
+        },
     )
 }
 
@@ -151,6 +181,7 @@ mod tests {
     struct Registration {
         hosts: RefCell<BTreeSet<String>>,
         policies: RefCell<BTreeSet<String>>,
+        owned_policies: RefCell<BTreeSet<String>>,
     }
 
     impl Registration {
@@ -159,13 +190,19 @@ mod tests {
                 data,
                 has_legacy_marker,
                 direct_install,
-                |browser| (browser != "brave", browser == "edge"),
+                |browser, _| BrowserRegistration {
+                    installed: browser != "brave",
+                    host_blocked: browser == "edge",
+                    managed_policy_recorded: self.owned_policies.borrow().contains(browser),
+                    managed_policy_matches: self.policies.borrow().contains(browser),
+                },
                 |browser| {
                     self.hosts.borrow_mut().insert(browser.to_string());
                     Ok(())
                 },
                 |browser| {
                     self.policies.borrow_mut().insert(browser.to_string());
+                    self.owned_policies.borrow_mut().insert(browser.to_string());
                     Ok(())
                 },
             )
@@ -208,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn repairs_missing_legacy_policies_for_installed_extension_mode_browsers() {
+    fn repairs_a_recorded_policy_after_reinstall_for_an_extension_mode_browser() {
         let data = json!({
             "settings": {
                 "eulaAccepted": true,
@@ -218,6 +255,7 @@ mod tests {
             "blocklists": [{"websites": ["example.org"]}]
         });
         let registry = Registration::default();
+        registry.owned_policies.borrow_mut().insert("chrome".into());
         registry.reconcile(&data, true, true);
         assert_eq!(
             registry.hosts.into_inner(),
@@ -226,6 +264,45 @@ mod tests {
         assert_eq!(
             registry.policies.into_inner(),
             BTreeSet::from(["chrome".into()])
+        );
+    }
+
+    #[test]
+    fn an_automation_users_skipped_firefox_does_not_gain_a_mandatory_policy() {
+        let data = json!({
+            "settings": {
+                "eulaAccepted": true,
+                "onboardingComplete": true,
+                "blockingMethods": {"chrome": "automation"}
+            },
+            "blocklists": [{"websites": ["example.org"]}]
+        });
+        let registry = Registration::default();
+        registry.reconcile(&data, true, true);
+        assert_eq!(
+            registry.hosts.borrow().clone(),
+            BTreeSet::from(["firefox".into()])
+        );
+        assert!(registry.policies.borrow().is_empty());
+
+        // The old blanket policy may even be present. Without a Firefox
+        // choice, do not establish ownership to recreate it after uninstall.
+        registry.policies.borrow_mut().insert("firefox".into());
+        registry.reconcile(&data, true, true);
+        assert!(registry.owned_policies.borrow().is_empty());
+    }
+
+    #[test]
+    fn an_explicit_extension_choice_records_an_existing_matching_policy() {
+        let data = json!({
+            "settings": {"eulaAcceptedRevision": 1, "blockingMethods": {"brave": "extension"}}
+        });
+        let registry = Registration::default();
+        registry.policies.borrow_mut().insert("brave".into());
+        registry.reconcile(&data, false, true);
+        assert_eq!(
+            registry.owned_policies.into_inner(),
+            BTreeSet::from(["brave".into()])
         );
     }
 

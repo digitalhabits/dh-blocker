@@ -180,6 +180,19 @@ describe('policy-blocked browsers on Windows', () => {
         invoke.mockImplementation(async () => []);
     });
 
+    test('Windows sets up the browser before opening its store from an enforcement warning', async () => {
+        const { openEnforcerFix, BROWSER_STORE_LINKS } = await setUpWindows(false);
+        const { invoke } = await import('@tauri-apps/api/core');
+        invoke.mockClear();
+        invoke.mockImplementation(async cmd => cmd === 'set_blocking_method' ? { brave: 'extension' } : null);
+        await openEnforcerFix({ label: 'Brave', issue: 'missing' });
+        expect(invoke.mock.calls).toEqual([
+            ['set_blocking_method', { browser: 'brave', method: 'extension' }],
+            ['open_url_in_browser', { browser: 'brave', url: BROWSER_STORE_LINKS.brave.url }],
+        ]);
+        invoke.mockImplementation(async () => []);
+    });
+
     test('Windows explicit automation skips extension setup and permission prompts', async () => {
         const { browserBlockingMethod, effectiveBrowserComplianceStatus, buildBannerActionSummary } = await setUpWindows();
         const browsers = Object.fromEntries(['chrome', 'edge', 'brave', 'firefox'].map(key => [key, edge({ profiles: [], present: true })]));
