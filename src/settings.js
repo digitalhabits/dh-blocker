@@ -736,10 +736,13 @@ export function setupOverrideAll() {
     const confirmOverrideAllBtn = document.getElementById('confirm-override-all-btn');
     const overrideAllBtn = document.getElementById('override-all-btn');
     const challenge = getChallengeController('overrideAll');
+    let confirmed = false;
+    let submitting = false;
 
     // Open override all modal
     if (overrideAllBtn && overrideAllModal) {
         overrideAllBtn.addEventListener('click', () => {
+            confirmed = false;
             // Close settings modal first
             document.getElementById('settings-modal').classList.add('hidden');
             setLanguagePickerOpen(false);
@@ -778,9 +781,15 @@ export function setupOverrideAll() {
     if (confirmOverrideAllBtn) {
         confirmOverrideAllBtn.addEventListener('click', async () => {
             // 'advanced' = a correct but non-final word; the user keeps typing.
-            if (challenge.handleConfirm().status !== 'ok') return;
-            await performOverrideAll();
-            closeOverrideAllModal();
+            if (submitting || (!confirmed && challenge.handleConfirm().status !== 'ok')) return;
+            confirmed = true;
+            submitting = true;
+            try {
+                const stopped = await performOverrideAll();
+                if (stopped || !state.isIOS) closeOverrideAllModal();
+            } finally {
+                submitting = false;
+            }
         });
     }
 }
@@ -1123,30 +1132,32 @@ async function applyOverrideAll(persist = saveData) {
     try {
         const clearedBlocks = state.appData.activeBlocks;
 
-        // Clear all active blocks
-        state.appData.activeBlocks = [];
-
-        // Switch every schedule off, keeping its days and times: paused with no end time is off.
-        for (const schedule of state.appData.schedules || []) {
-            schedule.isPaused = true;
-            delete schedule.pauseEndTime;
-        }
-
-        // Save the data
-        await persist();
-
-        // Clear enforcement after saving the new state.
         if (state.isIOS) {
+            const schedules = (state.appData.schedules || []).map(schedule => {
+                const draft = { ...schedule, isPaused: true };
+                delete draft.pauseEndTime;
+                return draft;
+            });
+            await persist({ ...state.appData, activeBlocks: [], schedules });
+            state.appData.activeBlocks = [];
+            state.appData.schedules = schedules;
             for (const block of clearedBlocks) await cancelIOSRestart(block);
-            await tauriAPI.screentimeClearBlock();
+            // Persist the stopped schedules in the App Group before clearing the
+            // stores so a concurrent callback sees the saved Stop all intent.
+            const scheduleResult = await syncIOSSchedules({ reportFailure: false });
+            await clearIOSOverrideAllStores();
+            if (scheduleResult?.success !== true) throw new Error(scheduleResult?.error || 'Screen Time could not update schedules');
         } else {
+            state.appData.activeBlocks = [];
+            for (const schedule of state.appData.schedules || []) {
+                schedule.isPaused = true;
+                delete schedule.pauseEndTime;
+            }
+            await persist();
             try { await tauriAPI.setBlockedApps([]); } catch (e) { console.warn('Failed to clear apps:', e); }
             // Safety net for older installations that left hosts entries behind.
             try { await tauriAPI.stripHostsMarkers(); } catch (e) { console.warn('Failed to clean hosts file:', e); }
         }
-
-        // Screen Time monitors must also reflect the saved schedules.
-        await syncIOSSchedules({ reportFailure: false });
 
         // Update blocked apps (will stop watcher if no apps to block)
         await updateBlockedApps();
@@ -1161,7 +1172,24 @@ async function applyOverrideAll(persist = saveData) {
         }
 
         console.log('Override-all completed — all blocks, schedules, apps, and hosts entries cleared');
+        return true;
     } catch (err) {
         console.error('Error during override all:', err);
+        if (state.isIOS) alert(tSettingsFmt('iosStopAllFailedFmt', { error: err?.message || String(err) }));
+        return false;
     }
+}
+
+async function clearIOSOverrideAllStores() {
+    let error;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+            const result = await tauriAPI.screentimeClearBlock();
+            if (result?.success === true) return;
+            error = result?.error || 'Screen Time could not clear its shields';
+        } catch (failure) {
+            error = failure?.message || String(failure);
+        }
+    }
+    throw new Error(error);
 }

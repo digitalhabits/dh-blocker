@@ -15,7 +15,7 @@ import { computeNextOneShotOccurrenceMs, computeNextRepeatingOccurrenceMs, isNon
 import { runIOSManualOperation, saveData, syncBlockingState } from './persistence.js';
 import { render, renderScheduleVisibilityChips } from './render.js';
 import { isFocusSpaceOn, getFocusSpaceOffUntil, turnFocusSpaceOn, setFocusSpaceEnabled } from './focus-space-switch.js';
-import { canEditScheduleBetweenBlocks, commitSegmentDelete, isScheduleSegmentActiveNow } from './schedule-editor.js';
+import { canEditScheduleBetweenBlocks, commitSegmentDelete, isScheduleSegmentActiveNow, pendingSegmentDelete } from './schedule-editor.js';
 import {
     BLOCKLIST_NAME_MAX_LENGTH,
     generateId,
@@ -790,25 +790,33 @@ async function applyBlocklistDelete(id, persist = saveData) {
         return;
     }
 
-    // If there's already a pending delete, commit it first
-    if (pendingDelete) {
-        commitDelete();
+    const deletion = {
+        blocklist,
+        activeBlocks: state.appData.activeBlocks.filter(block => block.blocklistId === id),
+        schedules: (state.appData.schedules || []).filter(schedule => schedule.blocklistId === id),
+    };
+    const withoutDeleted = () => ({
+        blocklists: state.appData.blocklists.filter(list => list.id !== id),
+        activeBlocks: state.appData.activeBlocks.filter(block => block.blocklistId !== id),
+        schedules: (state.appData.schedules || []).filter(schedule => schedule.blocklistId !== id),
+    });
+    if (state.isIOS) {
+        try {
+            await persist({ ...state.appData, ...withoutDeleted() });
+        } catch (error) {
+            alert(tSettingsFmt('deleteBlocklistSaveFailedFmt', { error: error?.message || String(error) }));
+            return false;
+        }
     }
+
+    commitDelete();
     commitSegmentDelete();
-
-    // Store the blocklist, its blocks and its (switched-off) schedules for undo
-    const activeBlocksToRemove = state.appData.activeBlocks.filter(b => b.blocklistId === id);
-    const schedulesToRemove = (state.appData.schedules || []).filter(s => s.blocklistId === id);
-
-    // Remove from data (soft delete)
-    state.appData.blocklists = state.appData.blocklists.filter(bl => bl.id !== id);
-    state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.blocklistId !== id);
-    state.appData.schedules = (state.appData.schedules || []).filter(s => s.blocklistId !== id);
+    // Keep any unrelated edits made while the draft save was in flight.
+    Object.assign(state.appData, withoutDeleted());
     expandedBlocklistCardIds.delete(id);
-    const save = persist();
-    if (state.isIOS) await save;
     // iOS: drop the space's monitors and start warnings now, not on the next tick.
     if (state.isIOS) void syncIOSSchedules();
+    else void persist();
 
     // If the deleted blocklist was the selected one, reset the scheduler UI
     if (state.selectedBlocklistId === id) {
@@ -821,56 +829,67 @@ async function applyBlocklistDelete(id, persist = saveData) {
     // Re-render immediately
     render();
 
+    offerDeleteUndo(deletion);
+    return true;
+}
+
+function offerDeleteUndo(deletion) {
+    pendingDelete = deletion;
     showUndoToast(
         tSettings('deleteUndoToastPrefix'),
-        blocklist.name,
+        deletion.blocklist.name,
         tSettings('deleteUndoToastSuffix'),
-        () => commitDelete(),
+        commitDelete,
     );
-
-    pendingDelete = {
-        blocklist,
-        activeBlocks: activeBlocksToRemove,
-        schedules: schedulesToRemove,
-    };
 }
 
 export function commitDelete() {
     if (!pendingDelete) return;
-
-    // Only once undo is gone: an undone delete keeps its stopped space's restart.
-    pendingDelete.activeBlocks.forEach((block) => void cancelIOSRestart(block));
-    if (pendingDelete.activeBlocks.length > 0) {
-        syncBlockingState();
-    }
-
+    finishDeletingBlocklist(pendingDelete);
     dismissUndoToast();
     pendingDelete = null;
+}
+
+function finishDeletingBlocklist(deletion) {
+    // An undone delete keeps its stopped space's restart.
+    deletion.activeBlocks.forEach((block) => void cancelIOSRestart(block));
+    if (deletion.activeBlocks.length > 0) void syncBlockingState();
 }
 
 export function undoDelete() {
-    return state.isIOS ? runIOSManualOperation((_, persist) => restoreDeletedBlocklist(persist)) : restoreDeletedBlocklist();
+    const deletion = pendingDelete;
+    if (!deletion) return;
+    pendingDelete = null;
+    dismissUndoToast();
+    return state.isIOS
+        ? runIOSManualOperation((_, persist) => restoreDeletedBlocklist(deletion, persist))
+        : restoreDeletedBlocklist(deletion);
 }
 
-async function restoreDeletedBlocklist(persist = saveData) {
-    if (!pendingDelete) return;
+async function restoreDeletedBlocklist(deletion, persist = saveData) {
+    if (state.isIOS) {
+        try {
+            await persist({
+                ...state.appData,
+                blocklists: [...state.appData.blocklists, deletion.blocklist],
+                activeBlocks: [...state.appData.activeBlocks, ...deletion.activeBlocks],
+                schedules: [...state.appData.schedules, ...deletion.schedules],
+            });
+        } catch (error) {
+            alert(tSettingsFmt('undoDeleteSaveFailedFmt', { error: error?.message || String(error) }));
+            // A more recent delete may already own the single Undo toast.
+            if (pendingDelete || pendingSegmentDelete) finishDeletingBlocklist(deletion);
+            else offerDeleteUndo(deletion);
+            return false;
+        }
+    }
 
-    // Restore the blocklist and active blocks
-    state.appData.blocklists.push(pendingDelete.blocklist);
-    pendingDelete.activeBlocks.forEach(block => {
-        state.appData.activeBlocks.push(block);
-    });
-    (pendingDelete.schedules || []).forEach(schedule => {
-        state.appData.schedules.push(schedule);
-    });
-    const save = persist();
-    if (state.isIOS) await save;
-
-    dismissUndoToast();
-    pendingDelete = null;
-
-    // Re-render
+    state.appData.blocklists.push(deletion.blocklist);
+    state.appData.activeBlocks.push(...deletion.activeBlocks);
+    state.appData.schedules.push(...deletion.schedules);
+    if (!state.isIOS) void persist();
     render();
+    return true;
 }
 
 // Main render function

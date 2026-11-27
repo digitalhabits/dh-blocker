@@ -86,6 +86,9 @@ export const SETTINGS_TRANSLATIONS = {
         iosScreentimeFailedNoteFmt: 'Screen Time access failed: {error}',
         iosAutomaticRestartFailed: 'Automatic restart could not be scheduled. Please try again.',
         iosManualSyncFailedFmt: 'Screen Time could not update manual blocking. Reopen the app to retry. {error}',
+        iosStopAllFailedFmt: 'Could not stop all iOS blocking. Press Stop all to retry. {error}',
+        deleteBlocklistSaveFailedFmt: 'Could not delete the focus space. {error}',
+        undoDeleteSaveFailedFmt: 'Could not restore the focus space. {error}',
         // iOS start warnings (notifications before a focus space starts)
         iosNotificationsOnboardingTitle: 'Get a heads-up before blocking begins',
         iosNotificationsOnboardingBody: 'Receive a notification 2 minutes before a scheduled focus space starts so you have time to finish what you\'re doing.',
@@ -1062,6 +1065,9 @@ export const SETTINGS_TRANSLATIONS = {
         iosScreentimeFailedNoteFmt: 'Screen Time-adgang mislykkedes: {error}',
         iosAutomaticRestartFailed: 'Automatisk genstart kunne ikke planlægges. Prøv igen.',
         iosManualSyncFailedFmt: 'Skærmtid kunne ikke opdatere manuel blokering. Åbn appen igen for at prøve igen. {error}',
+        iosStopAllFailedFmt: 'Kunne ikke stoppe al blokering på iOS. Tryk på Stop alle for at prøve igen. {error}',
+        deleteBlocklistSaveFailedFmt: 'Kunne ikke slette fokusrummet. {error}',
+        undoDeleteSaveFailedFmt: 'Kunne ikke gendanne fokusrummet. {error}',
         // iOS start warnings (notifications before a focus space starts)
         iosNotificationsOnboardingTitle: 'Få besked, før blokeringen begynder',
         iosNotificationsOnboardingBody: 'Få en notifikation 2 minutter før et planlagt fokusrum starter, så du har tid til at gøre det færdigt, du er i gang med.',
@@ -2006,6 +2012,9 @@ export const SETTINGS_TRANSLATIONS = {
         iosScreentimeFailedNoteFmt: '屏幕使用时间访问失败：{error}',
         iosAutomaticRestartFailed: '无法安排自动重新启用。请重试。',
         iosManualSyncFailedFmt: '屏幕使用时间无法更新手动屏蔽。请重新打开应用重试。{error}',
+        iosStopAllFailedFmt: '无法停止所有 iOS 屏蔽。请点击“全部停止”重试。{error}',
+        deleteBlocklistSaveFailedFmt: '无法删除专注空间。{error}',
+        undoDeleteSaveFailedFmt: '无法恢复专注空间。{error}',
         // iOS start warnings (notifications before a focus space starts)
         iosNotificationsOnboardingTitle: '在屏蔽开始前收到提醒',
         iosNotificationsOnboardingBody: '在已计划的专注空间开始前 2 分钟收到通知，让你有时间完成手头的事。',
