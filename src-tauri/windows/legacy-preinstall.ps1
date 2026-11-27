@@ -17,6 +17,7 @@ param(
         'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
     ),
     [string]$LocalAppData = $env:LOCALAPPDATA,
+    [string]$ProgramData = $env:ProgramData,
     [string]$ProgramFiles = $env:ProgramFiles,
     [string]$ProgramW6432 = $env:ProgramW6432,
     [string]$AppData = $env:APPDATA,
@@ -24,7 +25,11 @@ param(
     [string]$Public = $env:PUBLIC,
     [string]$RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',
     [string[]]$LegacyWatchdogTasks = @('ReDD Blocker Watchdog', 'ReDD Block Watchdog'),
-    [switch]$SkipWatchdog
+    [switch]$SkipWatchdog,
+    [string]$HostsDirectory = (Join-Path ([System.Environment]::SystemDirectory) 'drivers\etc'),
+    [string]$SnapshotFile,
+    [switch]$BeforeMaintenance,
+    [switch]$ProtectOlderUninstaller
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
@@ -36,65 +41,90 @@ function Get-QuotedOrTrimmed([string]$Value) {
     return $trim
 }
 
-function Invoke-LegacySilentUninstall {
-    param([string]$UninstallString, [string]$InstallLocation)
-
-    $raw = $UninstallString.Trim()
-    if ([string]::IsNullOrWhiteSpace($raw)) { return }
-
-    $exe = $null
-    $extraArgs = @()
-    if ($raw.StartsWith('"')) {
-        $end = $raw.IndexOf('"', 1)
-        if ($end -lt 1) { return }
-        $exe = $raw.Substring(1, $end - 1)
-        $remainder = $raw.Substring($end + 1).Trim()
-        if ($remainder) {
-            $extraArgs = @($remainder -split '\s+' | Where-Object { $_ })
-        }
-    } else {
-        $parts = $raw -split '\s+', 2
-        $exe = $parts[0]
-        if ($parts.Length -gt 1 -and $parts[1]) {
-            $extraArgs = @($parts[1] -split '\s+' | Where-Object { $_ })
-        }
-    }
-
-    if (-not $exe -or -not (Test-Path -LiteralPath $exe)) { return }
-
-    # Full silent uninstall (not /UPDATE): remove files, shortcuts, and the
-    # Apps & Features key. _?= tells NSIS to run against the real install dir.
-    $argList = [System.Collections.Generic.List[string]]::new()
-    foreach ($a in $extraArgs) {
-        if ($a -ieq '/S' -or $a -like '_?=*') { continue }
-        $argList.Add($a)
-    }
-    $argList.Add('/S')
-    $instDir = Get-QuotedOrTrimmed $InstallLocation
-    if (-not $instDir) {
-        $instDir = Split-Path -Parent $exe
-    }
-    if ($instDir) {
-        $argList.Add("_?=$instDir")
-    }
-
-    Start-Process -FilePath $exe -ArgumentList $argList.ToArray() -Wait -WindowStyle Hidden | Out-Null
-}
-
-# 1. Prefer the old product's own uninstaller (files + shortcuts + Uninstall key).
-foreach ($name in $LegacyNames) {
-    foreach ($root in $UninstallRoots) {
-        $key = Join-Path $root $name
-        if (-not (Test-Path -LiteralPath $key)) { continue }
-        $props = Get-ItemProperty -LiteralPath $key
-        if (-not $props -or -not $props.UninstallString) { continue }
-        Invoke-LegacySilentUninstall -UninstallString $props.UninstallString -InstallLocation $props.InstallLocation
+function Get-RegisteredLegacyDirectory($Registration) {
+    $dir = Get-QuotedOrTrimmed $Registration.InstallLocation
+    if ($dir) { return $dir }
+    if ($Registration.UninstallString -match '^\s*"([^"]+)"|^\s*(\S+)') {
+        $exe = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
+        return Split-Path -Parent $exe
     }
 }
 
-# 2. Directory sweep fallback — Tauri currentUser is %LOCALAPPDATA%\<name>
-#    (no Programs\). Also cover per-machine Program Files and electron-builder's
-#    %LOCALAPPDATA%\Programs\<name>.
+function Get-HostsHash([string]$Path) {
+    try {
+        $null = Get-Item -LiteralPath $Path -ErrorAction Stop
+    } catch [System.Management.Automation.ItemNotFoundException] {
+        return $null
+    }
+    return (Get-FileHash -LiteralPath $Path -ErrorAction Stop).Hash
+}
+
+function Test-LegacyHostsRisk($Hashes, [string]$SnapshotFolder) {
+    if ($null -ne $Hashes['hosts.redd-backup']) { return $true }
+    $marker = '^\s*(# === (BEGIN|END) REDD BLOCK \(reddfocus\.org\) ===|# ReDD Block (Start|End))\s*$'
+    if ($null -ne $Hashes['hosts'] -and
+        (Select-String -LiteralPath (Join-Path $SnapshotFolder 'hosts') -Quiet -Pattern $marker)) {
+        return $true
+    }
+    foreach ($name in ($LegacyNames + 'Digital Habits Blocker')) {
+        if (Test-Path -LiteralPath (Join-Path $ProgramData "$name\helper-state.json")) {
+            return $true
+        }
+    }
+    if (Get-Process -Name 'redd-block-helper' -ErrorAction SilentlyContinue) { return $true }
+    return [bool](Get-ScheduledTask -TaskPath '\' | Where-Object TaskName -eq 'ReDD Block Helper')
+}
+
+# The same-product Tauri maintenance page can run its old uninstaller
+# before PREINSTALL. Persist exact copies outside any default install or
+# bundle-ID directory, then compare live hosts before proceeding.
+if ($BeforeMaintenance) {
+    $ErrorActionPreference = 'Stop'
+    if (-not $SnapshotFile -or -not $AppData) { throw 'Could not resolve hosts recovery paths' }
+    $folder = Join-Path $AppData ("Digital Habits Blocker\backups\nsis-" + [Guid]::NewGuid())
+    [void][IO.Directory]::CreateDirectory($folder)
+    $hashes = @{}
+    foreach ($name in @('hosts', 'hosts.redd-backup')) {
+        $source = Join-Path $HostsDirectory $name
+        $hash = Get-HostsHash $source
+        if ($null -ne $hash) {
+            $backup = Join-Path $folder $name
+            [IO.File]::Copy($source, $backup)
+            if ((Get-HostsHash $backup) -ne $hash) { throw "$name changed during snapshot" }
+        }
+        if ((Get-HostsHash $source) -ne $hash) { throw "$name changed during snapshot" }
+        $hashes[$name] = $hash
+    }
+    $manifest = @{ Folder = $folder; Hashes = $hashes } | ConvertTo-Json
+    [IO.File]::WriteAllText($SnapshotFile, $manifest)
+    if ($ProtectOlderUninstaller -and (Test-LegacyHostsRisk $hashes $folder)) {
+        Write-Output "The older uninstaller can modify Windows hosts. Recovery copies are in $folder"
+        exit 2
+    }
+    exit 0
+}
+
+if ($SnapshotFile) {
+    $ErrorActionPreference = 'Stop'
+    try {
+        $snapshot = [IO.File]::ReadAllText($SnapshotFile) | ConvertFrom-Json
+        foreach ($name in @('hosts', 'hosts.redd-backup')) {
+            if ((Get-HostsHash (Join-Path $snapshot.Folder $name)) -ne $snapshot.Hashes.$name) {
+                throw "Could not verify recovery copy in $($snapshot.Folder)"
+            }
+        }
+        if ((Get-HostsHash (Join-Path $HostsDirectory 'hosts')) -ne $snapshot.Hashes.hosts) {
+            throw "Windows hosts changed during setup. Recovery copies are in $($snapshot.Folder)"
+        }
+    } catch {
+        [Console]::Error.WriteLine($_.Exception.Message)
+        exit 1
+    }
+    $ErrorActionPreference = 'SilentlyContinue'
+}
+
+# Remove known prior install directories without executing their
+# uninstallers, which may restore a stale hosts file.
 $paths = New-Object System.Collections.Generic.List[string]
 foreach ($name in $LegacyNames) {
     if ($ProgramFiles) { $paths.Add((Join-Path $ProgramFiles $name)) }
@@ -118,11 +148,17 @@ foreach ($path in ($paths | Select-Object -Unique)) {
     Remove-Item -LiteralPath $path -Recurse -Force
 }
 
-# 3. If uninstall.exe was missing, scrub leftover Apps & Features keys.
+# Remove stale Apps & Features keys. Preserve the registration for live
+# custom installations and for directories the sweep could not remove.
 foreach ($name in $LegacyNames) {
     foreach ($root in $UninstallRoots) {
         $key = Join-Path $root $name
         if (Test-Path -LiteralPath $key) {
+            $dir = Get-RegisteredLegacyDirectory (Get-ItemProperty -LiteralPath $key)
+            if ($dir -and (Test-Path -LiteralPath $dir)) {
+                Write-Warning "The legacy installation at $dir needs separate removal."
+                continue
+            }
             Remove-Item -LiteralPath $key -Recurse -Force
         }
     }
