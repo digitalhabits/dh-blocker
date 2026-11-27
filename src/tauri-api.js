@@ -66,7 +66,8 @@ export const tauriAPI = {
         invoke('plugin:screentime|register_one_off_activity', { activityName, startTimestampMs }),
     screentimeSetResumePayload: (payload) =>
         invoke('plugin:screentime|set_resume_payload', payload),
-    screentimeCancelResume: (blockId) => invoke('plugin:screentime|cancel_resume', { blockId }),
+    screentimeCancelResume: (blockId, isSchedule = false) =>
+        invoke('plugin:screentime|cancel_resume', { blockId, isSchedule }),
     screentimeSetBlockEndState: (payload) =>
         invoke('plugin:screentime|set_block_end_state', payload),
     screentimeSetStartWarnings: (payload) => invoke('plugin:screentime|set_start_warnings', { payload }),

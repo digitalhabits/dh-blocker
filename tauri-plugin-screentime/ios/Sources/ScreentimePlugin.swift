@@ -132,6 +132,7 @@ class ScheduleEntry: Decodable {
 
 class CancelResumeArgs: Decodable {
     let blockId: String
+    let isSchedule: Bool
 }
 
 class SetSchedulesArgs: Decodable {
@@ -1412,13 +1413,16 @@ class ScreentimePlugin: Plugin {
         invoke.resolve(["success": true])
     }
     
-    /// Cancel a Manual block's automatic restart: its one-off wake-up and the payload it
-    /// would re-apply. Nothing booked is fine; stopping an unknown activity is a no-op.
+    /// Cancel the one-off restart and, for a Manual block, its saved payload.
     @objc public func cancelResume(_ invoke: Invoke) throws {
         let args = try invoke.parseArgs(CancelResumeArgs.self)
-        center.stopMonitoring([DeviceActivityName("redd-block-resume-\(args.blockId)")])
-        SharedManualBlockStore.removeResumePayload(blockId: args.blockId)
-        logSchedule("cancelled automatic restart for block \(args.blockId)")
+        let prefix = args.isSchedule ? "redd-schedule-resume-" : "redd-block-resume-"
+        let activityName = prefix + args.blockId
+        center.stopMonitoring([DeviceActivityName(activityName)])
+        if !args.isSchedule {
+            SharedManualBlockStore.removeResumePayload(blockId: args.blockId)
+        }
+        logSchedule("cancelled automatic restart \(activityName)")
         invoke.resolve(["success": true])
     }
 
