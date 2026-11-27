@@ -150,3 +150,10 @@ fn cleanup_marker_must_be_the_final_shell_output_line() {
     assert!(cleanup_reported_success(b"ok\n"));
     assert!(!cleanup_reported_success(b"ok\rfailed\n"));
 }
+
+#[test]
+fn macos_cleanup_only_substitutes_staged_paths_into_quoted_arguments() {
+    let script = include_str!("cleanup.sh");
+    assert!(script.contains("'{STAGED}'"));
+    assert!(!script.replace("'{STAGED}'", "").contains("{STAGED}"));
+}

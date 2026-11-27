@@ -1,7 +1,7 @@
 # Bundled elevated cleanup for the v1.x → 2.0 migration on Windows.
 #
 # Loaded by Rust via include_str! and templated with:
-#   {STAGED}  — temp file holding the cleaned hosts content
+#   Staged path  — temp file holding the cleaned hosts content
 #   {LIVE_HASH} and {CLEANED_HASH} — SHA-256 of the original and edited bytes,
 #                                   or 'missing' when no hosts file exists
 #
@@ -23,7 +23,7 @@
 $ErrorActionPreference = 'Stop'
 $staged = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('{STAGED}'))
 $systemDirectory = [Environment]::SystemDirectory
-$hosts = 'C:\Windows\System32\drivers\etc\hosts'
+$hosts = Join-Path $systemDirectory 'drivers\etc\hosts'
 $helperTask = 'ReDD Block Helper'
 $programData = if ($env:PROGRAMDATA) { $env:PROGRAMDATA } else { 'C:\ProgramData' }
 # helper-state.json may exist under any historical shared-storage folder name.

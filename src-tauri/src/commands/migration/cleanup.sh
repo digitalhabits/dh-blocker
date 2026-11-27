@@ -2,7 +2,7 @@
 # Bundled elevated cleanup for the v1.x → 2.0 migration on macOS.
 #
 # Loaded by Rust via `include_str!` and templated with:
-#   {STAGED}  — temp file holding the cleaned hosts content
+#   Staged path  — temp file holding the cleaned hosts content
 #   {LIVE_HASH} and {CLEANED_HASH} — SHA-256 of the original and edited bytes,
 #                                   or 'missing' when no hosts file exists
 #

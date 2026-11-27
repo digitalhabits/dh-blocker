@@ -61,14 +61,29 @@ const UTF8_BOM: &[u8] = b"\xef\xbb\xbf";
 
 // ---- Detection -----------------------------------------------------------
 
-fn hosts_path() -> PathBuf {
+#[cfg(all(target_os = "windows", not(feature = "system-test")))]
+fn system_directory() -> std::io::Result<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows::Win32::System::SystemInformation::GetSystemDirectoryW;
+    let mut buffer = vec![0u16; 32768];
+    let size = unsafe { GetSystemDirectoryW(Some(&mut buffer)) } as usize;
+    if size == 0 || size >= buffer.len() {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(PathBuf::from(std::ffi::OsString::from_wide(
+        &buffer[..size],
+    )))
+}
+
+#[cfg(not(feature = "system-test"))]
+fn hosts_path() -> std::io::Result<PathBuf> {
     #[cfg(target_os = "windows")]
     {
-        PathBuf::from(r"C:\Windows\System32\drivers\etc\hosts")
+        system_directory().map(|dir| dir.join(r"drivers\etc\hosts"))
     }
     #[cfg(not(target_os = "windows"))]
     {
-        PathBuf::from("/etc/hosts")
+        Ok(PathBuf::from("/etc/hosts"))
     }
 }
 
@@ -78,17 +93,6 @@ fn read_live_hosts(path: &Path) -> std::io::Result<Option<Vec<u8>>> {
         Ok(bytes) => Ok(Some(bytes)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound && !path.is_symlink() => Ok(None),
         Err(e) => Err(e),
-    }
-}
-
-fn legacy_hosts_backup_path() -> PathBuf {
-    #[cfg(target_os = "windows")]
-    {
-        PathBuf::from(r"C:\Windows\System32\drivers\etc\hosts.redd-backup")
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        PathBuf::from("/etc/hosts.redd-backup")
     }
 }
 
@@ -111,6 +115,7 @@ fn trim_marker_line(line: &[u8]) -> &[u8] {
     }
 }
 
+#[cfg(not(feature = "system-test"))]
 fn legacy_artefacts_present() -> bool {
     // We only count daemon-specific files as residue. The shared data
     // dir (/var/lib/redd-block on macOS, ProgramData\<product> on
@@ -195,7 +200,7 @@ fn migration_pending_uncached() -> bool {
 
 #[cfg(not(feature = "system-test"))]
 fn migration_pending_uncached() -> bool {
-    match read_live_hosts(&hosts_path()) {
+    match hosts_path().and_then(|path| read_live_hosts(&path)) {
         Ok(Some(raw)) if hosts_has_markers(&raw) => return true,
         Err(e) if cfg!(any(target_os = "macos", target_os = "windows")) => {
             log::warn!("unable to check hosts for migration residue: {e}");
@@ -237,7 +242,7 @@ pub fn user_came_from_v1x() -> bool {
 #[cfg(not(feature = "system-test"))]
 #[tauri::command]
 pub fn user_came_from_v1x() -> bool {
-    legacy_hosts_backup_path().exists()
+    hosts_path().is_ok_and(|path| path.with_file_name("hosts.redd-backup").exists())
 }
 
 // ---- Hosts cleaning (pure) ----------------------------------------------
@@ -484,7 +489,9 @@ fn prepare_hosts_edit(
     use sha2::{Digest, Sha256};
     use std::io::Write;
 
-    let live = read_live_hosts(&hosts_path()).map_err(|e| format!("read hosts: {e}"))?;
+    let live = hosts_path()
+        .and_then(|path| read_live_hosts(&path))
+        .map_err(|e| format!("read hosts: {e}"))?;
     let original = live.as_deref().unwrap_or_default();
     let cleaned = strip_managed_sections(original)?;
     if cleaned != original {
@@ -615,18 +622,13 @@ fn run_elevated_windows(edit: &PreparedHostsEdit) -> ElevatedOutcome {
     // The inner elevated PowerShell is hidden separately via -WindowStyle.
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    use windows::Win32::System::SystemInformation::GetSystemDirectoryW;
-    let mut system_dir = vec![0u16; 32768];
-    let size = unsafe { GetSystemDirectoryW(Some(&mut system_dir)) } as usize;
-    if size == 0 || size >= system_dir.len() {
+    let Ok(system_dir) = system_directory() else {
         return ElevatedOutcome {
             success: false,
             user_cancelled: false,
         };
-    }
-    use std::os::windows::ffi::OsStringExt;
-    let powershell = PathBuf::from(std::ffi::OsString::from_wide(&system_dir[..size]))
-        .join(r"WindowsPowerShell\v1.0\powershell.exe");
+    };
+    let powershell = system_dir.join(r"WindowsPowerShell\v1.0\powershell.exe");
     let inner = include_str!("migration/cleanup.ps1")
         .replace("{LIVE_HASH}", &edit.live_hash)
         .replace("{CLEANED_HASH}", &edit.cleaned_hash)
