@@ -141,6 +141,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 futures-util = "0.3"
 tokio = { version = "1", features = ["fs", "io-util"] }
 sha2 = "0.10"
+tempfile = "3"
 # Single-instance enforcement so the NSIS post-install hook (which always
 # launches redd-block.exe) and the optional finish-page "Run" checkbox
 # can't produce two running instances. Also benefits day-to-day usage —

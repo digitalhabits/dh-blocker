@@ -753,55 +753,18 @@ jobs:
             exit 1
           fi
 
-      - name: Update latest-versions.json macOS checksum
+      - name: Generate latest-versions.json from signed installers
         if: >-
           (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
           (github.event_name == 'workflow_dispatch' && inputs.create_github_release)
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          PKG="$(find for-distribution -maxdepth 1 -name 'Digital-Habits-Blocker-*.pkg' | head -1)"
-          if [[ -z "$PKG" ]]; then
-            echo "No macOS .pkg found in for-distribution" >&2
-            exit 1
-          fi
           node scripts/update-latest-versions-json.js \
-            --version "${{ steps.meta.outputs.version }}" \
-            --macos-pkg "$PKG"
-
-      # v3.9+ clients poll digitalhabits.github.io/dh-blocker/latest-versions.json,
-      # served straight from this commit. Older clients poll Pages paths that
-      # did not follow the repo moves:
-      #   <= v3.8.7        ulyngs.github.io/redd-block/…
-      #   v3.8.8–v3.8.11   ulyngs.github.io/digital-habits-blocker/…
-      # Both are mirrored from docs/ by a scheduled workflow (every 6 h) in
-      # ulyngs/ulyngs.github.io — nothing in this workflow pushes there.
-      # Do NOT create repos named ulyngs/redd-block or
-      # ulyngs/digital-habits-blocker — that would break the release-download
-      # redirects those clients rely on.
-      - name: Commit latest-versions.json
-        if: >-
-          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
-          (github.event_name == 'workflow_dispatch' && inputs.create_github_release)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Builds can take a while; main often moves ahead of the checkout SHA.
-          # Re-apply the updated file on tip of main, then push (retry once if raced).
-          cp docs/latest-versions.json /tmp/latest-versions.json
-          git fetch origin main
-          git checkout -B main origin/main
-          cp /tmp/latest-versions.json docs/latest-versions.json
-
-          git add docs/latest-versions.json
-          if git diff --staged --quiet; then
-            echo "latest-versions.json already up to date"
-            exit 0
-          fi
-          git commit -m "Update latest-versions.json for v${{ steps.meta.outputs.version }}"
-          if ! git push origin HEAD:refs/heads/main; then
-            git pull --rebase origin main
-            git push origin HEAD:refs/heads/main
-          fi
+            --version "$VERSION" \
+            --macos-pkg "for-distribution/Digital-Habits-Blocker-${VERSION}.pkg" \
+            --windows-x64-setup "for-distribution/Digital-Habits-Blocker_${VERSION}_x64-setup.exe" \
+            --windows-arm64-setup "for-distribution/Digital-Habits-Blocker_${VERSION}_arm64-setup.exe"
 
       - name: Configure AWS credentials
         if: >-
@@ -875,3 +838,43 @@ jobs:
           make_latest: true
           generate_release_notes: false
           fail_on_unmatched_files: true
+
+      # Advertise the version only after its installer assets are available.
+      # v3.9+ clients poll digitalhabits.github.io/dh-blocker/latest-versions.json,
+      # served straight from this commit. Older clients poll Pages paths that
+      # did not follow the repo moves:
+      #   <= v3.8.7        ulyngs.github.io/redd-block/…
+      #   v3.8.8–v3.8.11   ulyngs.github.io/digital-habits-blocker/…
+      # Both are mirrored from docs/ by a scheduled workflow (every 6 h) in
+      # ulyngs/ulyngs.github.io — nothing in this workflow pushes there.
+      # Do NOT create repos named ulyngs/redd-block or
+      # ulyngs/digital-habits-blocker — that would break the release-download
+      # redirects those clients rely on.
+      - name: Commit latest-versions.json
+        if: >-
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
+          (github.event_name == 'workflow_dispatch' && inputs.create_github_release)
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Builds can take a while; main often moves ahead of the checkout SHA.
+          # Re-apply the updated file on tip of main, then push (retry once if raced).
+          cp docs/latest-versions.json "$RUNNER_TEMP/latest-versions.json"
+          git restore -- docs/latest-versions.json
+          git fetch origin main
+          git checkout -B main origin/main
+          cp "$RUNNER_TEMP/latest-versions.json" docs/latest-versions.json
+
+          git add docs/latest-versions.json
+          if git diff --staged --quiet; then
+            echo "latest-versions.json already up to date"
+            exit 0
+          fi
+          git commit -m "Update latest-versions.json for v$VERSION"
+          if ! git push origin HEAD:refs/heads/main; then
+            git pull --rebase origin main
+            git push origin HEAD:refs/heads/main
+          fi
