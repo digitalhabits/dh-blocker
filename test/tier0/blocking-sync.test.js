@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { initializeIOSBlockingState } from '../../src/blocking-platform.js';
+import { startManualBlock, stopFocusSpaceTarget } from '../../src/confirm-modals.js';
 import { syncBlockingState } from '../../src/persistence.js';
 import { syncIOSSchedules } from '../../src/schedule-engine.js';
 import { state } from '../../src/state.js';
@@ -6,9 +8,16 @@ import { tauriAPI } from '../../src/tauri-api.js';
 
 let previous;
 beforeEach(() => {
-    previous = { appData: state.appData, isIOS: state.isIOS, lastBlockedDomains: state.lastBlockedDomains };
+    previous = {
+        appData: state.appData,
+        isIOS: state.isIOS,
+        lastBlockedDomains: state.lastBlockedDomains,
+        activatedBlockIds: state.activatedBlockIds,
+        screentimeAuthorized: state.screentimeAuthorized,
+    };
     state.appData = { blocklists: [], activeBlocks: [], schedules: [], settings: {} };
     state.lastBlockedDomains = new Set();
+    state.activatedBlockIds = new Set();
 });
 afterEach(() => {
     Object.assign(state, previous);
@@ -61,4 +70,127 @@ test('iOS reports a rejected Screen Time call without recording a new policy', a
     expect(startBlock).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ domains: ['manual.invalid'] }));
     expect(watcher).not.toHaveBeenCalled();
     expect(state.lastBlockedDomains.size).toBe(0);
+});
+
+test.each(['missing', 'paused', 'expired'])('iOS launch reconciles a manual shield with %s saved intent', async (intent) => {
+    state.isIOS = true;
+    const now = Date.now();
+    state.appData.blocklists = [{ id: 'space', websites: ['manual.invalid'] }];
+    if (intent !== 'missing') {
+        state.appData.activeBlocks = [{
+            blocklistId: 'space',
+            startTime: now - 60_000,
+            endTime: intent === 'expired' ? now - 1 : now + 60_000,
+            isPaused: intent === 'paused',
+            pauseEndTime: intent === 'paused' ? now + 30_000 : undefined,
+        }];
+    }
+    const clearManual = vi.spyOn(tauriAPI, 'screentimeClearManualBlock').mockResolvedValue({ success: true });
+    const clearAll = vi.spyOn(tauriAPI, 'screentimeClearBlock');
+    vi.spyOn(tauriAPI, 'setSchedulesPlugin').mockResolvedValue({ success: true });
+    vi.spyOn(tauriAPI, 'screentimeSetStartWarnings').mockResolvedValue({ success: true });
+
+    await initializeIOSBlockingState();
+    expect(clearManual).toHaveBeenCalledOnce();
+    expect(clearAll).not.toHaveBeenCalled();
+});
+
+test.each([false, true])('iOS launch reapplies saved manual intent (expired pause: %s)', async (expiredPause) => {
+    state.isIOS = true;
+    const now = Date.now();
+    state.appData.blocklists = [{ id: 'space', websites: ['manual.invalid'] }];
+    state.appData.activeBlocks = [{
+        blocklistId: 'space', startTime: 0, endTime: now + 60_000,
+        isPaused: expiredPause, pauseEndTime: expiredPause ? now - 1 : undefined,
+    }];
+    const start = vi.spyOn(tauriAPI, 'screentimeStartBlock').mockResolvedValue({ success: true });
+    vi.spyOn(tauriAPI, 'setSchedulesPlugin').mockResolvedValue({ success: true });
+
+    await initializeIOSBlockingState();
+    expect(start).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ domains: ['manual.invalid'] }));
+});
+
+test.each(['start', 'clear'])('iOS reports a resolved native %s failure and preserves the previous policy', async (action) => {
+    state.isIOS = true;
+    state.lastBlockedDomains = new Set(['previous.invalid']);
+    const error = 'Screen Time rejected the update';
+    if (action === 'start') {
+        state.appData.blocklists = [{ id: 'manual', websites: ['manual.invalid'] }];
+        state.appData.activeBlocks = [{ blocklistId: 'manual', startTime: 0, endTime: Date.now() + 60_000 }];
+        vi.spyOn(tauriAPI, 'screentimeStartBlock').mockResolvedValue({ success: false, error });
+    } else {
+        vi.spyOn(tauriAPI, 'screentimeClearManualBlock').mockResolvedValue({ success: false, error });
+        vi.spyOn(tauriAPI, 'screentimeClearBlock').mockResolvedValue({ success: false, error });
+    }
+
+    await expect(syncBlockingState()).resolves.toEqual({ success: false, error });
+    expect(state.lastBlockedDomains).toEqual(new Set(['previous.invalid']));
+});
+
+test('a failed iOS Manual start save releases only the attempted restriction', async () => {
+    state.isIOS = true;
+    state.screentimeAuthorized = true;
+    const original = { id: 'original', blocklistId: 'saved', startTime: 0, endTime: Date.now() + 60_000 };
+    state.appData.activeBlocks = [original];
+    state.appData.blocklists = [
+        { id: 'saved', websites: ['existing.invalid'] },
+        { id: 'new', websites: ['new.invalid'] },
+    ];
+    const start = vi.spyOn(tauriAPI, 'screentimeStartBlock').mockResolvedValue({ success: true });
+    const clear = vi.spyOn(tauriAPI, 'screentimeClearManualBlock');
+    const save = vi.spyOn(tauriAPI, 'saveData').mockRejectedValue(new Error('Could not save manual block'));
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    await expect(startManualBlock('new')).resolves.toBe(false);
+    expect(start.mock.calls.map(([payload]) => payload.domains)).toEqual([
+        ['existing.invalid', 'new.invalid'], ['existing.invalid'],
+    ]);
+    expect(save).toHaveBeenCalledOnce();
+    expect(clear).not.toHaveBeenCalled();
+    expect(state.appData.activeBlocks).toEqual([original]);
+    expect(state.activatedBlockIds.size).toBe(0);
+    expect(alert).toHaveBeenCalledWith('Could not start block: Could not save manual block');
+});
+
+test('iOS stops one Manual source without clearing its overlap', async () => {
+    state.isIOS = true;
+    const keep = { id: 'keep', blocklistId: 'saved', startTime: 0, endTime: Date.now() + 60_000 };
+    const remove = { ...keep, id: 'remove', blocklistId: 'removed' };
+    state.appData.activeBlocks = [keep, remove];
+    state.appData.blocklists = [
+        { id: 'saved', websites: ['shared.invalid'] },
+        { id: 'removed', websites: ['shared.invalid', 'removed.invalid'] },
+    ];
+    vi.spyOn(tauriAPI, 'saveData').mockResolvedValue();
+    vi.spyOn(tauriAPI, 'screentimeCancelResume').mockResolvedValue({ success: true });
+    const start = vi.spyOn(tauriAPI, 'screentimeStartBlock').mockResolvedValue({ success: true });
+    const clear = vi.spyOn(tauriAPI, 'screentimeClearManualBlock');
+
+    await expect(stopFocusSpaceTarget({ block: remove, minutes: 0 })).resolves.toMatchObject({ kind: 'removed' });
+    expect(start).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ domains: ['shared.invalid'] }));
+    expect(clear).not.toHaveBeenCalled();
+    expect(state.appData.activeBlocks).toEqual([keep]);
+});
+
+test.each([0, 10])('a failed iOS Manual stop save retains the active block (pause: %s minutes)', async (minutes) => {
+    state.isIOS = true;
+    const block = { id: 'keep', blocklistId: 'saved', startTime: 0, endTime: Date.now() + 60_000 };
+    state.appData.activeBlocks = [block];
+    state.appData.blocklists = [{ id: 'saved', websites: ['keep.invalid'] }];
+    const clear = vi.spyOn(tauriAPI, 'screentimeClearManualBlock');
+    const cancel = vi.spyOn(tauriAPI, 'screentimeCancelResume').mockResolvedValue({ success: true });
+    vi.spyOn(tauriAPI, 'screentimeSetResumePayload').mockResolvedValue({ success: true });
+    vi.spyOn(tauriAPI, 'screentimeRegisterOneOffActivity').mockResolvedValue({ success: true });
+    vi.spyOn(tauriAPI, 'saveData').mockImplementation(async () => {
+        expect(state.appData.activeBlocks).toEqual([block]);
+        expect(block).not.toHaveProperty('isPaused');
+        throw new Error('Could not save manual stop');
+    });
+
+    await expect(stopFocusSpaceTarget({ block, minutes })).rejects.toThrow('Could not save manual stop');
+    expect(state.appData.activeBlocks).toEqual([block]);
+    expect(block).not.toHaveProperty('isPaused');
+    expect(clear).not.toHaveBeenCalled();
+    if (minutes > 0) expect(cancel).toHaveBeenCalledExactlyOnceWith('keep', false);
+    else expect(cancel).not.toHaveBeenCalled();
 });

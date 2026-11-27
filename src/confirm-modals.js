@@ -14,7 +14,7 @@ import { isBlocklistEditFrictionRequired,renderBlocklists, truncateBlocklistName
 import { areSegmentsEqual, getSelectedSchedule, canEditScheduleBetweenBlocks } from './schedule-editor.js';
 import { pad } from './time-inputs.js';
 import { formatScheduleWhenSummary, formatUnlockDurationLabel, getWhenToBlockKind, isEditorInCreateModal, mountFocusSpaceEditor, notifyEditorChanged, populateFocusSpaceEditor, resyncEditorLockState, returnFocusSpaceEditorToPanel } from './focus-space-editor.js';
-import { resetModalScrollPosition, updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth } from './blocking-platform.js';
+import { initializeIOSBlockingState, resetModalScrollPosition, updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth } from './blocking-platform.js';
 import { resetWebsitesImportMenuPosition } from './website-input.js';
 import { bindUiZoomLayoutObserver, scheduleUiZoomResponsiveLayout, usesStackSettingsPlacement } from './theme.js';
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
@@ -1031,52 +1031,43 @@ export async function startManualBlock(blocklistId) {
         isAlwaysOn: true,
     };
 
-    let result = { success: true };
-
-    if (state.isIOS) {
-        if (!state.screentimeAuthorized) {
-            const authResult = await requestScreentimeAuth();
-            if (!authResult.granted) {
-                if (authResult.status === 'denied') {
-                    alert('Screen Time authorization was denied. Please go to Settings > Screen Time > Digital Habits: Blocker and enable access.');
-                } else if (authResult.error) {
-                    alert('Screen Time authorization failed: ' + authResult.error);
-                } else {
-                    alert('Screen Time authorization is required to block websites. Please try again.');
-                }
-                updateOnboardingVisibility();
-                return false;
+    const isIOS = state.isIOS;
+    if (isIOS && !state.screentimeAuthorized) {
+        const authResult = await requestScreentimeAuth();
+        if (!authResult.granted) {
+            if (authResult.status === 'denied') {
+                alert('Screen Time authorization was denied. Please go to Settings > Screen Time > Digital Habits: Blocker and enable access.');
+            } else if (authResult.error) {
+                alert('Screen Time authorization failed: ' + authResult.error);
+            } else {
+                alert('Screen Time authorization is required to block websites. Please try again.');
             }
             updateOnboardingVisibility();
+            return false;
         }
-        try {
-            state.appData.activeBlocks.push(block);
-            state.activatedBlockIds.add(block.id);
-            const updateResult = await syncBlockingState();
-            if (!updateResult.success) {
-                state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-                state.activatedBlockIds.delete(block.id);
-                result = { success: false, error: updateResult.error || 'Failed to update blocking' };
-            } else {
-                result = { success: true };
-            }
-        } catch (err) {
-            state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-            state.activatedBlockIds.delete(block.id);
-            result = { success: false, error: err.toString() };
-        }
-    } else {
-        // Desktop backends pick up the block from the saved app data.
-        state.appData.activeBlocks.push(block);
-        state.activatedBlockIds.add(block.id);
+        updateOnboardingVisibility();
+        await initializeIOSBlockingState();
     }
 
-    if (!result.success) {
-        if (!result.cancelled) alert('Could not start block: ' + (result.error || 'Unknown error'));
+    state.appData.activeBlocks.push(block);
+    state.activatedBlockIds.add(block.id);
+    try {
+        if (isIOS) {
+            const result = await syncBlockingState();
+            if (!result.success) throw new Error(result.error);
+        }
+        await saveData();
+    } catch (error) {
+        if (!isIOS) throw error;
+        state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
+        state.activatedBlockIds.delete(block.id);
+        // A shield may already have been applied when persistence failed.
+        // Rebuild from the remaining blocks and leave the schedule channel alone.
+        await syncBlockingState();
+        alert('Could not start block: ' + (error?.message || String(error)));
         return false;
     }
 
-    await saveData();
     await updateBlockedApps();
     render();
     refreshSelectedBlocklistUi();
@@ -1518,8 +1509,12 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
     const unlockMinutes = normalizeUnlockMinutes(minutes ?? getLastBreakMinutes(state.appData.settings));
     const target = schedule || block;
     const stageIOSPause = state.isIOS && unlockMinutes > 0 && !!target;
+    const stageIOSManual = state.isIOS && !!block && !schedule;
+    const draft = stageIOSManual ? { ...state.appData } : state.appData;
     const stagedTarget = stageIOSPause ? { ...target } : null;
     const previousTarget = state.isIOS && (stageIOSPause || schedule) ? { ...target } : null;
+    // A staged manual block is not mutated until saving succeeds, so restoring
+    // it is a no-op; the rollback below still rebooks or cancels its restart.
     const restorePreviousPause = () => {
         for (const key of ['isPaused', 'pauseEndTime']) {
             if (Object.hasOwn(previousTarget, key)) target[key] = previousTarget[key];
@@ -1527,7 +1522,7 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
         }
     };
     const outcome = applyStopToTarget(
-        state.appData,
+        draft,
         { block: stageIOSPause ? (block ? stagedTarget : null) : block, schedule: stageIOSPause ? (schedule ? stagedTarget : null) : schedule },
         unlockMinutes,
     );
@@ -1617,20 +1612,22 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
             alert(tSettings('iosAutomaticRestartFailed'));
             return null;
         }
-        target.isPaused = true;
-        target.pauseEndTime = outcome.until;
+        if (stageIOSManual) {
+            draft.activeBlocks = state.appData.activeBlocks.map(entry => entry.id === block.id ? stagedTarget : entry);
+        } else {
+            target.isPaused = true;
+            target.pauseEndTime = outcome.until;
+        }
     }
 
     if (outcome.kind === 'removed') {
         // Never: the Manual block is gone, the same way "Stop" always removed it.
-        await saveData();
+        await saveData(draft);
         if (state.isIOS) {
-            // Manual channel only: a running schedule keeps enforcing.
+            state.appData.activeBlocks = state.appData.activeBlocks.filter(entry => entry.id !== block.id);
             await cancelIOSRestart(block);
-            await tauriAPI.screentimeClearManualBlock();
-            state.lastBlockedDomains = new Set();
-            await syncBlockingState();
-            await syncIOSSchedules();
+            const result = await syncBlockingState();
+            if (!result.success) throw new Error(result.error);
         }
         // Update blocked apps (will stop watcher if no apps to block, including schedules)
         await updateBlockedApps();
@@ -1639,11 +1636,15 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
 
     const turnsOffIOSSchedule = outcome.kind === 'off' && state.isIOS;
     try {
-        await saveData();
+        await saveData(draft);
     } catch (error) {
         if (rollbackTimedIOSPause) await rollbackTimedIOSPause();
         else if (turnsOffIOSSchedule) restorePreviousPause();
         throw error;
+    }
+    if (stageIOSManual) {
+        block.isPaused = true;
+        block.pauseEndTime = outcome.until;
     }
 
     if (turnsOffIOSSchedule) {
@@ -1666,7 +1667,8 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
         await reportIOSScheduleSyncFailure(scheduleSync.error);
     }
     // syncBlockingState skips paused blocks' domains.
-    await syncBlockingState();
+    const result = await syncBlockingState();
+    if (state.isIOS && block && !result.success) throw new Error(result.error);
     await updateBlockedApps();
 
     return outcome;

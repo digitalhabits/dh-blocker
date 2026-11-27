@@ -983,19 +983,18 @@ class ScreentimePlugin: Plugin {
             categoryTokenData: args.categoryTokenData,
             days: nil
         )
-        SharedManualBlockStore.saveManualBlockState(manualState)
-        if allowedDomains.isEmpty && allowedAppTokenData.isEmpty {
-            SharedManualBlockStore.clearManualAllowlistState()
-        } else {
-            SharedManualBlockStore.saveManualAllowlistState(
-                buildScheduleData(
-                    domains: allowedDomains,
-                    appTokenData: allowedAppTokenData,
-                    categoryTokenData: nil,
-                    days: nil,
-                    mode: "allowlist"
-                )
+        let manualAllowlistState = allowedDomains.isEmpty && allowedAppTokenData.isEmpty
+            ? nil
+            : buildScheduleData(
+                domains: allowedDomains,
+                appTokenData: allowedAppTokenData,
+                categoryTokenData: nil,
+                days: nil,
+                mode: "allowlist"
             )
+        guard SharedManualBlockStore.replaceManualState(blocked: manualState, allowed: manualAllowlistState) else {
+            invoke.resolve(["success": false, "error": "Failed to save manual Screen Time policy"])
+            return
         }
         // Web filter and app shields are derived state: recompute both channels
         // from the App Group.
@@ -1050,17 +1049,20 @@ class ScreentimePlugin: Plugin {
     /// manual half of the shield snapshot. The named "schedule" store is left
     /// alone so a running schedule keeps enforcing.
     @objc public func clearManualBlock(_ invoke: Invoke) throws {
-        clearManualChannel()
+        guard clearManualChannel() else {
+            invoke.resolve(["success": false, "error": "Failed to clear manual Screen Time policy"])
+            return
+        }
         invoke.resolve(["success": true])
     }
 
-    private func clearManualChannel() {
+    private func clearManualChannel() -> Bool {
+        let empty = ScheduleBlockData(domains: [], appTokenData: [], categoryTokenData: [], days: nil)
+        guard SharedManualBlockStore.replaceManualState(blocked: empty, allowed: nil) else { return false }
         store.webContent.blockedByFilter = nil
         store.shield.applications = nil
         store.shield.applicationCategories = nil
         store.clearAllSettings()
-        SharedManualBlockStore.saveManualBlockState(ScheduleBlockData(domains: [], appTokenData: [], categoryTokenData: [], days: nil))
-        SharedManualBlockStore.clearManualAllowlistState()
         persistManualShieldSnapshot(
             replaceDomains: [],
             replaceAppTokens: [],
@@ -1072,6 +1074,7 @@ class ScreentimePlugin: Plugin {
         // cleared; re-derive them, as every other writer does.
         IOSWebPolicyApplier.reapplyWebPolicy()
         IOSAppPolicyApplier.reapplyAppPolicy()
+        return true
     }
 
     /// Clear only the named "schedule" store — the OS-level shields the
@@ -1090,7 +1093,10 @@ class ScreentimePlugin: Plugin {
     }
 
     @objc public func clearBlock(_ invoke: Invoke) throws {
-        clearManualChannel()
+        guard clearManualChannel() else {
+            invoke.resolve(["success": false, "error": "Failed to clear manual Screen Time policy"])
+            return
+        }
 
         // Both stores, for a complete "stop everything" action.
         clearScheduleChannel()

@@ -731,17 +731,14 @@ export async function requestScreentimeAuth() {
 }
 
 export async function initializeIOSBlockingState() {
-    await refreshIOSScreenTimeSelections();
-    // Sync state.lastBlockedDomains from active (non-paused) blocks so pause/resume works after restart
-    const now = Date.now();
-    const activeDomains = new Set();
-    state.appData.activeBlocks
-        .filter(b => b.startTime <= now && b.endTime > now && !b.isPaused)
-        .forEach(b => {
-            const bl = state.appData.blocklists.find(bl => bl.id === b.blocklistId);
-            if (bl && bl.websites) bl.websites.forEach(d => activeDomains.add(d));
-        });
-    state.lastBlockedDomains = activeDomains;
+    try {
+        await refreshIOSScreenTimeSelections();
+    } catch (error) {
+        console.warn('[startup] Screen Time token refresh could not be saved:', error);
+    }
+    // Managed Settings can outlive an interrupted app save or missed callback.
+    // Rebuild the manual channel even when there are no current manual blocks.
+    await syncBlockingState();
     // Re-register DeviceActivity schedules so background activation survives app restarts.
     await syncIOSSchedules();
 }
@@ -759,7 +756,7 @@ export async function refreshIOSScreenTimeSelections() {
     if (!state.isIOS) return { supported: false, changed: false, failures: 0 };
 
     let supported = false;
-    let changed = false;
+    const previousSelections = new Map();
     let failures = 0;
 
     for (const blocklist of state.appData.blocklists || []) {
@@ -785,12 +782,22 @@ export async function refreshIOSScreenTimeSelections() {
         const refreshed = applyIOSScreenTimeTokenRefreshResult(selection, result);
         if (refreshed?.requiresReselection) failures += 1;
         if (JSON.stringify(refreshed) !== JSON.stringify(selection)) {
+            previousSelections.set(blocklist, blocklist.iosScreenTimeSelection);
             blocklist.iosScreenTimeSelection = refreshed;
-            changed = true;
         }
     }
 
-    if (changed) await saveData();
+    const changed = previousSelections.size > 0;
+    if (changed) {
+        try {
+            await saveData();
+        } catch (error) {
+            for (const [blocklist, selection] of previousSelections) {
+                blocklist.iosScreenTimeSelection = selection;
+            }
+            throw error;
+        }
+    }
     return { supported, changed, failures };
 }
 
@@ -963,8 +970,8 @@ export async function runExpiryOnce() {
 
     if (!changed) return;
     await saveData();
+    if (state.isIOS) return; // Authorised startup reconciles both Screen Time channels.
     await syncBlockingState();
-    await syncIOSSchedules();
     await updateBlockedApps();
 }
 

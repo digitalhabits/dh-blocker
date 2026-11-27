@@ -1,7 +1,7 @@
 // App data persistence and platform blocking synchronisation.
 import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
-import { normalizeBlocklist, isProtectedDomain, collectActiveIOSManualBlockPayload, healFocusSpaceColors, healWwwWebsiteEntries, iosManualSyncAction, migrateLegacyQuickStartBlocklists } from './blocklist-utils.js';
+import { normalizeBlocklist, isProtectedDomain, collectActiveIOSManualBlockPayload, healFocusSpaceColors, healWwwWebsiteEntries, migrateLegacyQuickStartBlocklists } from './blocklist-utils.js';
 import { isSchedulePausedNow, buildPersistedAppData } from './schedule-engine.js';
 import { updateBlockedApps } from './blocking-platform.js';
 import { normalizeLoadedEulaState } from './onboarding.js';
@@ -109,7 +109,13 @@ export async function loadData() {
     // space is built by hand and teaches how the app works.
 
     if (shouldSave) {
-        await saveData();
+        try {
+            await saveData();
+        } catch (error) {
+            if (!state.isIOS) throw error;
+            // A migration write failure does not invalidate the state we read.
+            console.warn('[startup] Could not save iOS data migrations:', error);
+        }
     }
 }
 
@@ -124,11 +130,13 @@ export function hasSeenAnyOnboarding() {
 }
 
 // Save data to main process
-export async function saveData() {
-    await tauriAPI.saveData(buildPersistedAppData());
+export async function saveData(appData = state.appData) {
+    await tauriAPI.saveData(buildPersistedAppData(appData));
 }
 
 export async function syncBlockingState() {
+    if (state.isIOS) return syncIOSManualBlockingState();
+
     const allDomains = new Set();
     const now = Date.now();
 
@@ -168,48 +176,6 @@ export async function syncBlockingState() {
     const lastDomainsArray = Array.from(state.lastBlockedDomains).sort();
     const domainsChanged = JSON.stringify(domainsArray) !== JSON.stringify(lastDomainsArray);
 
-    // Active iOS blocks always reach Screen Time, including app-only blocks.
-    if (state.isIOS) {
-        try {
-            const manualPayload = collectActiveIOSManualBlockPayload(now);
-            const hasActiveBlocks = state.appData.activeBlocks.some(
-                block => block.startTime <= now && block.endTime > now && !block.isPaused
-            );
-            const hasActiveScheduleSegments = (state.appData.schedules || []).some(schedule => {
-                if (!schedule || !schedule.segments || schedule.segments.length === 0) return false;
-                if (isSchedulePausedNow(schedule, now)) return false;
-                if (schedule.repeatType === 'date' && schedule.repeatDate) {
-                    const endDate = new Date(schedule.repeatDate);
-                    endDate.setHours(23, 59, 59, 999);
-                    if (nowDate > endDate) return false;
-                }
-                return isScheduleSegmentActiveNow(schedule, nowDate);
-            });
-            const action = iosManualSyncAction({ hasActiveBlocks, hasActiveScheduleSegments });
-            if (action !== 'start') {
-                // Schedule enforcement is owned by the DeviceActivityMonitor extension; while a
-                // segment is active only the manual channel may be cleared, or the running
-                // schedule would be wiped too.
-                console.log(`[syncBlockingState] iOS: no manual blocks, ${action}`);
-                if (action === 'clear-manual') await tauriAPI.screentimeClearManualBlock();
-                else await tauriAPI.screentimeClearBlock();
-                state.lastBlockedDomains = new Set();
-                return { success: true };
-            }
-            if (manualPayload.domains.length === 0) {
-                console.log('[syncBlockingState] iOS: active blocks with no domains (app-only), applying app shield');
-            } else {
-                console.log('[syncBlockingState] iOS: starting Screen Time block for', manualPayload.domains);
-            }
-            await tauriAPI.screentimeStartBlock(manualPayload);
-            state.lastBlockedDomains = new Set(manualPayload.domains);
-            return { success: true };
-        } catch (err) {
-            console.error('[syncBlockingState] iOS Screen Time error:', err);
-            return { success: false, error: err.toString() };
-        }
-    }
-
     if (!domainsChanged) {
         return { success: true, unchanged: true };
     }
@@ -218,4 +184,25 @@ export async function syncBlockingState() {
     state.lastBlockedDomains = allDomains;
     await updateBlockedApps();
     return { success: true };
+}
+
+async function syncIOSManualBlockingState() {
+    try {
+        const payload = collectActiveIOSManualBlockPayload();
+        // Native schedule policy has its own clock and store. Empty manual
+        // intent only authorises releasing the manual channel.
+        const result = payload.blockStartMs == null
+            ? await tauriAPI.screentimeClearManualBlock()
+            : await tauriAPI.screentimeStartBlock(payload);
+        if (result?.success !== true) {
+            const error = result?.error || 'Screen Time could not update manual blocking';
+            console.error('[syncBlockingState] iOS Screen Time error:', error);
+            return { success: false, error };
+        }
+        state.lastBlockedDomains = new Set(payload.domains);
+        return { success: true };
+    } catch (err) {
+        console.error('[syncBlockingState] iOS Screen Time error:', err);
+        return { success: false, error: String(err) };
+    }
 }
