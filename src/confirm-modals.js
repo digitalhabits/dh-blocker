@@ -25,7 +25,7 @@ import {
     snapMinutesToInterval,
 } from './app.js';
 import { stopAppBlockingLetsGoVoice } from './schedule-overlay.js';
-import { getLastBreakMinutes, PAUSE_MINUTE_OPTIONS, applyStopToTarget, timedStopLostOwnPause } from './unlock-duration.js';
+import { getLastBreakMinutes, PAUSE_MINUTE_OPTIONS, applyStopToTarget, normalizeUnlockMinutes, timedStopLostOwnPause } from './unlock-duration.js';
 import { deriveWhenToBlockKind } from './when-to-block.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
 import {
@@ -1515,10 +1515,17 @@ export async function resumePausedSchedule(schedule) {
 export async function stopFocusSpaceTarget({ block = null, schedule = null, minutes = null } = {}) {
     const blocklistId = schedule?.blocklistId ?? block?.blocklistId ?? null;
     const blocklist = state.appData.blocklists.find(bl => bl.id === blocklistId) || null;
-    const unlockMinutes = minutes ?? getLastBreakMinutes(state.appData.settings);
-    const stageIOSPause = state.isIOS && unlockMinutes > 0 && !!(block || schedule);
-    const stagedTarget = stageIOSPause ? { ...(schedule || block) } : null;
-    const previousSchedule = state.isIOS && schedule && !stageIOSPause ? { ...schedule } : null;
+    const unlockMinutes = normalizeUnlockMinutes(minutes ?? getLastBreakMinutes(state.appData.settings));
+    const target = schedule || block;
+    const stageIOSPause = state.isIOS && unlockMinutes > 0 && !!target;
+    const stagedTarget = stageIOSPause ? { ...target } : null;
+    const previousTarget = state.isIOS && (stageIOSPause || schedule) ? { ...target } : null;
+    const restorePreviousPause = () => {
+        for (const key of ['isPaused', 'pauseEndTime']) {
+            if (Object.hasOwn(previousTarget, key)) target[key] = previousTarget[key];
+            else delete target[key];
+        }
+    };
     const outcome = applyStopToTarget(
         state.appData,
         { block: stageIOSPause ? (block ? stagedTarget : null) : block, schedule: stageIOSPause ? (schedule ? stagedTarget : null) : schedule },
@@ -1528,14 +1535,21 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
     stopAppBlockingLetsGoVoice();
     console.log('[stop] Applying stop', { blocklistId, kind: outcome.kind, until: outcome.until || null });
     let restoreTimedIOSBlocking = null;
+    let rollbackTimedIOSPause = null;
 
     // Timed iOS stops are staged until both the resume payload (manual block)
     // and native one-off activity have explicitly succeeded. The deadline in
     // `outcome` is computed once before the await and is the exact timestamp
     // sent to native registration.
     if (state.isIOS && outcome.kind === 'unlocked') {
-        const target = schedule || block;
         const wasPaused = target?.isPaused === true;
+        const activityName = (schedule ? 'redd-schedule-resume-' : 'redd-block-resume-') + target.id;
+        const registerIOSResume = async (deadline) => {
+            const result = await tauriAPI.screentimeRegisterOneOffActivity(activityName, deadline);
+            if (result?.success !== true) {
+                throw new Error(result?.error || 'Screen Time could not schedule the automatic restart');
+            }
+        };
         const restoreBlockingAfterRegistrationFailure = async () => {
             delete target.isPaused;
             delete target.pauseEndTime;
@@ -1556,6 +1570,28 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
             }
         };
         restoreTimedIOSBlocking = restoreBlockingAfterRegistrationFailure;
+        rollbackTimedIOSPause = async () => {
+            restorePreviousPause();
+            // Registering a replacement removes the old monitor. Keep an
+            // existing timed pause only if its original restart can be rebooked.
+            if (wasPaused && target.pauseEndTime > Date.now()) {
+                try {
+                    await registerIOSResume(target.pauseEndTime);
+                    return;
+                } catch (error) {
+                    console.error('[iOS] Failed to restore the previous automatic restart:', error);
+                }
+            }
+            try {
+                const result = await tauriAPI.screentimeCancelResume(target.id, !!schedule);
+                if (result?.success !== true) {
+                    throw new Error(result?.error || 'Screen Time could not cancel the automatic restart');
+                }
+            } catch (error) {
+                console.error('[iOS] Failed to cancel the unsaved automatic restart:', error);
+            }
+            if (wasPaused && target.pauseEndTime) await restoreBlockingAfterRegistrationFailure();
+        };
         const iosPayload = block ? getBlocklistIOSPayload(blocklist) : null;
         let registrationAttempted = false;
         try {
@@ -1574,13 +1610,7 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
                 }
             }
             registrationAttempted = true;
-            const registrationResult = await tauriAPI.screentimeRegisterOneOffActivity(
-                schedule ? 'redd-schedule-resume-' + schedule.id : 'redd-block-resume-' + block.id,
-                outcome.until,
-            );
-            if (registrationResult?.success !== true) {
-                throw new Error(registrationResult?.error || 'Screen Time could not schedule the automatic restart');
-            }
+            await registerIOSResume(outcome.until);
         } catch (error) {
             if (registrationAttempted && wasPaused) await restoreBlockingAfterRegistrationFailure();
             console.error('[iOS] Timed stop was not applied:', error?.message || String(error));
@@ -1611,12 +1641,8 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
     try {
         await saveData();
     } catch (error) {
-        if (turnsOffIOSSchedule) {
-            for (const key of ['isPaused', 'pauseEndTime']) {
-                if (Object.hasOwn(previousSchedule, key)) schedule[key] = previousSchedule[key];
-                else delete schedule[key];
-            }
-        }
+        if (rollbackTimedIOSPause) await rollbackTimedIOSPause();
+        else if (turnsOffIOSSchedule) restorePreviousPause();
         throw error;
     }
 
