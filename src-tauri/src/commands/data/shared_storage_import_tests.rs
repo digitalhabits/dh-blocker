@@ -1,7 +1,7 @@
 #[cfg(not(feature = "system-test"))]
 use super::{canonical_data_path_static, per_user_data_path_static, TEST_IMPORT_SOURCES};
 use super::{
-    import_shared_data_into_per_user, per_user_data_path_from, DATA_FILE_NAME,
+    import_shared_data_into_per_user, per_user_data_path_from, DataFileWrite, DATA_FILE_NAME,
     PRE_SHARED_IMPORT_BACKUP,
 };
 use std::fs;
@@ -152,6 +152,40 @@ fn failed_backup_leaves_the_per_user_store_in_place() {
 
     assert!(error.contains("Could not back up"), "{error}");
     assert_eq!(fs::read(&dest).unwrap(), PER_USER_DATA);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn import_waits_for_a_concurrent_save_then_keeps_the_newer_data() {
+    use std::sync::mpsc;
+
+    let root = temp_root("concurrent-save");
+    let shared = root.join("ProgramData");
+    write_shared(&shared, SHARED_DATA);
+    let dest_dir = root.join("per-user");
+    let dest = write_shared(&dest_dir, PER_USER_DATA);
+    age(&dest, 60);
+
+    let transaction = DataFileWrite::lock(&dest).unwrap();
+    let (started_tx, started_rx) = mpsc::channel();
+    let (result_tx, result_rx) = mpsc::channel();
+    let import_dest = dest.clone();
+    let importer = std::thread::spawn(move || {
+        started_tx.send(()).unwrap();
+        let imported = import_shared_data_into_per_user(&import_dest, &[shared]);
+        result_tx.send(imported).unwrap();
+    });
+
+    started_rx.recv().unwrap();
+    let while_locked = result_rx.recv_timeout(Duration::from_millis(100));
+    transaction.write(PER_USER_DATA).unwrap();
+    drop(transaction);
+    importer.join().unwrap();
+
+    assert!(matches!(while_locked, Err(mpsc::RecvTimeoutError::Timeout)));
+    assert!(!result_rx.recv().unwrap().unwrap());
+    assert_eq!(fs::read(&dest).unwrap(), PER_USER_DATA);
+    assert!(!dest_dir.join(PRE_SHARED_IMPORT_BACKUP).exists());
     let _ = fs::remove_dir_all(root);
 }
 

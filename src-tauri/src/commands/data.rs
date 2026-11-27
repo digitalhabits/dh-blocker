@@ -284,6 +284,11 @@ pub(crate) fn import_shared_data_into_per_user(
         return Ok(false);
     }
 
+    let transaction =
+        DataFileWrite::lock(dest).map_err(|e| format!("Could not lock {}: {e}", dest.display()))?;
+    if destination_is_current() {
+        return Ok(false);
+    }
     let previous = match fs::read(dest) {
         Ok(bytes) => Some(bytes),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -308,14 +313,9 @@ pub(crate) fn import_shared_data_into_per_user(
         Err(e) => return Err(e),
     };
 
-    // A separate app or native host may have installed newer data while
-    // this process was reading the source.
-    if destination_is_current() {
-        return Ok(false);
-    }
-
     // Keep the previous backup if we already have these exact bytes.
     if previous.as_deref() == Some(contents.as_slice()) {
+        drop(transaction);
         if let Some(dest_dir) = dest.parent() {
             import_overlay_assets(dest_dir, shared_dirs);
         }
@@ -332,7 +332,7 @@ pub(crate) fn import_shared_data_into_per_user(
             )
         })?;
     }
-    write_data_file_atomic(dest, &contents).map_err(|e| {
+    transaction.write(&contents).map_err(|e| {
         format!(
             "Could not copy {} to {}: {e}",
             src.display(),
@@ -340,6 +340,7 @@ pub(crate) fn import_shared_data_into_per_user(
         )
     })?;
 
+    drop(transaction);
     log::info!(
         "shared data import: copied {} -> {} (this account now has its own blocklist)",
         src.display(),
@@ -524,6 +525,103 @@ pub(crate) fn get_data_path(app: &AppHandle) -> PathBuf {
             let _ = import_shared_data_once(&path, false);
             path
         })
+    }
+}
+
+/// Hold this for a complete read-modify-write. The data file itself is
+/// replaced on every write, so locking it would leave a stale inode locked.
+/// The sidecar stays in place and the OS releases the lock on process exit.
+pub(crate) struct DataFileWrite<'a> {
+    path: &'a std::path::Path,
+    #[cfg(not(target_os = "ios"))]
+    _lock: fs::File,
+}
+
+impl<'a> DataFileWrite<'a> {
+    pub(crate) fn lock(path: &'a std::path::Path) -> std::io::Result<Self> {
+        #[cfg(not(target_os = "ios"))]
+        {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let mut lock_path = path.as_os_str().to_owned();
+            lock_path.push(".lock");
+            let lock = fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(lock_path)?;
+            lock_data_file(&lock)?;
+            Ok(Self { path, _lock: lock })
+        }
+        #[cfg(target_os = "ios")]
+        {
+            Ok(Self { path })
+        }
+    }
+
+    pub(crate) fn write(&self, contents: &[u8]) -> std::io::Result<()> {
+        write_data_file_atomic(self.path, contents)
+    }
+}
+
+#[cfg(all(unix, not(target_os = "ios")))]
+fn lock_data_file(file: &fs::File) -> std::io::Result<()> {
+    use std::os::fd::AsRawFd;
+
+    loop {
+        // SAFETY: the open File owns this descriptor for the whole call.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } == 0 {
+            return Ok(());
+        }
+        let error = std::io::Error::last_os_error();
+        if error.kind() != std::io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn lock_data_file(file: &fs::File) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Storage::FileSystem::{LockFileEx, LOCKFILE_EXCLUSIVE_LOCK};
+    use windows::Win32::System::IO::OVERLAPPED;
+
+    // SAFETY: this is a live synchronous handle. LockFileEx waits for the
+    // one-byte lock before returning, so it cannot outlive the offset.
+    unsafe {
+        LockFileEx(
+            HANDLE(file.as_raw_handle()),
+            LOCKFILE_EXCLUSIVE_LOCK,
+            None,
+            1,
+            0,
+            &mut OVERLAPPED::default(),
+        )
+    }
+    .map_err(std::io::Error::other)
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for DataFileWrite<'_> {
+    fn drop(&mut self) {
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::Storage::FileSystem::UnlockFileEx;
+        use windows::Win32::System::IO::OVERLAPPED;
+
+        // SAFETY: unlock the same byte on the live handle before it closes.
+        let _ = unsafe {
+            UnlockFileEx(
+                HANDLE(self._lock.as_raw_handle()),
+                None,
+                1,
+                0,
+                &mut OVERLAPPED::default(),
+            )
+        };
     }
 }
 
@@ -733,21 +831,27 @@ pub fn load_data(app: AppHandle) -> Result<AppData, String> {
         return Ok(AppData::default());
     };
 
-    let content = fs::read_to_string(&source)
-        .map_err(|e| format!("Could not read {}: {e}", source.display()))?;
-    let mut data: AppData = serde_json::from_str(&content)
-        .map_err(|e| format!("Invalid saved data in {}: {e}", source.display()))?;
-    let changed = normalize_eula_state(&mut data);
-    if source != data_path {
-        log::info!(
-            "Migrating data into canonical per-user location: {:?} -> {:?}",
-            source,
-            data_path
-        );
+    let mut data = read_saved_data(&source)?;
+    if !normalize_eula_state(&mut data) && source == data_path {
+        return Ok(data);
     }
-    if changed || source != data_path {
+
+    // A migration must re-read after acquiring the lock. Another process
+    // may have installed newer canonical data since we found the source.
+    let transaction = DataFileWrite::lock(&data_path)
+        .map_err(|e| format!("Could not lock {}: {e}", data_path.display()))?;
+    let source = if data_path
+        .try_exists()
+        .map_err(|e| format!("Could not access {}: {e}", data_path.display()))?
+    {
+        &data_path
+    } else {
+        &source
+    };
+    let mut data = read_saved_data(source)?;
+    if normalize_eula_state(&mut data) || source != &data_path {
         let migrated = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
-        write_data_file_atomic(&data_path, migrated.as_bytes()).map_err(|e| {
+        transaction.write(migrated.as_bytes()).map_err(|e| {
             format!(
                 "Could not save migrated data to {}: {e}",
                 data_path.display()
@@ -755,9 +859,16 @@ pub fn load_data(app: AppHandle) -> Result<AppData, String> {
         })?;
     }
 
-    // The app-watcher registration loop reads this file as soon as it
-    // starts and then every two seconds, so it needs no synchronous update.
+    // The app-watcher registration loop reads this file on start and then
+    // every two seconds, so it needs no synchronous update.
     Ok(data)
+}
+
+fn read_saved_data(source: &std::path::Path) -> Result<AppData, String> {
+    let content = fs::read_to_string(source)
+        .map_err(|e| format!("Could not read {}: {e}", source.display()))?;
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Invalid saved data in {}: {e}", source.display()))
 }
 
 /// Save data to file
@@ -777,13 +888,18 @@ pub fn save_data(app: AppHandle, mut data: AppData) -> Result<(), String> {
     // tick, etc. — serializes the stale `undefined` and clobbers
     // the disk value written by the dedicated command). Preserve
     // whatever is currently on disk for these keys.
-    preserve_backend_settings(&data_path, &mut data);
+    {
+        let transaction = DataFileWrite::lock(&data_path)
+            .map_err(|e| format!("Could not lock {}: {e}", data_path.display()))?;
+        preserve_backend_settings(&data_path, &mut data);
+        let content = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+        transaction
+            .write(content.as_bytes())
+            .map_err(|e| format!("Could not save {}: {e}", data_path.display()))?;
 
-    let content = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
-    write_data_file_atomic(&data_path, content.as_bytes()).map_err(|e| e.to_string())?;
-
-    #[cfg(target_os = "macos")]
-    crate::app_group::maybe_mirror_after_save(&data_path, content.as_bytes());
+        #[cfg(target_os = "macos")]
+        crate::app_group::maybe_mirror_after_save(&data_path, content.as_bytes());
+    }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     super::app_blocking::sync_blocked_apps_from_disk(&app);

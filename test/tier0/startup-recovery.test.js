@@ -1,12 +1,9 @@
 import { readFileSync } from 'node:fs';
-import { beforeAll, beforeEach, expect, test, vi } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
+import '../../src/app.js';
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));
-
-beforeAll(async () => {
-    await import('../../src/app.js');
-});
 
 beforeEach(() => {
     const html = readFileSync('src/index.html', 'utf8');
