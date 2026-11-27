@@ -460,7 +460,7 @@ export function normalizeBlocklist(blocklist) {
     return normalizedBlocklist;
 }
 
-export function collectActiveIOSManualBlockPayload(now = Date.now()) {
+export function collectActiveIOSManualBlockPayload(now = Date.now(), appData = state.appData) {
     const allDomains = new Set();
     const allowedDomains = new Set();
     const allowedAppTokenData = new Set();
@@ -470,10 +470,10 @@ export function collectActiveIOSManualBlockPayload(now = Date.now()) {
     let displayWinner = null;
     let allowlistDisplayWinner = null;
 
-    for (const block of state.appData.activeBlocks || []) {
+    for (const block of appData.activeBlocks || []) {
         const paused = block.isPaused && (!block.pauseEndTime || block.pauseEndTime > now);
         if (block.startTime > now || block.endTime <= now || paused) continue;
-        const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
+        const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
         if (!blocklist) continue;
 
         const bid = String(block.blocklistId ?? '');

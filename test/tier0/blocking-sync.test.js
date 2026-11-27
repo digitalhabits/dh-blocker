@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { initializeIOSBlockingState } from '../../src/blocking-platform.js';
+import { initializeIOSBlockingState, reconcileIOSManualBlockingState } from '../../src/blocking-platform.js';
 import { startManualBlock, stopFocusSpaceTarget } from '../../src/confirm-modals.js';
+import { turnFocusSpaceOn } from '../../src/focus-space-switch.js';
 import { syncBlockingState } from '../../src/persistence.js';
 import { syncIOSSchedules } from '../../src/schedule-engine.js';
 import { state } from '../../src/state.js';
@@ -78,6 +79,7 @@ test.each(['missing', 'paused', 'expired'])('iOS launch reconciles a manual shie
     state.appData.blocklists = [{ id: 'space', websites: ['manual.invalid'] }];
     if (intent !== 'missing') {
         state.appData.activeBlocks = [{
+            id: 'saved-pause',
             blocklistId: 'space',
             startTime: now - 60_000,
             endTime: intent === 'expired' ? now - 1 : now + 60_000,
@@ -91,7 +93,7 @@ test.each(['missing', 'paused', 'expired'])('iOS launch reconciles a manual shie
     vi.spyOn(tauriAPI, 'screentimeSetStartWarnings').mockResolvedValue({ success: true });
 
     await initializeIOSBlockingState();
-    expect(clearManual).toHaveBeenCalledOnce();
+    expect(clearManual).toHaveBeenCalledExactlyOnceWith(intent === 'paused' ? ['saved-pause'] : []);
     expect(clearAll).not.toHaveBeenCalled();
 });
 
@@ -193,4 +195,71 @@ test.each([0, 10])('a failed iOS Manual stop save retains the active block (paus
     expect(clear).not.toHaveBeenCalled();
     if (minutes > 0) expect(cancel).toHaveBeenCalledExactlyOnceWith('keep');
     else expect(cancel).not.toHaveBeenCalled();
+});
+
+test.each(['block', 'schedule'])('a failed iOS %s reschedule restores the original wake-up', async (kind) => {
+    state.isIOS = true;
+    const previousDeadline = Date.now() + 300_000;
+    const target = { id: 'saved-pause', blocklistId: 'space', isPaused: true, pauseEndTime: previousDeadline };
+    if (kind === 'block') {
+        Object.assign(target, { startTime: 0, endTime: previousDeadline + 300_000 });
+        state.appData.activeBlocks = [target];
+    } else {
+        Object.assign(target, { repeatType: 'forever', segments: [] });
+        state.appData.schedules = [target];
+    }
+    state.appData.blocklists = [{ id: 'space', websites: ['keep.invalid'] }];
+    vi.spyOn(tauriAPI, 'screentimeSetResumePayload').mockResolvedValue({ success: true });
+    const register = vi.spyOn(tauriAPI, 'screentimeRegisterOneOffActivity').mockResolvedValue({ success: true });
+    const cancel = vi.spyOn(tauriAPI, 'screentimeCancelResume');
+    vi.spyOn(tauriAPI, 'saveData').mockRejectedValue(new Error('Could not save replacement pause'));
+
+    await expect(stopFocusSpaceTarget({ [kind]: target, minutes: 10 })).rejects.toThrow('Could not save replacement pause');
+    const activity = kind === 'block' ? 'redd-block-resume-saved-pause' : 'redd-schedule-resume-saved-pause';
+    expect(register).toHaveBeenNthCalledWith(1, activity, expect.any(Number));
+    expect(register.mock.calls[0][1]).toBeGreaterThan(previousDeadline);
+    expect(register).toHaveBeenNthCalledWith(2, activity, previousDeadline);
+    expect(cancel).not.toHaveBeenCalled();
+    expect(target).toMatchObject({ isPaused: true, pauseEndTime: previousDeadline });
+});
+
+test.each(['native update', 'save'])('failed iOS Resume now retains the saved pause and wake (%s)', async (failure) => {
+    state.isIOS = true;
+    const pauseEndTime = Date.now() + 300_000;
+    const block = { id: 'saved-pause', blocklistId: 'space', startTime: 0, endTime: pauseEndTime + 300_000, isPaused: true, pauseEndTime };
+    state.appData.activeBlocks = [block];
+    state.appData.blocklists = [{ id: 'space', websites: ['keep.invalid'] }];
+    const nativeError = 'Screen Time denied the update';
+    vi.spyOn(tauriAPI, 'screentimeStartBlock').mockResolvedValue(failure === 'native update'
+        ? { success: false, error: nativeError }
+        : { success: true });
+    const save = vi.spyOn(tauriAPI, 'saveData').mockRejectedValue(new Error('Could not save Resume now'));
+    const cancel = vi.spyOn(tauriAPI, 'screentimeCancelResume');
+    const clear = vi.spyOn(tauriAPI, 'screentimeClearManualBlock').mockResolvedValue({ success: true });
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    await expect(turnFocusSpaceOn('space')).resolves.toBe(false);
+    expect(block).toMatchObject({ isPaused: true, pauseEndTime });
+    expect(cancel).not.toHaveBeenCalled();
+    expect(clear).toHaveBeenCalledOnce();
+    if (failure === 'native update') expect(save).not.toHaveBeenCalled();
+    else expect(save).toHaveBeenCalledOnce();
+    expect(alert).toHaveBeenCalledWith('Could not resume block: ' + (failure === 'native update' ? nativeError : 'Could not save Resume now'));
+});
+
+test('iOS reconciliation retries a native failure and surfaces a persistent one', async () => {
+    state.isIOS = true;
+    const error = 'Could not clear the old shield';
+    const clear = vi.spyOn(tauriAPI, 'screentimeClearManualBlock')
+        .mockResolvedValue({ success: true })
+        .mockResolvedValueOnce({ success: false, error })
+        .mockResolvedValueOnce({ success: false, error });
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    await expect(reconcileIOSManualBlockingState()).resolves.toEqual({ success: false, error });
+    expect(clear).toHaveBeenCalledTimes(2);
+    expect(alert).toHaveBeenCalledExactlyOnceWith(expect.stringContaining(error));
+    await expect(reconcileIOSManualBlockingState()).resolves.toEqual({ success: true });
+    expect(clear).toHaveBeenCalledTimes(3);
+    expect(alert).toHaveBeenCalledOnce();
 });

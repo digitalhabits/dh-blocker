@@ -120,8 +120,7 @@ async function applyTurnOn(blocklistId, now) {
     if (block) {
         if (!isOneOffPauseActive(block, now)) return false;
         if (!await ensureIOSAllowlistStartable(blocklist)) return false;
-        await resumePausedBlock(block);
-        return true;
+        return resumePausedBlock(block);
     }
     return startManualBlock(blocklistId);
 }

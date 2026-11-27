@@ -77,6 +77,11 @@ class StartBlockArgs: Decodable {
     let allowlistBlocklistColorHex: String?
     let allowlistBlockStartMs: Double?
     let allowlistBlockEndMs: Double?
+    let pausedBlockIds: [String]?
+}
+
+class ClearManualBlockArgs: Decodable {
+    let pausedBlockIds: [String]?
 }
 
 class ScheduleBlockArgs: Decodable {
@@ -947,6 +952,7 @@ class ScreentimePlugin: Plugin {
             return
         }
         let args = try invoke.parseArgs(StartBlockArgs.self)
+        cancelOrphanedManualRestarts(retaining: args.pausedBlockIds)
         
         // Allowlist exceptions: never truncate — clamping an allow list over-blocks.
         // JS pre-validates; this is the native double-check.
@@ -1048,11 +1054,20 @@ class ScreentimePlugin: Plugin {
     /// manual half of the shield snapshot. The named "schedule" store is left
     /// alone so a running schedule keeps enforcing.
     @objc public func clearManualBlock(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(ClearManualBlockArgs.self)
+        cancelOrphanedManualRestarts(retaining: args.pausedBlockIds)
         guard clearManualChannel() else {
             invoke.resolve(["success": false, "error": "Failed to clear manual Screen Time policy"])
             return
         }
         invoke.resolve(["success": true])
+    }
+
+    private func cancelOrphanedManualRestarts(retaining blockIds: [String]?) {
+        guard let blockIds else { return }
+        let orphaned = SharedManualBlockStore.removeOrphanedResumePayloads(retaining: Set(blockIds))
+            .map { DeviceActivityName("redd-block-resume-\($0)") }
+        if !orphaned.isEmpty { center.stopMonitoring(orphaned) }
     }
 
     private func clearManualChannel() -> Bool {

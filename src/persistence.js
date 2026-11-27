@@ -134,8 +134,8 @@ export async function saveData(appData = state.appData) {
     await tauriAPI.saveData(buildPersistedAppData(appData));
 }
 
-export async function syncBlockingState() {
-    if (state.isIOS) return syncIOSManualBlockingState();
+export async function syncBlockingState({ appData = state.appData, reconcileIOSResumes = false } = {}) {
+    if (state.isIOS) return syncIOSManualBlockingState(appData, reconcileIOSResumes);
 
     const allDomains = new Set();
     const now = Date.now();
@@ -186,14 +186,20 @@ export async function syncBlockingState() {
     return { success: true };
 }
 
-async function syncIOSManualBlockingState() {
+async function syncIOSManualBlockingState(appData, reconcileIOSResumes) {
     try {
-        const payload = collectActiveIOSManualBlockPayload();
+        const now = Date.now();
+        const payload = collectActiveIOSManualBlockPayload(now, appData);
+        const pausedBlockIds = reconcileIOSResumes
+            ? appData.activeBlocks.filter(block => typeof block.id === 'string' && block.isPaused
+                && block.pauseEndTime > now && block.endTime > now
+                && appData.blocklists.some(list => list.id === block.blocklistId)).map(block => block.id)
+            : undefined;
         // Native schedule policy has its own clock and store. Empty manual
         // intent only authorises releasing the manual channel.
         const result = payload.blockStartMs == null
-            ? await tauriAPI.screentimeClearManualBlock()
-            : await tauriAPI.screentimeStartBlock(payload);
+            ? await tauriAPI.screentimeClearManualBlock(pausedBlockIds)
+            : await tauriAPI.screentimeStartBlock({ ...payload, pausedBlockIds });
         if (result?.success !== true) {
             const error = result?.error || 'Screen Time could not update manual blocking';
             console.error('[syncBlockingState] iOS Screen Time error:', error);
