@@ -9,15 +9,12 @@
  * boot the Vite dev server, open the page in headless Chromium, call
  * runBlockingTests(), and read back window.ReddBlockTestUtils.testResults.
  *
- * Exit 0 only if the suite completes with zero failures AND did not abort
- * early (the runner has no per-test try/catch, so an uncaught throw in one
- * group silently skips the rest — we detect that via the "Test suite crashed"
- * console line).
+ * Exit 0 only if the suite completes with zero failures, no uncaught browser
+ * errors and no early abort (reported by the "Test suite crashed" console
+ * line).
  *
- * No Tauri runtime is present here, so anything that calls `invoke` will
- * reject — but Tier 1 is pure logic and never touches the backend, so those
- * rejections don't affect it. (Tier 2 integration tests are intentionally not
- * run headlessly; they require the native command layer.)
+ * A fake Tauri transport lets the app boot without native side effects.
+ * Tier 2 integration tests require the real native command layer.
  */
 import { chromium } from 'playwright';
 
@@ -50,13 +47,63 @@ async function main() {
         const page = await browser.newPage();
 
         let crashed = false;
+        const pageErrors = [];
+        const unexpectedCommands = [];
         page.on('console', (msg) => {
             const text = msg.text();
             if (text.includes('Test suite crashed')) crashed = true;
+            if (text.startsWith('Unexpected Tier 1 native command:')) {
+                unexpectedCommands.push(text);
+                log('page>', text);
+            }
             // surface the suite's own output in CI logs
             if (/TEST RESULTS|❌|crashed/i.test(text)) log('page>', text);
         });
-        page.on('pageerror', (err) => log('pageerror>', err.message));
+        page.on('pageerror', (err) => {
+            pageErrors.push(err);
+            log('pageerror>', err.stack || err.message);
+        });
+
+        await page.addInitScript(() => {
+            const responses = {
+                load_data: {
+                    blocklists: [],
+                    activeBlocks: [],
+                    schedules: [],
+                    settings: {
+                        overrideCountUnit: 'words',
+                        lastBreakMinutes: 10,
+                        digitalHabitsRebrandNoticeShown: true,
+                        welcomeOnboardingShown: true,
+                    },
+                },
+                get_enforcement_enabled: false,
+                get_extension_grace_seconds: 0,
+                is_firefox_installed: false,
+                list_installed_apps: [],
+                list_pending_blocking_warnings: [],
+                reconcile_blocking_warning_shell: null,
+                sync_safari_fda_access: null,
+                'plugin:event|listen': 1,
+                'plugin:webview|set_webview_zoom': null,
+                'plugin:window|is_maximized': false,
+                // iOS resume ordering tests exercise the warning and error paths.
+                'plugin:screentime|set_start_warnings': null,
+                'plugin:dialog|message': null,
+            };
+            window.__TAURI_INTERNALS__ = {
+                invoke: async (cmd) => {
+                    if (Object.hasOwn(responses, cmd)) return responses[cmd];
+                    console.error('Unexpected Tier 1 native command:', cmd);
+                    throw new Error(`Unexpected Tier 1 native command: ${cmd}`);
+                },
+                transformCallback: () => 1,
+                metadata: {
+                    currentWindow: { label: 'main' },
+                    currentWebview: { label: 'main' },
+                },
+            };
+        });
 
         await page.goto(URL, { waitUntil: 'domcontentloaded' });
 
@@ -72,6 +119,8 @@ async function main() {
         page.setDefaultTimeout(TEST_TIMEOUT_MS);
         const results = await page.evaluate(async () => {
             await window.ReddBlockTests.runAllTests();
+            // Let the browser report unhandled rejections from the suite.
+            await new Promise((resolve) => setTimeout(resolve, 0));
             const r = window.ReddBlockTestUtils.testResults;
             return { passed: r.passed, failed: r.failed, errors: r.errors };
         });
@@ -81,6 +130,12 @@ async function main() {
 
         if (crashed) {
             throw new Error('Tier 1 suite aborted early (a group threw an uncaught error — see "Test suite crashed" above)');
+        }
+        if (pageErrors.length) {
+            throw new Error(`Tier 1: ${pageErrors.length} uncaught browser error(s)`);
+        }
+        if (unexpectedCommands.length) {
+            throw new Error(`Tier 1: ${unexpectedCommands.length} unexpected native call(s)`);
         }
         if (results.failed > 0) {
             throw new Error(`Tier 1: ${results.failed} test(s) failed`);

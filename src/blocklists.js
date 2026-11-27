@@ -308,9 +308,10 @@ export function cloneScheduleSegment(seg) {
     };
 }
 
-export function duplicateBlocklist(id) {
+// Apply the copy in memory. The UI entry point owns persistence and rendering.
+export function duplicateBlocklistInMemory(id) {
     const blocklist = state.appData.blocklists.find(bl => bl.id === id);
-    if (!blocklist) return;
+    if (!blocklist) return false;
 
     const newId = generateId();
     const newName = getNextCopyName(blocklist);
@@ -347,6 +348,12 @@ export function duplicateBlocklist(id) {
             isPaused: true,
         });
     }
+
+    return true;
+}
+
+export function duplicateBlocklist(id) {
+    if (!duplicateBlocklistInMemory(id)) return;
 
     saveData();
     render();
