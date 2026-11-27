@@ -163,7 +163,10 @@ fn windows_legacy_task_pending() -> bool {
 
     // Query the list so we can distinguish query failure from absence
     // independently of the language of schtasks' errors.
-    match std::process::Command::new("schtasks.exe")
+    let Ok(system_dir) = system_directory() else {
+        return true;
+    };
+    match std::process::Command::new(system_dir.join("schtasks.exe"))
         .args(["/Query", "/FO", "CSV", "/NH"])
         .creation_flags(0x0800_0000)
         .output()
