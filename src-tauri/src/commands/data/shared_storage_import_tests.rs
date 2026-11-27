@@ -367,3 +367,31 @@ fn per_user_fallback_is_native_to_the_platform() {
         "non-macOS fallback must not be macOS-shaped: {shape}"
     );
 }
+
+#[test]
+fn explicit_recovery_archives_exact_bytes_and_restores_a_valid_backup() {
+    let root = temp_root("recovery");
+    let path = root.join(DATA_FILE_NAME);
+    let invalid = b"\xffbroken";
+    fs::write(&path, invalid).unwrap();
+    fs::write(root.join(PRE_SHARED_IMPORT_BACKUP), PER_USER_DATA).unwrap();
+    let archived = super::recover_invalid_store(&path, || None).unwrap();
+    assert_eq!(fs::read(archived).unwrap(), invalid);
+    assert_eq!(fs::read(&path).unwrap(), PER_USER_DATA);
+    assert!(super::recover_invalid_store(&path, || None).is_err());
+    assert_eq!(fs::read(&path).unwrap(), PER_USER_DATA);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn recovery_without_backup_preserves_legacy_source_and_creates_readable_data() {
+    let root = temp_root("legacy-recovery");
+    let path = root.join(DATA_FILE_NAME);
+    let legacy = root.join("old.json");
+    fs::write(&legacy, b"{}").unwrap();
+    let archived = super::recover_invalid_store(&path, || Some(legacy.clone())).unwrap();
+    assert_eq!(fs::read(archived).unwrap(), b"{}");
+    assert_eq!(fs::read(legacy).unwrap(), b"{}");
+    assert!(super::read_saved_data(&path).unwrap().blocklists.is_empty());
+    fs::remove_dir_all(root).unwrap();
+}

@@ -864,10 +864,67 @@ pub fn load_data(app: AppHandle) -> Result<AppData, String> {
     Ok(data)
 }
 
+/// This action is offered only after a decoding failure. Recheck the bytes
+/// under the writer lock so retrying cannot reset a repaired or healthy store.
+#[cfg(not(target_os = "ios"))]
+#[tauri::command]
+pub fn recover_invalid_data(app: AppHandle) -> Result<String, String> {
+    let path = apply_system_test_override(|| get_per_user_data_path(&app));
+    recover_invalid_store(&path, || {
+        #[cfg(feature = "system-test")]
+        if !should_import_legacy_data() {
+            return None;
+        }
+        import_sources()
+            .iter()
+            .map(|dir| dir.join(DATA_FILE_NAME))
+            .find(|p| p.is_file())
+            .or_else(|| find_per_user_data(&app))
+    })
+    .map(|p| p.display().to_string())
+    .map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "ios"))]
+fn recover_invalid_store(
+    path: &std::path::Path,
+    legacy_source: impl FnOnce() -> Option<PathBuf>,
+) -> std::io::Result<PathBuf> {
+    use sha2::{Digest, Sha256};
+    let transaction = DataFileWrite::lock(path)?;
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => fs::read(legacy_source().ok_or(e)?)?,
+        Err(e) => return Err(e),
+    };
+    if serde_json::from_slice::<AppData>(&bytes).is_ok() {
+        return Err(std::io::Error::other(
+            "The saved data is readable. Try again.",
+        ));
+    }
+    let archived = path.with_file_name(format!(
+        "redd-block-data.damaged-{:x}.json",
+        Sha256::digest(&bytes)
+    ));
+    write_data_file_atomic(&archived, &bytes)?;
+    let backup = match fs::read(path.with_file_name(PRE_SHARED_IMPORT_BACKUP)) {
+        Ok(candidate) if serde_json::from_slice::<AppData>(&candidate).is_ok() => Some(candidate),
+        Ok(_) => None,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e),
+    };
+    let replacement = match backup {
+        Some(bytes) => bytes,
+        None => serde_json::to_vec(&AppData::default())?,
+    };
+    transaction.write(&replacement)?;
+    Ok(archived)
+}
+
 fn read_saved_data(source: &std::path::Path) -> Result<AppData, String> {
-    let content = fs::read_to_string(source)
-        .map_err(|e| format!("Could not read {}: {e}", source.display()))?;
-    serde_json::from_str(&content)
+    let content =
+        fs::read(source).map_err(|e| format!("Could not read {}: {e}", source.display()))?;
+    serde_json::from_slice(&content)
         .map_err(|e| format!("Invalid saved data in {}: {e}", source.display()))
 }
 
