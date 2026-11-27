@@ -6,6 +6,7 @@ on:
       - 'src-tauri/windows/**'
       - 'src-tauri/tauri.windows.conf.json'
       - 'scripts/test-windows-hosts-recovery.ps1'
+      - 'scripts/test-windows-store-watchdog.ps1'
       - '.github/workflows/windows-installer-recovery.yml'
 
 permissions:
@@ -19,6 +20,9 @@ jobs:
       - name: Exercise legacy recovery with fixture files
         shell: powershell
         run: ./scripts/test-windows-hosts-recovery.ps1
+      - name: Verify legacy Store watchdog ownership with fixture tasks
+        shell: powershell
+        run: ./scripts/test-windows-store-watchdog.ps1
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:

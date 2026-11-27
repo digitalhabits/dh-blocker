@@ -1,6 +1,6 @@
-// Legacy Windows watchdog diagnostics and uninstall cleanup.
+// Legacy Windows watchdog diagnostics and cleanup.
 // New tasks and script wrappers are no longer created (Defender issue #152).
-// Existing installations keep their tasks until normal uninstall.
+// The Store cannot run an uninstaller hook, so retire its tasks on upgrade.
 
 use std::path::{Path, PathBuf};
 
@@ -28,6 +28,44 @@ fn delete_legacy_tasks() {
     for name in crate::product_identity::LEGACY_WATCHDOG_TASK_NAMES {
         delete_task(name);
     }
+}
+
+#[cfg(not(feature = "system-test"))]
+pub(crate) fn retire_store_tasks() {
+    use windows::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER;
+    use windows::Win32::Storage::Packaging::Appx::GetCurrentPackageFamilyName;
+
+    let mut length = 0;
+    if unsafe { GetCurrentPackageFamilyName(&mut length, None) } != ERROR_INSUFFICIENT_BUFFER {
+        return;
+    }
+
+    std::thread::spawn(|| {
+        let output = crate::windows_process::system_directory().and_then(|dir| {
+            hidden_command(dir.join(r"WindowsPowerShell\v1.0\powershell.exe"))
+                .args([
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    include_str!("../windows/store-watchdog-cleanup.ps1"),
+                ])
+                .output()
+        });
+        match output {
+            Ok(output) if output.status.success() => {
+                let message = String::from_utf8_lossy(&output.stdout);
+                if !message.trim().is_empty() {
+                    log::info!("watchdog: {}", message.trim());
+                }
+            }
+            Ok(output) => log::warn!(
+                "watchdog: Store task cleanup failed ({}): {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+            Err(e) => log::warn!("watchdog: could not launch Store task cleanup: {e}"),
+        }
+    });
 }
 
 /// True if the per-user Scheduled Task is currently registered with
