@@ -10,6 +10,9 @@
 // directly to `SafariWebExtensionHandler.swift` inside the signed app
 // bundle; there is no manifest file.
 
+#[cfg(any(target_os = "windows", test))]
+pub(crate) mod store_owner;
+
 use std::path::PathBuf;
 
 use serde::Serialize;
@@ -413,6 +416,7 @@ fn ensure_staged_native_host(source_exe: &std::path::Path) -> std::io::Result<St
         .ok_or_else(|| std::io::Error::other("exe has no parent dir"))?;
     let dest_dir = native_host_stage_dir()
         .ok_or_else(|| std::io::Error::other("cannot resolve LOCALAPPDATA"))?;
+    store_owner::record(&dest_dir)?;
     sync_install_dir_to_stage(source_dir, &dest_dir)?;
     let dest_exe = dest_dir.join(STAGED_NATIVE_HOST_EXE);
     if !dest_exe.exists() {
