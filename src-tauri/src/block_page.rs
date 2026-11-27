@@ -99,7 +99,7 @@ pub(crate) fn is_block_page_url(url: &str, block_page_url: &str) -> bool {
 
 /// Pull the original site URL back out of a block-page URL's `u` param.
 pub(crate) fn original_url_from_block_page(url: &str) -> Option<String> {
-    let query = url.split('?').nth(1)?;
+    let (_, query) = url.split('#').next()?.split_once('?')?;
     for pair in query.split('&') {
         let mut kv = pair.splitn(2, '=');
         if kv.next() == Some("u") {
@@ -111,7 +111,7 @@ pub(crate) fn original_url_from_block_page(url: &str) -> Option<String> {
 
 #[cfg(feature = "system-test")]
 pub(crate) fn block_page_owned_by_system_test(url: &str) -> bool {
-    let Some(query) = url.split('?').nth(1) else {
+    let Some((_, query)) = url.split('#').next().and_then(|path| path.split_once('?')) else {
         return false;
     };
     query.split('&').any(|pair| {

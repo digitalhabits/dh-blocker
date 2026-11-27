@@ -23,7 +23,7 @@ struct Attempt {
 
 #[derive(Clone, Copy)]
 enum Progress {
-    Issued,
+    Issued { background_attempt_used: bool },
     OnBlockPage,
     WaitingUntil(Instant),
 }
@@ -51,9 +51,16 @@ impl RedirectRetries {
                     continue;
                 }
                 match attempt.progress {
-                    // A successful script can swallow per-tab errors. Without
-                    // an observed navigation, leave the next redirect eligible.
-                    Progress::Issued => {}
+                    // A foreground redirect followed by immediate Back can
+                    // look like a navigation that never started. If we saw
+                    // neither the pending URL nor a background attempt, keep
+                    // the selected tab eligible for its one background try.
+                    Progress::Issued {
+                        background_attempt_used: false,
+                    } => continue,
+                    Progress::Issued {
+                        background_attempt_used: true,
+                    } => {}
                     Progress::OnBlockPage => {
                         attempt.progress = Progress::WaitingUntil(now + RETRY_DELAY)
                     }
@@ -62,6 +69,11 @@ impl RedirectRetries {
             } else if is_block_page_url(&tab.url, base)
                 && original_url_from_block_page(&tab.url).as_ref() == Some(&attempt.original)
             {
+                // The document replaces #pending with #loaded only after
+                // navigation commits. Back from it starts a fresh visit.
+                if tab.url.ends_with("#loaded") {
+                    continue;
+                }
                 attempt.progress = Progress::OnBlockPage;
             } else {
                 continue;
@@ -100,17 +112,26 @@ impl RedirectRetries {
         None
     }
 
-    pub(super) fn record_actions(&mut self, actions: &[TabAction], base: &str) {
+    pub(super) fn record_actions(
+        &mut self,
+        actions: &[TabAction],
+        base: &str,
+        consume_background_attempt: bool,
+    ) {
         for (window, tab, target) in actions {
             let key = (window.clone(), *tab);
             if !is_block_page_url(target, base) {
                 self.tabs.remove(&key);
             } else if let Some(original) = original_url_from_block_page(target) {
+                let background_attempt_used =
+                    consume_background_attempt || self.tabs.contains_key(&key);
                 self.tabs.insert(
                     key,
                     Attempt {
                         original,
-                        progress: Progress::Issued,
+                        progress: Progress::Issued {
+                            background_attempt_used,
+                        },
                     },
                 );
             }

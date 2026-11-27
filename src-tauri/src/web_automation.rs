@@ -43,7 +43,7 @@ use tauri::{AppHandle, Emitter};
 mod redirect_retries;
 use redirect_retries::RedirectRetries;
 
-use crate::block_page::{plan_actions, Tab, TabAction};
+use crate::block_page::{is_block_page_url, plan_actions, Tab, TabAction};
 pub use crate::block_page::{url_is_blocked, web_enforcement_active};
 use crate::native_host::{self, BlockInfo};
 
@@ -393,8 +393,7 @@ pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
         // planned no restores (so a failed apply retries). Starting
         // true clears leftovers from a previous session.
         let mut needs_restore = true;
-        // When the last full pass (all running browsers, not just the
-        // frontmost one) was scripted — drives BACKGROUND_BROWSER_TICK.
+        // Carry the full-pass cadence and per-tab retry state between ticks.
         let mut scan = ScanState::default();
         loop {
             // No browser on Automation: block until a method changes rather
@@ -449,6 +448,12 @@ fn tick(
     );
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum ApplyOutcome {
+    Complete,
+    BackgroundSkipped,
+}
+
 /// I/O required by the stateful Automation orchestration. Keeping this seam
 /// below `plan_actions` lets unit tests exercise the real latch, cadence, and
 /// retry behavior without starting browsers or touching the data file.
@@ -466,7 +471,7 @@ trait AutomationIo {
         browser: SupportedBrowser,
         actions: &[TabAction],
         background_tab: Option<u32>,
-    ) -> Result<(), AutomationError>;
+    ) -> Result<ApplyOutcome, AutomationError>;
     fn set_permission(
         &mut self,
         shared: &Arc<Mutex<Shared>>,
@@ -530,8 +535,13 @@ impl AutomationIo for ProductionAutomationIo<'_> {
         browser: SupportedBrowser,
         actions: &[TabAction],
         background_tab: Option<u32>,
-    ) -> Result<(), AutomationError> {
-        run_osascript(&apply_actions_script(browser, background_tab, actions)).map(|_| ())
+    ) -> Result<ApplyOutcome, AutomationError> {
+        let reply = run_osascript(&apply_actions_script(browser, background_tab, actions))?;
+        Ok(if background_tab.is_some() && reply.trim() == "skipped" {
+            ApplyOutcome::BackgroundSkipped
+        } else {
+            ApplyOutcome::Complete
+        })
     }
 
     fn set_permission(
@@ -694,11 +704,28 @@ fn tick_with_io<I: AutomationIo>(
                         blocks.len()
                     );
                 } else {
-                    // A timeout can follow a successful Apple Event. Consume the
-                    // attempt before dispatch to avoid another background prompt.
-                    retries.record_actions(&actions, block_page_url);
-                    match io.apply_actions(browser, &actions, background_tab) {
-                        Ok(()) => {
+                    if browser != SupportedBrowser::Safari {
+                        for (_, _, target) in &mut actions {
+                            if is_block_page_url(target, block_page_url) {
+                                target.push_str("#pending");
+                            }
+                        }
+                    }
+                    let result = io.apply_actions(browser, &actions, background_tab);
+                    if matches!(result, Ok(ApplyOutcome::BackgroundSkipped)) {
+                        // Only the guarded redirect was skipped. Restores in the
+                        // same batch still ran and must clear their retry state.
+                        actions.retain(|(_, tab, _)| Some(*tab) != background_tab);
+                    }
+                    // A timeout can follow an issued Apple Event. Only a definite
+                    // selection skip releases the background attempt.
+                    retries.record_actions(
+                        &actions,
+                        block_page_url,
+                        background_tab.is_some() || result.is_err(),
+                    );
+                    match result {
+                        Ok(_) => {
                             log::info!(
                                 "web_automation: applied {} tab action(s) to {} (redirect to / restore from block page)",
                                 actions.len(),
@@ -993,23 +1020,33 @@ fn apply_actions_script(
             key = applescript_string_expr(wid)
         ));
         for (ti, url) in list {
-            // Each set is wrapped in `try` so one stale index (a tab the
-            // user closed mid-tick) doesn't abort the whole batch.
-            // The selection can change between the query and this Apple Event.
-            let guard = if Some(ti) == background_tab {
-                format!("if (id of active tab of front window as text) is \"{ti}\" then ")
+            let set_url = format!(
+                "set URL of {tab_selector} {ti} of window id _wid to {}",
+                applescript_string_expr(url)
+            );
+            // A tab may close or lose selection before the Apple Event runs.
+            body.push_str("        try\n");
+            if Some(ti) == background_tab {
+                body.push_str(&format!(
+                    "          if (id of active tab of front window as text) is \"{ti}\" then\n            set _backgroundResult to \"issued\"\n            {set_url}\n          end if\n"
+                ));
             } else {
-                String::new()
-            };
-            body.push_str(&format!(
-                "        try\n          {guard}set URL of {tab_selector} {ti} of window id _wid to {url}\n        end try\n",
-                url = applescript_string_expr(url)
-            ));
+                body.push_str(&format!("          {set_url}\n"));
+            }
+            body.push_str("        end try\n");
         }
         body.push_str("      end if\n");
     }
+    let (initialise, report) = if background_tab.is_some() {
+        (
+            "set _backgroundResult to \"skipped\"\n",
+            "\nreturn _backgroundResult",
+        )
+    } else {
+        ("", "")
+    };
     format!(
-        r#"if application "{app}" is running then
+        r#"{initialise}if application "{app}" is running then
   tell application "{app}"
     -- Bind the ids first: iterating `(id of every window)` directly
     -- yields lazy references Brave cannot resolve (-1700).
@@ -1019,7 +1056,7 @@ fn apply_actions_script(
       set _key to _wid as text
 {body}    end repeat
   end tell
-end if"#,
+end if{report}"#,
         app = browser.applescript_name(),
     )
 }

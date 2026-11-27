@@ -273,15 +273,23 @@ the active one, and need no system-wide input-synthesis grant. Safari's extensio
      uses (`url`, `blocklist`, `mode`, etc.). Safari redirects blocked tabs
      on the five-second background scan. Chrome, Brave and Edge can redirect
      the selected tab of their front window once while in the background.
-     A previous foreground attempt also counts. This stops media on an
+     A foreground redirect observed pending also counts. If a foreground
+     redirect and Back happen between reads, the selected tab can still
+     use its one background attempt. This stops media on an
      ordinary page while limiting a page with unsaved edits to one potential
      background interruption. Other tabs and retries wait for the browser
      to regain focus. Restores can run in the background. When the
      frontmost app is unknown, every browser remains eligible for redirects.
-     After observing the matching block page, the watcher waits five seconds
-     from first seeing the original blocked URL again before retrying. If it
-     never observes the block page, the next eligible scan retries. Other
-     tabs, new URLs and restores off the block page keep their usual timing.
+     Chromium reports the destination URL while a Leave site dialog is open.
+     The watcher sends the block page with `#pending`. The page replaces this
+     with `#loaded` when it runs, preserving browser history. After observing
+     the loaded page, the watcher treats Back as a fresh visit, eligible on
+     the next foreground tick or selected-tab background scan. That background
+     redirect can bring Brave forward again after the user switches apps. A return from
+     a pending redirect retains the five-second Cancel delay. If selection
+     changes before the script issues the redirect, the script reports the
+     skip and the background attempt remains available. A timeout is ambiguous
+     and still counts as an attempt.
 3. All Apple Events serialize through a global mutex — concurrent osascript
    from the watcher, enforcer, and Tauri commands can deadlock macOS's
    AppleEvent manager.
