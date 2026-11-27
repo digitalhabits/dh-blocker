@@ -1670,7 +1670,7 @@
     // every active source. Validating one focus space at a time lets two of
     // them pass and silently lose the overflow, which Swift drops by keeping a
     // sorted 50-item prefix.
-    function runIOSAllowLimitTests() {
+    async function runIOSAllowLimitTests() {
         console.log('\n\u{1F34E} iOS allow-mode limits and pause');
         const internals = window.__REDDBLOCK_INTERNALS__;
         const {
@@ -1722,7 +1722,7 @@
                 assertEqual(sourcesNow().length, 0, 'T229: a schedule paused with no end time is not an active source, as Swift and the rest of the JS already treat it');
             })();
 
-            (function T235() {
+            await (async function T235() {
                 // Switching a paused allow space back on runs the same check as starting it.
                 const running = allow(sites('a', 30));
                 const paused = allow(sites('b', 30));
@@ -1734,7 +1734,8 @@
                 const wasIOS = internals.isIOS;
                 internals.isIOS = true;
                 try {
-                    internals.turnFocusSpaceOn(paused.id, now)?.catch?.(() => {});
+                    const resumed = await internals.turnFocusSpaceOn(paused.id, now);
+                    assert(resumed === false, 'T235: resuming over the iOS limit returns false');
                 } finally {
                     internals.isIOS = wasIOS;
                 }
@@ -4150,7 +4151,7 @@
             runIOSAllowlistPolicyTests();
 
             runDesktopAppPayloadTests();
-            runIOSAllowLimitTests();
+            await runIOSAllowLimitTests();
             runWarningAttributionTests();
             runDiagnosticsAllowModeTests();
             runIOSSchedulePayloadTests();
