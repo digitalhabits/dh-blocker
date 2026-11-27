@@ -39,6 +39,10 @@ pub fn set_blocked_apps(
     allowlist_newly_started: bool,
     state: State<AppWatcherState>,
 ) {
+    if !crate::cross_app_consent::has_accepted_eula_at_path(&super::canonical_data_path_static()) {
+        clear_blocked_apps(state);
+        return;
+    }
     let mut slot = state.0.lock().expect("app-watcher lock");
     if slot.is_none() {
         *slot = Some(app_watcher::start(Some(app)));
@@ -154,6 +158,10 @@ pub fn list_pending_blocking_warnings() -> Vec<app_watcher::PendingBlockingWarni
 /// merge so allowlist enforcement survives periodic syncs and `save_data`.
 pub fn sync_blocked_apps_from_disk(app: &AppHandle) {
     let path = super::canonical_data_path_static();
+    if !crate::cross_app_consent::has_accepted_eula_at_path(&path) {
+        clear_blocked_apps(app.state::<AppWatcherState>());
+        return;
+    }
     let desired_blocked = crate::native_host::derive_blocked_apps(&path);
     let desired_allowed = crate::native_host::derive_allowed_apps(&path);
     let allowlist_active = !desired_allowed.is_empty();

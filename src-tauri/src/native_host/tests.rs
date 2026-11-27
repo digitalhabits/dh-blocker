@@ -938,3 +938,21 @@ fn open_settings_flag_rides_on_a_full_payload() {
         serde_json::from_slice(&payload_json(&domains, &[], false).unwrap()).unwrap();
     assert!(without.get("openExtensionSettings").is_none());
 }
+
+#[test]
+fn browser_started_before_consent_receives_no_persisted_rules() {
+    let mut data = json!({
+        "settings": {},
+        "blocklists": [{"id":"focus","name":"Focus","websites":["example.com"]}],
+        "activeBlocks": [{"id":"one","blocklistId":"focus","startTime":0,"endTime":253402300799000_u64}]
+    });
+    let pending = write_temp_json("before-consent", &data);
+    assert!(!derive_payload(&pending).1.is_empty());
+    let (domains, blocks) = extension_payload(&pending);
+    assert!(domains.is_empty() && blocks.is_empty());
+    data["settings"]["eulaAcceptedRevision"] = json!(1);
+    let accepted = write_temp_json("after-consent", &data);
+    assert_eq!(extension_payload(&accepted).0, vec!["example.com"]);
+    fs::remove_file(pending).unwrap();
+    fs::remove_file(accepted).unwrap();
+}

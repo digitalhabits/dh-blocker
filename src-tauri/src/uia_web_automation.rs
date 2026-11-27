@@ -97,9 +97,10 @@ fn method_changed_within(timeout: Duration) -> bool {
 /// policy fallback. A failed policy read resolves to the extension, as it
 /// does everywhere else in the method resolver.
 fn automation_wanted(path: &Path) -> bool {
-    blocking_method::WINDOWS_BLOCKING_METHOD_KEYS
-        .iter()
-        .any(|key| blocking_method::method_for_key_at_path(path, key) == Method::Automation)
+    crate::cross_app_consent::has_accepted_eula_at_path(path)
+        && blocking_method::WINDOWS_BLOCKING_METHOD_KEYS
+            .iter()
+            .any(|key| blocking_method::method_for_key_at_path(path, key) == Method::Automation)
 }
 
 /// For Diagnostics: the last address-bar lookup and the last redirect or
@@ -273,7 +274,7 @@ pub fn start(app: AppHandle, block_page_url: String) {
                     continue;
                 }
             }
-            watcher.tick(&app);
+            watcher.tick(&path);
         }
     });
 }
@@ -293,8 +294,8 @@ struct Watcher {
 }
 
 impl Watcher {
-    fn tick(&mut self, app: &AppHandle) {
-        if self.activity.suspended() {
+    fn tick(&mut self, path: &Path) {
+        if self.activity.suspended() || !crate::cross_app_consent::has_accepted_eula_at_path(path) {
             return;
         }
         self.pending.retain(live_restore_window);
@@ -313,16 +314,13 @@ impl Watcher {
 
         // Read the blocks only once a window needs judging; idle ticks with
         // no browser in front cost two Win32 calls.
-        let Some(path) = crate::commands::canonical_data_path(app) else {
-            return;
-        };
         if !browser.should_watch(blocking_method::method_for_key_at_path(
-            &path,
+            path,
             browser.setting_key(),
         )) {
             return;
         }
-        let (_domains, blocks) = native_host::derive_payload(&path);
+        let (_domains, blocks) = native_host::derive_payload(path);
         let restore_key = restore_window_key(hwnd);
         if !polling::needs_address_bar(!blocks.is_empty(), self.pending.count(&restore_key)) {
             self.omnibox = None;

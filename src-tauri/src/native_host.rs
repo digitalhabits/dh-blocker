@@ -72,6 +72,14 @@ pub fn is_native_host_invocation() -> bool {
     false
 }
 
+// A browser can launch an existing native-host registration before the GUI.
+fn extension_payload(path: &std::path::Path) -> (Vec<String>, Vec<BlockInfo>) {
+    if !crate::cross_app_consent::has_accepted_eula_at_path(path) {
+        return (vec![], vec![]);
+    }
+    derive_payload(path)
+}
+
 /// Entry point. Blocks until stdin closes.
 pub fn run() -> ! {
     #[cfg(target_os = "windows")]
@@ -100,7 +108,7 @@ pub fn run() -> ! {
             send_payload(&[], &[], false);
             std::process::exit(0);
         }
-        let (domains, blocks) = derive_payload(&data_path);
+        let (domains, blocks) = extension_payload(&data_path);
         send_payload(&domains, &blocks, open_settings);
     };
     publish(false);
