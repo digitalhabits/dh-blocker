@@ -42,6 +42,8 @@
 
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
@@ -230,16 +232,15 @@ const PROTECTED: &[&str] = &[
 ];
 
 /// Apps allow mode leaves alone even though they are not on the allowed
-/// list: interrupting an install or a disk operation half-way can leave the
-/// machine broken, a cost out of all proportion to a focus block.
+/// list. Interrupting installation or disk operations can leave the machine
+/// broken, and closing assistive tools can leave the user unable to use it.
 ///
 /// Deliberately NOT part of `PROTECTED`: that list also stops a name being
 /// blocked at all, and someone may have good reason to block one of these in
 /// blocklist mode. It is also deliberately short — every entry is a hole in
-/// an allow-only block, so an app belongs here only when killing it
-/// mid-operation does damage, not merely because it is a system app. System
-/// Settings is left out on purpose: it is where Automation gets switched
-/// off, which is exactly the way round the blocker.
+/// an allow-only block, so an app belongs here only to avoid serious harm
+/// to the system or its usability. System Settings stays blockable because
+/// it is where Automation can be switched off.
 ///
 /// Matched like a user's own app label — by process name, and on macOS also
 /// by bundle path, because `NSRunningApplication` reports the *localised*
@@ -255,9 +256,161 @@ const ALLOW_MODE_NEVER_CLOSE: &[&str] = &[
 ];
 
 fn is_allow_mode_exempt(proc_name: &str, proc_exe: Option<&std::path::Path>) -> bool {
+    #[cfg(target_os = "macos")]
+    if proc_exe.is_some_and(is_macos_upgrade_or_partition_utility) {
+        return true;
+    }
+    #[cfg(target_os = "windows")]
+    if is_windows_upgrade_install_or_accessibility_tool(proc_name, proc_exe) {
+        return true;
+    }
     ALLOW_MODE_NEVER_CLOSE
         .iter()
         .any(|label| process_matches_app_label(label, proc_name, proc_exe))
+}
+
+#[cfg(target_os = "macos")]
+fn is_macos_upgrade_or_partition_utility(executable: &Path) -> bool {
+    let Some(path) = executable.to_str() else {
+        return false;
+    };
+    let path = path.to_ascii_lowercase();
+    let Some((bundle, binary)) = path.rsplit_once("/contents/macos/") else {
+        return false;
+    };
+    match binary {
+        "boot camp assistant" => matches!(
+            bundle,
+            "/system/applications/utilities/boot camp assistant.app"
+                | "/applications/utilities/boot camp assistant.app"
+        ),
+        "install in progress" => bundle == "/system/library/coreservices/install in progress.app",
+        "installer progress" => bundle == "/system/library/coreservices/installer progress.app",
+        // Apple supports moving the downloaded installer, including to a
+        // bootable volume. Match its bundle and entry point together.
+        "installassistant" => bundle.rsplit('/').next().is_some_and(|name| {
+            name.strip_prefix("install macos ")
+                .and_then(|version| version.strip_suffix(".app"))
+                .is_some_and(|version| !version.is_empty())
+        }),
+        _ => false,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn is_windows_upgrade_install_or_accessibility_tool(
+    proc_name: &str,
+    executable: Option<&Path>,
+) -> bool {
+    let filename = executable
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .unwrap_or(proc_name)
+        .to_ascii_lowercase();
+    let stem = strip_exe_suffix(&filename);
+    let update_assistant = matches!(
+        stem,
+        "windows10upgraderapp" | "windows11installationassistant"
+    ) || stem
+        .strip_prefix("windows10upgrade")
+        .is_some_and(|build| build.len() <= 5 && build.bytes().all(|byte| byte.is_ascii_digit()));
+    if update_assistant || is_blocker_windows_setup_filename(&filename) {
+        return true;
+    }
+
+    let parent = executable.and_then(Path::parent);
+    match stem {
+        "narrator" | "magnify" => {
+            // When the path cannot be queried, favour keeping the in-box
+            // assistive tool running. A known path must be in System32.
+            executable.is_none()
+                || windows_system_root()
+                    .is_some_and(|root| windows_parent_is(parent, &root.join("System32")))
+        }
+        "setup" | "setuphost" | "setupprep" | "setupplatform" => {
+            windows_system_root().is_some_and(|root| {
+                root.parent().is_some_and(|drive| {
+                    windows_parent_is(parent, &drive.join(r"$WINDOWS.~BT\Sources"))
+                })
+            })
+        }
+        // The Tauri NSIS bundle writes uninstall.exe beside our executable.
+        "uninstall" => std::env::current_exe().is_ok_and(|own_exe| {
+            own_exe
+                .parent()
+                .is_some_and(|own_dir| windows_parent_is(parent, own_dir))
+        }),
+        _ if stem == "un" || matches!(stem.as_bytes(), [b'a'..=b'z', b'u', b'_']) => {
+            parent.is_some_and(|folder| is_nsis_uninstaller_copy(stem, folder))
+        }
+        _ => false,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_system_root() -> Option<std::path::PathBuf> {
+    std::env::var_os("SystemRoot").map(std::path::PathBuf::from)
+}
+
+#[cfg(target_os = "windows")]
+fn is_nsis_uninstaller_copy(stem: &str, folder: &Path) -> bool {
+    let Some(name) = folder.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    // NSIS launches a temporary copy of the uninstaller. Older versions
+    // used ~nsu.tmp/Au_.exe, Bu_.exe, etc. Newer ones use ~nsu<hex>.tmp/Un.exe.
+    let name = name.to_ascii_lowercase();
+    let valid_folder = if stem == "un" {
+        name.strip_prefix("~nsu")
+            .and_then(|rest| rest.strip_suffix(".tmp"))
+            .is_some_and(|serial| {
+                (1..=4).contains(&serial.len())
+                    && serial.bytes().all(|byte| byte.is_ascii_hexdigit())
+            })
+    } else {
+        name == "~nsu.tmp"
+    };
+    valid_folder
+        && (windows_parent_is(folder.parent(), &std::env::temp_dir())
+            || windows_system_root()
+                .is_some_and(|root| windows_parent_is(folder.parent(), &root.join("Temp"))))
+}
+
+#[cfg(target_os = "windows")]
+fn windows_parent_is(parent: Option<&Path>, expected: &Path) -> bool {
+    // In-process and process-table APIs may spell the same drive path with
+    // or without the Win32 extended-length prefix.
+    fn without_prefix(path: &str) -> &str {
+        path.strip_prefix(r"\\?\")
+            .unwrap_or(path)
+            .trim_end_matches(['\\', '/'])
+    }
+    match (parent.and_then(Path::to_str), expected.to_str()) {
+        (Some(parent), Some(expected)) => {
+            without_prefix(parent).eq_ignore_ascii_case(without_prefix(expected))
+        }
+        _ => false,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn is_blocker_windows_setup_filename(filename: &str) -> bool {
+    // Current and legacy release filenames used by the in-app updater and
+    // release workflow. Do not exempt generic "*-setup.exe" applications.
+    let Some((product, version_and_arch)) = filename.split_once('_') else {
+        return false;
+    };
+    let Some((version, target)) = version_and_arch.split_once('_') else {
+        return false;
+    };
+    matches!(
+        product,
+        "digital-habits-blocker" | "digital habits blocker" | "redd-blocker"
+    ) && matches!(target, "x64-setup.exe" | "arm64-setup.exe")
+        && version.split('.').count() == 3
+        && version
+            .split('.')
+            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 fn is_protected(name: &str) -> bool {
