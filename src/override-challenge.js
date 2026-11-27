@@ -143,6 +143,7 @@ export function renderChallengeReferenceText(el, text, { cursorIndex = 0, errorI
  */
 export function normalizeChallengeComparableText(value) {
     return String(value ?? '')
+        .replace(/[\uD800-\uDFFF]/gu, '') // Remove isolated UTF-16 surrogates from legacy targets.
         .normalize('NFC')
         // ZWSP / ZWNJ / ZWJ, BOM/ZWNBSP, word joiner, soft hyphen (strip — not a real hyphen)
         .replace(/[\u200B-\u200D\uFEFF\u2060\u00AD]/g, '')
@@ -350,9 +351,15 @@ export function normalizeOverrideCount(value, type = 'random-words', maxWords = 
     return Math.min(max, Math.max(MIN_OVERRIDE_WORDS, parsed));
 }
 
+export function limitCustomOverrideText(text) {
+    // The textarea limit counts UTF-16 code units. A cut after the first
+    // unit of a supplementary character would leave an untypeable target.
+    return text.slice(0, MAX_CUSTOM_OVERRIDE_CHARS).replace(/[\uD800-\uDBFF]$/u, '');
+}
+
 export function normalizeCustomOverrideText(value) {
     const text = sanitizeChallengeTargetText(typeof value === 'string' ? value : '');
-    return text.slice(0, MAX_CUSTOM_OVERRIDE_CHARS);
+    return limitCustomOverrideText(text);
 }
 
 /**

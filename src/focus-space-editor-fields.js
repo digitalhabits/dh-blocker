@@ -1,7 +1,7 @@
 import { pushModalUndo } from './app.js';
 import { state } from './state.js';
 import { applyModalBlocklistTint, applyOverrideTypeUi, syncColorSwatchInk, updateOverridePreview } from './confirm-modals.js';
-import { getMaxOverrideCountForType, getTypingCharsPerMinuteForType, normalizeOverrideCount } from './override-challenge.js';
+import { limitCustomOverrideText, getMaxOverrideCountForType, getTypingCharsPerMinuteForType, normalizeOverrideCount } from './override-challenge.js';
 
 export function setupFocusSpaceNameField(modalWebsiteInput) {
     function focusModalWebsiteInputFromNameField() {
@@ -96,7 +96,7 @@ export function setupFocusSpaceOverrideFields() {
         e.target.maxLength = maxChars;
 
         if (e.target.value.length > maxChars) {
-            e.target.value = e.target.value.slice(0, maxChars);
+            e.target.value = limitCustomOverrideText(e.target.value);
         }
 
         if (e.target.value.length >= maxChars) {
