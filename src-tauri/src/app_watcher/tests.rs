@@ -562,3 +562,131 @@ fn repeated_kill_failures_stop_until_the_policy_changes() {
     reset_kill_failures();
     assert!(kill_allowed(pid), "a policy change tries again");
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_upgrade_and_partition_utilities_are_exempt_in_allow_mode() {
+    use std::path::Path;
+
+    for (name, executable) in [
+        (
+            "Installer macOS Sonoma",
+            "/Applications/Install macOS Sonoma.app/Contents/MacOS/InstallAssistant",
+        ),
+        (
+            "Installer macOS Monterey",
+            "/Volumes/Installer/Install macOS Monterey.app/Contents/MacOS/InstallAssistant",
+        ),
+        (
+            "Assistant Boot Camp",
+            "/System/Applications/Utilities/Boot Camp Assistant.app/Contents/MacOS/Boot Camp Assistant",
+        ),
+        (
+            "Installation en cours",
+            "/System/Library/CoreServices/Install in Progress.app/Contents/MacOS/Install in Progress",
+        ),
+    ] {
+        assert_eq!(
+            current_entry_origin(&[], &["Notes".into()], true, name, Some(Path::new(executable))),
+            None,
+            "{name} must not be closed in allow mode"
+        );
+    }
+
+    for executable in [
+        "/Applications/Install macOS Quiz.app/Contents/MacOS/Quiz",
+        "/Applications/Updater.app/Contents/MacOS/InstallAssistant",
+        "/Applications/Boot Camp Assistant.app/Contents/MacOS/Boot Camp Assistant",
+    ] {
+        assert_eq!(
+            current_entry_origin(
+                &[],
+                &["Notes".into()],
+                true,
+                "Utility",
+                Some(Path::new(executable))
+            ),
+            Some(EntryOrigin::Allowlist),
+            "{executable} must still be blocked"
+        );
+    }
+
+    assert_eq!(
+        current_entry_origin(
+            &["InstallAssistant".into()],
+            &["Notes".into()],
+            true,
+            "InstallAssistant",
+            Some(Path::new(
+                "/Applications/Install macOS Sonoma.app/Contents/MacOS/InstallAssistant"
+            )),
+        ),
+        Some(EntryOrigin::Blocklist),
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn windows_upgrade_installer_and_accessibility_tools_are_exempt_in_allow_mode() {
+    use std::path::Path;
+
+    let system_root = std::env::var_os("SystemRoot").expect("Windows SystemRoot");
+    let system_root = Path::new(&system_root);
+    let own_exe = std::env::current_exe().expect("test executable path");
+    let windows_drive = system_root.parent().expect("Windows system drive");
+    let cases = [
+        system_root.join("System32").join("Narrator.exe"),
+        system_root.join("System32").join("Magnify.exe"),
+        system_root.join("System32").join("osk.exe"),
+        windows_drive.join(r"$WINDOWS.~BT\Sources\SetupHost.exe"),
+        windows_drive.join(r"$WINDOWS.~BT\Sources\setup.exe"),
+        own_exe.with_file_name("uninstall.exe"),
+        std::env::temp_dir().join(r"~nsu.tmp\Au_.exe"),
+        std::env::temp_dir().join(r"~nsu1F.tmp\Un.exe"),
+        system_root.join(r"Temp\~nsu2.tmp\Un.exe"),
+        Path::new(r"C:\Downloads\Windows11InstallationAssistant.exe").to_path_buf(),
+        Path::new(r"C:\Downloads\Windows10Upgrade9252.exe").to_path_buf(),
+        Path::new(r"C:\Program Files (x86)\WindowsInstallationAssistant\Windows10UpgraderApp.exe")
+            .to_path_buf(),
+        Path::new(r"C:\Downloads\Digital-Habits-Blocker_3.13.0_arm64-setup.exe").to_path_buf(),
+        Path::new(r"C:\Downloads\redd-blocker_3.13.0_x64-setup.exe").to_path_buf(),
+    ];
+
+    for executable in &cases {
+        let name = executable.file_name().unwrap().to_str().unwrap();
+        assert_eq!(
+            current_entry_origin(&[], &["notepad".into()], true, name, Some(executable)),
+            None,
+            "{executable:?} must not be closed in allow mode"
+        );
+        assert_eq!(
+            current_entry_origin(
+                &[strip_exe_suffix(name).into()],
+                &["notepad".into()],
+                true,
+                name,
+                Some(executable)
+            ),
+            Some(EntryOrigin::Blocklist),
+            "an explicit block must still apply to {executable:?}"
+        );
+    }
+
+    for executable in [
+        r"C:\Downloads\setup.exe",
+        r"C:\Downloads\uninstall.exe",
+        r"C:\Downloads\magnify.exe",
+        r"C:\Downloads\osk.exe",
+        r"C:\Downloads\OtherApp\~nsu.tmp\Au_.exe",
+        r"C:\Downloads\Digital-Habits-Blocker_unrelated_x64-setup.exe",
+        r"C:\Downloads\Digital-Habits-Blocker_3.13.0_x64-setup.exe.backup",
+    ] {
+        let executable = Path::new(executable);
+        let name = executable.file_name().unwrap().to_str().unwrap();
+        assert_eq!(
+            current_entry_origin(&[], &["notepad".into()], true, name, Some(executable)),
+            Some(EntryOrigin::Allowlist),
+            "{executable:?} must still be blocked"
+        );
+    }
+}
