@@ -193,9 +193,12 @@ pub(crate) async fn set_resume_payload<R: Runtime>(
 pub(crate) async fn cancel_resume<R: Runtime>(
     app: AppHandle<R>,
     block_id: String,
+    is_schedule: Option<bool>,
 ) -> Result<SuccessResponse> {
-    app.screentime()
-        .cancel_resume(CancelResumeRequest { block_id })
+    app.screentime().cancel_resume(CancelResumeRequest {
+        block_id,
+        is_schedule: is_schedule.unwrap_or_default(),
+    })
 }
 
 #[command]
