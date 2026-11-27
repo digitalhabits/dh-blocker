@@ -49,6 +49,10 @@ impl AutomationIo for FakeIo {
         self.blocks.clone()
     }
 
+    fn read_completed_at(&self, tick_start: Instant) -> Instant {
+        tick_start
+    }
+
     fn events_active(&self) -> bool {
         self.events
     }
@@ -111,7 +115,7 @@ fn tick_shared() -> Arc<Mutex<Shared>> {
 fn parked_tab(base: &str, original: &str) -> Tab {
     Tab {
         window_id: "1".to_string(),
-        tab_index: 1,
+        tab_ref: 1,
         url: build_blocked_url(base, original, &[]),
     }
 }
@@ -139,13 +143,13 @@ fn tick_arms_restore_latch_while_enforcement_is_active() {
         &[],
     );
     let mut needs_restore = false;
-    let mut last_full_pass = None;
+    let mut scan = ScanState::default();
     tick_with_io(
         &mut io,
         &shared,
         "file:///blocked.html",
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         Instant::now(),
     );
     assert!(needs_restore);
@@ -165,7 +169,7 @@ fn pause_restore_retries_until_a_pass_finds_nothing_left_parked() {
         browser,
         Ok(vec![Tab {
             window_id: "1".to_string(),
-            tab_index: 1,
+            tab_ref: 1,
             url: original.to_string(),
         }]),
     );
@@ -173,17 +177,10 @@ fn pause_restore_retries_until_a_pass_finds_nothing_left_parked() {
     io.queue_apply(browser, Ok(()));
     io.queue_apply(browser, Ok(()));
     let mut needs_restore = false;
-    let mut last_full_pass = None;
+    let mut scan = ScanState::default();
     let start = Instant::now();
 
-    tick_with_io(
-        &mut io,
-        &shared,
-        base,
-        &mut needs_restore,
-        &mut last_full_pass,
-        start,
-    );
+    tick_with_io(&mut io, &shared, base, &mut needs_restore, &mut scan, start);
     assert!(needs_restore);
 
     io.blocks = Some(Vec::new());
@@ -192,7 +189,7 @@ fn pause_restore_retries_until_a_pass_finds_nothing_left_parked() {
         &shared,
         base,
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         start + Duration::from_secs(1),
     );
 
@@ -211,7 +208,7 @@ fn pause_restore_retries_until_a_pass_finds_nothing_left_parked() {
         &shared,
         base,
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         start + Duration::from_secs(2),
     );
     assert!(!needs_restore);
@@ -236,17 +233,10 @@ fn silently_dropped_restore_is_retried_on_the_next_pass() {
     io.queue_apply(browser, Ok(()));
     io.queue_apply(browser, Ok(()));
     let mut needs_restore = true;
-    let mut last_full_pass = None;
+    let mut scan = ScanState::default();
     let start = Instant::now();
 
-    tick_with_io(
-        &mut io,
-        &shared,
-        base,
-        &mut needs_restore,
-        &mut last_full_pass,
-        start,
-    );
+    tick_with_io(&mut io, &shared, base, &mut needs_restore, &mut scan, start);
     assert!(needs_restore, "tab is still parked; latch must stay armed");
 
     tick_with_io(
@@ -254,7 +244,7 @@ fn silently_dropped_restore_is_retried_on_the_next_pass() {
         &shared,
         base,
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         start + Duration::from_secs(1),
     );
     assert_eq!(io.apply_calls.len(), 2, "restore must be retried");
@@ -273,24 +263,17 @@ fn failed_restore_action_keeps_latch_for_a_later_retry() {
     io.queue_apply(browser, Err(AutomationError::Other("temporary".into())));
     io.queue_apply(browser, Ok(()));
     let mut needs_restore = true;
-    let mut last_full_pass = None;
+    let mut scan = ScanState::default();
     let start = Instant::now();
 
-    tick_with_io(
-        &mut io,
-        &shared,
-        base,
-        &mut needs_restore,
-        &mut last_full_pass,
-        start,
-    );
+    tick_with_io(&mut io, &shared, base, &mut needs_restore, &mut scan, start);
     assert!(needs_restore);
     tick_with_io(
         &mut io,
         &shared,
         base,
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         start + Duration::from_secs(1),
     );
     assert_eq!(io.apply_calls.len(), 2, "the failure must be retried");
@@ -303,7 +286,7 @@ fn failed_restore_action_keeps_latch_for_a_later_retry() {
         &shared,
         base,
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         start + Duration::from_secs(2),
     );
     assert!(!needs_restore);
@@ -320,7 +303,7 @@ fn permission_denial_is_backed_off_but_retried_while_blocking() {
     io.queue_read(browser, Err(AutomationError::NotAuthorized));
     io.queue_read(browser, Ok(Vec::new()));
     let mut needs_restore = false;
-    let mut last_full_pass = None;
+    let mut scan = ScanState::default();
     let start = Instant::now();
 
     tick_with_io(
@@ -328,7 +311,7 @@ fn permission_denial_is_backed_off_but_retried_while_blocking() {
         &shared,
         "file:///blocked.html",
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         start,
     );
     assert_eq!(io.read_calls, vec![browser]);
@@ -347,7 +330,7 @@ fn permission_denial_is_backed_off_but_retried_while_blocking() {
         &shared,
         "file:///blocked.html",
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         start + Duration::from_secs(1),
     );
     assert_eq!(
@@ -361,7 +344,7 @@ fn permission_denial_is_backed_off_but_retried_while_blocking() {
         &shared,
         "file:///blocked.html",
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         start + DENIED_RETRY_WHILE_BLOCKING + Duration::from_millis(1),
     );
     assert_eq!(io.read_calls, vec![browser, browser]);
@@ -378,7 +361,7 @@ fn transient_tab_query_failure_does_not_clear_restore_latch() {
     );
     io.queue_read(browser, Ok(Vec::new()));
     let mut needs_restore = true;
-    let mut last_full_pass = None;
+    let mut scan = ScanState::default();
     let start = Instant::now();
 
     tick_with_io(
@@ -386,7 +369,7 @@ fn transient_tab_query_failure_does_not_clear_restore_latch() {
         &shared,
         "file:///blocked.html",
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         start,
     );
     assert!(needs_restore);
@@ -395,7 +378,7 @@ fn transient_tab_query_failure_does_not_clear_restore_latch() {
         &shared,
         "file:///blocked.html",
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         start + Duration::from_secs(1),
     );
     assert!(!needs_restore);
@@ -413,7 +396,7 @@ fn frontmost_browser_runs_each_tick_background_runs_on_full_cadence() {
     io.events = true;
     io.frontmost = Some(frontmost.bundle_id().to_string());
     let mut needs_restore = false;
-    let mut last_full_pass = None;
+    let mut scan = ScanState::default();
     let start = Instant::now();
 
     tick_with_io(
@@ -421,7 +404,7 @@ fn frontmost_browser_runs_each_tick_background_runs_on_full_cadence() {
         &shared,
         "file:///blocked.html",
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         start,
     );
     assert_eq!(io.read_calls, vec![frontmost, background]);
@@ -430,7 +413,7 @@ fn frontmost_browser_runs_each_tick_background_runs_on_full_cadence() {
         &shared,
         "file:///blocked.html",
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         start + Duration::from_secs(1),
     );
     assert_eq!(io.read_calls, vec![frontmost, background, frontmost]);
@@ -439,7 +422,7 @@ fn frontmost_browser_runs_each_tick_background_runs_on_full_cadence() {
         &shared,
         "file:///blocked.html",
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         start + BACKGROUND_BROWSER_TICK,
     );
     assert_eq!(
@@ -449,12 +432,53 @@ fn frontmost_browser_runs_each_tick_background_runs_on_full_cadence() {
     assert_eq!(io.running_calls, 2);
 }
 
-fn open_tab(tab_index: u32, url: &str) -> Tab {
+fn open_tab(tab_ref: u32, url: &str) -> Tab {
     Tab {
         window_id: "1".to_string(),
-        tab_index,
+        tab_ref,
         url: url.to_string(),
     }
+}
+
+#[test]
+fn cancelled_redirect_waits_five_seconds_from_the_return_to_the_original_url() {
+    let shared = tick_shared();
+    let brave = SupportedBrowser::Brave;
+    let url = "https://mail.google.com/";
+    let base = "file:///blocked.html";
+    let mut io = FakeIo::new(
+        vec![block("mail", "blocklist", &["mail.google.com"], 0, 999)],
+        &[brave],
+    );
+    let start = Instant::now();
+    let mut needs_restore = false;
+    let mut scan = ScanState::default();
+    let mut step = |ms, tabs| {
+        io.queue_read(brave, Ok(tabs));
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut scan,
+            start + Duration::from_millis(ms),
+        );
+        std::mem::take(&mut io.apply_calls)
+            .into_iter()
+            .flat_map(|(_, actions)| actions)
+            .map(|(_, tab, _)| tab)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(step(0, vec![open_tab(1, url)]), [1]);
+    assert!(step(30_000, vec![parked_tab(base, url)]).is_empty());
+    // Cancel returns tab 1 to its original URL. Tab 2 visits the very same URL.
+    assert_eq!(step(31_000, vec![open_tab(1, url), open_tab(2, url)]), [2]);
+    assert!(step(35_999, vec![open_tab(1, url)]).is_empty());
+    assert_eq!(step(36_000, vec![open_tab(1, url)]), [1]);
+    assert_eq!(
+        step(37_000, vec![open_tab(1, "https://mail.google.com/other")]),
+        [1]
+    );
 }
 
 /// Redirecting a background Chromium tab whose page has a beforeunload
@@ -475,17 +499,10 @@ fn background_browser_redirect_waits_until_it_is_frontmost() {
     io.frontmost = Some("com.apple.TextEdit".to_string());
     io.queue_read(brave, Ok(vec![open_tab(1, gmail)]));
     let mut needs_restore = false;
-    let mut last_full_pass = None;
+    let mut scan = ScanState::default();
     let start = Instant::now();
 
-    tick_with_io(
-        &mut io,
-        &shared,
-        base,
-        &mut needs_restore,
-        &mut last_full_pass,
-        start,
-    );
+    tick_with_io(&mut io, &shared, base, &mut needs_restore, &mut scan, start);
     assert_eq!(io.read_calls, vec![brave], "background browser still read");
     assert!(io.apply_calls.is_empty(), "no redirect while in background");
 
@@ -496,7 +513,7 @@ fn background_browser_redirect_waits_until_it_is_frontmost() {
         &shared,
         base,
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         start + Duration::from_secs(1),
     );
     assert_eq!(io.apply_calls.len(), 1, "redirected once frontmost");
@@ -528,7 +545,7 @@ fn switching_focus_while_reading_brave_tabs_defers_only_redirects() {
         &tick_shared(),
         base,
         &mut false,
-        &mut None,
+        &mut ScanState::default(),
         Instant::now(),
     );
 
@@ -554,13 +571,13 @@ fn unknown_frontmost_app_still_redirects() {
         io.frontmost = None;
         io.queue_read(brave, Ok(vec![open_tab(1, "https://mail.google.com/")]));
         let mut needs_restore = false;
-        let mut last_full_pass = None;
+        let mut scan = ScanState::default();
         tick_with_io(
             &mut io,
             &shared,
             base,
             &mut needs_restore,
-            &mut last_full_pass,
+            &mut scan,
             Instant::now(),
         );
         assert_eq!(io.apply_calls.len(), 1, "events={events}");
@@ -588,13 +605,13 @@ fn background_browser_still_restores_unblocked_tabs_while_blocking() {
         ]),
     );
     let mut needs_restore = false;
-    let mut last_full_pass = None;
+    let mut scan = ScanState::default();
     tick_with_io(
         &mut io,
         &shared,
         base,
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         Instant::now(),
     );
     assert_eq!(
@@ -618,13 +635,13 @@ fn extension_method_browser_is_excluded_from_automation() {
     io.methods.insert(extension, false);
     io.methods.insert(automation, true);
     let mut needs_restore = false;
-    let mut last_full_pass = None;
+    let mut scan = ScanState::default();
     tick_with_io(
         &mut io,
         &shared,
         "file:///blocked.html",
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         Instant::now(),
     );
     assert_eq!(io.read_calls, vec![automation]);
@@ -642,16 +659,9 @@ fn restore_pass_scans_background_browser_even_when_frontmost_is_another_app() {
     io.queue_read(browser, Ok(vec![parked_tab(base, original)]));
     io.queue_apply(browser, Ok(()));
     let mut needs_restore = true;
-    let mut last_full_pass = None;
+    let mut scan = ScanState::default();
     let start = Instant::now();
-    tick_with_io(
-        &mut io,
-        &shared,
-        base,
-        &mut needs_restore,
-        &mut last_full_pass,
-        start,
-    );
+    tick_with_io(&mut io, &shared, base, &mut needs_restore, &mut scan, start);
     assert_eq!(io.read_calls, vec![browser]);
     assert_eq!(io.apply_calls.len(), 1, "background browser was restored");
 
@@ -662,7 +672,7 @@ fn restore_pass_scans_background_browser_even_when_frontmost_is_another_app() {
         &shared,
         base,
         &mut needs_restore,
-        &mut last_full_pass,
+        &mut scan,
         start + Duration::from_secs(1),
     );
     assert_eq!(io.read_calls, vec![browser, browser]);
@@ -848,7 +858,7 @@ fn plan_actions_restores_parked_tab_when_original_no_longer_blocked() {
     let parked = build_blocked_url(base, original, &[]);
     let tabs = vec![Tab {
         window_id: "1".to_string(),
-        tab_index: 1,
+        tab_ref: 1,
         url: parked,
     }];
 
@@ -947,7 +957,7 @@ fn parse_tab_rows_keeps_empty_urls_and_skips_malformed_rows() {
     );
     let got: Vec<(&str, u32, &str)> = tabs
         .iter()
-        .map(|t| (t.window_id.as_str(), t.tab_index, t.url.as_str()))
+        .map(|t| (t.window_id.as_str(), t.tab_ref, t.url.as_str()))
         .collect();
     assert_eq!(
         got,
@@ -989,11 +999,14 @@ fn redirects_address_windows_by_id_not_stacking_position() {
     assert!(w12 < w5);
     assert_eq!(script.matches("if _key is \"12\" then").count(), 1);
     let w12_block = &script[w12..w5];
-    assert!(w12_block.contains("set URL of tab 3 of window id _wid to \"file:///blocked.html?a\""));
-    assert!(w12_block.contains("set URL of tab 1 of window id _wid to \"file:///blocked.html?c\""));
     assert!(
-        script[w5..].contains("set URL of tab 1 of window id _wid to \"file:///blocked.html?b\"")
+        w12_block.contains("set URL of tab id 3 of window id _wid to \"file:///blocked.html?a\"")
     );
+    assert!(
+        w12_block.contains("set URL of tab id 1 of window id _wid to \"file:///blocked.html?c\"")
+    );
+    assert!(script[w5..]
+        .contains("set URL of tab id 1 of window id _wid to \"file:///blocked.html?b\""));
 }
 
 #[test]
@@ -1041,14 +1054,20 @@ fn assert_live_background_redirect(browser: SupportedBrowser, setup: &str) {
     let (id_a, id_b) = out.trim().split_once('|').expect("two ids");
     let (id_a, id_b) = (id_a.to_string(), id_b.to_string());
     let read = run_osascript(&read_tabs_script(browser)).map(|o| parse_tab_rows(&o));
-    let applied = run_osascript(&apply_actions_script(
-        browser,
-        &[(
-            id_a.clone(),
-            1,
-            "https://example.net/?redirected".to_string(),
-        )],
-    ));
+    let applied = read
+        .as_ref()
+        .ok()
+        .and_then(|tabs| tabs.iter().find(|tab| tab.window_id == id_a))
+        .map(|tab| {
+            run_osascript(&apply_actions_script(
+                browser,
+                &[(
+                    id_a.clone(),
+                    tab.tab_ref,
+                    "https://example.net/?redirected".to_string(),
+                )],
+            ))
+        });
     std::thread::sleep(Duration::from_secs(2));
     // Windows are matched as text so the same script works whether the
     // browser types ids as numbers (Safari) or text (Chromium).
@@ -1076,12 +1095,13 @@ end tell"#
         (&id_b, "https://example.org/?B"),
     ] {
         assert!(
-            tabs.iter()
-                .any(|t| &t.window_id == id && t.tab_index == 1 && t.url == url),
+            tabs.iter().any(|t| &t.window_id == id && t.url == url),
             "read script reports window {id} at {url}: {tabs:?}"
         );
     }
-    applied.expect("apply script runs against the browser");
+    applied
+        .expect("test window has a tab")
+        .expect("apply script runs against the browser");
     let (url_a, url_b) = urls.trim().split_once('|').expect("two urls");
     assert_eq!(url_a, "https://example.net/?redirected");
     assert_eq!(url_b, "https://example.org/?B");

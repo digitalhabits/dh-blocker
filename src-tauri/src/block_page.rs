@@ -23,7 +23,7 @@ pub fn web_enforcement_active(blocks: &[BlockInfo]) -> bool {
 
 /// Decide what to do with each tab: redirect blocked sites to the block
 /// page, restore block-page tabs whose original URL is no longer
-/// blocked. Returns (window_id, tab_index, new_url) triples.
+/// blocked. Returns (window_id, tab_ref, new_url) triples.
 ///
 /// Restore matches the extension's `restoreUnblockedTabs`: any parked
 /// tab whose original URL is no longer blocked is restored, even when
@@ -47,7 +47,7 @@ pub(crate) fn plan_actions(
             }
             if let Some(original) = original_url_from_block_page(&tab.url) {
                 if is_http_url(&original) && !url_is_blocked(&original, blocks) {
-                    actions.push((tab.window_id.clone(), tab.tab_index, original));
+                    actions.push((tab.window_id.clone(), tab.tab_ref, original));
                 }
             }
             continue;
@@ -57,13 +57,13 @@ pub(crate) fn plan_actions(
         }
         if url_is_blocked(&tab.url, blocks) {
             let target = build_blocked_url(block_page_url, &tab.url, blocks);
-            actions.push((tab.window_id.clone(), tab.tab_index, target));
+            actions.push((tab.window_id.clone(), tab.tab_ref, target));
         }
     }
     actions
 }
 
-/// One planned tab action: `(window_id, tab_index, new_url)`.
+/// One planned tab action: `(window_id, tab_ref, new_url)`.
 pub(crate) type TabAction = (String, u32, String);
 
 /// One tab as a browser reports it. The window and tab references are
@@ -75,7 +75,8 @@ pub(crate) struct Tab {
     /// as text, not the window's position: positions follow the stacking
     /// order and go stale as soon as a window is raised.
     pub(crate) window_id: String,
-    pub(crate) tab_index: u32,
+    /// Chromium tab ID or Safari tab position, as used by the watcher.
+    pub(crate) tab_ref: u32,
     pub(crate) url: String,
 }
 
@@ -563,7 +564,7 @@ pub(crate) fn plan_address_bar_action(
     let url = address_bar_text_to_url(address_bar_text)?;
     let tab = Tab {
         window_id: "1".to_string(),
-        tab_index: 1,
+        tab_ref: 1,
         url,
     };
     plan_actions(std::slice::from_ref(&tab), blocks, block_page_url)
