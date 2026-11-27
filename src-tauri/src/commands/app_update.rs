@@ -6,7 +6,7 @@
 // unrelated to what this module does; scoping the allow here keeps the
 // `-D warnings` clippy gate meaningful for every other lint.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
@@ -18,7 +18,8 @@ use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
 const GITHUB_RELEASES: &str = "https://github.com/digitalhabits/dh-blocker/releases/download";
-#[allow(dead_code)] // used on macOS; dead on Windows
+const GITHUB_RELEASES_API: &str =
+    "https://api.github.com/repos/digitalhabits/dh-blocker/releases/tags";
 const LATEST_VERSIONS_URL: &str = "https://digitalhabits.github.io/dh-blocker/latest-versions.json";
 
 #[derive(Clone, Serialize)]
@@ -30,42 +31,156 @@ struct UpdateDownloadProgress {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)] // used on macOS; dead on Windows
 struct LatestVersionsManifest {
     macos: Option<serde_json::Value>,
+    windows: Option<serde_json::Value>,
     sha256: Option<ManifestChecksums>,
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)] // used on macOS; dead on Windows
+#[serde(rename_all = "camelCase")]
 struct ManifestChecksums {
-    #[serde(rename = "macosPkg")]
     macos_pkg: Option<String>,
+    windows_x64_setup: Option<String>,
+    windows_arm64_setup: Option<String>,
 }
 
-fn normalize_version(version: &str) -> String {
-    version.trim().trim_start_matches('v').trim().to_string()
+#[derive(Debug, Deserialize)]
+struct GitHubRelease {
+    tag_name: String,
+    assets: Vec<GitHubReleaseAsset>,
 }
 
-#[allow(dead_code)] // used on macOS; dead on Windows
-fn platform_version_from_manifest(value: &serde_json::Value) -> Option<String> {
-    match value {
-        serde_json::Value::String(version) => Some(normalize_version(version)),
-        serde_json::Value::Object(map) => map
-            .get("version")
-            .and_then(|v| v.as_str())
-            .map(normalize_version),
-        _ => None,
+#[derive(Debug, Deserialize)]
+struct GitHubReleaseAsset {
+    name: String,
+    digest: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+enum Installer {
+    MacosPkg,
+    WindowsX64Setup,
+    WindowsArm64Setup,
+}
+
+impl Installer {
+    fn for_target() -> Result<Self, String> {
+        match (std::env::consts::OS, std::env::consts::ARCH) {
+            ("macos", _) => Ok(Self::MacosPkg),
+            ("windows", "aarch64") => Ok(Self::WindowsArm64Setup),
+            ("windows", _) => Ok(Self::WindowsX64Setup),
+            _ => Err("in-app update download is not supported on this platform".into()),
+        }
+    }
+
+    fn filename(self, version: &str) -> String {
+        match self {
+            Self::MacosPkg => format!("Digital-Habits-Blocker-{version}.pkg"),
+            Self::WindowsX64Setup => format!("Digital-Habits-Blocker_{version}_x64-setup.exe"),
+            Self::WindowsArm64Setup => format!("Digital-Habits-Blocker_{version}_arm64-setup.exe"),
+        }
     }
 }
 
-#[allow(dead_code)] // used on macOS; dead on Windows
-async fn fetch_expected_macos_pkg_sha256(version: &str) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .user_agent(format!("ReDD-Blocker/{}", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|e| format!("update manifest client: {e}"))?;
+fn validate_version(version: &str) -> Result<&str, String> {
+    let version = version.trim();
+    let version = version.strip_prefix(['v', 'V']).unwrap_or(version);
+    let mut parts = version.splitn(3, '.');
+    if parts.clone().count() == 3
+        && parts.all(|part| {
+            part.bytes().all(|byte| byte.is_ascii_digit())
+                && (part == "0" || !part.starts_with('0'))
+                && part.parse::<u64>().is_ok()
+        })
+    {
+        Ok(version)
+    } else {
+        Err("Invalid update version — expected a stable major.minor.patch release".into())
+    }
+}
 
+fn platform_version_from_manifest(value: &serde_json::Value) -> Option<&str> {
+    match value {
+        serde_json::Value::String(version) => Some(version.as_str()),
+        serde_json::Value::Object(map) => map.get("version").and_then(serde_json::Value::as_str),
+        _ => None,
+    }
+    .and_then(|version| validate_version(version).ok())
+}
+
+fn validate_sha256(hash: &str) -> Result<&str, String> {
+    let hash = hash.trim();
+    if hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        Ok(hash)
+    } else {
+        Err("Update installer checksum was invalid".into())
+    }
+}
+
+fn manifest_checksum<'a>(
+    manifest: &'a LatestVersionsManifest,
+    installer: Installer,
+    version: &str,
+) -> Result<Option<&'a str>, String> {
+    let (platform, platform_version) = match installer {
+        Installer::MacosPkg => ("macOS", manifest.macos.as_ref()),
+        Installer::WindowsX64Setup | Installer::WindowsArm64Setup => {
+            ("Windows", manifest.windows.as_ref())
+        }
+    };
+
+    let manifest_version = platform_version
+        .and_then(platform_version_from_manifest)
+        .ok_or_else(|| format!("Update manifest has no valid {platform} version"))?;
+    if manifest_version != version {
+        return Err(format!(
+            "Update manifest version mismatch (manifest {manifest_version}, requested {version})"
+        ));
+    }
+
+    let checksum = manifest
+        .sha256
+        .as_ref()
+        .and_then(|checksums| match installer {
+            Installer::MacosPkg => checksums.macos_pkg.as_deref(),
+            Installer::WindowsX64Setup => checksums.windows_x64_setup.as_deref(),
+            Installer::WindowsArm64Setup => checksums.windows_arm64_setup.as_deref(),
+        });
+    if checksum.is_none() && matches!(installer, Installer::MacosPkg) {
+        return Err(
+            "Update manifest is missing the macOS installer checksum — try again later".into(),
+        );
+    }
+    checksum.map(validate_sha256).transpose()
+}
+
+fn github_release_checksum<'a>(
+    release: &'a GitHubRelease,
+    tag: &str,
+    filename: &str,
+) -> Result<&'a str, String> {
+    if release.tag_name != tag {
+        return Err("GitHub returned metadata for a different update release".into());
+    }
+
+    let checksum = release
+        .assets
+        .iter()
+        .find(|asset| asset.name == filename)
+        .and_then(|asset| asset.digest.as_deref())
+        .and_then(|digest| digest.strip_prefix("sha256:"))
+        .ok_or_else(|| "GitHub has no SHA-256 for this Windows installer".to_string())?;
+    validate_sha256(checksum)
+}
+
+async fn fetch_expected_sha256(
+    client: &reqwest::Client,
+    installer: Installer,
+    version: &str,
+    tag: &str,
+    filename: &str,
+) -> Result<String, String> {
     let manifest: LatestVersionsManifest = client
         .get(LATEST_VERSIONS_URL)
         .send()
@@ -77,71 +192,32 @@ async fn fetch_expected_macos_pkg_sha256(version: &str) -> Result<String, String
         .await
         .map_err(|e| format!("Update manifest was invalid: {e}"))?;
 
-    let manifest_version = manifest
-        .macos
-        .as_ref()
-        .and_then(platform_version_from_manifest)
-        .ok_or_else(|| "Update manifest is missing a macOS version".to_string())?;
-
-    if manifest_version != version {
-        return Err(format!(
-            "Update manifest version mismatch (manifest {manifest_version}, requested {version})"
-        ));
+    if let Some(checksum) = manifest_checksum(&manifest, installer, version)? {
+        return Ok(checksum.to_owned());
     }
 
-    manifest
-        .sha256
-        .and_then(|checksums| checksums.macos_pkg)
-        .map(|hash| hash.trim().to_lowercase())
-        .filter(|hash| !hash.is_empty())
-        .ok_or_else(|| {
-            "Update manifest is missing the macOS installer checksum — try again later".to_string()
-        })
+    // Older manifests contain the Windows version without installer hashes.
+    // GitHub's digest for the exact tagged asset keeps those releases verifiable.
+    let release: GitHubRelease = client
+        .get(format!("{GITHUB_RELEASES_API}/{tag}"))
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| format!("Could not fetch Windows installer metadata: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("Windows installer metadata unavailable: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("Windows installer metadata was invalid: {e}"))?;
+    Ok(github_release_checksum(&release, tag, filename)?.to_owned())
 }
 
-#[allow(clippy::needless_return)] // cfg dispatch: the return is load-bearing on the other platform
-fn release_asset(version: &str) -> Result<(String, String), String> {
-    let version = normalize_version(version);
-    if version.is_empty() {
-        return Err("missing version".into());
-    }
-    let tag = format!("v{version}");
-
-    #[cfg(target_os = "macos")]
-    {
-        let filename = format!("Digital-Habits-Blocker-{version}.pkg");
-        let url = format!("{GITHUB_RELEASES}/{tag}/{filename}");
-        Ok((url, filename))
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let arch = match std::env::consts::ARCH {
-            "aarch64" => "arm64",
-            _ => "x64",
-        };
-        let filename = format!("Digital-Habits-Blocker_{version}_{arch}-setup.exe");
-        let url = format!("{GITHUB_RELEASES}/{tag}/{filename}");
-        return Ok((url, filename));
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        let _ = tag;
-        Err("in-app update download is not supported on this platform".into())
-    }
-}
-
-fn installer_dest_path(filename: &str) -> PathBuf {
-    std::env::temp_dir().join(filename)
-}
-
-async fn download_file(app: &AppHandle, url: &str, dest: &Path) -> Result<(), String> {
-    let client = reqwest::Client::builder()
-        .user_agent(format!("ReDD-Blocker/{}", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|e| format!("download client: {e}"))?;
-
+async fn download_file(
+    client: &reqwest::Client,
+    app: &AppHandle,
+    url: &str,
+    dest: &Path,
+) -> Result<(), String> {
     let response = client
         .get(url)
         .send()
@@ -156,7 +232,7 @@ async fn download_file(app: &AppHandle, url: &str, dest: &Path) -> Result<(), St
     }
 
     let total_bytes = response.content_length();
-    let mut file = tokio::fs::File::create(dest)
+    let mut file = tokio::fs::File::create_new(dest)
         .await
         .map_err(|e| format!("Could not write installer to disk: {e}"))?;
 
@@ -184,7 +260,6 @@ async fn download_file(app: &AppHandle, url: &str, dest: &Path) -> Result<(), St
     Ok(())
 }
 
-#[allow(dead_code)] // used on macOS; dead on Windows
 async fn verify_file_sha256(path: &Path, expected: &str) -> Result<(), String> {
     let mut file = tokio::fs::File::open(path)
         .await
@@ -205,7 +280,7 @@ async fn verify_file_sha256(path: &Path, expected: &str) -> Result<(), String> {
     }
 
     let actual = format!("{:x}", hasher.finalize());
-    if actual.eq_ignore_ascii_case(expected.trim()) {
+    if actual.eq_ignore_ascii_case(expected) {
         Ok(())
     } else {
         Err(
@@ -479,32 +554,141 @@ fn launch_installer(app: &AppHandle, path: &Path) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn download_and_run_update(app: AppHandle, version: String) -> Result<(), String> {
-    let version = normalize_version(&version);
-    let (url, filename) = release_asset(&version)?;
-    let dest = installer_dest_path(&filename);
+    let version = validate_version(&version)?;
+    let installer = Installer::for_target()?;
+    let tag = format!("v{version}");
+    let filename = installer.filename(version);
+    let client = reqwest::Client::builder()
+        .user_agent(format!("ReDD-Blocker/{}", env!("CARGO_PKG_VERSION")))
+        .https_only(true)
+        .build()
+        .map_err(|e| format!("update client: {e}"))?;
+    let expected_sha256 =
+        fetch_expected_sha256(&client, installer, version, &tag, &filename).await?;
 
+    // Separate staging directories keep interrupted or concurrent updates away
+    // from a verified installer. The guard cleans up failures automatically.
+    let staging = tempfile::Builder::new()
+        .prefix("redd-block-update-")
+        .tempdir()
+        .map_err(|e| format!("Could not stage the installer: {e}"))?;
+    let dest = staging.path().join(&filename);
+    let url = format!("{GITHUB_RELEASES}/{tag}/{filename}");
     log::info!("update: downloading {url} -> {}", dest.display());
-
-    if dest.exists() {
-        if let Err(e) = tokio::fs::remove_file(&dest).await {
-            log::warn!(
-                "update: could not remove stale installer {}: {e}",
-                dest.display()
-            );
-        }
-    }
-
-    download_file(&app, &url, &dest).await?;
-
-    #[cfg(target_os = "macos")]
-    {
-        let expected_sha256 = fetch_expected_macos_pkg_sha256(&version).await?;
-        verify_file_sha256(&dest, &expected_sha256).await?;
-        log::info!("update: installer checksum verified");
-    }
+    download_file(&client, &app, &url, &dest).await?;
+    verify_file_sha256(&dest, &expected_sha256).await?;
+    log::info!("update: installer checksum verified");
 
     launch_installer(&app, &dest)?;
+    // The system installer can still be reading the file after launch returns.
+    let _ = staging.keep();
 
     log::info!("update: opened installer at {}", dest.display());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const X64_SHA256: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const ARM64_SHA256: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    #[test]
+    fn validates_the_release_version_before_it_becomes_a_path_component() {
+        assert_eq!(validate_version(" \tv3.13.0\n"), Ok("3.13.0"));
+        assert_eq!(validate_version("0.1.0"), Ok("0.1.0"));
+        for version in [
+            "",
+            "3.13",
+            "3.013.0",
+            "3.13.0.1",
+            "3.13.0-rc.1",
+            "3.13.0+build",
+            "3.13.0/../file",
+            "3.13.0\\file",
+            "3.13.0%2f",
+            "3.13.0?query",
+            "3.13.0#fragment",
+        ] {
+            assert!(validate_version(version).is_err(), "{version:?}");
+        }
+    }
+
+    #[test]
+    fn selects_the_windows_checksum_for_the_exact_architecture_and_version() {
+        let manifest: LatestVersionsManifest = serde_json::from_value(serde_json::json!({
+            "windows": { "version": "v3.13.0" },
+            "sha256": { "windowsX64Setup": X64_SHA256, "windowsArm64Setup": ARM64_SHA256 }
+        }))
+        .unwrap();
+        let x64 = Installer::WindowsX64Setup;
+        let arm64 = Installer::WindowsArm64Setup;
+        assert_eq!(
+            x64.filename("3.13.0"),
+            "Digital-Habits-Blocker_3.13.0_x64-setup.exe"
+        );
+        assert_eq!(
+            arm64.filename("3.13.0"),
+            "Digital-Habits-Blocker_3.13.0_arm64-setup.exe"
+        );
+        assert_eq!(
+            manifest_checksum(&manifest, x64, "3.13.0"),
+            Ok(Some(X64_SHA256))
+        );
+        assert_eq!(
+            manifest_checksum(&manifest, arm64, "3.13.0"),
+            Ok(Some(ARM64_SHA256))
+        );
+        assert!(manifest_checksum(&manifest, x64, "3.13.1").is_err());
+    }
+
+    #[test]
+    fn only_a_missing_windows_checksum_uses_release_metadata() {
+        let legacy: LatestVersionsManifest = serde_json::from_str(
+            r#"{"macos":"3.13.0", "windows":"3.13.0", "sha256":{"macosPkg":null}}"#,
+        )
+        .unwrap();
+        let invalid: LatestVersionsManifest =
+            serde_json::from_str(r#"{"windows":"3.13.0", "sha256":{"windowsX64Setup":"invalid"}}"#)
+                .unwrap();
+        let x64 = Installer::WindowsX64Setup;
+        assert_eq!(manifest_checksum(&legacy, x64, "3.13.0"), Ok(None));
+        assert!(manifest_checksum(&legacy, x64, "3.13.1").is_err());
+        assert!(manifest_checksum(&legacy, Installer::MacosPkg, "3.13.0").is_err());
+        assert!(manifest_checksum(&invalid, x64, "3.13.0").is_err());
+    }
+
+    #[test]
+    fn release_metadata_requires_the_exact_tag_asset_and_sha256() {
+        let tag = "v3.13.0";
+        let x64 = Installer::WindowsX64Setup.filename("3.13.0");
+        let arm64 = Installer::WindowsArm64Setup.filename("3.13.0");
+        let mut release: GitHubRelease = serde_json::from_value(serde_json::json!({
+            "tag_name": tag,
+            "assets": [
+                { "name": &arm64, "digest": format!("sha256:{ARM64_SHA256}") },
+                { "name": &x64, "digest": format!("sha256:{X64_SHA256}") },
+            ]
+        }))
+        .unwrap();
+        assert_eq!(github_release_checksum(&release, tag, &x64), Ok(X64_SHA256));
+        assert!(github_release_checksum(&release, "v3.13.1", &x64).is_err());
+        assert!(github_release_checksum(&release, tag, "other.exe").is_err());
+        for digest in [Some("sha1:abcd".into()), Some("sha256:abcd".into()), None] {
+            release.assets[1].digest = digest;
+            assert!(github_release_checksum(&release, tag, &x64).is_err());
+        }
+    }
+
+    #[test]
+    fn verifies_installer_bytes_and_rejects_a_changed_file() {
+        const EXPECTED: &str = "be2ce2dd28b0293e480f9d7443bc99b442ae06348b010a6f8043c667b15d4a5a";
+        let staging = tempfile::tempdir().unwrap();
+        let file = staging.path().join("installer.exe");
+        std::fs::write(&file, b"signed installer").unwrap();
+        assert!(tauri::async_runtime::block_on(verify_file_sha256(&file, EXPECTED)).is_ok());
+        std::fs::write(&file, b"changed installer").unwrap();
+        assert!(tauri::async_runtime::block_on(verify_file_sha256(&file, EXPECTED)).is_err());
+    }
 }
