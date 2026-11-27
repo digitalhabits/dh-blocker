@@ -53,7 +53,8 @@ pub fn safari_extension_mirror_active(source: &Path) -> bool {
 
 #[cfg(all(target_os = "macos", not(feature = "system-test")))]
 pub fn safari_extension_mirror_active(source: &Path) -> bool {
-    !crate::blocking_method::uses_automation_at_path(source, "safari")
+    crate::cross_app_consent::has_accepted_eula_at_path(source)
+        && !crate::blocking_method::uses_automation_at_path(source, "safari")
 }
 
 #[cfg(target_os = "macos")]

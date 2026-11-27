@@ -1,4 +1,4 @@
-//! Cross-app consent gating for macOS.
+//! Desktop EULA and macOS cross-app consent gating.
 //!
 //! Safari and Chromium website blocking uses **Automation** (Apple
 //! Events) by default. **Safari extension mode** needs Full Disk Access
@@ -8,38 +8,26 @@
 #[cfg(target_os = "macos")]
 use std::path::PathBuf;
 
-#[cfg(target_os = "macos")]
-fn has_accepted_eula_in_data() -> bool {
-    let path = crate::commands::canonical_data_path_static();
-    if !path.exists() {
-        return false;
+// Keep in sync with CURRENT_EULA_REVISION in src/onboarding.js.
+const CURRENT_EULA_REVISION: u64 = 1;
+
+pub(crate) fn has_current_eula(data: &serde_json::Value) -> bool {
+    let settings = &data["settings"];
+    match &settings["eulaAcceptedRevision"] {
+        // The boolean accepted revision 1, even after the current revision changes.
+        serde_json::Value::Null => {
+            CURRENT_EULA_REVISION == 1 && settings["eulaAccepted"].as_bool() == Some(true)
+        }
+        revision => revision.as_u64() == Some(CURRENT_EULA_REVISION),
     }
-    let Ok(raw) = std::fs::read_to_string(&path) else {
-        return false;
-    };
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) else {
-        return false;
-    };
-    let Some(settings) = json.get("settings") else {
-        return false;
-    };
-    if settings
-        .get("eulaAcceptedRevision")
-        .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n.max(0) as u64)))
-        .map(|n| n > 0)
-        .unwrap_or(false)
-    {
-        return true;
-    }
-    settings
-        .get("eulaAccepted")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
 }
 
-#[cfg(not(target_os = "macos"))]
+pub(crate) fn has_accepted_eula_at_path(path: &std::path::Path) -> bool {
+    crate::data_cache::read(path).is_some_and(|data| has_current_eula(&data))
+}
+
 fn has_accepted_eula_in_data() -> bool {
-    true
+    has_accepted_eula_at_path(&crate::commands::canonical_data_path_static())
 }
 
 /// True when we can read Firefox's profile metadata (optional signal for
@@ -85,7 +73,7 @@ pub fn should_run_cross_app_installs() -> bool {
     true
 }
 
-/// True when the in-process enforcer loop may run (EULA on macOS).
+/// True when the in-process enforcer loop may run.
 #[cfg(target_os = "macos")]
 pub fn should_run_enforcer() -> bool {
     should_run_web_automation()
@@ -93,7 +81,7 @@ pub fn should_run_enforcer() -> bool {
 
 #[cfg(not(target_os = "macos"))]
 pub fn should_run_enforcer() -> bool {
-    true
+    has_accepted_eula_in_data()
 }
 
 /// True when the macOS website-automation watcher may run (EULA only).

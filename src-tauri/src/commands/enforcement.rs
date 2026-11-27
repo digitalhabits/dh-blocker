@@ -21,10 +21,7 @@ pub fn enforcer_start(app: AppHandle, state: State<EnforcerState>) {
     if slot.is_none() {
         *slot = Some(enforcer::start(app));
     }
-    #[cfg(target_os = "macos")]
     let cross_app_ok = crate::cross_app_consent::should_run_enforcer();
-    #[cfg(not(target_os = "macos"))]
-    let cross_app_ok = true;
     if let Some(h) = slot.as_ref() {
         h.set_enabled(cross_app_ok);
         if !cross_app_ok {
@@ -52,7 +49,7 @@ pub fn register<R: tauri::Runtime>(app: &tauri::App<R>) {
 ///
 /// IMPORTANT: we start the enforcer **paused** when either:
 ///   - a v1.x → 2.0 migration is pending (same rationale as before), or
-///   - on macOS, the EULA has not yet been accepted.
+///   - the EULA has not yet been accepted.
 ///
 /// The enforcer's tick loop reads Firefox profile data to detect a
 /// disabled extension — that read needs FDA and is skipped until the
@@ -64,10 +61,7 @@ pub fn auto_start(app: &tauri::AppHandle) {
     let h = enforcer::start(app.clone());
 
     let pending = crate::commands::migration::migration_pending_sync();
-    #[cfg(target_os = "macos")]
     let cross_app_ok = crate::cross_app_consent::should_run_enforcer();
-    #[cfg(not(target_os = "macos"))]
-    let cross_app_ok = true;
 
     let enabled = !pending && cross_app_ok;
     h.set_enabled(enabled);
