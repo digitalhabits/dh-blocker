@@ -1180,30 +1180,19 @@
         console.log('--------------------------------------');
 
         const internals = window.__REDDBLOCK_INTERNALS__;
-        if (!internals || typeof internals.duplicateBlocklist !== 'function') {
-            console.warn('   ⏭️ Duplication tests skipped: duplicateBlocklist not available (run in app with internals)');
+        if (!internals || typeof internals.duplicateBlocklistInMemory !== 'function') {
+            console.warn('   ⏭️ Duplication tests skipped: duplicateBlocklistInMemory not available (run in app with internals)');
             return;
         }
 
-        // Helper: run a duplication test with side-effect isolation.
-        // Stubs saveData/render to no-ops so the async fire-and-forget inside
-        // duplicateBlocklist doesn't persist mock data or re-render the UI.
+        // The in-memory operation only needs the fixture during this synchronous call.
         function withIsolatedAppData(mockAppData, fn) {
             const savedAppData = internals.appData;
-            const realSave = internals.saveData;
-            const realRender = internals.render;
             try {
-                internals.saveData = function() {};   // stub: prevent disk writes of mock data
-                internals.render = function() {};      // stub: prevent UI re-render with mock data
                 internals.appData = mockAppData;
                 fn();
             } finally {
                 internals.appData = savedAppData;
-                internals.saveData = realSave;
-                internals.render = realRender;
-                internals.saveData();        // persist restored data to disk
-                internals.syncBlockingState();
-                internals.render();          // re-render UI with real data
             }
         }
 
@@ -1224,7 +1213,7 @@
             });
             const mockData = duplicationTestAppData({ blocklists: [blocklist], activeBlocks: [], schedules: [] });
             withIsolatedAppData(mockData, function() {
-                internals.duplicateBlocklist(blocklist.id);
+                internals.duplicateBlocklistInMemory(blocklist.id);
                 assertEqual(mockData.blocklists.length, 2, 'T51: Two blocklists after duplicate');
                 const dup = mockData.blocklists.find(function(bl) { return bl.id !== blocklist.id; });
                 assert(dup !== undefined, 'T51: Duplicate blocklist present');
@@ -1241,7 +1230,7 @@
             const blocklist = createMockBlocklist({ name: 'DanskListe', websites: ['x.dk'] });
             const mockData = duplicationTestAppData({ blocklists: [blocklist], activeBlocks: [], schedules: [] }, 'da');
             withIsolatedAppData(mockData, function() {
-                internals.duplicateBlocklist(blocklist.id);
+                internals.duplicateBlocklistInMemory(blocklist.id);
                 const dup = mockData.blocklists.find(function(bl) { return bl.id !== blocklist.id; });
                 assert(dup !== undefined, 'T51da: Duplicate blocklist present');
                 assertEqual(dup.name, 'DanskListe kopi', 'T51da: Name uses Danish kopi suffix');
@@ -1261,7 +1250,7 @@
                 activeBlocks: []
             });
             withIsolatedAppData(mockData, function() {
-                internals.duplicateBlocklist(blocklist.id);
+                internals.duplicateBlocklistInMemory(blocklist.id);
                 const dup = mockData.blocklists.find(function(bl) { return bl.id !== blocklist.id; });
                 assert(dup !== undefined, 'T52: Duplicate blocklist present');
                 if (!dup) return;
@@ -1293,7 +1282,7 @@
             });
 
             withIsolatedAppData(mockData, function() {
-                internals.duplicateBlocklist(blocklist.id);
+                internals.duplicateBlocklistInMemory(blocklist.id);
                 const dup = mockData.blocklists.find(function(bl) { return bl.id !== blocklist.id; });
                 assert(dup !== undefined, 'T53: Duplicate blocklist present');
                 if (!dup) return;
@@ -1325,7 +1314,7 @@
             });
 
             withIsolatedAppData(mockData, function() {
-                internals.duplicateBlocklist(blocklist.id);
+                internals.duplicateBlocklistInMemory(blocklist.id);
                 const dup = mockData.blocklists.find(function(bl) { return bl.id !== blocklist.id; });
                 assert(dup !== undefined, 'T53b: Duplicate blocklist present');
                 if (!dup) return;
@@ -1349,7 +1338,7 @@
             });
 
             withIsolatedAppData(mockData, function() {
-                internals.duplicateBlocklist(original.id);
+                internals.duplicateBlocklistInMemory(original.id);
                 const dup = mockData.blocklists.find(function(bl) {
                     return bl.id !== original.id && bl.id !== firstCopy.id && bl.id !== thirdCopy.id;
                 });
