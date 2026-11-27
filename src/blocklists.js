@@ -12,7 +12,7 @@ import { escapeHtml, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
 import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, healWwwWebsiteEntries, isAllowlistBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist } from './blocklist-utils.js';
 import { computeNextOneShotOccurrenceMs, computeNextRepeatingOccurrenceMs, isNonRepeatingSchedule, isSchedulePausedNow, syncIOSSchedules } from './schedule-engine.js';
-import { saveData, syncBlockingState } from './persistence.js';
+import { runIOSManualOperation, saveData, syncBlockingState } from './persistence.js';
 import { render, renderScheduleVisibilityChips } from './render.js';
 import { isFocusSpaceOn, getFocusSpaceOffUntil, turnFocusSpaceOn, setFocusSpaceEnabled } from './focus-space-switch.js';
 import { canEditScheduleBetweenBlocks, commitSegmentDelete, isScheduleSegmentActiveNow } from './schedule-editor.js';
@@ -750,7 +750,11 @@ export function showUndoToast(prefix, emphasis, suffix, onExpire) {
     startUndoToastCountdown(onExpire);
 }
 
-export async function deleteBlocklist(id) {
+export function deleteBlocklist(id) {
+    return state.isIOS ? runIOSManualOperation((_, persist) => applyBlocklistDelete(id, persist)) : applyBlocklistDelete(id);
+}
+
+async function applyBlocklistDelete(id, persist = saveData) {
     const blocklist = state.appData.blocklists.find(bl => bl.id === id);
     if (!blocklist) return;
 
@@ -794,7 +798,8 @@ export async function deleteBlocklist(id) {
     state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.blocklistId !== id);
     state.appData.schedules = (state.appData.schedules || []).filter(s => s.blocklistId !== id);
     expandedBlocklistCardIds.delete(id);
-    void saveData();
+    const save = persist();
+    if (state.isIOS) await save;
     // iOS: drop the space's monitors and start warnings now, not on the next tick.
     if (state.isIOS) void syncIOSSchedules();
 
@@ -837,6 +842,10 @@ export function commitDelete() {
 }
 
 export function undoDelete() {
+    return state.isIOS ? runIOSManualOperation((_, persist) => restoreDeletedBlocklist(persist)) : restoreDeletedBlocklist();
+}
+
+async function restoreDeletedBlocklist(persist = saveData) {
     if (!pendingDelete) return;
 
     // Restore the blocklist and active blocks
@@ -847,7 +856,8 @@ export function undoDelete() {
     (pendingDelete.schedules || []).forEach(schedule => {
         state.appData.schedules.push(schedule);
     });
-    void saveData();
+    const save = persist();
+    if (state.isIOS) await save;
 
     dismissUndoToast();
     pendingDelete = null;

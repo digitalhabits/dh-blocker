@@ -11,7 +11,7 @@ import { escapeHtml } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
 import { applyIOSScreenTimeTokenRefreshResult, getBlocklistIOSScreenTimeSelection, hasUsableIOSScreenTimeSelection, isAllowlistBlocklist, isProtectedApp, normalizeBlockedAppKey, uniqueBlockedAppDisplayNames } from './blocklist-utils.js';
 import { isSchedulePausedNow, scheduleHasFutureSingleOccurrence, syncIOSSchedules } from './schedule-engine.js';
-import { saveData, syncBlockingState } from './persistence.js';
+import { runIOSManualOperation, saveData, syncBlockingState } from './persistence.js';
 
 import { renderBlocklists } from './blocklists.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
@@ -732,10 +732,11 @@ export async function requestScreentimeAuth() {
 
 let reportedManualPolicyError = null;
 
-export async function reconcileIOSManualBlockingState({ pruneOrphanedRestarts = false } = {}) {
-    const options = { reconcileIOSResumes: pruneOrphanedRestarts };
-    let result = await syncBlockingState(options);
-    if (!result.success) result = await syncBlockingState(options);
+export async function reconcileIOSManualBlockingState(options = {}, syncManualPolicy) {
+    if (!syncManualPolicy) return runIOSManualOperation(sync => reconcileIOSManualBlockingState(options, sync));
+    const syncOptions = { reconcileIOSResumes: options.pruneOrphanedRestarts === true };
+    let result = await syncManualPolicy(syncOptions);
+    if (!result.success) result = await syncManualPolicy(syncOptions);
     if (result.success) {
         reportedManualPolicyError = null;
     } else if (reportedManualPolicyError !== result.error) {
@@ -745,15 +746,16 @@ export async function reconcileIOSManualBlockingState({ pruneOrphanedRestarts = 
     return result;
 }
 
-export async function initializeIOSBlockingState() {
+export async function initializeIOSBlockingState(syncManualPolicy, persist) {
+    if (!syncManualPolicy) return runIOSManualOperation(initializeIOSBlockingState);
     try {
-        await refreshIOSScreenTimeSelections();
+        await refreshIOSScreenTimeSelections(persist);
     } catch (error) {
         console.warn('[startup] Screen Time token refresh could not be saved:', error);
     }
     // Managed Settings can outlive an interrupted app save or missed callback.
     // Rebuild the manual channel even when there are no current manual blocks.
-    await reconcileIOSManualBlockingState({ pruneOrphanedRestarts: true });
+    await reconcileIOSManualBlockingState({ pruneOrphanedRestarts: true }, syncManualPolicy);
     // Re-register DeviceActivity schedules so background activation survives app restarts.
     await syncIOSSchedules();
 }
@@ -767,7 +769,7 @@ export async function initializeIOSBlockingState() {
  * for picker reselection. Keep the old tokens visible instead of silently
  * replacing the selection with an empty one.
  */
-export async function refreshIOSScreenTimeSelections() {
+export async function refreshIOSScreenTimeSelections(persist = saveData) {
     if (!state.isIOS) return { supported: false, changed: false, failures: 0 };
 
     let supported = false;
@@ -805,7 +807,7 @@ export async function refreshIOSScreenTimeSelections() {
     const changed = previousSelections.size > 0;
     if (changed) {
         try {
-            await saveData();
+            await persist();
         } catch (error) {
             for (const [blocklist, selection] of previousSelections) {
                 blocklist.iosScreenTimeSelection = selection;
