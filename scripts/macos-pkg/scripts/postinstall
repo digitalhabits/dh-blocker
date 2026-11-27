@@ -1,15 +1,9 @@
 #!/bin/bash
 # postinstall — runs as root after the .pkg payload is laid down.
 #
-# Auto-launches the new app for the user who triggered the install,
-# mirroring the Windows NSIS finish-page run checkbox.
-# Without this, macOS users who installed via .pkg would be left staring
-# at the Installer.app "Install Successful" screen with no clear next step.
-# Also removes legacy `/Applications/ReDD Blocker.app`,
-# `/Applications/ReDD Block.app`, and `/Applications/Fristed.app`
-# bundles so upgrades don't leave duplicate app icons in Applications, and
-# scrubs stale user LaunchAgents so login items don't point at deleted
-# app paths before the new build re-registers autostart.
+# Open the installed app in the console user's desktop and restore app
+# sessions stopped by preinstall. Also remove legacy bundles so upgrades
+# leave one app in Applications.
 
 set +e
 
@@ -17,10 +11,9 @@ LOG=/var/log/redd-block-pkg-postinstall.log
 exec > >(tee -a "$LOG") 2>&1
 echo "=== postinstall $(date '+%F %T') ==="
 
-APP_PATH='/Applications/Digital Habits Blocker.app'
-LEGACY_REDD_BLOCKER_APP_PATH='/Applications/ReDD Blocker.app'
-LEGACY_REDD_BLOCK_APP_PATH='/Applications/ReDD Block.app'
-FRISTED_APP_PATH='/Applications/Fristed.app'
+SCRIPT_DIR="$(dirname "$0")"
+# shellcheck source=scripts/macos-pkg/scripts/sessions.sh
+source "$SCRIPT_DIR/sessions.sh" || exit 1
 
 if [ -d "$LEGACY_REDD_BLOCKER_APP_PATH" ]; then
     rm -rf "$LEGACY_REDD_BLOCKER_APP_PATH" && echo "removed legacy app: $LEGACY_REDD_BLOCKER_APP_PATH"
@@ -38,60 +31,53 @@ if [ -d "$BLOCKED_RES" ]; then
     chmod 644 "$BLOCKED_RES"/* 2>/dev/null && echo "fixed block page resource permissions"
 fi
 
-# The Installer.app stashes the invoking user in $USER (their actual
-# console user, not root). Use it to launch the GUI in their session.
-TARGET_USER="${USER:-$(stat -f '%Su' /dev/console)}"
-TARGET_UID=$(id -u "$TARGET_USER" 2>/dev/null)
-
-if [ -z "$TARGET_UID" ]; then
-    echo "could not resolve uid for $TARGET_USER; skipping auto-launch"
-    exit 0
-fi
-
-# Remove stale launch-at-login plists before opening the new app.
-# Release builds self-heal autostart on every launch, but a leftover
-# `Fristed.plist` (or a redd-block plist pointing at a deleted .app)
-# would still fire at login and error until the user opens the new app.
+# Run file operations in the user's home with their own permissions.
+# Preserve agents pointing to the current bundle so a fresh launch cannot
+# be terminated by booting out its job.
 scrub_stale_autostart_plists_for_user() {
-    local user="$1"
-    local uid="$2"
-    local home
-    home=$(dscl . -read "/Users/$user" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
-    [ -z "$home" ] && home="/Users/$user"
-    local dir="$home/Library/LaunchAgents"
-    [ -d "$dir" ] || return 0
-
-    for plist in "$dir"/*.plist; do
-        [ -f "$plist" ] || continue
-        local base lower remove=0
-        base=$(basename "$plist")
-        lower=$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')
-        if [[ "$lower" == *reddblock* ]] || [[ "$lower" == *redd-block* ]]; then
-            remove=1
-        elif [[ "$lower" == "fristed.plist" ]]; then
-            remove=1
-        elif grep -q '/Applications/Fristed.app' "$plist" 2>/dev/null; then
-            remove=1
-        elif grep -q '/Applications/ReDD Block.app' "$plist" 2>/dev/null; then
-            remove=1
-        elif grep -q '/Applications/ReDD Blocker.app' "$plist" 2>/dev/null; then
-            remove=1
-        fi
-        if [ "$remove" = "1" ]; then
-            launchctl bootout "gui/$uid" "$plist" 2>/dev/null || true
-            rm -f "$plist" && echo "removed stale LaunchAgent: $plist"
-        fi
-    done
+    run_as_gui_user "$1" /bin/bash -s -- "$1" "$APP_PATH" \
+        "$LEGACY_REDD_BLOCKER_APP_PATH" "$LEGACY_REDD_BLOCK_APP_PATH" "$FRISTED_APP_PATH" <<'SCRUB'
+uid="$1"
+app_path="$2"
+shift 2
+for plist in "$HOME/Library/LaunchAgents/"*.plist; do
+    [ -f "$plist" ] || continue
+    /usr/bin/grep -qaF "$app_path" "$plist" && continue
+    name=$(printf '%s' "${plist##*/}" | /usr/bin/tr '[:upper:]' '[:lower:]')
+    case "$name" in
+        *reddblock*|*redd-block*|fristed.plist) ;;
+        *) /usr/bin/grep -qaF -e "$1" -e "$2" -e "$3" "$plist" || continue ;;
+    esac
+    /bin/launchctl bootout "gui/$uid" "$plist" 2>/dev/null || true
+    /bin/rm -f "$plist" && echo "removed stale LaunchAgent: $plist"
+done
+SCRUB
 }
-scrub_stale_autostart_plists_for_user "$TARGET_USER" "$TARGET_UID"
 
-# launchctl asuser runs the command in the target user's bootstrap
-# domain so the GUI shows up on their session. `open` passes our
-# environment to the app, and the installer's TMPDIR points into a
-# PKInstallSandbox that is deleted when the install finishes; unset it
-# so the app falls back to the user's own temp dir.
-launchctl asuser "$TARGET_UID" /usr/bin/env -u TMPDIR /usr/bin/open "$APP_PATH" || \
-    sudo -u "$TARGET_USER" /usr/bin/env -u TMPDIR /usr/bin/open "$APP_PATH"
+# Installer.app, sudo and MDM may supply root or an authorising account.
+# The console device identifies the frontmost desktop (or root at login).
+console_uid=$(/usr/bin/stat -f '%u' /dev/console 2>/dev/null)
+{
+    printf '%s\n' "$console_uid"
+    if [ -f "$RESTART_UIDS_FILE" ]; then
+        /bin/cat "$RESTART_UIDS_FILE"
+    fi
+} | /usr/bin/sort -u | while IFS= read -r uid; do
+    is_gui_user "$uid" || continue
+    scrub_stale_autostart_plists_for_user "$uid"
 
-echo "postinstall launched Digital Habits Blocker for $TARGET_USER"
+    open_args=()
+    if [ "$uid" != "$console_uid" ]; then
+        open_args=(-g)
+    fi
+
+    # Installer's TMPDIR disappears with the package sandbox. Use the
+    # default in the user's session instead.
+    if run_as_gui_user "$uid" /usr/bin/env -u TMPDIR /usr/bin/open "${open_args[@]}" "$APP_PATH"; then
+        echo "postinstall launched Digital Habits Blocker for GUI uid $uid"
+    else
+        echo "could not launch Digital Habits Blocker for GUI uid $uid"
+    fi
+done
+
 exit 0
