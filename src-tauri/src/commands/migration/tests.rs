@@ -116,3 +116,11 @@ fn windows_launcher_passes_quoted_script_content_without_executing_a_temp_file()
     assert!(!launcher.contains("'-File'"));
     assert!(include_str!("cleanup.ps1").trim_end().ends_with("exit 42"));
 }
+
+#[cfg(all(not(feature = "system-test"), target_os = "macos"))]
+#[test]
+fn cleanup_marker_must_be_the_final_shell_output_line() {
+    assert!(cleanup_reported_success(b"permission reset\rok\n"));
+    assert!(cleanup_reported_success(b"ok\n"));
+    assert!(!cleanup_reported_success(b"ok\rfailed\n"));
+}

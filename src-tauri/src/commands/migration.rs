@@ -507,6 +507,16 @@ fn default_backup_dir() -> Option<PathBuf> {
 }
 
 #[cfg(all(not(feature = "system-test"), target_os = "macos"))]
+fn cleanup_reported_success(output: &[u8]) -> bool {
+    // AppleScript can translate shell newlines into carriage returns.
+    output
+        .trim_ascii_end()
+        .rsplit(|b| matches!(b, b'\r' | b'\n'))
+        .next()
+        == Some(b"ok")
+}
+
+#[cfg(all(not(feature = "system-test"), target_os = "macos"))]
 fn run_elevated_macos(edit: &PreparedHostsEdit) -> ElevatedOutcome {
     use std::process::Command;
 
@@ -532,9 +542,7 @@ fn run_elevated_macos(edit: &PreparedHostsEdit) -> ElevatedOutcome {
         .output()
     {
         Ok(out) => {
-            if out.status.success()
-                && String::from_utf8_lossy(&out.stdout).lines().last() == Some("ok")
-            {
+            if out.status.success() && cleanup_reported_success(&out.stdout) {
                 ElevatedOutcome {
                     success: true,
                     user_cancelled: false,
