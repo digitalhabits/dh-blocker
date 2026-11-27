@@ -536,20 +536,17 @@ fn prepare_hosts_edit(
     })
 }
 
-#[cfg(all(not(feature = "system-test"), target_os = "macos"))]
+#[cfg(all(
+    not(feature = "system-test"),
+    any(target_os = "macos", target_os = "windows")
+))]
 fn default_backup_dir() -> Option<PathBuf> {
-    // Keep snapshots outside the directories targeted by wipe_user_data.
+    // Roaming on Windows. Keep recovery outside the install directory
+    // and the bundle-ID directories targeted by explicit data removal.
     dirs::data_dir().map(|dir| {
         dir.join(crate::product_identity::PRODUCT_DIR_NAME)
             .join("backups")
     })
-}
-
-#[cfg(all(not(feature = "system-test"), target_os = "windows"))]
-fn default_backup_dir() -> Option<PathBuf> {
-    // The NSIS delete-app-data checkbox removes the bundle-ID directories.
-    // Hosts recovery snapshots sit beside those directories.
-    crate::product_identity::windows_primary_local_product_dir().map(|dir| dir.join("backups"))
 }
 
 #[cfg(all(not(feature = "system-test"), target_os = "macos"))]
