@@ -1030,13 +1030,6 @@ pub fn wipe_user_data(app: &AppHandle) {
 
     use std::collections::HashSet;
 
-    #[cfg(target_os = "macos")]
-    {
-        if let Err(e) = crate::app_group::remove_blocklist_mirror() {
-            log::warn!("wipe_user_data: App Group mirror cleanup failed: {e}");
-        }
-    }
-
     let data_path = get_data_path(app);
     let mut files: Vec<PathBuf> = vec![
         data_path.with_file_name(PRE_SHARED_IMPORT_BACKUP),

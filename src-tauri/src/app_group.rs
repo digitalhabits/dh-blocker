@@ -11,7 +11,7 @@ use std::io;
 #[cfg(target_os = "macos")]
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 #[cfg(target_os = "macos")]
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -27,6 +27,33 @@ const BLOCKLIST_FILENAME: &str = "redd-block-data.json";
 static GROUP_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
 #[cfg(target_os = "macos")]
 static SYNC_LOOP_STARTED: OnceLock<()> = OnceLock::new();
+#[cfg(target_os = "macos")]
+static BLOCKLIST_MIRROR: BlocklistMirror = BlocklistMirror(Mutex::new(false));
+
+/// Serialise the final removal with writes from the background worker,
+/// save-data command and browser-method command.
+#[cfg(target_os = "macos")]
+struct BlocklistMirror(Mutex<bool>);
+
+#[cfg(target_os = "macos")]
+impl BlocklistMirror {
+    fn write(&self, bytes: &[u8], target: impl FnOnce() -> Option<PathBuf>) -> io::Result<()> {
+        let stopped = self.0.lock().map_err(|e| io::Error::other(e.to_string()))?;
+        if *stopped {
+            return Ok(());
+        }
+        let target = target().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, "App Group container unavailable")
+        })?;
+        atomic_write(&target, bytes)
+    }
+
+    fn stop_and_remove(&self, target: Option<&Path>) -> io::Result<()> {
+        let mut stopped = self.0.lock().map_err(|e| io::Error::other(e.to_string()))?;
+        *stopped = true;
+        remove_mirror_at(target)
+    }
+}
 
 #[cfg(all(target_os = "macos", feature = "system-test"))]
 pub fn path() -> Option<PathBuf> {
@@ -57,14 +84,8 @@ pub fn safari_extension_mirror_active(source: &Path) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-pub fn write_blocklist_bytes(bytes: &[u8]) -> io::Result<()> {
-    let Some(target) = blocklist_path() else {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "App Group container unavailable",
-        ));
-    };
-    atomic_write(&target, bytes)
+fn write_blocklist_bytes(bytes: &[u8]) -> io::Result<()> {
+    BLOCKLIST_MIRROR.write(bytes, blocklist_path)
 }
 
 #[cfg(target_os = "macos")]
@@ -79,13 +100,21 @@ pub fn sync_blocklist_from(source: &Path) -> io::Result<()> {
 
 #[cfg(target_os = "macos")]
 pub fn remove_blocklist_mirror() -> io::Result<()> {
-    let Some(target) = blocklist_path() else {
-        return Ok(());
-    };
-    if target.exists() {
-        fs::remove_file(target)?;
+    remove_mirror_at(blocklist_path().as_deref())
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn stop_and_remove_blocklist_mirror() -> io::Result<()> {
+    BLOCKLIST_MIRROR.stop_and_remove(blocklist_path().as_deref())
+}
+
+#[cfg(target_os = "macos")]
+fn remove_mirror_at(target: Option<&Path>) -> io::Result<()> {
+    match target.map(fs::remove_file) {
+        None | Some(Ok(())) => Ok(()),
+        Some(Err(e)) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Some(Err(e)) => Err(e),
     }
-    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -180,4 +209,29 @@ fn atomic_write(target: &Path, bytes: &[u8]) -> io::Result<()> {
 #[cfg(target_os = "macos")]
 fn mtime(path: &Path) -> Option<SystemTime> {
     fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
+#[cfg(all(target_os = "macos", test))]
+#[test]
+fn uninstall_removes_mirror_and_prevents_late_writes() {
+    let directory = std::env::temp_dir().join(format!(
+        "redd-block-uninstall-mirror-{}",
+        std::process::id()
+    ));
+    let target = directory.join(BLOCKLIST_FILENAME);
+    let source = directory.join("saved-data.json");
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(&source, b"saved data").unwrap();
+    let mirror = BlocklistMirror(Mutex::new(false));
+
+    mirror.write(b"policy", || Some(target.clone())).unwrap();
+    assert_eq!(fs::read(&target).unwrap(), b"policy");
+
+    mirror.stop_and_remove(Some(&target)).unwrap();
+    mirror
+        .write(b"late policy", || Some(target.clone()))
+        .unwrap();
+    assert!(!target.exists());
+    assert_eq!(fs::read(&source).unwrap(), b"saved data");
+    fs::remove_dir_all(directory).unwrap();
 }

@@ -400,8 +400,11 @@ these do not prove Rust app integration, schedule activation or MSIX access.
 
 New installations do not create a periodic watchdog task. Defender flagged
 the script-based task registration command (issue #152), and recovery after
-crash/kill is an accepted omission. Existing tasks and wrappers are left alone
-until uninstall; `watchdog.rs` retains diagnostics and uninstall cleanup.
+crash/kill is an accepted omission. Direct installs keep their existing tasks
+until uninstall. An upgraded Store app retires matching legacy tasks on
+launch, since removing the package gives the app no uninstall hook. Cleanup
+matches only this user's least-privileged tasks that use the historical
+Store wrapper action.
 
 Launch-at-login remains enabled. Store/MSIX packages declare a native
 `windows.startupTask` in `scripts/build-msix.ps1`, enabled by default after the
@@ -663,7 +666,7 @@ never active. Naming: “X” → “X copy” → “X copy 2” …
    removal; may prompt once for admin/UAC
 3. Register tray, enforcer, app watcher, native host manifests
 4. macOS: start Automation watcher after EULA (`web_automation` auto-start)
-5. Reconcile launch-at-login (release builds only); Windows leaves legacy watchdog tasks untouched
+5. Reconcile launch-at-login (release builds only); retire matching legacy tasks on Store builds
 6. Frontend: EULA gate → browser setup (Automation rows + Firefox extension)
 
 ### 11.2 App close vs quit
@@ -682,8 +685,11 @@ running regardless.
 
 ### 11.3 Uninstall
 
-- macOS: modern `NSFileManager.trashItemAtURL` path first; legacy script fallback
-- Removes native-messaging manifests, legacy helper artifacts if present
+- macOS verifies legacy helper cleanup and moves the bundle to Trash
+  through `NSFileManager.trashItemAtURL` or Finder. It checks that the
+  bundle's original path is gone before clearing launch-at-login, browser
+  registrations and any user data selected for deletion. It always
+  removes the Safari App Group mirror and prevents writes until exit.
 - **Keep blocking after uninstall** removed in v2 — uninstall stops blocking
 - Firefox extension on macOS may need manual removal (called out in UI)
 
