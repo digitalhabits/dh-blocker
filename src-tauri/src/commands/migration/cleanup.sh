@@ -3,7 +3,6 @@
 #
 # Loaded by Rust via `include_str!` and templated with:
 #   {STAGED}  — temp file holding the cleaned hosts content
-#   {STATUS}  — temp file we write "ok" to on success (Rust gates on it)
 #   {LIVE_HASH} and {CLEANED_HASH} — SHA-256 of the original and edited bytes
 #
 # DO NOT add other template placeholders without updating
@@ -122,5 +121,5 @@ done
 #    here must not abort migration, hence `|| true`.
 tccutil reset SystemPolicyAllFiles com.reddblock 2>/dev/null || true
 
-# 7. Status marker — written only if every gate above passed.
-echo 'ok' > '{STATUS}'
+# Return the completion marker to the caller on stdout.
+printf 'ok\n'

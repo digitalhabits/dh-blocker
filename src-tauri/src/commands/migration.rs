@@ -59,12 +59,6 @@ const LEGACY_BEGIN: &[u8] = b"# ReDD Block Start";
 const LEGACY_END: &[u8] = b"# ReDD Block End";
 const UTF8_BOM: &[u8] = b"\xef\xbb\xbf";
 
-#[cfg(all(
-    not(feature = "system-test"),
-    any(target_os = "macos", target_os = "windows")
-))]
-const STATUS_OK: &str = "ok";
-
 // ---- Detection -----------------------------------------------------------
 
 fn hosts_path() -> PathBuf {
@@ -422,51 +416,11 @@ pub fn run_elevated_migration(app_data_dir: Option<&Path>) -> ElevatedOutcome {
         }
     };
 
-    let status_path = std::env::temp_dir().join(format!("redd-migration-status.{file_suffix}"));
-    // Best-effort cleanup of any stale prior status file.
-    let _ = std::fs::remove_file(&status_path);
-    log::info!(
-        "migration: status marker target = {}",
-        status_path.display()
-    );
-
     #[cfg(target_os = "macos")]
-    let outcome = run_elevated_macos(&prepared, &status_path);
+    let outcome = run_elevated_macos(&prepared);
     #[cfg(target_os = "windows")]
-    let outcome = run_elevated_windows(&prepared, &status_path);
+    let outcome = run_elevated_windows(&prepared);
     let _ = std::fs::remove_file(&prepared.staged);
-
-    // Final gate: the elevated script writes STATUS_OK only after
-    // every ordered step succeeded. If the marker is missing, treat
-    // this as a failure even if the process returned 0 for some
-    // reason (e.g. PowerShell -Verb RunAs returning prematurely).
-    let marker_read = std::fs::read_to_string(&status_path);
-    let marker_ok = match &marker_read {
-        Ok(s) => s.trim() == STATUS_OK,
-        Err(_) => false,
-    };
-    if !marker_ok {
-        match marker_read {
-            Ok(s) => log::warn!(
-                "migration: status marker present but wrong content: {:?}",
-                s
-            ),
-            Err(e) => log::warn!(
-                "migration: could not read status marker at {}: {} (success={}, user_cancelled={})",
-                status_path.display(),
-                e,
-                outcome.success,
-                outcome.user_cancelled
-            ),
-        }
-    }
-    let _ = std::fs::remove_file(&status_path);
-    if !marker_ok {
-        return ElevatedOutcome {
-            success: false,
-            ..outcome
-        };
-    }
 
     outcome
 }
@@ -553,39 +507,16 @@ fn default_backup_dir() -> Option<PathBuf> {
 }
 
 #[cfg(all(not(feature = "system-test"), target_os = "macos"))]
-fn run_elevated_macos(edit: &PreparedHostsEdit, status_path: &Path) -> ElevatedOutcome {
+fn run_elevated_macos(edit: &PreparedHostsEdit) -> ElevatedOutcome {
     use std::process::Command;
 
-    // set -e stops the shell script at a failed gate.
-    //
-    // The shell script writes STATUS_OK to the status file only if it
-    // reaches the end with no failure. Rust reads that marker after
-    // the process exits.
-    let staged_str = edit.staged.display().to_string();
-    let status_str = status_path.display().to_string();
-
-    // Shell escape: the paths contain only timestamp / temp-dir
-    // characters, so single-quoting is safe. Reject anything weird
-    // up front to be defensive.
-    if staged_str.contains('\'') || status_str.contains('\'') {
-        log::warn!("migration aborted: unexpected quote in staged paths");
-        return ElevatedOutcome {
-            success: false,
-            user_cancelled: false,
-        };
-    }
-
-    // Script body lives in a sibling .sh file so it can be edited
-    // with shell syntax highlighting, linted with shellcheck, and
-    // tested in isolation. STATUS_OK is hard-coded in the script (must stay in
-    // sync with the Rust constant — both equal "ok").
-    const SCRIPT_TEMPLATE: &str = include_str!("migration/cleanup.sh");
-    debug_assert_eq!(STATUS_OK, "ok", "cleanup.sh hard-codes 'ok'");
-    let inner = SCRIPT_TEMPLATE
-        .replace("{STAGED}", &staged_str)
-        .replace("{STATUS}", &status_str)
+    // The helper returns its completion marker on stdout, avoiding a
+    // privileged write to an unprivileged caller's temporary directory.
+    let staged = edit.staged.to_string_lossy().replace('\'', r"'\''");
+    let inner = include_str!("migration/cleanup.sh")
         .replace("{LIVE_HASH}", &edit.live_hash)
-        .replace("{CLEANED_HASH}", &edit.cleaned_hash);
+        .replace("{CLEANED_HASH}", &edit.cleaned_hash)
+        .replace("{STAGED}", &staged);
 
     // Wrap in osascript do shell script. Single admin prompt for the
     // user. The prompt wording mentions both pieces of work so the
@@ -601,7 +532,9 @@ fn run_elevated_macos(edit: &PreparedHostsEdit, status_path: &Path) -> ElevatedO
         .output()
     {
         Ok(out) => {
-            if out.status.success() {
+            if out.status.success()
+                && String::from_utf8_lossy(&out.stdout).lines().last() == Some("ok")
+            {
                 ElevatedOutcome {
                     success: true,
                     user_cancelled: false,
@@ -631,7 +564,7 @@ fn run_elevated_macos(edit: &PreparedHostsEdit, status_path: &Path) -> ElevatedO
 }
 
 #[cfg(all(not(feature = "system-test"), target_os = "windows"))]
-fn run_elevated_windows(edit: &PreparedHostsEdit, status_path: &Path) -> ElevatedOutcome {
+fn run_elevated_windows(edit: &PreparedHostsEdit) -> ElevatedOutcome {
     use std::os::windows::process::CommandExt;
     use std::process::Command;
 
@@ -639,61 +572,27 @@ fn run_elevated_windows(edit: &PreparedHostsEdit, status_path: &Path) -> Elevate
     // The inner elevated PowerShell is hidden separately via -WindowStyle.
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    let staged_str = edit.staged.display().to_string();
-    let status_str = status_path.display().to_string();
-
-    // PowerShell with $ErrorActionPreference='Stop' so any failure
-    // aborts the script before destructive steps. Single UAC prompt
-    // via `Start-Process -Verb RunAs`.
-    //
-    // The outer call writes the inner script to a temp file (so we
-    // don't have to deal with double-quote escaping through two
-    // PowerShell invocations) and runs it elevated, waiting for it
-    // to exit so we can read the status marker.
-    // Same pattern as macOS: script body in a sibling .ps1 file so
-    // it can be edited with PowerShell syntax highlighting, linted
-    // with PSScriptAnalyzer, and tested in isolation.
-    const SCRIPT_TEMPLATE: &str = include_str!("migration/cleanup.ps1");
-    debug_assert_eq!(STATUS_OK, "ok", "cleanup.ps1 hard-codes 'ok'");
-    let inner_script = SCRIPT_TEMPLATE
-        .replace("{STAGED}", &staged_str.replace('\'', "''"))
-        .replace("{STATUS}", &status_str.replace('\'', "''"))
-        .replace("{LIVE_HASH}", &edit.live_hash)
-        .replace("{CLEANED_HASH}", &edit.cleaned_hash);
-
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let inner_path = std::env::temp_dir().join(format!("redd-migration.{timestamp}.ps1"));
-    if let Err(e) = std::fs::write(&inner_path, inner_script) {
-        log::warn!("failed to stage windows migration script: {e}");
+    use windows::Win32::System::SystemInformation::GetSystemDirectoryW;
+    let mut system_dir = vec![0u16; 32768];
+    let size = unsafe { GetSystemDirectoryW(Some(&mut system_dir)) } as usize;
+    if size == 0 || size >= system_dir.len() {
         return ElevatedOutcome {
             success: false,
             user_cancelled: false,
         };
     }
-
-    // Outer launcher: spawn elevated PowerShell to run the inner
-    // script and wait. Capture exit code; UAC cancellation surfaces
-    // as a launch error from Start-Process -Verb RunAs.
-    let launcher = format!(
-        r#"$ErrorActionPreference = 'Stop'
-try {{
-  $p = Start-Process -FilePath 'powershell.exe' -ArgumentList @(
-    '-NoProfile', '-NonInteractive', '-ExecutionPolicy','Bypass',
-    '-WindowStyle','Hidden', '-File','"{inner}"'
-  ) -Verb RunAs -WindowStyle Hidden -PassThru -Wait
-  exit $p.ExitCode
-}} catch {{
-  # User cancelled UAC, or other launch failure.
-  exit 1223
-}}
-"#,
-        inner = inner_path.display().to_string().replace('\'', "''"),
-    );
-
-    let outcome = match Command::new("powershell.exe")
+    use std::os::windows::ffi::OsStringExt;
+    let powershell = PathBuf::from(std::ffi::OsString::from_wide(&system_dir[..size]))
+        .join(r"WindowsPowerShell\v1.0\powershell.exe");
+    let inner = include_str!("migration/cleanup.ps1")
+        .replace("{LIVE_HASH}", &edit.live_hash)
+        .replace("{CLEANED_HASH}", &edit.cleaned_hash)
+        .replace(
+            "{STAGED}",
+            &edit.staged.to_string_lossy().replace('\'', "''"),
+        );
+    let launcher = windows_elevation_launcher(&inner);
+    match Command::new(powershell)
         .args([
             "-NoProfile",
             "-NonInteractive",
@@ -711,7 +610,7 @@ try {{
             // the catch branch above.
             let code = out.status.code().unwrap_or(-1);
             let cancelled = code == 1223;
-            let success = code == 0;
+            let success = code == 42; // Explicit final instruction of cleanup.ps1.
             if !success && !cancelled {
                 log::warn!(
                     "elevated migration powershell failed: code={} stderr={}",
@@ -731,10 +630,24 @@ try {{
                 user_cancelled: false,
             }
         }
-    };
+    }
+}
 
-    let _ = std::fs::remove_file(&inner_path);
-    outcome
+// Hand the elevated process immutable script bytes, never a script path in
+// the caller's writable temp directory. PowerShell expects UTF-16LE.
+#[cfg(all(not(feature = "system-test"), any(test, target_os = "windows")))]
+fn windows_elevation_launcher(script: &str) -> String {
+    format!(
+        r#"$ErrorActionPreference = 'Stop'
+$payload = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes('{script}'))
+try {{
+    $p = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoProfile','-NonInteractive','-EncodedCommand',$payload) -Verb RunAs -WindowStyle Hidden -PassThru -Wait
+    exit $p.ExitCode
+}} catch [System.ComponentModel.Win32Exception] {{
+    exit $_.Exception.NativeErrorCode
+}}"#,
+        script = script.replace('\'', "''")
+    )
 }
 
 // ---- Settings persistence -----------------------------------------------

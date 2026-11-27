@@ -2,7 +2,6 @@
 #
 # Loaded by Rust via include_str! and templated with:
 #   {STAGED}  — temp file holding the cleaned hosts content
-#   {STATUS}  — temp file we write 'ok' to on success (Rust gates on it)
 #   {LIVE_HASH} and {CLEANED_HASH} — SHA-256 of the original and edited bytes
 #
 # DO NOT add other template placeholders without updating
@@ -22,7 +21,6 @@
 
 $ErrorActionPreference = 'Stop'
 $staged = '{STAGED}'
-$status = '{STATUS}'
 $hosts = 'C:\Windows\System32\drivers\etc\hosts'
 $helperTask = 'ReDD Block Helper'
 $programData = if ($env:PROGRAMDATA) { $env:PROGRAMDATA } else { 'C:\ProgramData' }
@@ -114,5 +112,5 @@ foreach ($helperState in $helperStatePaths) {
     if (Test-Path -LiteralPath $helperState) { throw "helper-state.json still present: $helperState" }
 }
 
-# 6. status marker — written only after every gate above passed.
-Set-Content -LiteralPath $status -Value 'ok' -Encoding ASCII -NoNewline
+# Only this explicit completion code indicates success to the waiting caller.
+exit 42
