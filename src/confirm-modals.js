@@ -8,7 +8,7 @@ import { tSettings, tSettingsFmt } from './i18n.js';
 import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn, formatSpaceTitleLabel } from './blocklist-utils.js';
 import { DEFAULT_OVERRIDE_WORDS, getMaxOverrideCountForType, getMaxOverrideWords, getMinOverrideCountForType, getOverrideWordsSliderMax, getOverrideEstimatedMinutes, migrateOverrideDifficultyToWords, normalizeCustomOverrideText, normalizeOverrideCount, normalizeOverrideType } from './override-challenge.js';
 import { reportIOSScheduleSyncFailure, syncIOSSchedules } from './schedule-engine.js';
-import { saveData, syncBlockingState } from './persistence.js';
+import { runIOSManualOperation, saveData, syncBlockingState } from './persistence.js';
 import { layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks } from './render.js';
 import { isBlocklistEditFrictionRequired,renderBlocklists, truncateBlocklistName } from './blocklists.js';
 import { areSegmentsEqual, getSelectedSchedule, canEditScheduleBetweenBlocks } from './schedule-editor.js';
@@ -1011,15 +1011,15 @@ export function deselectBlocklist() {
     handleBlocklistSelect({ target: blocklistSelect });
 }
 
-async function applyAndSaveIOSManualPolicy(draft) {
+async function applyAndSaveIOSManualPolicy(draft, syncManualPolicy, persist) {
     try {
-        const result = await syncBlockingState({ appData: draft });
+        const result = await syncManualPolicy({ appData: draft });
         if (!result.success) throw new Error(result.error);
-        await saveData(draft);
+        await persist(draft);
     } catch (error) {
         // The native command may already have applied the draft. Restore the
         // saved manual policy while keeping existing wake-ups and schedules.
-        await reconcileIOSManualBlockingState();
+        await reconcileIOSManualBlockingState({}, syncManualPolicy);
         throw error;
     }
 }
@@ -1029,9 +1029,17 @@ async function applyAndSaveIOSManualPolicy(draft) {
  * confirmation step — the effort barrier is on the way out, not in. Returns
  * true on success; failures alert and leave the data untouched.
  */
-export async function startManualBlock(blocklistId) {
+export function startManualBlock(blocklistId) {
+    if (state.isIOS) return runIOSManualOperation((sync, persist) => applyManualStart(blocklistId, sync, persist));
+    return applyManualStart(blocklistId);
+}
+
+async function applyManualStart(blocklistId, syncManualPolicy, persist) {
     const blocklist = state.appData.blocklists.find(bl => bl.id === blocklistId);
     if (!blocklist) return false;
+    if (state.isIOS && state.appData.activeBlocks.some(block => block.blocklistId === blocklistId && block.endTime > Date.now())) {
+        return false;
+    }
 
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this block')) return false;
     if (!await ensureIOSAllowlistStartable(blocklist)) return false;
@@ -1059,7 +1067,7 @@ export async function startManualBlock(blocklistId) {
             return false;
         }
         updateOnboardingVisibility();
-        await initializeIOSBlockingState();
+        await initializeIOSBlockingState(syncManualPolicy, persist);
     }
 
     if (isIOS) {
@@ -1067,7 +1075,7 @@ export async function startManualBlock(blocklistId) {
             await applyAndSaveIOSManualPolicy({
                 ...state.appData,
                 activeBlocks: [...state.appData.activeBlocks, block],
-            });
+            }, syncManualPolicy, persist);
         } catch (error) {
             alert('Could not start block: ' + (error?.message || String(error)));
             return false;
@@ -1477,9 +1485,17 @@ export async function cancelIOSRestart(block) {
 }
 
 /** Turn a paused Manual space back on. No challenge: this falls toward blocking. */
-export async function resumePausedBlock(block) {
+export function resumePausedBlock(block) {
+    if (state.isIOS) return runIOSManualOperation((sync, persist) => applyManualResume(block, sync, persist));
+    return applyManualResume(block);
+}
+
+async function applyManualResume(block, syncManualPolicy = syncBlockingState, persist = saveData) {
     if (!block) return false;
     if (state.isIOS) {
+        if (!state.appData.activeBlocks.includes(block) || !block.isPaused) return false;
+        const blocklist = state.appData.blocklists.find(entry => entry.id === block.blocklistId);
+        if (!blocklist || !await ensureIOSAllowlistStartable(blocklist)) return false;
         const resumed = { ...block };
         delete resumed.isPaused;
         delete resumed.pauseEndTime;
@@ -1488,7 +1504,7 @@ export async function resumePausedBlock(block) {
             activeBlocks: state.appData.activeBlocks.map(entry => entry.id === block.id ? resumed : entry),
         };
         try {
-            await applyAndSaveIOSManualPolicy(draft);
+            await applyAndSaveIOSManualPolicy(draft, syncManualPolicy, persist);
         } catch (error) {
             alert('Could not resume block: ' + (error?.message || String(error)));
             return false;
@@ -1530,7 +1546,13 @@ export async function resumePausedSchedule(schedule) {
  * layer for what actually happened. Returns that outcome, or null when
  * nothing was running or iOS could not register automatic restart.
  */
-export async function stopFocusSpaceTarget({ block = null, schedule = null, minutes = null } = {}) {
+export function stopFocusSpaceTarget(target = {}) {
+    if (state.isIOS) return runIOSManualOperation((sync, persist) => applyFocusSpaceStop(target, sync, persist));
+    return applyFocusSpaceStop(target);
+}
+
+async function applyFocusSpaceStop({ block = null, schedule = null, minutes = null }, syncManualPolicy = syncBlockingState, persist = saveData) {
+    if (state.isIOS && block && !state.appData.activeBlocks.includes(block)) return null;
     const blocklistId = schedule?.blocklistId ?? block?.blocklistId ?? null;
     const blocklist = state.appData.blocklists.find(bl => bl.id === blocklistId) || null;
     const unlockMinutes = normalizeUnlockMinutes(minutes ?? getLastBreakMinutes(state.appData.settings));
@@ -1576,7 +1598,7 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
             delete target.isPaused;
             delete target.pauseEndTime;
             try {
-                await saveData();
+                await persist();
             } catch (error) {
                 console.error('[iOS] Failed to persist blocking restoration after resume registration failure:', error);
             }
@@ -1586,7 +1608,7 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
                 console.error('[iOS] Failed to resync schedules after resume registration failure:', error);
             }
             try {
-                await syncBlockingState();
+                await syncManualPolicy();
             } catch (error) {
                 console.error('[iOS] Failed to reapply blocking after resume registration failure:', error);
             }
@@ -1649,11 +1671,11 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
 
     if (outcome.kind === 'removed') {
         // Never: the Manual block is gone, the same way "Stop" always removed it.
-        await saveData(draft);
+        await persist(draft);
         if (state.isIOS) {
             state.appData.activeBlocks = state.appData.activeBlocks.filter(entry => entry.id !== block.id);
             await cancelIOSRestart(block);
-            const result = await syncBlockingState();
+            const result = await syncManualPolicy();
             if (!result.success) throw new Error(result.error);
         }
         // Update blocked apps (will stop watcher if no apps to block, including schedules)
@@ -1663,7 +1685,7 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
 
     const turnsOffIOSSchedule = outcome.kind === 'off' && state.isIOS;
     try {
-        await saveData(draft);
+        await persist(draft);
     } catch (error) {
         if (rollbackTimedIOSPause) await rollbackTimedIOSPause();
         else if (turnsOffIOSSchedule) restorePreviousPause();
@@ -1694,7 +1716,7 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
         await reportIOSScheduleSyncFailure(scheduleSync.error);
     }
     // syncBlockingState skips paused blocks' domains.
-    const result = await syncBlockingState();
+    const result = await syncManualPolicy();
     if (state.isIOS && block && !result.success) throw new Error(result.error);
     await updateBlockedApps();
 
