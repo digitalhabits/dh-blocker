@@ -1,0 +1,36 @@
+name: Windows installer recovery
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src-tauri/windows/**'
+      - 'src-tauri/tauri.windows.conf.json'
+      - 'scripts/test-windows-hosts-recovery.ps1'
+      - '.github/workflows/windows-installer-recovery.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Exercise legacy recovery with fixture files
+        shell: powershell
+        run: ./scripts/test-windows-hosts-recovery.ps1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          workspaces: src-tauri
+      - run: pnpm install --frozen-lockfile
+      - name: Compile the unsigned NSIS installer with its production hooks
+        shell: pwsh
+        run: |
+          $config = Join-Path $env:RUNNER_TEMP 'unsigned-installer.json'
+          '{"bundle":{"windows":{"signCommand":null}}}' | Set-Content -Encoding utf8 $config
+          pnpm tauri build --debug --bundles nsis --config $config
