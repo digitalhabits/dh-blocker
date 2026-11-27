@@ -2,7 +2,7 @@
 // period, override-all, and in-app uninstall flows. Extracted verbatim from app.js.
 import { state } from './state.js';
 import { getChallengeController } from './challenge-controller.js';
-import { saveData } from './persistence.js';
+import { runIOSManualOperation, saveData } from './persistence.js';
 import { render } from './render.js';
 import { cancelIOSRestart, handleBlocklistSelect, syncOverrideCountUi, updateOverridePreview } from './confirm-modals.js';
 import { updateBlockedApps, openExternal } from './blocking-platform.js';
@@ -1115,7 +1115,11 @@ export function setupSettingsInfoTooltips() {
 }
 
 // Perform the actual override-all operation
-export async function performOverrideAll() {
+export function performOverrideAll() {
+    return state.isIOS ? runIOSManualOperation((_, persist) => applyOverrideAll(persist)) : applyOverrideAll();
+}
+
+async function applyOverrideAll(persist = saveData) {
     try {
         const clearedBlocks = state.appData.activeBlocks;
 
@@ -1129,7 +1133,7 @@ export async function performOverrideAll() {
         }
 
         // Save the data
-        await saveData();
+        await persist();
 
         // Clear enforcement after saving the new state.
         if (state.isIOS) {

@@ -129,13 +129,28 @@ export function hasSeenAnyOnboarding() {
         || settings.eulaAcceptedAt != null;
 }
 
-// Save data to main process
-export async function saveData(appData = state.appData) {
+async function persistAppData(appData = state.appData) {
     await tauriAPI.saveData(buildPersistedAppData(appData));
 }
 
-export async function syncBlockingState({ appData = state.appData, reconcileIOSResumes = false } = {}) {
-    if (state.isIOS) return syncIOSManualBlockingState(appData, reconcileIOSResumes);
+let iosManualOperationTail;
+
+// The callback receives unlocked operations for its own transaction. External
+// saves and syncs wait until the current draft commits before taking a snapshot.
+export function runIOSManualOperation(operation) {
+    const queued = (iosManualOperationTail ?? Promise.resolve())
+        .then(() => operation(syncIOSManualBlockingState, persistAppData));
+    iosManualOperationTail = queued.then(() => {}, () => {});
+    return queued;
+}
+
+export function saveData() {
+    if (state.isIOS) return runIOSManualOperation((_, persist) => persist());
+    return persistAppData();
+}
+
+export async function syncBlockingState(options) {
+    if (state.isIOS) return runIOSManualOperation(sync => sync(options));
 
     const allDomains = new Set();
     const now = Date.now();
@@ -186,7 +201,7 @@ export async function syncBlockingState({ appData = state.appData, reconcileIOSR
     return { success: true };
 }
 
-async function syncIOSManualBlockingState(appData, reconcileIOSResumes) {
+async function syncIOSManualBlockingState({ appData = state.appData, reconcileIOSResumes = false } = {}) {
     try {
         const now = Date.now();
         const payload = collectActiveIOSManualBlockPayload(now, appData);

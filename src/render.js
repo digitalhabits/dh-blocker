@@ -6,7 +6,7 @@ import { escapeHtml, getContrastTextColor } from './utils.js';
 import { tSettings, weekdayAbbrevMon0List } from './i18n.js';
 import { isBlockAlwaysOn } from './blocklist-utils.js';
 import { isNonRepeatingSchedule, isSchedulePausedNow, resolveOneShotOccurrences, syncIOSSchedules } from './schedule-engine.js';
-import { saveData, syncBlockingState } from './persistence.js';
+import { runIOSManualOperation, saveData, syncBlockingState } from './persistence.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { autoSelectSoleBlocklist, isBlocklistEditFrictionRequired, isOneOffPauseActive, renderBlocklists } from './blocklists.js';
 import { updateBlockedApps, updateOnboardingVisibility, updateWindowHeight } from './blocking-platform.js';
@@ -791,22 +791,25 @@ export function startTickInterval() {
         }
 
         // Check for paused blocks that should resume
-        const resumedBlocks = state.appData.activeBlocks.filter(
-            block => block.isPaused && block.pauseEndTime && block.pauseEndTime <= now
-        );
-
-        if (resumedBlocks.length > 0) {
-            // Clear pause state
-            resumedBlocks.forEach(block => {
-                delete block.isPaused;
-                delete block.pauseEndTime;
-            });
-
-            await saveData();
-            await syncBlockingState();
-            await updateBlockedApps();
-            render();
-            shouldSyncControls = true;
+        const pauseExpired = block => block.isPaused && block.pauseEndTime && block.pauseEndTime <= now;
+        if (state.appData.activeBlocks.some(pauseExpired)) {
+            const resumeExpired = async (sync, persist = saveData) => {
+                const resumedBlocks = state.appData.activeBlocks.filter(pauseExpired);
+                if (!resumedBlocks.length) return false;
+                resumedBlocks.forEach(block => {
+                    delete block.isPaused;
+                    delete block.pauseEndTime;
+                });
+                await persist();
+                await sync();
+                return true;
+            };
+            const resumed = state.isIOS ? await runIOSManualOperation(resumeExpired) : await resumeExpired(syncBlockingState);
+            if (resumed) {
+                await updateBlockedApps();
+                render();
+                shouldSyncControls = true;
+            }
         }
 
         // Check for paused schedules that should resume
@@ -914,8 +917,23 @@ export function startTickInterval() {
         }
 
         // Check for expired blocks
-        const previousCount = state.appData.activeBlocks.length;
-        state.appData.activeBlocks = state.appData.activeBlocks.filter(block => block.endTime > now);
+        const expiredBlock = block => !(block.endTime > now);
+        if (state.appData.activeBlocks.some(expiredBlock)) {
+            const removeExpired = async (sync, persist = saveData) => {
+                const activeBlocks = state.appData.activeBlocks.filter(block => !expiredBlock(block));
+                if (activeBlocks.length === state.appData.activeBlocks.length) return false;
+                state.appData.activeBlocks = activeBlocks;
+                await persist();
+                render();
+                await sync();
+                return true;
+            };
+            const removed = state.isIOS ? await runIOSManualOperation(removeExpired) : await removeExpired(syncBlockingState);
+            if (removed) {
+                await updateBlockedApps();
+                shouldSyncControls = true;
+            }
+        }
 
         // Clean up activated set
         state.activatedBlockIds = new Set(
@@ -923,17 +941,6 @@ export function startTickInterval() {
                 state.appData.activeBlocks.some(b => b.id === id)
             )
         );
-
-        // Only re-render if blocks actually expired
-        if (state.appData.activeBlocks.length < previousCount) {
-            await saveData();
-            render();
-
-            // Sync blocking rules now that blocks have been removed.
-            await syncBlockingState();
-            await updateBlockedApps();
-            shouldSyncControls = true;
-        }
 
         const scheduleStateSignature = getScheduleStateSignature(now);
         if (startTickInterval._lastScheduleStateSignature !== scheduleStateSignature) {

@@ -2,7 +2,8 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { initializeIOSBlockingState, reconcileIOSManualBlockingState } from '../../src/blocking-platform.js';
 import { startManualBlock, stopFocusSpaceTarget } from '../../src/confirm-modals.js';
 import { turnFocusSpaceOn } from '../../src/focus-space-switch.js';
-import { syncBlockingState } from '../../src/persistence.js';
+import { runIOSManualOperation, saveData, syncBlockingState } from '../../src/persistence.js';
+import * as renderModule from '../../src/render.js';
 import { syncIOSSchedules } from '../../src/schedule-engine.js';
 import { state } from '../../src/state.js';
 import { tauriAPI } from '../../src/tauri-api.js';
@@ -262,4 +263,52 @@ test('iOS reconciliation retries a native failure and surfaces a persistent one'
     await expect(reconcileIOSManualBlockingState()).resolves.toEqual({ success: true });
     expect(clear).toHaveBeenCalledTimes(3);
     expect(alert).toHaveBeenCalledOnce();
+});
+
+test('two concurrent iOS Manual starts retain both committed spaces through foreground reconciliation', async () => {
+    state.isIOS = true;
+    state.screentimeAuthorized = true;
+    state.appData.blocklists = [
+        { id: 'first', websites: ['first.invalid'] },
+        { id: 'second', websites: ['second.invalid'] },
+    ];
+    vi.spyOn(renderModule, 'render').mockImplementation(() => {});
+    const applied = vi.spyOn(tauriAPI, 'screentimeStartBlock').mockResolvedValue({ success: true });
+    const pendingSave = Promise.withResolvers();
+    const saveStarted = Promise.withResolvers();
+    const save = vi.spyOn(tauriAPI, 'saveData').mockResolvedValue().mockImplementationOnce(() => {
+        saveStarted.resolve();
+        return pendingSave.promise;
+    });
+
+    const first = startManualBlock('first');
+    await saveStarted.promise;
+    const second = startManualBlock('second');
+    const settingsSave = saveData();
+    const foreground = reconcileIOSManualBlockingState();
+    // Let a second unqueued operation reach its native apply while the first save is held.
+    await new Promise(resolve => setTimeout(resolve, 0));
+    try {
+        expect(applied).toHaveBeenCalledOnce();
+        expect(save).toHaveBeenCalledOnce();
+    } finally {
+        pendingSave.resolve();
+        await Promise.allSettled([first, second, settingsSave, foreground]);
+    }
+
+    await expect(Promise.all([first, second, foreground])).resolves.toEqual([true, true, { success: true }]);
+    expect(save.mock.calls.map(([draft]) => draft.activeBlocks.map(block => block.blocklistId))).toEqual([
+        ['first'], ['first', 'second'], ['first', 'second'],
+    ]);
+    expect(state.appData.activeBlocks.map(block => block.blocklistId)).toEqual(['first', 'second']);
+    expect(applied.mock.calls.map(([policy]) => policy.domains)).toEqual([
+        ['first.invalid'], ['first.invalid', 'second.invalid'], ['first.invalid', 'second.invalid'],
+    ]);
+});
+
+test('a rejected iOS Manual operation releases the next queued operation', async () => {
+    const failed = runIOSManualOperation(async () => { throw new Error('Manual save failed'); });
+    const next = runIOSManualOperation(async () => 'next operation ran');
+    await expect(failed).rejects.toThrow('Manual save failed');
+    await expect(next).resolves.toBe('next operation ran');
 });
