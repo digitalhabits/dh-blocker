@@ -7,32 +7,14 @@
 //
 // Design (matches the approved plan in the planning file):
 //
-// A. Detect — markers present OR legacy daemon installed?
-//    No → no-op, stamp version, done.
-// B. Probe admin via a cheap elevated `true` call. User cancels →
-//    abort with `migration_pending=true`, no state touched.
-// C. Inside ONE elevated script (set -e or PowerShell with
-//    $ErrorActionPreference='Stop'), in this order:
-//      1. snapshot /etc/hosts to <app-data>/backups/hosts.<ts>
-//      2. validate snapshot (non-empty, contains `localhost`)
-//      3. compute cleaned hosts content (prefer the legacy
-//         /etc/hosts.redd-backup if it's sane; else awk-strip)
-//      4. validate cleaned content (non-empty, contains `localhost`)
-//      5. atomic temp-file + rename onto /etc/hosts
-//      6. flush DNS
-//      7. ONLY NOW remove daemon (bootout + rm plist + rm binary
-//         + rm /var/lib/redd-block/helper-state.json — the directory
-//         itself stays; see `legacy_artefacts_present` below)
-//      8. ONLY NOW remove the legacy /etc/hosts.redd-backup
-//      9. write a status marker so Rust knows the script reached
-//         the end
-// D. Rust re-validates from userspace (markers gone, plist gone),
-//    and only then stamps `settings.migrationRanAtVersion`.
+// Prepare an edit from the live hosts file and keep its original bytes in
+// a recovery snapshot. The elevated script stops the helper, verifies the
+// hosts file still matches those bytes, and replaces it when an edit is
+// needed. Only then does it remove the helper's persistent files and
+// write a success marker. Both the new and legacy backups are retained.
 //
-// Any failure between B and D leaves the user with an intact original
-// hosts file and surfaces a "Migration incomplete" banner. The
-// migration is fully retryable — the next launch (or the banner CTA)
-// re-runs the whole sequence.
+// A failure leaves the migration pending for retry. A failure after the
+// hosts edit leaves the recovery snapshot intact.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI8, Ordering};
@@ -71,44 +53,58 @@ fn snapshot_initial_state() -> bool {
     MIGRATION_WAS_PENDING_AT_LAUNCH.load(Ordering::Acquire) == 1
 }
 
-const BEGIN_MARKER: &str = "# === BEGIN REDD BLOCK (reddfocus.org) ===";
-const END_MARKER: &str = "# === END REDD BLOCK (reddfocus.org) ===";
-const LEGACY_BEGIN: &str = "# ReDD Block Start";
-const LEGACY_END: &str = "# ReDD Block End";
-
-const STATUS_OK: &str = "ok";
+const BEGIN_MARKER: &[u8] = b"# === BEGIN REDD BLOCK (reddfocus.org) ===";
+const END_MARKER: &[u8] = b"# === END REDD BLOCK (reddfocus.org) ===";
+const LEGACY_BEGIN: &[u8] = b"# ReDD Block Start";
+const LEGACY_END: &[u8] = b"# ReDD Block End";
+const UTF8_BOM: &[u8] = b"\xef\xbb\xbf";
 
 // ---- Detection -----------------------------------------------------------
 
-fn hosts_path() -> PathBuf {
+#[cfg(all(target_os = "windows", not(feature = "system-test")))]
+use crate::windows_process::system_directory;
+
+#[cfg(not(feature = "system-test"))]
+fn hosts_path() -> std::io::Result<PathBuf> {
     #[cfg(target_os = "windows")]
     {
-        PathBuf::from(r"C:\Windows\System32\drivers\etc\hosts")
+        system_directory().map(|dir| dir.join(r"drivers\etc\hosts"))
     }
     #[cfg(not(target_os = "windows"))]
     {
-        PathBuf::from("/etc/hosts")
+        Ok(PathBuf::from("/etc/hosts"))
     }
 }
 
-fn legacy_hosts_backup_path() -> PathBuf {
-    #[cfg(target_os = "windows")]
-    {
-        PathBuf::from(r"C:\Windows\System32\drivers\etc\hosts.redd-backup")
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        PathBuf::from("/etc/hosts.redd-backup")
+#[cfg(any(test, not(feature = "system-test")))]
+fn read_live_hosts(path: &Path) -> std::io::Result<Option<Vec<u8>>> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && !path.is_symlink() => Ok(None),
+        Err(e) => Err(e),
     }
 }
 
-fn hosts_has_markers(content: &str) -> bool {
-    content.lines().any(|l| {
-        let t = l.trim();
-        t == BEGIN_MARKER || t == END_MARKER || t == LEGACY_BEGIN || t == LEGACY_END
+fn hosts_has_markers(content: &[u8]) -> bool {
+    let body = content.strip_prefix(UTF8_BOM).unwrap_or(content);
+    body.split_inclusive(|&byte| byte == b'\n').any(|line| {
+        matches!(
+            trim_marker_line(line),
+            BEGIN_MARKER | END_MARKER | LEGACY_BEGIN | LEGACY_END
+        )
     })
 }
 
+fn trim_marker_line(line: &[u8]) -> &[u8] {
+    let start = line.iter().position(|byte| !byte.is_ascii_whitespace());
+    let end = line.iter().rposition(|byte| !byte.is_ascii_whitespace());
+    match (start, end) {
+        (Some(start), Some(end)) => &line[start..=end],
+        _ => &[],
+    }
+}
+
+#[cfg(not(feature = "system-test"))]
 fn legacy_artefacts_present() -> bool {
     // We only count daemon-specific files as residue. The shared data
     // dir (/var/lib/redd-block on macOS, ProgramData\<product> on
@@ -132,10 +128,50 @@ fn legacy_artefacts_present() -> bool {
         dirs.push(crate::product_identity::windows_primary_shared_dir());
         dirs.iter()
             .any(|dir| dir.join("helper-state.json").exists())
+            || windows_legacy_task_pending()
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         false
+    }
+}
+
+#[cfg(any(test, all(target_os = "windows", not(feature = "system-test"))))]
+fn has_windows_legacy_helper_task(task_csv: &[u8]) -> bool {
+    // schtasks /FO CSV /NH puts the quoted task path first.
+    task_csv.split(|&b| b == b'\n').any(|line| {
+        line.split(|&b| b == b'"')
+            .nth(1)
+            .is_some_and(|name| name.eq_ignore_ascii_case(br"\ReDD Block Helper"))
+    })
+}
+
+#[cfg(all(target_os = "windows", not(feature = "system-test")))]
+fn windows_legacy_task_pending() -> bool {
+    use std::os::windows::process::CommandExt;
+
+    // Query the list so we can distinguish query failure from absence
+    // independently of the language of schtasks' errors.
+    let Ok(system_dir) = system_directory() else {
+        return true;
+    };
+    match std::process::Command::new(system_dir.join("schtasks.exe"))
+        .args(["/Query", "/FO", "CSV", "/NH"])
+        .creation_flags(0x0800_0000)
+        .output()
+    {
+        Ok(output) if output.status.success() => has_windows_legacy_helper_task(&output.stdout),
+        Ok(output) => {
+            log::warn!(
+                "could not check for legacy Windows helper task: {}",
+                output.status
+            );
+            true
+        }
+        Err(e) => {
+            log::warn!("could not query legacy Windows helper task: {e}");
+            true
+        }
     }
 }
 
@@ -156,9 +192,13 @@ fn migration_pending_uncached() -> bool {
 
 #[cfg(not(feature = "system-test"))]
 fn migration_pending_uncached() -> bool {
-    let raw = std::fs::read_to_string(hosts_path()).unwrap_or_default();
-    if hosts_has_markers(&raw) {
-        return true;
+    match hosts_path().and_then(|path| read_live_hosts(&path)) {
+        Ok(Some(raw)) if hosts_has_markers(&raw) => return true,
+        Err(e) if cfg!(any(target_os = "macos", target_os = "windows")) => {
+            log::warn!("unable to check hosts for migration residue: {e}");
+            return true;
+        }
+        _ => {}
     }
     legacy_artefacts_present()
 }
@@ -194,56 +234,46 @@ pub fn user_came_from_v1x() -> bool {
 #[cfg(not(feature = "system-test"))]
 #[tauri::command]
 pub fn user_came_from_v1x() -> bool {
-    legacy_hosts_backup_path().exists()
+    hosts_path().is_ok_and(|path| path.with_file_name("hosts.redd-backup").exists())
 }
 
 // ---- Hosts cleaning (pure) ----------------------------------------------
 
-fn strip_managed_sections(content: &str) -> String {
-    let mut out = String::with_capacity(content.len());
-    let mut in_managed = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == BEGIN_MARKER || trimmed == LEGACY_BEGIN {
-            in_managed = true;
-            continue;
-        }
-        if trimmed == END_MARKER || trimmed == LEGACY_END {
-            in_managed = false;
-            continue;
-        }
-        if in_managed {
-            continue;
-        }
-        out.push_str(line);
-        out.push('\n');
-    }
-    out
-}
+#[cfg(any(
+    test,
+    all(
+        not(feature = "system-test"),
+        any(target_os = "macos", target_os = "windows")
+    )
+))]
+fn strip_managed_sections(content: &[u8]) -> Result<Vec<u8>, &'static str> {
+    let mut out = Vec::with_capacity(content.len());
+    let body = if let Some(body) = content.strip_prefix(UTF8_BOM) {
+        out.extend_from_slice(UTF8_BOM);
+        body
+    } else {
+        content
+    };
 
-/// Pick the source of truth for the cleaned hosts content. Prefer the
-/// legacy `/etc/hosts.redd-backup` (it's the pre-modification snapshot
-/// the daemon kept) when it's sane; otherwise awk-strip in place.
-/// Returns the cleaned text and whether we used the legacy backup.
-fn compute_cleaned_hosts() -> Result<(String, bool), String> {
-    let live = std::fs::read_to_string(hosts_path()).map_err(|e| format!("read hosts: {e}"))?;
-    if let Ok(legacy) = std::fs::read_to_string(legacy_hosts_backup_path()) {
-        // legacy backup is "valid" if it's non-empty and contains a
-        // localhost line — same gate as the helper daemon used.
-        if !legacy.trim().is_empty() && legacy.contains("localhost") {
-            // The legacy backup might itself contain stale markers
-            // from an even-earlier era; strip them defensively.
-            let cleaned = strip_managed_sections(&legacy);
-            if cleaned.contains("localhost") && !cleaned.trim().is_empty() {
-                return Ok((cleaned, true));
+    // Match full, same-generation pairs. Bail out on ambiguity rather
+    // than treating intervening user entries as ours.
+    let mut expected_end = None;
+    for line in body.split_inclusive(|&byte| byte == b'\n') {
+        match trim_marker_line(line) {
+            BEGIN_MARKER if expected_end.is_none() => expected_end = Some(END_MARKER),
+            LEGACY_BEGIN if expected_end.is_none() => expected_end = Some(LEGACY_END),
+            end @ (END_MARKER | LEGACY_END) if expected_end == Some(end) => expected_end = None,
+            BEGIN_MARKER | END_MARKER | LEGACY_BEGIN | LEGACY_END => {
+                return Err("unpaired or nested ReDD Block hosts marker");
             }
+            _ if expected_end.is_none() => out.extend_from_slice(line),
+            _ => {}
         }
     }
-    let cleaned = strip_managed_sections(&live);
-    if !cleaned.contains("localhost") {
-        return Err("refusing to write hosts without localhost".into());
+    if expected_end.is_some() {
+        return Err("missing end marker for ReDD Block hosts section");
     }
-    Ok((cleaned, false))
+    Ok(out)
 }
 
 // ---- Public commands -----------------------------------------------------
@@ -251,8 +281,6 @@ fn compute_cleaned_hosts() -> Result<(String, bool), String> {
 /// Clean up legacy hosts markers using the bundled migration.
 #[tauri::command]
 pub async fn strip_hosts_markers() -> Result<bool, String> {
-    // No AppHandle here, so no app-data backup. Best-effort marker
-    // strip via the elevated path; safe to no-op when nothing to do.
     if !migration_pending_sync() {
         return Ok(false);
     }
@@ -269,20 +297,23 @@ pub async fn uninstall_legacy_helper() -> Result<bool, String> {
     Ok(outcome.success)
 }
 
-pub fn strip_hosts_markers_sync() -> Result<bool, String> {
+/// Check for legacy residue, try the same cleanup as upgrade once, and
+/// verify it before the uninstaller removes the app.
+pub fn cleanup_legacy_for_uninstall() -> Result<(), String> {
     if !migration_pending_sync() {
-        return Ok(false);
+        return Ok(());
     }
     let outcome = run_elevated_migration(None);
-    Ok(outcome.success)
-}
-
-pub fn uninstall_legacy_helper_sync() -> Result<bool, String> {
-    if !migration_pending_sync() {
-        return Ok(true);
+    if outcome.user_cancelled {
+        return Err(
+            "Administrator approval is required to remove the legacy hosts entries and helper."
+                .into(),
+        );
     }
-    let outcome = run_elevated_migration(None);
-    Ok(outcome.success)
+    if !outcome.success || migration_pending_sync() {
+        return Err("Could not verify removal of the legacy hosts entries and helper.".into());
+    }
+    Ok(())
 }
 
 // ---- Onboarding orchestration --------------------------------------------
@@ -328,45 +359,20 @@ pub async fn run_upgrade_migration(_app: tauri::AppHandle) -> Result<bool, Strin
 #[cfg(not(feature = "system-test"))]
 #[tauri::command]
 pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String> {
-    let current = env!("CARGO_PKG_VERSION").to_string();
-    let data_path = match super::data::canonical_data_path(&app) {
-        Some(p) => p,
-        None => return Ok(false),
+    let Some(data_path) = super::data::canonical_data_path(&app) else {
+        return Ok(false);
     };
 
-    let mut data = read_data(&data_path).unwrap_or_default();
-
-    // (A) Detect. The residue check is the authoritative gate, NOT
-    // the version stamp — residue can reappear (e.g., a manual
-    // reinject for testing, or a user reinstalling v1.x next to
-    // 2.0). If there's nothing to clean, we no-op and stamp the
-    // version. If there is residue, we run the elevated migration
-    // regardless of whether we've stamped this version before.
-    if !migration_pending_sync() {
-        // Nothing to do — install native-host manifests on non-macOS
-        // platforms and stamp the version so we don't keep checking.
-        #[cfg(not(target_os = "macos"))]
-        if let Err(e) = crate::native_host_install::install() {
-            log::warn!("native-host install during migration failed: {e}");
-        }
-        stamp_version(&data_path, &mut data, &current);
-        return Ok(true);
-    }
-
-    // (B+C) Run the bundled elevated migration.
-    let app_data_dir = data_path
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(std::env::temp_dir);
-    let outcome = run_elevated_migration(Some(&app_data_dir));
-
-    // (D) Validate from userspace before stamping.
-    if !outcome.success {
-        return Ok(false);
-    }
+    // Legacy residue can reappear even after the version was stamped.
     if migration_pending_sync() {
-        log::warn!("elevated migration returned ok but residue is still present");
-        return Ok(false);
+        let outcome = run_elevated_migration(None);
+        if !outcome.success {
+            return Ok(false);
+        }
+        if migration_pending_sync() {
+            log::warn!("elevated migration returned ok but residue is still present");
+            return Ok(false);
+        }
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -374,7 +380,9 @@ pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String
         log::warn!("native-host install during migration failed: {e}");
     }
 
-    stamp_version(&data_path, &mut data, &current);
+    if let Err(e) = stamp_version(&data_path, env!("CARGO_PKG_VERSION")) {
+        log::warn!("failed to persist migrationRanAtVersion at {data_path:?}: {e}");
+    }
     Ok(true)
 }
 
@@ -409,36 +417,20 @@ pub async fn onboarding_state(_app: tauri::AppHandle) -> Result<OnboardingState,
 
 // ---- Elevated execution --------------------------------------------------
 
-/// Runs the bundled elevated migration script. `app_data_dir` is the
-/// directory under which we'll keep an in-app-data snapshot of the
-/// pre-edit hosts file (belt-and-braces alongside the legacy backup).
-/// Returns `success=false` if any step fails — including the user
-/// cancelling the admin prompt.
-///
-/// Public so test harnesses (`examples/test_migration.rs`) can drive
-/// it without spinning up the full Tauri app + browser stack.
+/// Runs the bundled elevated migration script and verifies its completion.
+/// With no app-data directory, use a persistent per-user recovery location.
+#[cfg(all(
+    not(feature = "system-test"),
+    any(target_os = "macos", target_os = "windows")
+))]
 pub fn run_elevated_migration(app_data_dir: Option<&Path>) -> ElevatedOutcome {
-    let backup_dir = app_data_dir.map(|d| d.join("backups"));
-    let timestamp_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    // Use nanos for the status-marker path so two calls within the
-    // same second can't collide (the first one's post-read delete
-    // would otherwise eat the second one's marker).
-    let timestamp_nanos = std::time::SystemTime::now()
+    let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let snapshot_path = backup_dir
-        .as_ref()
-        .map(|d| d.join(format!("hosts.{timestamp_secs}")));
-
-    // Compute cleaned hosts content here in Rust (we have userspace
-    // read access to /etc/hosts — only writes need elevation). Any
-    // failure aborts before prompting.
-    let (cleaned, used_legacy) = match compute_cleaned_hosts() {
-        Ok(v) => v,
+    let file_suffix = format!("{timestamp}.{}", std::process::id());
+    let prepared = match prepare_hosts_edit(app_data_dir, &file_suffix) {
+        Ok(prepared) => prepared,
         Err(e) => {
             log::warn!("migration aborted before prompt: {e}");
             return ElevatedOutcome {
@@ -447,172 +439,125 @@ pub fn run_elevated_migration(app_data_dir: Option<&Path>) -> ElevatedOutcome {
             };
         }
     };
-    log::info!(
-        "migration: prepared cleaned hosts content (via {})",
-        if used_legacy {
-            "legacy backup"
-        } else {
-            "in-place strip"
-        }
-    );
-
-    // Best-effort: also write the snapshot ourselves from userspace.
-    // /etc/hosts is world-readable on macOS, and the Windows hosts file
-    // is also readable without admin. This means even if the elevated
-    // script never runs (user cancels), the user already has a copy.
-    if let Some(path) = &snapshot_path {
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        match std::fs::read(hosts_path()) {
-            Ok(bytes) if !bytes.is_empty() => {
-                if let Err(e) = std::fs::write(path, &bytes) {
-                    log::warn!("pre-flight hosts snapshot to {path:?} failed: {e}");
-                }
-                // Intentionally do NOT prune older snapshots. They're
-                // tiny text files, migration only runs at most once
-                // per version, and they're the only userspace-readable
-                // recovery copy if something goes wrong post-migration.
-                // Cleared during uninstall (see purge_legacy_backups_sync).
-            }
-            Ok(_) => log::warn!("pre-flight hosts snapshot: hosts file empty, skipping"),
-            Err(e) => log::warn!("pre-flight hosts snapshot read failed: {e}"),
-        }
-    }
-
-    // Stage cleaned content to a temp file readable by the elevated
-    // process. mktemp-style: in tempdir with a unique name.
-    let staged = match stage_cleaned_content(&cleaned) {
-        Ok(p) => p,
-        Err(e) => {
-            log::warn!("migration aborted: failed to stage cleaned hosts: {e}");
-            return ElevatedOutcome {
-                success: false,
-                user_cancelled: false,
-            };
-        }
-    };
-
-    let status_path = std::env::temp_dir().join(format!("redd-migration-status.{timestamp_nanos}"));
-    // Best-effort cleanup of any stale prior status file.
-    let _ = std::fs::remove_file(&status_path);
-    log::info!(
-        "migration: status marker target = {}",
-        status_path.display()
-    );
 
     #[cfg(target_os = "macos")]
-    let outcome = run_elevated_macos(&staged, &status_path);
+    let outcome = run_elevated_macos(&prepared);
     #[cfg(target_os = "windows")]
-    let outcome = run_elevated_windows(&staged, &status_path);
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let outcome = ElevatedOutcome {
-        success: true,
-        user_cancelled: false,
-    };
-
-    let _ = std::fs::remove_file(&staged);
-
-    // Final gate: the elevated script writes STATUS_OK only after
-    // every ordered step succeeded. If the marker is missing, treat
-    // this as a failure even if the process returned 0 for some
-    // reason (e.g. PowerShell -Verb RunAs returning prematurely).
-    let marker_read = std::fs::read_to_string(&status_path);
-    let marker_ok = match &marker_read {
-        Ok(s) => s.trim() == STATUS_OK,
-        Err(_) => false,
-    };
-    if !marker_ok {
-        match marker_read {
-            Ok(s) => log::warn!("migration: status marker present but wrong content: {:?}", s),
-            Err(e) => log::warn!(
-                "migration: could not read status marker at {}: {} (osascript said success={}, user_cancelled={})",
-                status_path.display(),
-                e,
-                outcome.success,
-                outcome.user_cancelled
-            ),
-        }
-    }
-    let _ = std::fs::remove_file(&status_path);
-    if !marker_ok {
-        return ElevatedOutcome {
-            success: false,
-            ..outcome
-        };
-    }
+    let outcome = run_elevated_windows(&prepared);
+    let _ = std::fs::remove_file(&prepared.staged);
 
     outcome
 }
 
-fn stage_cleaned_content(content: &str) -> std::io::Result<PathBuf> {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let path = std::env::temp_dir().join(format!("redd-hosts-cleaned.{timestamp}"));
-    std::fs::write(&path, content)?;
-    Ok(path)
-}
-
-/// Best-effort cleanup of every backup the migration ever created.
-/// Called from the `--uninstall` CLI path; never from the migration
-/// flow itself (we want backups to outlive normal operation in case
-/// something goes wrong in a future release).
-///
-/// Reachable in practice ONLY from the Windows NSIS pre-uninstall
-/// hook. macOS has no `--uninstall` invocation path — users drag the
-/// app to Trash, which never runs our binary — so on macOS both
-/// backup paths persist indefinitely. That's intentional: the legacy
-/// `/etc/hosts.redd-backup` requires root anyway and is genuinely the
-/// user's last-resort recovery copy of their pre-modification hosts
-/// file. The in-app-data snapshots are tiny and unobtrusive.
-///
-/// On Windows the NSIS uninstaller runs elevated, so an unprivileged
-/// delete of the legacy backup succeeds from this code path.
-pub fn purge_legacy_backups_sync(app_data_dir: Option<&Path>) {
-    let _ = std::fs::remove_file(legacy_hosts_backup_path());
-    if let Some(dir) = app_data_dir {
-        let _ = std::fs::remove_dir_all(dir.join("backups"));
+#[cfg(any(
+    feature = "system-test",
+    not(any(target_os = "macos", target_os = "windows"))
+))]
+pub fn run_elevated_migration(_app_data_dir: Option<&Path>) -> ElevatedOutcome {
+    ElevatedOutcome {
+        success: false,
+        user_cancelled: false,
     }
 }
 
-#[cfg(target_os = "macos")]
-fn run_elevated_macos(staged: &Path, status_path: &Path) -> ElevatedOutcome {
+#[cfg(all(
+    not(feature = "system-test"),
+    any(target_os = "macos", target_os = "windows")
+))]
+struct PreparedHostsEdit {
+    staged: PathBuf,
+    live_hash: String,
+    cleaned_hash: String,
+}
+
+#[cfg(all(
+    not(feature = "system-test"),
+    any(target_os = "macos", target_os = "windows")
+))]
+fn prepare_hosts_edit(
+    app_data_dir: Option<&Path>,
+    file_suffix: &str,
+) -> Result<PreparedHostsEdit, String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Write;
+
+    let live = hosts_path()
+        .and_then(|path| read_live_hosts(&path))
+        .map_err(|e| format!("read hosts: {e}"))?;
+    let original = live.as_deref().unwrap_or_default();
+    let cleaned = strip_managed_sections(original)?;
+    if cleaned != original {
+        let backup_dir = app_data_dir
+            .map(|dir| dir.join("backups"))
+            .or_else(default_backup_dir)
+            .ok_or("could not resolve hosts recovery directory")?;
+        std::fs::create_dir_all(&backup_dir).map_err(|e| format!("create recovery dir: {e}"))?;
+        let snapshot = backup_dir.join(format!("hosts.{file_suffix}"));
+        let mut file = std::fs::File::create_new(&snapshot)
+            .map_err(|e| format!("open hosts snapshot at {snapshot:?}: {e}"))?;
+        if let Err(e) = file.write_all(original).and_then(|()| file.sync_all()) {
+            drop(file);
+            let _ = std::fs::remove_file(&snapshot);
+            return Err(format!("save hosts snapshot at {snapshot:?}: {e}"));
+        }
+    }
+
+    let staged = std::env::temp_dir().join(format!("redd-hosts-cleaned.{file_suffix}"));
+    let mut file =
+        std::fs::File::create_new(&staged).map_err(|e| format!("open staged hosts: {e}"))?;
+    if let Err(e) = file.write_all(&cleaned) {
+        drop(file);
+        let _ = std::fs::remove_file(&staged);
+        return Err(format!("write staged hosts: {e}"));
+    }
+    let (live_hash, cleaned_hash) = if live.is_some() {
+        (
+            format!("{:x}", Sha256::digest(original)),
+            format!("{:x}", Sha256::digest(&cleaned)),
+        )
+    } else {
+        ("missing".into(), "missing".into())
+    };
+    Ok(PreparedHostsEdit {
+        staged,
+        live_hash,
+        cleaned_hash,
+    })
+}
+
+#[cfg(all(
+    not(feature = "system-test"),
+    any(target_os = "macos", target_os = "windows")
+))]
+fn default_backup_dir() -> Option<PathBuf> {
+    // Roaming on Windows. Keep recovery outside the install directory
+    // and the bundle-ID directories targeted by explicit data removal.
+    dirs::data_dir().map(|dir| {
+        dir.join(crate::product_identity::PRODUCT_DIR_NAME)
+            .join("backups")
+    })
+}
+
+#[cfg(all(not(feature = "system-test"), target_os = "macos"))]
+fn cleanup_reported_success(output: &[u8]) -> bool {
+    // AppleScript can translate shell newlines into carriage returns.
+    output
+        .rsplit(|b| matches!(b, b'\r' | b'\n'))
+        .find(|line| !line.is_empty())
+        == Some(b"ok")
+}
+
+#[cfg(all(not(feature = "system-test"), target_os = "macos"))]
+fn run_elevated_macos(edit: &PreparedHostsEdit) -> ElevatedOutcome {
     use std::process::Command;
 
-    // Build the shell script. set -e so any failed gate aborts before
-    // anything destructive runs. We touch the daemon ONLY after the
-    // hosts atomic-rename succeeds, and the legacy /etc/hosts.redd-backup
-    // ONLY after the daemon is gone.
-    //
-    // The shell script writes STATUS_OK to the status file only if it
-    // reaches the end with no failure. Rust reads that marker after
-    // the process exits.
-    let staged_str = staged.display().to_string();
-    let status_str = status_path.display().to_string();
-
-    // Shell escape: the paths contain only timestamp / temp-dir
-    // characters, so single-quoting is safe. Reject anything weird
-    // up front to be defensive.
-    if staged_str.contains('\'') || status_str.contains('\'') {
-        log::warn!("migration aborted: unexpected quote in staged paths");
-        return ElevatedOutcome {
-            success: false,
-            user_cancelled: false,
-        };
-    }
-
-    // Script body lives in a sibling .sh file so it can be edited
-    // with shell syntax highlighting, linted with shellcheck, and
-    // tested in isolation. Two placeholders are substituted at
-    // runtime; STATUS_OK is hard-coded in the script (must stay in
-    // sync with the Rust constant — both equal "ok").
-    const SCRIPT_TEMPLATE: &str = include_str!("migration/cleanup.sh");
-    debug_assert_eq!(STATUS_OK, "ok", "cleanup.sh hard-codes 'ok'");
-    let inner = SCRIPT_TEMPLATE
-        .replace("{STAGED}", &staged_str)
-        .replace("{STATUS}", &status_str);
+    // The helper returns its completion marker on stdout, avoiding a
+    // privileged write to an unprivileged caller's temporary directory.
+    let staged = edit.staged.to_string_lossy().replace('\'', r"'\''");
+    let inner = include_str!("migration/cleanup.sh")
+        .replace("{LIVE_HASH}", &edit.live_hash)
+        .replace("{CLEANED_HASH}", &edit.cleaned_hash)
+        .replace("{STAGED}", &staged);
 
     // Wrap in osascript do shell script. Single admin prompt for the
     // user. The prompt wording mentions both pieces of work so the
@@ -628,7 +573,7 @@ fn run_elevated_macos(staged: &Path, status_path: &Path) -> ElevatedOutcome {
         .output()
     {
         Ok(out) => {
-            if out.status.success() {
+            if out.status.success() && cleanup_reported_success(&out.stdout) {
                 ElevatedOutcome {
                     success: true,
                     user_cancelled: false,
@@ -657,8 +602,8 @@ fn run_elevated_macos(staged: &Path, status_path: &Path) -> ElevatedOutcome {
     }
 }
 
-#[cfg(target_os = "windows")]
-fn run_elevated_windows(staged: &Path, status_path: &Path) -> ElevatedOutcome {
+#[cfg(all(not(feature = "system-test"), target_os = "windows"))]
+fn run_elevated_windows(edit: &PreparedHostsEdit) -> ElevatedOutcome {
     use std::os::windows::process::CommandExt;
     use std::process::Command;
 
@@ -666,60 +611,22 @@ fn run_elevated_windows(staged: &Path, status_path: &Path) -> ElevatedOutcome {
     // The inner elevated PowerShell is hidden separately via -WindowStyle.
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    let staged_str = staged.display().to_string();
-    let status_str = status_path.display().to_string();
-
-    // PowerShell with $ErrorActionPreference='Stop' so any failure
-    // aborts the script before destructive steps. Single UAC prompt
-    // via `Start-Process -Verb RunAs`.
-    //
-    // The outer call writes the inner script to a temp file (so we
-    // don't have to deal with double-quote escaping through two
-    // PowerShell invocations) and runs it elevated, waiting for it
-    // to exit so we can read the status marker.
-    // Same pattern as macOS: script body in a sibling .ps1 file so
-    // it can be edited with PowerShell syntax highlighting, linted
-    // with PSScriptAnalyzer, and tested in isolation. Two
-    // placeholders substituted at runtime.
-    const SCRIPT_TEMPLATE: &str = include_str!("migration/cleanup.ps1");
-    debug_assert_eq!(STATUS_OK, "ok", "cleanup.ps1 hard-codes 'ok'");
-    let inner_script = SCRIPT_TEMPLATE
-        .replace("{STAGED}", &staged_str.replace('\'', "''"))
-        .replace("{STATUS}", &status_str.replace('\'', "''"));
-
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let inner_path = std::env::temp_dir().join(format!("redd-migration.{timestamp}.ps1"));
-    if let Err(e) = std::fs::write(&inner_path, inner_script) {
-        log::warn!("failed to stage windows migration script: {e}");
+    let Ok(system_dir) = system_directory() else {
         return ElevatedOutcome {
             success: false,
             user_cancelled: false,
         };
-    }
-
-    // Outer launcher: spawn elevated PowerShell to run the inner
-    // script and wait. Capture exit code; UAC cancellation surfaces
-    // as a launch error from Start-Process -Verb RunAs.
-    let launcher = format!(
-        r#"$ErrorActionPreference = 'Stop'
-try {{
-  $p = Start-Process -FilePath 'powershell.exe' -ArgumentList @(
-    '-NoProfile', '-NonInteractive', '-ExecutionPolicy','Bypass',
-    '-WindowStyle','Hidden', '-File','{inner}'
-  ) -Verb RunAs -WindowStyle Hidden -PassThru -Wait
-  exit $p.ExitCode
-}} catch {{
-  # User cancelled UAC, or other launch failure.
-  exit 1223
-}}
-"#,
-        inner = inner_path.display().to_string().replace('\'', "''"),
-    );
-
-    let outcome = match Command::new("powershell.exe")
+    };
+    let powershell = system_dir.join(r"WindowsPowerShell\v1.0\powershell.exe");
+    let inner = include_str!("migration/cleanup.ps1")
+        .replace("{LIVE_HASH}", &edit.live_hash)
+        .replace("{CLEANED_HASH}", &edit.cleaned_hash)
+        .replace(
+            "{STAGED}",
+            &encode_powershell_text(&edit.staged.to_string_lossy()),
+        );
+    let launcher = windows_elevation_launcher(&inner);
+    match Command::new(powershell)
         .args([
             "-NoProfile",
             "-NonInteractive",
@@ -737,7 +644,7 @@ try {{
             // the catch branch above.
             let code = out.status.code().unwrap_or(-1);
             let cancelled = code == 1223;
-            let success = code == 0;
+            let success = code == 42; // Explicit final instruction of cleanup.ps1.
             if !success && !cancelled {
                 log::warn!(
                     "elevated migration powershell failed: code={} stderr={}",
@@ -757,62 +664,61 @@ try {{
                 user_cancelled: false,
             }
         }
-    };
+    }
+}
 
-    let _ = std::fs::remove_file(&inner_path);
-    outcome
+#[cfg(all(not(feature = "system-test"), any(test, target_os = "windows")))]
+fn encode_powershell_text(text: &str) -> String {
+    use base64::Engine;
+    let bytes: Vec<u8> = text.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+// Hand the elevated process immutable script bytes, never a script path in
+// the caller's writable temp directory. PowerShell expects UTF-16LE.
+#[cfg(all(not(feature = "system-test"), any(test, target_os = "windows")))]
+fn windows_elevation_launcher(script: &str) -> String {
+    format!(
+        r#"$ErrorActionPreference = 'Stop'
+$payload = '{payload}'
+try {{
+    $p = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoProfile','-NonInteractive','-EncodedCommand',$payload) -Verb RunAs -WindowStyle Hidden -PassThru -Wait
+    exit $p.ExitCode
+}} catch [System.ComponentModel.Win32Exception] {{
+    exit $_.Exception.NativeErrorCode
+}}"#,
+        payload = encode_powershell_text(script)
+    )
 }
 
 // ---- Settings persistence -----------------------------------------------
 
-fn stamp_version(
-    data_path: &Path,
-    data: &mut serde_json::Map<String, serde_json::Value>,
-    current: &str,
-) {
+#[cfg(not(feature = "system-test"))]
+fn stamp_version(path: &Path, current: &str) -> Result<(), String> {
+    // Read after elevation and hold the same lock as regular saves until
+    // the atomic replacement. Never turn malformed or missing data into
+    // a settings-only file.
+    let transaction = super::data::DataFileWrite::lock(path).map_err(|e| e.to_string())?;
+    let raw = match std::fs::read(path) {
+        Ok(raw) => raw,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.to_string()),
+    };
+    let mut data: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_slice(&raw).map_err(|e| e.to_string())?;
     let settings = data
-        .entry("settings".to_string())
-        .or_insert(serde_json::Value::Object(Default::default()));
-    if let Some(obj) = settings.as_object_mut() {
-        obj.insert(
-            "migrationRanAtVersion".to_string(),
-            serde_json::Value::String(current.to_string()),
-        );
-        obj.insert(
-            "migrationRanAt".to_string(),
-            serde_json::Value::Number(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_millis() as u64)
-                    .unwrap_or(0)
-                    .into(),
-            ),
-        );
-    }
-    if let Err(e) = write_data(data_path, data) {
-        log::warn!(
-            "failed to persist migrationRanAtVersion at {:?}: {}",
-            data_path,
-            e
-        );
-    }
-}
+        .entry("settings")
+        .or_insert_with(|| serde_json::Value::Object(Default::default()))
+        .as_object_mut()
+        .ok_or("settings must be an object")?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_millis() as u64);
+    settings.insert("migrationRanAtVersion".to_string(), current.into());
+    settings.insert("migrationRanAt".to_string(), now.into());
 
-fn read_data(path: &Path) -> Option<serde_json::Map<String, serde_json::Value>> {
-    let raw = std::fs::read_to_string(path).ok()?;
-    let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    parsed.as_object().cloned()
-}
-
-fn write_data(
-    path: &Path,
-    data: &serde_json::Map<String, serde_json::Value>,
-) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let body = serde_json::to_vec_pretty(&serde_json::Value::Object(data.clone()))?;
-    std::fs::write(path, body)
+    let body = serde_json::to_vec_pretty(&data).map_err(|e| e.to_string())?;
+    transaction.write(&body).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

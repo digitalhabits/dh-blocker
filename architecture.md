@@ -400,8 +400,11 @@ these do not prove Rust app integration, schedule activation or MSIX access.
 
 New installations do not create a periodic watchdog task. Defender flagged
 the script-based task registration command (issue #152), and recovery after
-crash/kill is an accepted omission. Existing tasks and wrappers are left alone
-until uninstall; `watchdog.rs` retains diagnostics and uninstall cleanup.
+crash/kill is an accepted omission. Direct installs keep their existing tasks
+until uninstall. An upgraded Store app retires matching legacy tasks on
+launch, since removing the package gives the app no uninstall hook. Cleanup
+matches only this user's least-privileged tasks that use the historical
+Store wrapper action.
 
 Launch-at-login remains enabled. Store/MSIX packages declare a native
 `windows.startupTask` in `scripts/build-msix.ps1`, enabled by default after the
@@ -659,7 +662,7 @@ never active. Naming: “X” → “X copy” → “X copy 2” …
    removal; may prompt once for admin/UAC
 3. Register tray, enforcer, app watcher, native host manifests
 4. macOS: start Automation watcher after EULA (`web_automation` auto-start)
-5. Reconcile launch-at-login (release builds only); Windows leaves legacy watchdog tasks untouched
+5. Reconcile launch-at-login (release builds only); retire matching legacy tasks on Store builds
 6. Frontend: EULA gate → browser setup (Automation rows + Firefox extension)
 
 ### 11.2 App close vs quit
@@ -686,12 +689,25 @@ running regardless.
 `migration.rs` on first launch after upgrade from v1.x:
 
 - detect hosts markers or legacy daemon install
-- one elevated script: backup hosts → strip ReDD markers → flush DNS → remove
-  launchd/task + helper binary + `/var/lib/redd-block/helper-state.json` →
-  stamp `migrationRanAtVersion`. It deletes the daemon-specific files only —
-  `/var/lib/redd-block` itself stays, because the per-user data import still
-  reads `redd-block-data.json` out of it (§3.2).
-- idempotent and retryable; `migration_pending` banner if user cancels elevation
+- The macOS package installs the app and leaves legacy cleanup to onboarding.
+- Prepare an edit from the live hosts file, removing complete ReDD Block
+  sections. Save the original bytes to `Digital Habits Blocker/backups`
+  under `~/Library/Application Support` on macOS or `%APPDATA%` on Windows.
+  Keep `hosts.redd-backup` as a recovery copy.
+- The elevated script stops the helper, checks that hosts still matches the
+  snapshot, and replaces it if needed. It removes only daemon-specific files
+  and leaves shared blocklist data for per-user import (§3.2).
+- The app stamps `migrationRanAtVersion` after verification. Cleanup failures
+  leave migration pending for retry and halt uninstall before app removal.
+- Windows setup saves recovery copies at the start of a same-product upgrade
+  wizard, before maintenance can run the older uninstaller. Legacy hosts and
+  helper artefacts cause setup to block the maintenance uninstaller before launch.
+  `/UPDATE` allows an in-place NSIS upgrade. An older MSI requires administrator
+  review because Tauri invokes its uninstaller even in update mode. Silent setup
+  stops when it finds a same-product MSI and directs the caller to interactive
+  setup. If the live hosts file changes before installation, setup leaves the file
+  and recovery copies for review. Setup removes known renamed-product
+  installations directly and preserves registrations for custom paths.
 
 ---
 

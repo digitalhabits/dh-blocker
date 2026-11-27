@@ -113,6 +113,7 @@ windows = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Security",
   "Win32_System_Threading",
+  "Win32_System_IO",
   "Win32_System_Registry",
   "Win32_System_LibraryLoader",
   "Win32_System_ProcessStatus",
@@ -120,6 +121,7 @@ windows = { version = "0.61", features = [
   "Win32_System_Power",
   "Win32_System_RemoteDesktop",
   "Win32_System_SystemServices",
+  "Win32_System_SystemInformation",
   "Win32_Graphics_Gdi",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_Com",
@@ -134,6 +136,7 @@ sysinfo = "0.33"
 tauri-plugin-notification = "2"
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
+base64 = "0.22"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["fs", "io-util"] }

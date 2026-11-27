@@ -26,6 +26,8 @@ pub fn set_blocking_method(
     blocking_method::validate_method_for_key(&browser, parsed)?;
 
     let path = super::canonical_data_path(&app).ok_or_else(|| "no app data path".to_string())?;
+    let transaction =
+        super::data::DataFileWrite::lock(&path).map_err(|e| format!("lock data: {e}"))?;
     let mut data = read_data(&path).unwrap_or_else(|| Value::Object(serde_json::Map::new()));
     if !data.is_object() {
         data = Value::Object(serde_json::Map::new());
@@ -43,7 +45,11 @@ pub fn set_blocking_method(
         .unwrap()
         .insert(browser.clone(), Value::String(parsed.as_str().to_string()));
 
-    write_data(&path, &data).map_err(|e| format!("write data: {e}"))?;
+    let body = serde_json::to_vec_pretty(&data).map_err(|e| format!("write data: {e}"))?;
+    transaction
+        .write(&body)
+        .map_err(|e| format!("write data: {e}"))?;
+    drop(transaction);
     // Before the side effects, so a failed native-host step cannot leave a
     // watcher asleep while the saved method says it should be running.
     #[cfg(target_os = "macos")]
@@ -127,9 +133,4 @@ fn apply_side_effects(_app: &AppHandle, browser: &str, method: Method) -> Result
 fn read_data(path: &std::path::Path) -> Option<Value> {
     let raw = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&raw).ok()
-}
-
-fn write_data(path: &std::path::Path, data: &Value) -> std::io::Result<()> {
-    let body = serde_json::to_vec_pretty(data)?;
-    super::data::write_data_file_atomic(path, &body)
 }

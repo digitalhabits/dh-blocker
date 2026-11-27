@@ -165,6 +165,9 @@ pub(crate) const DATA_FILE_NAME: &str = "redd-block-data.json";
 /// matches `app_data_dir()` for handle-free callers.
 const APP_DIR_NAME: &str = "com.reddblock";
 
+#[cfg(not(target_os = "ios"))]
+const PRE_SHARED_IMPORT_BACKUP: &str = "redd-block-data.pre-shared-import.json";
+
 fn get_per_user_data_path(app: &AppHandle) -> PathBuf {
     // `app_data_dir()` fails only when the platform dirs are unresolvable.
     // Falling back keeps a broken environment on the same file the
@@ -248,12 +251,11 @@ fn legacy_shared_dirs() -> Vec<PathBuf> {
 /// Copy machine-wide data into this account's own store, taking the first
 /// `shared_dirs` entry that has a data file. Returns whether it copied.
 ///
-/// The destination wins only when it is *newer*. The pre-v3 per-user ->
+/// The destination wins if it is at least as recent. The pre-v3 per-user ->
 /// shared migration copied without deleting, so an upgrading account can
 /// hold a per-user file frozen at migration time beside the shared file it
-/// has been editing ever since; preferring the local copy on age alone
-/// would silently revert the user's blocklist — an enforcement gap, so the
-/// tie is broken toward the file that was most recently written.
+/// has been editing ever since. Validate the source before replacing either
+/// store and save the previous usable per-user bytes before installing it.
 ///
 /// Never deletes the source: other accounts have not necessarily upgraded
 /// yet, and each of them needs to import the same file.
@@ -261,7 +263,7 @@ fn legacy_shared_dirs() -> Vec<PathBuf> {
 pub(crate) fn import_shared_data_into_per_user(
     dest: &std::path::Path,
     shared_dirs: &[PathBuf],
-) -> bool {
+) -> Result<bool, String> {
     let modified = |path: &std::path::Path| {
         fs::metadata(path)
             .and_then(|m| m.modified())
@@ -273,45 +275,81 @@ pub(crate) fn import_shared_data_into_per_user(
         .map(|dir| dir.join(DATA_FILE_NAME))
         .find(|candidate| candidate.is_file())
     else {
-        return false;
+        return Ok(false);
     };
 
-    if dest.exists() && modified(dest) >= modified(&src) {
-        return false;
+    let source_modified = modified(&src);
+    let destination_is_current = || dest.exists() && modified(dest) >= source_modified;
+    if destination_is_current() {
+        return Ok(false);
     }
 
-    let contents = match fs::read(&src) {
-        Ok(contents) => contents,
-        Err(e) => {
-            log::warn!("shared data import: failed to read {}: {e}", src.display());
-            return false;
+    let transaction =
+        DataFileWrite::lock(dest).map_err(|e| format!("Could not lock {}: {e}", dest.display()))?;
+    if destination_is_current() {
+        return Ok(false);
+    }
+    let previous = match fs::read(dest) {
+        Ok(bytes) => Some(bytes),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(format!("Could not read {}: {e}", dest.display())),
+    };
+    let previous_valid = previous
+        .as_deref()
+        .filter(|bytes| serde_json::from_slice::<AppData>(bytes).is_ok());
+    let source = fs::read(&src)
+        .map_err(|e| format!("Could not read {}: {e}", src.display()))
+        .and_then(|bytes| {
+            serde_json::from_slice::<AppData>(&bytes)
+                .map_err(|e| format!("Invalid legacy data in {}: {e}", src.display()))?;
+            Ok(bytes)
+        });
+    let contents = match source {
+        Ok(bytes) => bytes,
+        Err(e) if previous_valid.is_some() => {
+            log::warn!("shared data import: keeping {}: {e}", dest.display());
+            return Ok(false);
         }
+        Err(e) => return Err(e),
     };
 
-    match write_data_file_atomic(dest, &contents) {
-        Ok(()) => {
-            log::info!(
-                "shared data import: copied {} -> {} (this account now has its own blocklist)",
-                src.display(),
-                dest.display()
-            );
-            // iOS keeps no overlay-assets folder beside the data file
-            // (`overlay_assets` is desktop-only), so there is nothing to merge.
-            #[cfg(not(target_os = "ios"))]
-            if let Some(dest_dir) = dest.parent() {
-                import_overlay_assets(dest_dir, shared_dirs);
-            }
-            true
+    // Keep the previous backup if we already have these exact bytes.
+    if previous.as_deref() == Some(contents.as_slice()) {
+        drop(transaction);
+        if let Some(dest_dir) = dest.parent() {
+            import_overlay_assets(dest_dir, shared_dirs);
         }
-        Err(e) => {
-            log::warn!(
-                "shared data import: failed to copy {} -> {} atomically: {e}",
-                src.display(),
-                dest.display()
-            );
-            false
-        }
+        return Ok(false);
     }
+
+    if let Some(bytes) = previous_valid {
+        let backup = dest.with_file_name(PRE_SHARED_IMPORT_BACKUP);
+        write_data_file_atomic(&backup, bytes).map_err(|e| {
+            format!(
+                "Could not back up {} to {}: {e}",
+                dest.display(),
+                backup.display()
+            )
+        })?;
+    }
+    transaction.write(&contents).map_err(|e| {
+        format!(
+            "Could not copy {} to {}: {e}",
+            src.display(),
+            dest.display()
+        )
+    })?;
+
+    drop(transaction);
+    log::info!(
+        "shared data import: copied {} -> {} (this account now has its own blocklist)",
+        src.display(),
+        dest.display()
+    );
+    if let Some(dest_dir) = dest.parent() {
+        import_overlay_assets(dest_dir, shared_dirs);
+    }
+    Ok(true)
 }
 
 /// Schedule start-overlay media (pictures, voice clips) lives in
@@ -364,17 +402,25 @@ fn copy_dir_merge(src: &std::path::Path, dest: &std::path::Path) -> std::io::Res
     Ok(())
 }
 
-/// Run the import at most once per process, before the first read of the
-/// per-user file. Every resolver goes through here rather than only
-/// `load_data`, because the enforcement loops and `cross_app_consent` can
-/// read the data file before the frontend ever asks for it.
+/// Resolve the import before the first read of the per-user file, including
+/// native enforcement reads. Remember failures so polling readers keep using
+/// the canonical path without retrying migration on every tick. A new load
+/// request can retry after the user fixes the error.
 #[cfg(not(target_os = "ios"))]
-fn import_shared_data_once(dest: &std::path::Path) {
-    use std::sync::Once;
-    static IMPORTED: Once = Once::new();
-    IMPORTED.call_once(|| {
-        import_shared_data_into_per_user(dest, &import_sources());
-    });
+fn import_shared_data_once(dest: &std::path::Path, retry_failed: bool) -> Result<(), String> {
+    use std::sync::Mutex;
+    static IMPORT: Mutex<Option<Result<(), String>>> = Mutex::new(None);
+    let mut result = IMPORT.lock().unwrap();
+    if retry_failed && matches!(*result, Some(Err(_))) {
+        *result = None;
+    }
+    result
+        .get_or_insert_with(|| {
+            import_shared_data_into_per_user(dest, &import_sources())
+                .map(|_| ())
+                .inspect_err(|e| log::warn!("shared data import: {e}"))
+        })
+        .clone()
 }
 
 /// Unit tests only: what `import_sources` returns instead of the real
@@ -415,7 +461,7 @@ pub fn canonical_data_path(app: &AppHandle) -> Option<PathBuf> {
 pub fn canonical_data_path_static() -> PathBuf {
     apply_system_test_override(|| {
         let path = per_user_data_path_static();
-        import_shared_data_once(&path);
+        let _ = import_shared_data_once(&path, false);
         path
     })
 }
@@ -476,9 +522,106 @@ pub(crate) fn get_data_path(app: &AppHandle) -> PathBuf {
     {
         apply_system_test_override(|| {
             let path = get_per_user_data_path(app);
-            import_shared_data_once(&path);
+            let _ = import_shared_data_once(&path, false);
             path
         })
+    }
+}
+
+/// Hold this for a complete read-modify-write. The data file itself is
+/// replaced on every write, so locking it would leave a stale inode locked.
+/// The sidecar stays in place and the OS releases the lock on process exit.
+pub(crate) struct DataFileWrite<'a> {
+    path: &'a std::path::Path,
+    #[cfg(not(target_os = "ios"))]
+    _lock: fs::File,
+}
+
+impl<'a> DataFileWrite<'a> {
+    pub(crate) fn lock(path: &'a std::path::Path) -> std::io::Result<Self> {
+        #[cfg(not(target_os = "ios"))]
+        {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let mut lock_path = path.as_os_str().to_owned();
+            lock_path.push(".lock");
+            let lock = fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(lock_path)?;
+            lock_data_file(&lock)?;
+            Ok(Self { path, _lock: lock })
+        }
+        #[cfg(target_os = "ios")]
+        {
+            Ok(Self { path })
+        }
+    }
+
+    pub(crate) fn write(&self, contents: &[u8]) -> std::io::Result<()> {
+        write_data_file_atomic(self.path, contents)
+    }
+}
+
+#[cfg(all(unix, not(target_os = "ios")))]
+fn lock_data_file(file: &fs::File) -> std::io::Result<()> {
+    use std::os::fd::AsRawFd;
+
+    loop {
+        // SAFETY: the open File owns this descriptor for the whole call.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } == 0 {
+            return Ok(());
+        }
+        let error = std::io::Error::last_os_error();
+        if error.kind() != std::io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn lock_data_file(file: &fs::File) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Storage::FileSystem::{LockFileEx, LOCKFILE_EXCLUSIVE_LOCK};
+    use windows::Win32::System::IO::OVERLAPPED;
+
+    // SAFETY: this is a live synchronous handle. LockFileEx waits for the
+    // one-byte lock before returning, so it cannot outlive the offset.
+    unsafe {
+        LockFileEx(
+            HANDLE(file.as_raw_handle()),
+            LOCKFILE_EXCLUSIVE_LOCK,
+            None,
+            1,
+            0,
+            &mut OVERLAPPED::default(),
+        )
+    }
+    .map_err(std::io::Error::other)
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for DataFileWrite<'_> {
+    fn drop(&mut self) {
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::Storage::FileSystem::UnlockFileEx;
+        use windows::Win32::System::IO::OVERLAPPED;
+
+        // SAFETY: unlock the same byte on the live handle before it closes.
+        let _ = unsafe {
+            UnlockFileEx(
+                HANDLE(self._lock.as_raw_handle()),
+                None,
+                1,
+                0,
+                &mut OVERLAPPED::default(),
+            )
+        };
     }
 }
 
@@ -653,63 +796,79 @@ fn normalize_eula_state(data: &mut AppData) -> bool {
 /// Load data from file
 #[tauri::command]
 pub fn load_data(app: AppHandle) -> Result<AppData, String> {
+    #[cfg(target_os = "ios")]
     let data_path = get_data_path(&app);
+    #[cfg(not(target_os = "ios"))]
+    let data_path = apply_system_test_override(|| get_per_user_data_path(&app));
+
+    #[cfg(not(target_os = "ios"))]
+    {
+        #[cfg(feature = "system-test")]
+        let import_legacy = should_import_legacy_data();
+        #[cfg(not(feature = "system-test"))]
+        let import_legacy = true;
+        if import_legacy {
+            import_shared_data_once(&data_path, true)?;
+        }
+    }
 
     ensure_data_dir(&data_path)?;
 
-    if data_path.exists() {
-        let content = fs::read_to_string(&data_path).map_err(|e| e.to_string())?;
-        let mut data: AppData = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-        if normalize_eula_state(&mut data) {
-            let migrated = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
-            write_data_file_atomic(&data_path, migrated.as_bytes()).map_err(|e| e.to_string())?;
-        }
-        // The app-watcher registration loop already reads this file as soon
-        // as it starts and then every two seconds. Avoid repeating that work
-        // synchronously on the frontend's first data request: load_data is on
-        // the first-render critical path.
-        Ok(data)
+    let source = if data_path
+        .try_exists()
+        .map_err(|e| format!("Could not access {}: {e}", data_path.display()))?
+    {
+        Some(data_path.clone())
     } else {
-        // A system-test process starts from a deliberately empty isolated
-        // store. Never import production or legacy per-user data into it:
-        // doing so would both leak user state into tests and make a test
-        // result depend on what happens to be installed on the host.
+        // An isolated system-test process must never read production data.
         #[cfg(feature = "system-test")]
         if !should_import_legacy_data() {
             return Ok(AppData::default());
         }
+        find_per_user_data(&app)
+    };
+    let Some(source) = source else {
+        return Ok(AppData::default());
+    };
 
-        // Migrate from per-user location or legacy paths
-        if let Some(source_path) = find_per_user_data(&app) {
-            if source_path == data_path {
-                let content = fs::read_to_string(&source_path).map_err(|e| e.to_string())?;
-                let mut data: AppData =
-                    serde_json::from_str(&content).map_err(|e| e.to_string())?;
-                if normalize_eula_state(&mut data) {
-                    let migrated =
-                        serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
-                    write_data_file_atomic(&source_path, migrated.as_bytes())
-                        .map_err(|e| e.to_string())?;
-                }
-                return Ok(data);
-            }
-
-            log::info!(
-                "Migrating data into canonical per-user location: {:?} -> {:?}",
-                source_path,
-                data_path
-            );
-            let content = fs::read_to_string(&source_path).map_err(|e| e.to_string())?;
-            let mut data: AppData = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-            normalize_eula_state(&mut data);
-            // Save to new location so migration only happens once
-            let migrated = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
-            write_data_file_atomic(&data_path, migrated.as_bytes()).map_err(|e| e.to_string())?;
-            Ok(data)
-        } else {
-            Ok(AppData::default())
-        }
+    let mut data = read_saved_data(&source)?;
+    if !normalize_eula_state(&mut data) && source == data_path {
+        return Ok(data);
     }
+
+    // A migration must re-read after acquiring the lock. Another process
+    // may have installed newer canonical data since we found the source.
+    let transaction = DataFileWrite::lock(&data_path)
+        .map_err(|e| format!("Could not lock {}: {e}", data_path.display()))?;
+    let source = if data_path
+        .try_exists()
+        .map_err(|e| format!("Could not access {}: {e}", data_path.display()))?
+    {
+        &data_path
+    } else {
+        &source
+    };
+    let mut data = read_saved_data(source)?;
+    if normalize_eula_state(&mut data) || source != &data_path {
+        let migrated = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+        transaction.write(migrated.as_bytes()).map_err(|e| {
+            format!(
+                "Could not save migrated data to {}: {e}",
+                data_path.display()
+            )
+        })?;
+    }
+
+    // The app-watcher registration loop reads this file on start and then
+    // every two seconds, so it needs no synchronous update.
+    Ok(data)
+}
+
+fn read_saved_data(source: &std::path::Path) -> Result<AppData, String> {
+    let content = fs::read_to_string(source)
+        .map_err(|e| format!("Could not read {}: {e}", source.display()))?;
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Invalid saved data in {}: {e}", source.display()))
 }
 
 /// Save data to file
@@ -729,13 +888,18 @@ pub fn save_data(app: AppHandle, mut data: AppData) -> Result<(), String> {
     // tick, etc. — serializes the stale `undefined` and clobbers
     // the disk value written by the dedicated command). Preserve
     // whatever is currently on disk for these keys.
-    preserve_backend_settings(&data_path, &mut data);
+    {
+        let transaction = DataFileWrite::lock(&data_path)
+            .map_err(|e| format!("Could not lock {}: {e}", data_path.display()))?;
+        preserve_backend_settings(&data_path, &mut data);
+        let content = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+        transaction
+            .write(content.as_bytes())
+            .map_err(|e| format!("Could not save {}: {e}", data_path.display()))?;
 
-    let content = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
-    write_data_file_atomic(&data_path, content.as_bytes()).map_err(|e| e.to_string())?;
-
-    #[cfg(target_os = "macos")]
-    crate::app_group::maybe_mirror_after_save(&data_path, content.as_bytes());
+        #[cfg(target_os = "macos")]
+        crate::app_group::maybe_mirror_after_save(&data_path, content.as_bytes());
+    }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     super::app_blocking::sync_blocked_apps_from_disk(&app);
@@ -816,7 +980,11 @@ pub fn wipe_user_data(app: &AppHandle) {
         }
     }
 
-    let mut files: Vec<PathBuf> = vec![get_data_path(app)];
+    let data_path = get_data_path(app);
+    let mut files: Vec<PathBuf> = vec![
+        data_path.with_file_name(PRE_SHARED_IMPORT_BACKUP),
+        data_path,
+    ];
 
     if let Ok(app_data_dir) = app.path().app_data_dir() {
         files.push(app_data_dir.join("redd-block-data.json"));

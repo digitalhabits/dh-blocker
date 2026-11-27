@@ -1,11 +1,18 @@
 #[cfg(not(feature = "system-test"))]
 use super::{canonical_data_path_static, per_user_data_path_static, TEST_IMPORT_SOURCES};
-use super::{import_shared_data_into_per_user, per_user_data_path_from, DATA_FILE_NAME};
+use super::{
+    import_shared_data_into_per_user, per_user_data_path_from, DataFileWrite, DATA_FILE_NAME,
+    PRE_SHARED_IMPORT_BACKUP,
+};
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+const SHARED_DATA: &[u8] = br#"{"blocklists":[],"activeBlocks":[],"settings":{"origin":"shared"}}"#;
+const PER_USER_DATA: &[u8] =
+    br#"{"blocklists":[],"activeBlocks":[],"settings":{"origin":"per-user"}}"#;
 
 fn temp_root(label: &str) -> PathBuf {
     let nanos = SystemTime::now()
@@ -39,15 +46,12 @@ fn write_shared(dir: &Path, contents: &[u8]) -> PathBuf {
 fn imports_shared_data_when_per_user_is_missing() {
     let root = temp_root("missing");
     let shared = root.join("ProgramData");
-    let src = write_shared(&shared, b"{\"from\":\"shared\"}");
+    let src = write_shared(&shared, SHARED_DATA);
     let dest = root.join("per-user").join(DATA_FILE_NAME);
 
-    assert!(import_shared_data_into_per_user(
-        &dest,
-        std::slice::from_ref(&shared)
-    ));
+    assert!(import_shared_data_into_per_user(&dest, std::slice::from_ref(&shared)).unwrap());
 
-    assert_eq!(fs::read_to_string(&dest).unwrap(), "{\"from\":\"shared\"}");
+    assert_eq!(fs::read(&dest).unwrap(), SHARED_DATA);
     // Copy, never move: the other accounts on this machine still need it.
     assert!(src.exists());
     let _ = fs::remove_dir_all(root);
@@ -57,16 +61,16 @@ fn imports_shared_data_when_per_user_is_missing() {
 fn does_not_clobber_newer_per_user_data() {
     let root = temp_root("newer");
     let shared = root.join("ProgramData");
-    let src = write_shared(&shared, b"stale-shared");
+    let src = write_shared(&shared, SHARED_DATA);
     let dest_dir = root.join("per-user");
     fs::create_dir_all(&dest_dir).unwrap();
     let dest = dest_dir.join(DATA_FILE_NAME);
-    fs::write(&dest, b"fresh-per-user").unwrap();
+    fs::write(&dest, PER_USER_DATA).unwrap();
     age(&src, 60);
 
-    assert!(!import_shared_data_into_per_user(&dest, &[shared]));
+    assert!(!import_shared_data_into_per_user(&dest, &[shared]).unwrap());
 
-    assert_eq!(fs::read_to_string(&dest).unwrap(), "fresh-per-user");
+    assert_eq!(fs::read(&dest).unwrap(), PER_USER_DATA);
     let _ = fs::remove_dir_all(root);
 }
 
@@ -78,16 +82,110 @@ fn imports_over_a_stale_per_user_file() {
     // Preferring the stale local copy would silently revert the blocklist.
     let root = temp_root("stale");
     let shared = root.join("ProgramData");
-    write_shared(&shared, b"live-shared");
+    write_shared(&shared, SHARED_DATA);
     let dest_dir = root.join("per-user");
     fs::create_dir_all(&dest_dir).unwrap();
     let dest = dest_dir.join(DATA_FILE_NAME);
-    fs::write(&dest, b"stale-per-user").unwrap();
+    fs::write(&dest, PER_USER_DATA).unwrap();
     age(&dest, 60);
 
-    assert!(import_shared_data_into_per_user(&dest, &[shared]));
+    assert!(import_shared_data_into_per_user(&dest, &[shared]).unwrap());
 
-    assert_eq!(fs::read_to_string(&dest).unwrap(), "live-shared");
+    assert_eq!(fs::read(&dest).unwrap(), SHARED_DATA);
+    assert_eq!(
+        fs::read(dest_dir.join(PRE_SHARED_IMPORT_BACKUP)).unwrap(),
+        PER_USER_DATA
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn rejects_newer_shared_data_unreadable_by_the_app() {
+    for invalid in [
+        b"{".as_slice(),
+        br#"{"blocklists":{},"activeBlocks":[],"settings":{}}"#,
+    ] {
+        let root = temp_root("invalid");
+        let shared = root.join("ProgramData");
+        let src = write_shared(&shared, invalid);
+        let dest_dir = root.join("per-user");
+        let dest = write_shared(&dest_dir, PER_USER_DATA);
+        age(&dest, 60);
+
+        assert!(!import_shared_data_into_per_user(&dest, &[shared]).unwrap());
+
+        assert_eq!(fs::read(&dest).unwrap(), PER_USER_DATA);
+        assert_eq!(fs::read(&src).unwrap(), invalid);
+        assert!(!dest_dir.join(PRE_SHARED_IMPORT_BACKUP).exists());
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+#[test]
+fn invalid_shared_only_store_reports_an_error() {
+    let root = temp_root("invalid-shared-only");
+    let shared = root.join("ProgramData");
+    write_shared(
+        &shared,
+        br#"{"blocklists":null,"activeBlocks":[],"settings":{}}"#,
+    );
+    let dest = root.join("per-user").join(DATA_FILE_NAME);
+
+    let error = import_shared_data_into_per_user(&dest, &[shared]).unwrap_err();
+
+    assert!(error.contains("Invalid legacy data"), "{error}");
+    assert!(!dest.exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn failed_backup_leaves_the_per_user_store_in_place() {
+    let root = temp_root("failed-backup");
+    let shared = root.join("ProgramData");
+    write_shared(&shared, SHARED_DATA);
+    let dest_dir = root.join("per-user");
+    let dest = write_shared(&dest_dir, PER_USER_DATA);
+    age(&dest, 60);
+    fs::create_dir(dest_dir.join(PRE_SHARED_IMPORT_BACKUP)).unwrap();
+
+    let error = import_shared_data_into_per_user(&dest, &[shared]).unwrap_err();
+
+    assert!(error.contains("Could not back up"), "{error}");
+    assert_eq!(fs::read(&dest).unwrap(), PER_USER_DATA);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn import_waits_for_a_concurrent_save_then_keeps_the_newer_data() {
+    use std::sync::mpsc;
+
+    let root = temp_root("concurrent-save");
+    let shared = root.join("ProgramData");
+    write_shared(&shared, SHARED_DATA);
+    let dest_dir = root.join("per-user");
+    let dest = write_shared(&dest_dir, PER_USER_DATA);
+    age(&dest, 60);
+
+    let transaction = DataFileWrite::lock(&dest).unwrap();
+    let (started_tx, started_rx) = mpsc::channel();
+    let (result_tx, result_rx) = mpsc::channel();
+    let import_dest = dest.clone();
+    let importer = std::thread::spawn(move || {
+        started_tx.send(()).unwrap();
+        let imported = import_shared_data_into_per_user(&import_dest, &[shared]);
+        result_tx.send(imported).unwrap();
+    });
+
+    started_rx.recv().unwrap();
+    let while_locked = result_rx.recv_timeout(Duration::from_millis(100));
+    transaction.write(PER_USER_DATA).unwrap();
+    drop(transaction);
+    importer.join().unwrap();
+
+    assert!(matches!(while_locked, Err(mpsc::RecvTimeoutError::Timeout)));
+    assert!(!result_rx.recv().unwrap().unwrap());
+    assert_eq!(fs::read(&dest).unwrap(), PER_USER_DATA);
+    assert!(!dest_dir.join(PRE_SHARED_IMPORT_BACKUP).exists());
     let _ = fs::remove_dir_all(root);
 }
 
@@ -96,17 +194,17 @@ fn imports_over_a_stale_per_user_file() {
 fn import_atomically_replaces_destination_without_copying_shared_permissions() {
     let root = temp_root("atomic");
     let shared = root.join("shared");
-    let src = write_shared(&shared, b"live-shared");
+    let src = write_shared(&shared, SHARED_DATA);
     fs::set_permissions(&src, fs::Permissions::from_mode(0o777)).unwrap();
 
     let dest_dir = root.join("per-user");
     fs::create_dir_all(&dest_dir).unwrap();
     let dest = dest_dir.join(DATA_FILE_NAME);
-    fs::write(&dest, b"stale-per-user").unwrap();
+    fs::write(&dest, PER_USER_DATA).unwrap();
     age(&dest, 60);
     let original_inode = fs::metadata(&dest).unwrap().ino();
 
-    assert!(import_shared_data_into_per_user(&dest, &[shared]));
+    assert!(import_shared_data_into_per_user(&dest, &[shared]).unwrap());
 
     let imported = fs::metadata(&dest).unwrap();
     assert_ne!(
@@ -119,7 +217,7 @@ fn import_atomically_replaces_destination_without_copying_shared_permissions() {
         0,
         "import must not copy executable/shared source permissions"
     );
-    assert_eq!(fs::read_to_string(&dest).unwrap(), "live-shared");
+    assert_eq!(fs::read(&dest).unwrap(), SHARED_DATA);
     let _ = fs::remove_dir_all(root);
 }
 
@@ -129,13 +227,13 @@ fn prefers_the_first_shared_dir_that_has_the_file() {
     let root = temp_root("order");
     let primary = root.join("Digital Habits Blocker");
     let legacy = root.join("ReDD Blocker");
-    write_shared(&primary, b"from-primary");
-    write_shared(&legacy, b"from-legacy");
+    write_shared(&primary, SHARED_DATA);
+    write_shared(&legacy, PER_USER_DATA);
     let dest = root.join("per-user").join(DATA_FILE_NAME);
 
-    assert!(import_shared_data_into_per_user(&dest, &[primary, legacy]));
+    assert!(import_shared_data_into_per_user(&dest, &[primary, legacy]).unwrap());
 
-    assert_eq!(fs::read_to_string(&dest).unwrap(), "from-primary");
+    assert_eq!(fs::read(&dest).unwrap(), SHARED_DATA);
     let _ = fs::remove_dir_all(root);
 }
 
@@ -154,15 +252,12 @@ fn imports_overlay_assets_beside_the_data_file() {
     // clips that were left behind.
     let root = temp_root("assets");
     let shared = root.join("ProgramData");
-    write_shared(&shared, b"{\"from\":\"shared\"}");
+    write_shared(&shared, SHARED_DATA);
     let asset = write_asset(&shared, "bl-1/img-1.png", b"png");
     let dest_dir = root.join("per-user");
     let dest = dest_dir.join(DATA_FILE_NAME);
 
-    assert!(import_shared_data_into_per_user(
-        &dest,
-        std::slice::from_ref(&shared)
-    ));
+    assert!(import_shared_data_into_per_user(&dest, std::slice::from_ref(&shared)).unwrap());
 
     let copied = dest_dir
         .join("overlay-assets")
@@ -183,8 +278,8 @@ fn merges_overlay_assets_left_behind_in_older_shared_dirs() {
     let root = temp_root("assets-legacy");
     let primary = root.join("Digital Habits Blocker");
     let legacy = root.join("ReDD Block");
-    write_shared(&primary, b"from-primary");
-    write_shared(&legacy, b"from-legacy");
+    write_shared(&primary, SHARED_DATA);
+    write_shared(&legacy, PER_USER_DATA);
     write_asset(&primary, "bl-2/new.png", b"new");
     write_asset(&legacy, "global/voice.webm", b"webm");
     write_asset(&primary, "bl-1/same.png", b"primary-wins");
@@ -192,9 +287,9 @@ fn merges_overlay_assets_left_behind_in_older_shared_dirs() {
     let dest_dir = root.join("per-user");
     let dest = dest_dir.join(DATA_FILE_NAME);
 
-    assert!(import_shared_data_into_per_user(&dest, &[primary, legacy]));
+    assert!(import_shared_data_into_per_user(&dest, &[primary, legacy]).unwrap());
 
-    assert_eq!(fs::read_to_string(&dest).unwrap(), "from-primary");
+    assert_eq!(fs::read(&dest).unwrap(), SHARED_DATA);
     let assets = dest_dir.join("overlay-assets");
     assert_eq!(fs::read(assets.join("bl-2/new.png")).unwrap(), b"new");
     assert_eq!(fs::read(assets.join("global/voice.webm")).unwrap(), b"webm");
@@ -211,15 +306,15 @@ fn skipped_import_leaves_overlay_assets_alone() {
     // looks; nothing from the shared side should appear beside it.
     let root = temp_root("assets-skip");
     let shared = root.join("ProgramData");
-    let src = write_shared(&shared, b"stale-shared");
+    let src = write_shared(&shared, SHARED_DATA);
     write_asset(&shared, "bl-1/img.png", b"png");
     let dest_dir = root.join("per-user");
     fs::create_dir_all(&dest_dir).unwrap();
     let dest = dest_dir.join(DATA_FILE_NAME);
-    fs::write(&dest, b"fresh-per-user").unwrap();
+    fs::write(&dest, PER_USER_DATA).unwrap();
     age(&src, 60);
 
-    assert!(!import_shared_data_into_per_user(&dest, &[shared]));
+    assert!(!import_shared_data_into_per_user(&dest, &[shared]).unwrap());
 
     assert!(!dest_dir.join("overlay-assets").exists());
     let _ = fs::remove_dir_all(root);
@@ -230,10 +325,7 @@ fn no_shared_data_creates_nothing() {
     let root = temp_root("absent");
     let dest = root.join("per-user").join(DATA_FILE_NAME);
 
-    assert!(!import_shared_data_into_per_user(
-        &dest,
-        &[root.join("ProgramData")]
-    ));
+    assert!(!import_shared_data_into_per_user(&dest, &[root.join("ProgramData")]).unwrap());
 
     assert!(!dest.exists());
     assert!(!dest.parent().unwrap().exists());

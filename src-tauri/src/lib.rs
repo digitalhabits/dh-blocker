@@ -794,11 +794,10 @@ pub fn run() {
                 }
             }
 
-            // Do not create or refresh Windows watchdog tasks: Defender
-            // flags the script-based registration command (issue #152).
-            // Existing tasks are left alone until uninstall. Recovery after
-            // termination is optional; launch-at-login remains enabled below
-            // and through the MSIX manifest's native startup task.
+            // Store removal has no uninstaller hook for scheduled tasks
+            // created by older versions outside the package.
+            #[cfg(all(target_os = "windows", not(feature = "system-test")))]
+            watchdog::retire_store_tasks();
 
             // Self-heal launch-at-login on every startup. For ReDD
             // Block 2.0 the app IS the enforcement engine, so blocking

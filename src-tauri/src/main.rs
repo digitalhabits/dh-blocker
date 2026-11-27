@@ -41,6 +41,10 @@ fn main() {
     // for an `Uninstall.app` shim or a manual `redd-block --uninstall`.
     #[cfg(not(target_os = "ios"))]
     if std::env::args().skip(1).any(|a| a == "--uninstall") {
+        if let Err(e) = redd_block_lib::commands::migration::cleanup_legacy_for_uninstall() {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
         let _ = redd_block_lib::native_host_install::uninstall();
         let _ = redd_block_lib::extension_install::uninstall();
         #[cfg(target_os = "windows")]
@@ -48,13 +52,6 @@ fn main() {
             redd_block_lib::watchdog::unregister();
             redd_block_lib::windows_login::disable_autostart();
         }
-        let _ = redd_block_lib::commands::migration::strip_hosts_markers_sync();
-        let _ = redd_block_lib::commands::migration::uninstall_legacy_helper_sync();
-        // Final cleanup: now that the user is uninstalling, the hosts
-        // backups have served their purpose. Best-effort delete; on
-        // macOS the legacy /etc/hosts.redd-backup needs root and will
-        // be left for the user, but the in-app-data snapshots go.
-        redd_block_lib::commands::migration::purge_legacy_backups_sync(None);
         std::process::exit(0);
     }
 
