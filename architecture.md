@@ -480,7 +480,8 @@ The enforcer is active only when **all** of:
    schedule windows, one-off expiry). Allowlist domains never populate the
    legacy flat domain list, so the gate reads the per-block metadata,
 2. `settings.enforcementEnabled === true` — user opt-in (default **off**),
-3. at least one enforced browser process is **running**.
+3. at least one enforced browser application is **running** (a Launch Services
+   application on macOS, or a process with a browser window on Windows).
 
 If no website block is active, the tick is a no-op and in-flight grace timers
 are cleared — a misconfigured extension outside a block is not policed.
@@ -501,7 +502,10 @@ already on the Automation path).
 
 - Grace period: `settings.extensionGraceSeconds` (default 60 s, clamped 5–300 s)
 - Emits `enforcer://grace-update` with countdown; UI shows persistent banner
-- On expiry: SIGTERM then SIGKILL after 10 s (`taskkill` on Windows)
+- On expiry, requests a normal close of the original browser instances through
+  AppKit on macOS or `WM_CLOSE` on Windows. After 10 s it may force-close the
+  same PID and launch identity if website blocking, opt-in and non-compliance
+  all still apply. A replacement instance gets its own grace period.
 - Emits `enforcer://browser-closed` when quit completes
 - Issue types include `ExtensionIssue::Automation` for macOS Safari/Chromium
 

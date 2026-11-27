@@ -16,7 +16,7 @@
 // Originally ported from the MVP enforcer prototype (see git history
 // for browser-ext-mvp/enforcer/enforce.mjs).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -27,6 +27,9 @@ use tauri::{AppHandle, Emitter};
 // Only the macOS Automation path calls `try_state`.
 #[cfg(target_os = "macos")]
 use tauri::Manager;
+
+mod processes;
+use processes::{BrowserProcess, BrowserProcesses};
 
 const TICK: Duration = Duration::from_secs(5);
 const TICK_FAST: Duration = Duration::from_secs(1);
@@ -136,31 +139,6 @@ impl BrowserKey {
             BrowserKey::Brave => "Brave",
             BrowserKey::Edge => "Edge",
             BrowserKey::Safari => "Safari",
-        }
-    }
-
-    /// Process name as reported by sysinfo. Exact match on Windows
-    /// (with extension), suffix match on macOS (bundle binary).
-    fn process_names(self) -> &'static [&'static str] {
-        #[cfg(target_os = "windows")]
-        match self {
-            BrowserKey::Firefox => &["firefox.exe"],
-            BrowserKey::Chrome => &["chrome.exe"],
-            BrowserKey::Brave => &["brave.exe"],
-            BrowserKey::Edge => &["msedge.exe"],
-            BrowserKey::Safari => &[],
-        }
-        #[cfg(target_os = "macos")]
-        match self {
-            BrowserKey::Firefox => &["firefox"],
-            BrowserKey::Chrome => &["Google Chrome"],
-            BrowserKey::Brave => &["Brave Browser"],
-            BrowserKey::Edge => &["Microsoft Edge"],
-            BrowserKey::Safari => &["Safari"],
-        }
-        #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-        match self {
-            _ => &[],
         }
     }
 
@@ -286,6 +264,7 @@ pub struct BrowserClosedEvent {
 
 #[derive(Debug)]
 struct TimerState {
+    targets: HashSet<BrowserProcess>,
     deadline: Instant,
     total: Duration,
     /// Kept for the enforcement logs; nothing reads it back today.
@@ -294,14 +273,51 @@ struct TimerState {
     issue: ExtensionIssue,
 }
 
+impl TimerState {
+    fn matches(&self, running: &HashSet<BrowserProcess>) -> bool {
+        !self.targets.is_disjoint(running)
+    }
+}
+
 /// A browser whose grace expired and we are waiting for its process to
 /// disappear. `quit_dispatched` distinguishes a user manual quit
-/// (gone before we asked) from a force-close we initiated.
+/// (gone before we asked) from a close we initiated.
 #[derive(Debug)]
 struct ClosingState {
+    targets: HashSet<BrowserProcess>,
     issue: ExtensionIssue,
     quit_dispatched: bool,
     quit_started: Instant,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum CloseAction {
+    Cancel,
+    Finish,
+    Wait,
+    Force,
+}
+
+impl ClosingState {
+    fn action(
+        &self,
+        allowed: bool,
+        any_target_running: bool,
+        issue: Option<ExtensionIssue>,
+        now: Instant,
+    ) -> CloseAction {
+        if !allowed {
+            CloseAction::Cancel
+        } else if !any_target_running {
+            CloseAction::Finish
+        } else if issue.is_none() {
+            CloseAction::Cancel
+        } else if now.duration_since(self.quit_started) >= HARD_KILL_AFTER {
+            CloseAction::Force
+        } else {
+            CloseAction::Wait
+        }
+    }
 }
 
 #[derive(Default)]
@@ -358,20 +374,7 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
     // wasn't allowed in incognito, no block was running, and Chrome
     // got killed anyway). Resolve any in-flight grace timers so the
     // UI banner clears if a block just expired or got paused mid-grace.
-    if !website_blocking_active(app) {
-        for &key in BrowserKey::enforced() {
-            cancel_timer(app, state, key, true);
-            cancel_closing(app, state, key, true);
-        }
-        return;
-    }
-
-    // Don't force-close browsers unless the user has explicitly opted
-    // in. Enforcement is powerful but jarring for new users who don't
-    // understand why their browser was killed. Default is OFF; the
-    // user enables it in the extension setup dialog once they've
-    // understood the behaviour.
-    if !enforcement_enabled(app) {
+    if !closing_allowed(app) {
         for &key in BrowserKey::enforced() {
             cancel_timer(app, state, key, true);
             cancel_closing(app, state, key, true);
@@ -384,18 +387,18 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
     // data triggers macOS Sequoia's per-app data-access TCC prompt;
     // unconditionally scanning all five vendors meant a user with
     // four browsers installed got four serial prompts every tick,
-    // even though we only ever act on running browsers. If nothing's
-    // running there's nothing to enforce — bail before touching disk.
-    let running = running_browsers();
-    sweep_closing(app, state, &running);
-    if running.is_empty() {
-        // User quit every browser (or the last one we were timing) —
-        // tell the UI to drop any in-flight grace banner, same as
-        // app_watcher's warning-hide on PID gone.
-        for &key in BrowserKey::enforced() {
-            cancel_timer(app, state, key, true);
+    // even though we only ever act on running browsers.
+    let running = processes::running_browsers();
+    let mut running_keys: HashSet<BrowserKey> = running.keys().copied().collect();
+    if let Ok(s) = state.lock() {
+        for (&key, closing) in &s.closing {
+            // Windows can leave a background browser process after its last
+            // window closes. Check the original PID and creation time so a
+            // pending close still gets a current compliance verdict.
+            if processes::any_live_target(key, &closing.targets, &running) {
+                running_keys.insert(key);
+            }
         }
-        return;
     }
 
     // Resolve each running browser's method once for both scanning and
@@ -404,14 +407,14 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
     // extension, starting a grace timer and revealing the window for a
     // browser that is fine. The next tick picks up the change.
     #[cfg(target_os = "macos")]
-    let extension_browsers = extension_browsers(&running, |key| {
+    let extension_browsers = extension_browsers(&running_keys, |key| {
         !judged_by_extension(
             key.uses_automation_on_macos(app),
             key.uses_accessibility_on_macos(app),
         )
     });
     #[cfg(target_os = "windows")]
-    let extension_browsers = extension_browsers(&running, |key| {
+    let extension_browsers = extension_browsers(&running_keys, |key| {
         crate::blocking_method::uses_automation(app, key.setting_key())
     });
 
@@ -429,7 +432,7 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
             "safari" => BrowserKey::Safari,
             _ => return false,
         };
-        if !running.contains(&key) {
+        if !running_keys.contains(&key) {
             return false;
         }
         #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -443,38 +446,25 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
     });
 
     for &key in BrowserKey::enforced() {
-        if state
-            .lock()
-            .map(|s| s.closing.contains_key(&key))
-            .unwrap_or(false)
-        {
+        let issue = if running_keys.contains(&key) {
+            compliance_issue(
+                app,
+                key,
+                &scan_result,
+                true,
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                extension_browsers.contains(&key),
+            )
+        } else {
+            None
+        };
+        if update_browser_close(app, state, key, &running, issue) {
             continue;
         }
 
-        let is_running = running.contains(&key);
-
-        if !is_running {
-            // Browser exited on its own during grace — not a force-close,
-            // so emit grace-resolved (not browser-closed).
+        let (Some(issue), Some(targets)) = (issue, running.get(&key)) else {
             cancel_timer(app, state, key, true);
             continue;
-        }
-
-        // None = compliant (extension OK, or Automation granted) → clear
-        // any timer and move on. Some(issue) = act on it.
-        let issue = match compliance_issue(
-            app,
-            key,
-            &scan_result,
-            is_running,
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
-            extension_browsers.contains(&key),
-        ) {
-            None => {
-                cancel_timer(app, state, key, true);
-                continue;
-            }
-            Some(i) => i,
         };
         log_non_compliant_summary(key, issue, &scan_result);
 
@@ -484,7 +474,10 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
                 Ok(g) => g,
                 Err(_) => continue,
             };
-            if let Some(t) = s.timers.get(&key) {
+            if !s.enabled {
+                continue;
+            }
+            if let Some(t) = s.timers.get(&key).filter(|t| t.matches(targets)) {
                 (Instant::now() >= t.deadline, false)
             } else {
                 let offenses = {
@@ -501,6 +494,7 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
                 s.timers.insert(
                     key,
                     TimerState {
+                        targets: targets.clone(),
                         deadline,
                         total: grace,
                         offense_count: offenses,
@@ -541,80 +535,85 @@ fn begin_browser_close(
     key: BrowserKey,
     issue: ExtensionIssue,
 ) {
-    let inserted = state
-        .lock()
-        .ok()
-        .map(|mut s| {
-            s.timers.remove(&key);
-            s.closing
-                .insert(
-                    key,
-                    ClosingState {
-                        issue,
-                        quit_dispatched: false,
-                        quit_started: Instant::now(),
-                    },
-                )
-                .is_none()
-        })
-        .unwrap_or(false);
-    if !inserted {
+    if !closing_allowed(app) {
+        cancel_timer(app, state, key, true);
         return;
+    }
+    {
+        let Ok(mut s) = state.lock() else { return };
+        if !s.enabled {
+            return;
+        }
+        let Some(timer) = s.timers.remove(&key) else {
+            return;
+        };
+        let quit_started = Instant::now();
+        let quit_dispatched = close_targets(key, &timer.targets, false);
+        s.closing.insert(
+            key,
+            ClosingState {
+                targets: timer.targets,
+                issue,
+                quit_dispatched,
+                quit_started,
+            },
+        );
     }
     emit_closing(app, key, issue);
-    dispatch_browser_quit(key);
-    if let Ok(mut s) = state.lock() {
-        if let Some(c) = s.closing.get_mut(&key) {
-            c.quit_dispatched = true;
-        }
-    }
 }
 
-fn sweep_closing(
+fn update_browser_close(
     app: &AppHandle,
     state: &Arc<Mutex<EnforcerState>>,
-    running: &std::collections::HashSet<BrowserKey>,
-) {
-    let keys: Vec<BrowserKey> = state
-        .lock()
-        .ok()
-        .map(|s| s.closing.keys().copied().collect())
-        .unwrap_or_default();
-    for key in keys {
-        if running.contains(&key) {
-            maybe_escalate_browser_kill(state, key);
-            continue;
+    key: BrowserKey,
+    running: &BrowserProcesses,
+    issue: Option<ExtensionIssue>,
+) -> bool {
+    let (action, closed) = {
+        let Ok(mut s) = state.lock() else { return true };
+        let enabled = s.enabled;
+        let Some(closing) = s.closing.get_mut(&key) else {
+            return false;
+        };
+        // Read the latest opt-in and website policy after compliance work,
+        // since the block can expire or pause during a profile scan.
+        let action = closing.action(
+            enabled && closing_allowed(app),
+            processes::any_live_target(key, &closing.targets, running),
+            issue,
+            Instant::now(),
+        );
+        if action == CloseAction::Force {
+            closing.quit_dispatched |= close_targets(key, &closing.targets, true);
         }
-        finish_browser_close(app, state, key);
-    }
-}
-
-fn finish_browser_close(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>, key: BrowserKey) {
-    let closing = state.lock().ok().and_then(|mut s| s.closing.remove(&key));
-    let Some(closing) = closing else {
-        return;
+        let closed = if matches!(action, CloseAction::Finish | CloseAction::Cancel) {
+            s.closing.remove(&key)
+        } else {
+            None
+        };
+        (action, closed)
     };
-    if closing.quit_dispatched {
-        emit_browser_closed(app, key, closing.issue);
-        crate::commands::reveal_app(app);
-    } else {
-        emit_grace_resolved(app, key);
+    if let Some(closing) = closed {
+        if action == CloseAction::Finish && closing.quit_dispatched {
+            emit_browser_closed(app, key, closing.issue);
+            crate::commands::reveal_app(app);
+        } else {
+            emit_grace_resolved(app, key);
+        }
     }
+    matches!(action, CloseAction::Wait | CloseAction::Force)
 }
 
-fn maybe_escalate_browser_kill(state: &Arc<Mutex<EnforcerState>>, key: BrowserKey) {
-    let should_kill = state
-        .lock()
-        .ok()
-        .and_then(|s| {
-            s.closing
-                .get(&key)
-                .map(|c| c.quit_dispatched && c.quit_started.elapsed() >= HARD_KILL_AFTER)
-        })
-        .unwrap_or(false);
-    if should_kill {
-        force_kill_browser(key);
+fn closing_allowed(app: &AppHandle) -> bool {
+    enforcement_enabled(app) && website_blocking_active(app)
+}
+
+fn close_targets(key: BrowserKey, targets: &HashSet<BrowserProcess>, force: bool) -> bool {
+    let mut dispatched = false;
+    for &target in targets {
+        dispatched |= processes::close_target(key, target, force);
     }
+    dispatched
 }
 
 fn log_non_compliant(key: BrowserKey, b: &BrowserStatus) {
@@ -890,7 +889,7 @@ fn compliance_issue(
         }
     }
     #[cfg(target_os = "windows")]
-    if !uses_extension {
+    if !uses_extension || crate::blocking_method::uses_automation(app, key.setting_key()) {
         return None;
     }
     let b = key.for_status(scan);
@@ -980,155 +979,15 @@ fn judged_by_extension(uses_automation: bool, uses_accessibility: bool) -> bool 
 /// browsers are never asked about.
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn extension_browsers(
-    running: &std::collections::HashSet<BrowserKey>,
+    running: &HashSet<BrowserKey>,
     uses_grant_method: impl Fn(BrowserKey) -> bool,
-) -> std::collections::HashSet<BrowserKey> {
+) -> HashSet<BrowserKey> {
     running
         .iter()
         .copied()
         .filter(|key| !uses_grant_method(*key))
         .collect()
 }
-
-#[cfg(target_os = "macos")]
-fn running_browsers() -> std::collections::HashSet<BrowserKey> {
-    // Launch Services, not a process-table scan, every tick of a block.
-    BrowserKey::enforced()
-        .iter()
-        .copied()
-        .filter(|key| match key.to_web_automation() {
-            Some(browser) => crate::running_apps::any_running(&[browser.bundle_id()]),
-            None => crate::running_apps::any_running(crate::running_apps::FIREFOX),
-        })
-        .collect()
-}
-
-#[cfg(not(target_os = "macos"))]
-fn running_browsers() -> std::collections::HashSet<BrowserKey> {
-    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
-    let mut sys = System::new();
-    // We only match on process names — skip the default CPU/memory/disk/
-    // exe refresh that `refresh_processes` does for every process.
-    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
-    let mut out = std::collections::HashSet::new();
-    for &key in BrowserKey::enforced() {
-        for name in key.process_names() {
-            let lowered = name.to_ascii_lowercase();
-            if sys.processes().values().any(|p| {
-                p.name()
-                    .to_string_lossy()
-                    .to_ascii_lowercase()
-                    .ends_with(&lowered)
-            }) {
-                out.insert(key);
-                break;
-            }
-        }
-    }
-    out
-}
-
-#[cfg(target_os = "macos")]
-fn dispatch_browser_quit(key: BrowserKey) {
-    // Same primitive the enforcer used before the responsive-state work:
-    // SIGTERM all matching browser processes, then let the 1s loop watch
-    // for disappearance and escalate to SIGKILL if the browser lingers.
-    use sysinfo::{ProcessesToUpdate, Signal, System};
-
-    let names = key.process_names();
-    let matches = |name: &str| -> bool {
-        let lower = name.to_ascii_lowercase();
-        names
-            .iter()
-            .any(|n| lower.ends_with(&n.to_ascii_lowercase()))
-    };
-
-    let mut sys = System::new();
-    sys.refresh_processes(ProcessesToUpdate::All, true);
-    for proc_ in sys.processes().values() {
-        let name = proc_.name().to_string_lossy().to_string();
-        if !matches(&name) {
-            continue;
-        }
-        if let Some(false) = proc_.kill_with(Signal::Term) {
-            log::warn!(
-                "enforcer: SIGTERM failed for pid={} name='{}'",
-                proc_.pid(),
-                name
-            );
-        }
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn force_kill_browser(key: BrowserKey) {
-    use sysinfo::{ProcessesToUpdate, System};
-
-    let names = key.process_names();
-    let matches = |name: &str| -> bool {
-        let lower = name.to_ascii_lowercase();
-        names
-            .iter()
-            .any(|n| lower.ends_with(&n.to_ascii_lowercase()))
-    };
-
-    let mut sys = System::new();
-    sys.refresh_processes(ProcessesToUpdate::All, true);
-    for proc_ in sys.processes().values() {
-        let name = proc_.name().to_string_lossy().to_string();
-        if !matches(&name) {
-            continue;
-        }
-        log::info!("enforcer: SIGKILL pid={} name='{}'", proc_.pid(), name);
-        if !proc_.kill() {
-            log::warn!(
-                "enforcer: SIGKILL failed for pid={} name='{}'",
-                proc_.pid(),
-                name
-            );
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn dispatch_browser_quit(key: BrowserKey) {
-    use crate::windows_process::hidden_command;
-
-    for name in key.process_names() {
-        log::info!("enforcer: requesting graceful close of {name} (taskkill /T)");
-        match hidden_command("taskkill")
-            .args(["/IM", name, "/T"])
-            .output()
-        {
-            Ok(out) => log::debug!(
-                "enforcer: taskkill /IM {name} /T -> exit {:?}",
-                out.status.code()
-            ),
-            Err(e) => log::warn!("enforcer: taskkill /IM {name} /T spawn failed: {e}"),
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn force_kill_browser(key: BrowserKey) {
-    use crate::windows_process::hidden_command;
-
-    for name in key.process_names() {
-        log::info!("enforcer: forcing close of {name} (taskkill /F /T)");
-        if let Err(e) = hidden_command("taskkill")
-            .args(["/F", "/IM", name, "/T"])
-            .output()
-        {
-            log::warn!("enforcer: taskkill /F /IM {name} /T spawn failed: {e}");
-        }
-    }
-}
-
-#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-fn dispatch_browser_quit(_key: BrowserKey) {}
-
-#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-fn force_kill_browser(_key: BrowserKey) {}
 
 #[cfg(all(test, any(target_os = "macos", target_os = "windows")))]
 mod tests;
