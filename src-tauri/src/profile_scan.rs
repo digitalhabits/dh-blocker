@@ -108,8 +108,8 @@ pub struct BrowserStatus {
     /// after app refocus / relaunch without re-reading the protected plist.
     #[serde(rename = "needsFdaAccess", default)]
     pub needs_fda_access: bool,
-    /// macOS Firefox only: native-messaging manifest points at the
-    /// current ReDD Blocker binary (extension blocking bridge).
+    /// Windows and macOS Firefox: the native-messaging host is
+    /// registered and points at the current Blocker installation.
     #[serde(rename = "nativeHostReady", default)]
     pub native_host_ready: bool,
     /// Windows Chromium only: an organisation policy stops the browser

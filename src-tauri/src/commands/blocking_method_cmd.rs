@@ -29,6 +29,10 @@ pub fn set_blocking_method(
     let transaction =
         super::data::DataFileWrite::lock(&path).map_err(|e| format!("lock data: {e}"))?;
     let mut data = read_data(&path).unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+    #[cfg(all(target_os = "windows", not(feature = "system-test")))]
+    if parsed == Method::Extension && !crate::cross_app_consent::has_current_eula(&data) {
+        return Err("Accept the current EULA before setting up a browser extension".to_string());
+    }
     if !data.is_object() {
         data = Value::Object(serde_json::Map::new());
     }
@@ -68,7 +72,7 @@ pub fn set_blocking_method(
 fn apply_side_effects(_app: &AppHandle, browser: &str, method: Method) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        if method == Method::Extension {
+        if !cfg!(feature = "system-test") && method == Method::Extension {
             if let Some(target) = blocking_method::native_host_target(browser) {
                 crate::native_host_install::install_native_host_for(target)
                     .map_err(|e| format!("native-host install for {browser}: {e}"))?;

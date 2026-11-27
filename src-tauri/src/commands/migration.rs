@@ -375,7 +375,7 @@ pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String
         }
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     if let Err(e) = crate::native_host_install::install() {
         log::warn!("native-host install during migration failed: {e}");
     }
