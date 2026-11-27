@@ -32,7 +32,7 @@
 // `native_host::derive_payload` — the same single source of truth the
 // extension's native host and the enforcer use.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::Stdio;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -426,6 +426,7 @@ pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
 
 #[derive(Default)]
 struct ScanState {
+    restored_browsers: HashSet<SupportedBrowser>,
     last_full_pass: Option<Instant>,
     retries: HashMap<SupportedBrowser, RedirectRetries>,
 }
@@ -576,6 +577,7 @@ fn tick_with_io<I: AutomationIo>(
     // later pause/stop/expiry sweeps parked tabs. When enforcement is
     // off and the latch is clear, stay completely idle (no Apple Events).
     if blocking_active {
+        scan.restored_browsers.clear();
         *needs_restore = true;
     } else if !*needs_restore {
         return;
@@ -631,17 +633,14 @@ fn tick_with_io<I: AutomationIo>(
     if full_pass {
         scan.retries.retain(|browser, _| running.contains(browser));
     }
-    let no_automation_browsers = running.is_empty();
-    // Count every action a restore pass *planned*, not just the ones that
-    // reported an error. `apply_actions` wraps each `set URL` in its own
-    // AppleScript `try`, so a stale window/tab index is swallowed and the
-    // batch still returns Ok while the tab stays parked on the block page.
-    // Clearing the latch on Ok would strand that tab until the next block
-    // re-arms it; keeping it armed costs one extra tick and re-plans from a
-    // fresh read.
-    let mut restore_actions = 0usize;
-    let mut scanned = 0usize;
-    for browser in running {
+    if restore_pass {
+        scan.restored_browsers
+            .retain(|browser| running.contains(browser));
+    }
+    for &browser in &running {
+        if restore_pass && scan.restored_browsers.contains(&browser) {
+            continue;
+        }
         // Respect the denial backoff so we don't spawn osascript every
         // second only to get -1743 back. While a block is active, retry
         // sooner so a fresh Automation grant is picked up quickly.
@@ -657,7 +656,6 @@ fn tick_with_io<I: AutomationIo>(
 
         match io.read_tabs(browser) {
             Ok(tabs) => {
-                scanned += 1;
                 io.set_permission(shared, browser, PermState::Granted, Duration::ZERO, now);
                 let mut actions = plan_actions(&tabs, &blocks, block_page_url);
                 let retries = scan.retries.entry(browser).or_default();
@@ -693,10 +691,12 @@ fn tick_with_io<I: AutomationIo>(
                 } else {
                     None
                 };
-                if restore_pass {
-                    restore_actions += actions.len();
-                }
                 if actions.is_empty() {
+                    // A successful Apple Event may have skipped a stale tab. Only
+                    // a fresh scan without a planned restore confirms this browser.
+                    if restore_pass {
+                        scan.restored_browsers.insert(browser);
+                    }
                     log::debug!(
                         "web_automation: {} — {} tab(s), {} blocked domain(s), nothing to do",
                         browser.label(),
@@ -769,13 +769,8 @@ fn tick_with_io<I: AutomationIo>(
         }
     }
 
-    // Idle restore latch: clear only after a full pass that found
-    // nothing left to restore (and we actually scanned, or there were
-    // no automation browsers to scan). Denial-backoff skips must not
-    // clear the latch — retry next tick. Matches the extension's
-    // restoreUnblockedTabs retry-until-clean behavior.
-    if restore_pass && full_pass && restore_actions == 0 && (scanned > 0 || no_automation_browsers)
-    {
+    // Failed reads and permission backoff leave the affected browser pending.
+    if restore_pass && scan.restored_browsers.len() == running.len() {
         *needs_restore = false;
     }
 }
