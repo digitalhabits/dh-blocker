@@ -14,7 +14,7 @@ import { isBlocklistEditFrictionRequired,renderBlocklists, truncateBlocklistName
 import { areSegmentsEqual, getSelectedSchedule, canEditScheduleBetweenBlocks } from './schedule-editor.js';
 import { pad } from './time-inputs.js';
 import { formatScheduleWhenSummary, formatUnlockDurationLabel, getWhenToBlockKind, isEditorInCreateModal, mountFocusSpaceEditor, notifyEditorChanged, populateFocusSpaceEditor, resyncEditorLockState, returnFocusSpaceEditorToPanel } from './focus-space-editor.js';
-import { initializeIOSBlockingState, resetModalScrollPosition, updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth } from './blocking-platform.js';
+import { initializeIOSBlockingState, reconcileIOSManualBlockingState, resetModalScrollPosition, updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth } from './blocking-platform.js';
 import { resetWebsitesImportMenuPosition } from './website-input.js';
 import { bindUiZoomLayoutObserver, scheduleUiZoomResponsiveLayout, usesStackSettingsPlacement } from './theme.js';
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
@@ -1011,6 +1011,19 @@ export function deselectBlocklist() {
     handleBlocklistSelect({ target: blocklistSelect });
 }
 
+async function applyAndSaveIOSManualPolicy(draft) {
+    try {
+        const result = await syncBlockingState({ appData: draft });
+        if (!result.success) throw new Error(result.error);
+        await saveData(draft);
+    } catch (error) {
+        // The native command may already have applied the draft. Restore the
+        // saved manual policy while keeping existing wake-ups and schedules.
+        await reconcileIOSManualBlockingState();
+        throw error;
+    }
+}
+
 /**
  * Turn a Manual space on: create its always-on block and enforce it. No
  * confirmation step — the effort barrier is on the way out, not in. Returns
@@ -1049,24 +1062,20 @@ export async function startManualBlock(blocklistId) {
         await initializeIOSBlockingState();
     }
 
+    if (isIOS) {
+        try {
+            await applyAndSaveIOSManualPolicy({
+                ...state.appData,
+                activeBlocks: [...state.appData.activeBlocks, block],
+            });
+        } catch (error) {
+            alert('Could not start block: ' + (error?.message || String(error)));
+            return false;
+        }
+    }
     state.appData.activeBlocks.push(block);
     state.activatedBlockIds.add(block.id);
-    try {
-        if (isIOS) {
-            const result = await syncBlockingState();
-            if (!result.success) throw new Error(result.error);
-        }
-        await saveData();
-    } catch (error) {
-        if (!isIOS) throw error;
-        state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-        state.activatedBlockIds.delete(block.id);
-        // A shield may already have been applied when persistence failed.
-        // Rebuild from the remaining blocks and leave the schedule channel alone.
-        await syncBlockingState();
-        alert('Could not start block: ' + (error?.message || String(error)));
-        return false;
-    }
+    if (!isIOS) await saveData();
 
     await updateBlockedApps();
     render();
@@ -1469,16 +1478,34 @@ export async function cancelIOSRestart(block) {
 
 /** Turn a paused Manual space back on. No challenge: this falls toward blocking. */
 export async function resumePausedBlock(block) {
-    if (!block) return;
+    if (!block) return false;
+    if (state.isIOS) {
+        const resumed = { ...block };
+        delete resumed.isPaused;
+        delete resumed.pauseEndTime;
+        const draft = {
+            ...state.appData,
+            activeBlocks: state.appData.activeBlocks.map(entry => entry.id === block.id ? resumed : entry),
+        };
+        try {
+            await applyAndSaveIOSManualPolicy(draft);
+        } catch (error) {
+            alert('Could not resume block: ' + (error?.message || String(error)));
+            return false;
+        }
+    }
     delete block.isPaused;
     delete block.pauseEndTime;
-    await cancelIOSRestart(block);
-    await saveData();
-    await syncIOSSchedules();
-    await syncBlockingState();
+    if (state.isIOS) {
+        await cancelIOSRestart(block);
+    } else {
+        await saveData();
+        await syncBlockingState();
+    }
     await updateBlockedApps();
     render();
     refreshSelectedBlocklistUi();
+    return true;
 }
 
 /** Turn a paused Daily / Weekly space back on. No challenge: this falls toward blocking. */
@@ -1521,6 +1548,7 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
     stopAppBlockingLetsGoVoice();
     console.log('[stop] Applying stop', { blocklistId, kind: outcome.kind, until: outcome.until || null });
     let restoreTimedIOSBlocking = null;
+    let restoreIOSRestartAfterSaveFailure = null;
 
     // Timed iOS stops are staged until both the resume payload (manual block)
     // and native one-off activity have explicitly succeeded. The deadline in
@@ -1529,6 +1557,8 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
     if (state.isIOS && outcome.kind === 'unlocked') {
         const target = schedule || block;
         const wasPaused = target?.isPaused === true;
+        const previousDeadline = target.pauseEndTime;
+        const activityName = schedule ? 'redd-schedule-resume-' + schedule.id : 'redd-block-resume-' + block.id;
         const restoreBlockingAfterRegistrationFailure = async () => {
             delete target.isPaused;
             delete target.pauseEndTime;
@@ -1549,6 +1579,21 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
             }
         };
         restoreTimedIOSBlocking = restoreBlockingAfterRegistrationFailure;
+        restoreIOSRestartAfterSaveFailure = async () => {
+            if (wasPaused && previousDeadline > Date.now()) {
+                try {
+                    const result = await tauriAPI.screentimeRegisterOneOffActivity(activityName, previousDeadline);
+                    if (result?.success === true) return;
+                    console.warn('[iOS] Could not restore the previous automatic restart:', result?.error);
+                } catch (error) {
+                    console.warn('[iOS] Could not restore the previous automatic restart:', error);
+                }
+            }
+            if (block) await cancelIOSRestart(block);
+            // The original timed restart is no longer recoverable. Fall towards
+            // blocking so a failed reschedule cannot extend the saved pause.
+            if (wasPaused && previousDeadline) await restoreBlockingAfterRegistrationFailure();
+        };
         const iosPayload = block ? getBlocklistIOSPayload(blocklist) : null;
         let registrationAttempted = false;
         try {
@@ -1568,7 +1613,7 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
             }
             registrationAttempted = true;
             const registrationResult = await tauriAPI.screentimeRegisterOneOffActivity(
-                schedule ? 'redd-schedule-resume-' + schedule.id : 'redd-block-resume-' + block.id,
+                activityName,
                 outcome.until,
             );
             if (registrationResult?.success !== true) {
@@ -1611,9 +1656,8 @@ export async function stopFocusSpaceTarget({ block = null, schedule = null, minu
                 if (Object.hasOwn(previousSchedule, key)) schedule[key] = previousSchedule[key];
                 else delete schedule[key];
             }
-        } else if (stageIOSManual && !block.isPaused) {
-            await cancelIOSRestart(block);
         }
+        await restoreIOSRestartAfterSaveFailure?.();
         throw error;
     }
     if (stageIOSManual) {

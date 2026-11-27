@@ -42,7 +42,29 @@ struct ScheduleDataTests {
         entry.isActiveNow(now: entry.startCallbackEvaluationTime(now: now))
     }
 
+    private static func checkOrphanedManualRestarts() {
+        let suite = "ManualRestartsTest.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let marker = Data([1])
+        defaults.set(marker, forKey: resumePayloadKeyPrefix + "saved-pause")
+        defaults.set(marker, forKey: resumePayloadKeyPrefix + "removed-block")
+        defaults.set(marker, forKey: blockEndStateKeyPrefix + "removed-block")
+        defaults.set(marker, forKey: multiScheduleDataKey)
+
+        let removed = SharedManualBlockStore.removeOrphanedResumePayloads(retaining: ["saved-pause"], defaults: defaults)
+        check(removed == ["removed-block"] && defaults.data(forKey: resumePayloadKeyPrefix + "removed-block") == nil,
+              "manual reconciliation invalidates a removed block's pending restart")
+        check(defaults.data(forKey: resumePayloadKeyPrefix + "saved-pause") == marker,
+              "manual reconciliation retains a saved timed pause")
+        check(defaults.data(forKey: multiScheduleDataKey) == marker
+              && defaults.data(forKey: blockEndStateKeyPrefix + "removed-block") == marker,
+              "manual reconciliation preserves other App Group channels")
+    }
+
     static func main() {
+        checkOrphanedManualRestarts()
+
         // Start-callback tolerance
         let morning = entry((11, 0), (13, 0))
         check(enforcesOnStart(morning, now: at(10, 59, 59, ns: 800_000_000)), "start 0.2 s early enforces")

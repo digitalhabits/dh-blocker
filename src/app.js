@@ -15,7 +15,7 @@ import { handlePopoverOutsideClick } from './time-inputs.js';
 import { applyFocusSpaceEditorLanguage, confirmDiscardEditorEdits, editorHasUnsavedEdits, setupFocusSpaceEditor } from './focus-space-editor.js';
 import { loadData, saveData, syncBlockingState } from './persistence.js';
 import { isBackgroundClick } from './background-click.js';
-import { updateBlockedApps, acceptEula, checkScreentimeAuth, detectPlatform, ensureInstalledAppsCache, initializeIOSBlockingState, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility } from './blocking-platform.js';
+import { updateBlockedApps, acceptEula, checkScreentimeAuth, detectPlatform, ensureInstalledAppsCache, initializeIOSBlockingState, reconcileIOSManualBlockingState, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility } from './blocking-platform.js';
 import { applyEnforcementDescCopy, applyMacAutomationIntroCopy, ensureExtensionSetupOnboardingShown, hasAcceptedEula, resetDevOnlyEulaAcceptance, returnToWelcomeFromEula, runDesktopOnboarding, runInitialOnboardingSequence, setupMacAutomationIntroModal, syncMigrationPostBackButtonVisibility, syncSetupBannerHeadline, welcomeFirefoxInstalled } from './onboarding.js';
 import {
     ALL_BLOCKING_METHOD_KEYS,
@@ -392,7 +392,7 @@ function setupEventListeners() {
             void checkScreentimeAuth().then(async () => {
                 if (!state.screentimeAuthorized) return;
                 if (!wasAuthorised) await initializeIOSBlockingState();
-                else await syncBlockingState();
+                else await reconcileIOSManualBlockingState();
                 await syncIOSStartWarnings();
             }).catch(error => console.warn('[foreground] Screen Time reconciliation failed:', error));
         });

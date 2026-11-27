@@ -85,6 +85,7 @@ export const SETTINGS_TRANSLATIONS = {
             'Screen Time access was denied. Please tap the button again, or enable Digital Habits: Blocker in Settings > Screen Time > Apps With Screen Time Access.',
         iosScreentimeFailedNoteFmt: 'Screen Time access failed: {error}',
         iosAutomaticRestartFailed: 'Automatic restart could not be scheduled. Please try again.',
+        iosManualSyncFailedFmt: 'Screen Time could not update manual blocking. Reopen the app to retry. {error}',
         // iOS start warnings (notifications before a focus space starts)
         iosNotificationsOnboardingTitle: 'Get a heads-up before blocking begins',
         iosNotificationsOnboardingBody: 'Receive a notification 2 minutes before a scheduled focus space starts so you have time to finish what you\'re doing.',
@@ -1063,6 +1064,7 @@ export const SETTINGS_TRANSLATIONS = {
             'Adgang til Screen Time blev nægtet. Tryk på knappen igen, eller slå Digital Habits: Blocker til under Indstillinger > Skærmtid > Apps med skærmtid-adgang.',
         iosScreentimeFailedNoteFmt: 'Screen Time-adgang mislykkedes: {error}',
         iosAutomaticRestartFailed: 'Automatisk genstart kunne ikke planlægges. Prøv igen.',
+        iosManualSyncFailedFmt: 'Skærmtid kunne ikke opdatere manuel blokering. Åbn appen igen for at prøve igen. {error}',
         // iOS start warnings (notifications before a focus space starts)
         iosNotificationsOnboardingTitle: 'Få besked, før blokeringen begynder',
         iosNotificationsOnboardingBody: 'Få en notifikation 2 minutter før et planlagt fokusrum starter, så du har tid til at gøre det færdigt, du er i gang med.',
@@ -2009,6 +2011,7 @@ export const SETTINGS_TRANSLATIONS = {
         iosScreentimeDeniedNote: '屏幕使用时间授权被拒绝。请再次点按按钮，或在“设置 > 屏幕使用时间 > 具有屏幕使用时间访问权限的 App”中启用 Digital Habits: Blocker。',
         iosScreentimeFailedNoteFmt: '屏幕使用时间访问失败：{error}',
         iosAutomaticRestartFailed: '无法安排自动重新启用。请重试。',
+        iosManualSyncFailedFmt: '屏幕使用时间无法更新手动屏蔽。请重新打开应用重试。{error}',
         // iOS start warnings (notifications before a focus space starts)
         iosNotificationsOnboardingTitle: '在屏蔽开始前收到提醒',
         iosNotificationsOnboardingBody: '在已计划的专注空间开始前 2 分钟收到通知，让你有时间完成手头的事。',
