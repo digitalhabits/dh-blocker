@@ -11,59 +11,71 @@ LOG=/var/log/redd-block-pkg-preinstall.log
 exec > >(tee -a "$LOG") 2>&1
 echo "=== preinstall $(date '+%F %T') ==="
 
-# Stop any running app process. Order:
-#    - polite quit (only when the .app is already on disk — on a
-#      first-time install preinstall runs before the payload lands, so
-#      `tell application "…"` would make macOS show a
-#      "Where is …?" file picker; skip it in that case),
-#    - SIGTERM by binary path / process name,
-#    - 2 s breather,
-#    - SIGKILL stragglers including --native-host subprocesses spawned
-#      by browsers (those hold open file handles inside the .app
-#      bundle and would block the payload swap).
-APP_PATH='/Applications/Digital Habits Blocker.app'
-LEGACY_REDD_BLOCKER_APP_PATH='/Applications/ReDD Blocker.app'
-LEGACY_REDD_BLOCK_APP_PATH='/Applications/ReDD Block.app'
-FRISTED_APP_PATH='/Applications/Fristed.app'
+SCRIPT_DIR="$(dirname "$0")"
+# shellcheck source=scripts/macos-pkg/scripts/sessions.sh
+source "$SCRIPT_DIR/sessions.sh" || exit 1
 
-if [ -d "$APP_PATH" ]; then
-    osascript -e 'tell application id "com.reddblock" to quit' 2>/dev/null || true
-    osascript -e 'tell application "Digital Habits Blocker" to quit' 2>/dev/null || true
-fi
-if [ -d "$LEGACY_REDD_BLOCKER_APP_PATH" ]; then
-    osascript -e 'tell application id "com.reddblock" to quit' 2>/dev/null || true
-    osascript -e 'tell application "ReDD Blocker" to quit' 2>/dev/null || true
-fi
-if [ -d "$LEGACY_REDD_BLOCK_APP_PATH" ]; then
-    osascript -e 'tell application "ReDD Block" to quit' 2>/dev/null || true
-fi
-if [ -d "$FRISTED_APP_PATH" ]; then
-    osascript -e 'tell application id "com.reddblock" to quit' 2>/dev/null || true
-    osascript -e 'tell application "Fristed" to quit' 2>/dev/null || true
+# Keep the restart list private to this transaction. If it cannot be created,
+# leave the running app alone and stop before replacing its bundle.
+if ! (umask 077; set -o noclobber; : > "$RESTART_UIDS_FILE"); then
+    echo "could not create the package restart list"
+    exit 1
 fi
 
-# `redd-block` is the Tauri binary stem inside the .app; that's the
-# name `ps` shows, not always the bundle display name. Match all known
-# install locations as a belt-and-braces.
-for app_path in "$APP_PATH" "$LEGACY_REDD_BLOCKER_APP_PATH" "$LEGACY_REDD_BLOCK_APP_PATH" "$FRISTED_APP_PATH"; do
-    pgrep -f "${app_path}/Contents/MacOS/redd-block" | xargs -r kill -TERM 2>/dev/null
-done
-pkill -x 'redd-block' 2>/dev/null
-pkill -x 'Digital Habits Blocker' 2>/dev/null
-pkill -x 'ReDD Blocker' 2>/dev/null
-pkill -x 'ReDD Block' 2>/dev/null
-pkill -x 'Fristed' 2>/dev/null
+is_installed_app_executable() {
+    local app_path="${1%/Contents/MacOS/*}"
+    case "$app_path" in
+        "$APP_PATH"|"$LEGACY_REDD_BLOCKER_APP_PATH"|"$LEGACY_REDD_BLOCK_APP_PATH"|"$FRISTED_APP_PATH")
+            local bundle_name="${app_path##*/}"
+            [[ "$1" == "$app_path/Contents/MacOS/redd-block" ||
+               "$1" == "$app_path/Contents/MacOS/${bundle_name%.app}" ]]
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+is_native_host() {
+    # Keep the browser argv markers aligned with native_host::is_native_host_invocation.
+    [[ "$1" =~ (^|[[:space:]])(--native-host|mindshield@example\.com)([[:space:]]|$) ||
+       "$1" =~ (^|[[:space:]])(chrome-extension://|--parent-window=) ]]
+}
+
+stop_install_processes() {
+    local signal="$1"
+    local processes pid uid executable args restore_session process current_uid current_executable
+    if ! processes=$(/bin/ps -axww -o pid= -o uid= -o comm=); then
+        echo "could not enumerate running apps for SIG$signal"
+        return
+    fi
+    while read -r pid uid executable; do
+        is_installed_app_executable "$executable" || continue
+        [[ "$pid" =~ ^[1-9][0-9]*$ && "$pid" != "$$" ]] || continue
+        args=$(/bin/ps -ww -p "$pid" -o args=) || continue
+        # Browser-launched native hosts also hold the old bundle open.
+        # Browsers reconnect on demand. Restore only GUI app sessions.
+        restore_session=false
+        if ! is_native_host "$args" && is_gui_user "$uid"; then
+            restore_session=true
+        fi
+
+        # Recheck the owner and executable because macOS can recycle a PID.
+        process=$(/bin/ps -ww -p "$pid" -o uid= -o comm=) || continue
+        read -r current_uid current_executable <<< "$process"
+        [[ "$current_uid" == "$uid" && "$current_executable" == "$executable" ]] || continue
+        if $restore_session && ! printf '%s\n' "$uid" >> "$RESTART_UIDS_FILE"; then
+            echo "could not record GUI uid $uid; leaving app process $pid running"
+            continue
+        fi
+        kill "-$signal" "$pid" 2>/dev/null
+    done <<< "$processes"
+    return 0
+}
+
+# The app vetoes ordinary AppleScript quit requests. Signal the exact
+# installed executables, including old names, with time to exit first.
+stop_install_processes TERM
 sleep 2
-
-# Anything still running gets SIGKILL'd.
-for app_path in "$APP_PATH" "$LEGACY_REDD_BLOCKER_APP_PATH" "$LEGACY_REDD_BLOCK_APP_PATH" "$FRISTED_APP_PATH"; do
-    pgrep -f "${app_path}/Contents/MacOS/redd-block" | xargs -r kill -KILL 2>/dev/null
-done
-pkill -KILL -x 'redd-block' 2>/dev/null
-pkill -KILL -x 'Digital Habits Blocker' 2>/dev/null
-pkill -KILL -x 'ReDD Blocker' 2>/dev/null
-pkill -KILL -x 'ReDD Block' 2>/dev/null
-pkill -KILL -x 'Fristed' 2>/dev/null
+stop_install_processes KILL
 sleep 1
 
 # Clean up stale Tauri DMG temp files that earlier builds of this
