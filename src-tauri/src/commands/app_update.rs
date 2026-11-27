@@ -258,7 +258,7 @@ async fn download_file(
     Ok(())
 }
 
-async fn verify_file_sha256(path: &Path, expected: &str) -> Result<(), String> {
+async fn file_matches_sha256(path: &Path, expected: &str) -> Result<bool, String> {
     let mut file = tokio::fs::File::open(path)
         .await
         .map_err(|e| format!("Could not read downloaded installer: {e}"))?;
@@ -278,14 +278,7 @@ async fn verify_file_sha256(path: &Path, expected: &str) -> Result<(), String> {
     }
 
     let actual = format!("{:x}", hasher.finalize());
-    if actual.eq_ignore_ascii_case(expected) {
-        Ok(())
-    } else {
-        Err(
-            "Download failed verification — the installer file may be corrupted or tampered with"
-                .into(),
-        )
-    }
+    Ok(actual.eq_ignore_ascii_case(expected))
 }
 
 #[cfg(target_os = "windows")]
@@ -334,17 +327,26 @@ fn create_private_cache_directory(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-async fn verify_cached_installer(path: &Path, expected: &str) -> Result<bool, String> {
+enum CachedInstaller {
+    Missing,
+    Verified,
+    Corrupt,
+}
+
+async fn inspect_cached_installer(path: &Path, expected: &str) -> Result<CachedInstaller, String> {
     let metadata = match tokio::fs::symlink_metadata(path).await {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(CachedInstaller::Missing),
         Err(error) => return Err(format!("Could not inspect the cached installer: {error}")),
     };
     if !metadata.is_file() || cache_entry_is_link(&metadata) {
         return Err("Cached installer must be a regular file".into());
     }
-    verify_file_sha256(path, expected).await?;
-    Ok(true)
+    if file_matches_sha256(path, expected).await? {
+        Ok(CachedInstaller::Verified)
+    } else {
+        Ok(CachedInstaller::Corrupt)
+    }
 }
 
 async fn cache_installer<F>(
@@ -360,9 +362,21 @@ where
     create_private_cache_directory(cache_root)?;
     let directory = cache_root.join(&digest);
     create_private_cache_directory(&directory)?;
-    let destination = directory.join(filename);
-    if verify_cached_installer(&destination, &digest).await? {
-        return Ok(destination);
+    let mut destination = directory.join(filename);
+    let mut repair_number = 0_u64;
+    loop {
+        match inspect_cached_installer(&destination, &digest).await? {
+            CachedInstaller::Missing => break,
+            CachedInstaller::Verified => return Ok(destination),
+            CachedInstaller::Corrupt => {
+                // An existing installer may still have this path open. Publish
+                // the replacement in a stable slot shared by concurrent retries.
+                repair_number += 1;
+                let repair_directory = directory.join(format!("repair-{repair_number}"));
+                create_private_cache_directory(&repair_directory)?;
+                destination = repair_directory.join(filename);
+            }
+        }
     }
 
     // Each in-flight download owns its staging file. Publish verified bytes
@@ -373,10 +387,18 @@ where
         .map_err(|error| format!("Could not stage the installer: {error}"))?
         .into_parts();
     download(tokio::fs::File::from_std(file)).await?;
-    verify_file_sha256(&staging, &digest).await?;
+    if !file_matches_sha256(&staging, &digest).await? {
+        return Err(
+            "Download failed verification — the installer file may be corrupted or tampered with"
+                .into(),
+        );
+    }
     if let Err(error) = staging.persist_noclobber(&destination) {
         // A concurrent download may have published the same installer first.
-        if !verify_cached_installer(&destination, &digest).await? {
+        if !matches!(
+            inspect_cached_installer(&destination, &digest).await?,
+            CachedInstaller::Verified
+        ) {
             return Err(format!("Could not publish the installer: {}", error.error));
         }
     }
@@ -782,9 +804,15 @@ mod tests {
         let staging = tempfile::tempdir().unwrap();
         let file = staging.path().join("installer.exe");
         std::fs::write(&file, FIXTURE_INSTALLER).unwrap();
-        assert!(tauri::async_runtime::block_on(verify_file_sha256(&file, FIXTURE_SHA256)).is_ok());
+        assert_eq!(
+            tauri::async_runtime::block_on(file_matches_sha256(&file, FIXTURE_SHA256)),
+            Ok(true)
+        );
         std::fs::write(&file, b"changed installer").unwrap();
-        assert!(tauri::async_runtime::block_on(verify_file_sha256(&file, FIXTURE_SHA256)).is_err());
+        assert_eq!(
+            tauri::async_runtime::block_on(file_matches_sha256(&file, FIXTURE_SHA256)),
+            Ok(false)
+        );
     }
 
     async fn write_fixture(mut file: tokio::fs::File, bytes: &[u8]) -> Result<(), String> {
@@ -836,7 +864,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_download_leaves_no_installer_and_tampered_cache_is_rejected() {
+    fn failed_download_leaves_no_installer_and_a_retry_repairs_corrupt_cache() {
         let staging = tempfile::tempdir().unwrap();
         let cache = staging.path().join("cache");
         tauri::async_runtime::block_on(async {
@@ -849,15 +877,54 @@ mod tests {
             let digest_dir = cache.join(FIXTURE_SHA256);
             assert_eq!(std::fs::read_dir(&digest_dir).unwrap().count(), 0);
 
-            let dest = digest_dir.join(filename);
-            std::fs::write(&dest, b"changed cached installer").unwrap();
-            let result = cache_installer(&cache, filename, FIXTURE_SHA256, |_| async {
-                panic!("a cache file must never be overwritten")
+            let corrupt = digest_dir.join(filename);
+            std::fs::write(&corrupt, b"changed cached installer").unwrap();
+            let running = std::fs::File::open(&corrupt).unwrap();
+            let repaired = cache_installer(&cache, filename, FIXTURE_SHA256, |file| {
+                write_fixture(file, FIXTURE_INSTALLER)
             })
-            .await;
-            assert!(result.is_err());
-            assert_eq!(std::fs::read(&dest).unwrap(), b"changed cached installer");
+            .await
+            .unwrap();
+            assert_ne!(repaired, corrupt);
+            assert_eq!(std::fs::read(&repaired).unwrap(), FIXTURE_INSTALLER);
+            assert_eq!(
+                std::fs::read(&corrupt).unwrap(),
+                b"changed cached installer"
+            );
+            drop(running);
+
+            let retry = cache_installer(&cache, filename, FIXTURE_SHA256, |_| async {
+                panic!("retry should reuse the repaired installer")
+            })
+            .await
+            .unwrap();
+            assert_eq!(retry, repaired);
         });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_to_a_valid_installer_is_rejected_instead_of_repaired() {
+        let staging = tempfile::tempdir().unwrap();
+        let mirror = staging.path().join("outside-installer.exe");
+        std::fs::write(&mirror, FIXTURE_INSTALLER).unwrap();
+        let cache = staging.path().join("cache");
+        create_private_cache_directory(&cache).unwrap();
+        let directory = cache.join(FIXTURE_SHA256);
+        create_private_cache_directory(&directory).unwrap();
+        let filename = "installer.exe";
+        std::os::unix::fs::symlink(&mirror, directory.join(filename)).unwrap();
+
+        let result = tauri::async_runtime::block_on(cache_installer(
+            &cache,
+            filename,
+            FIXTURE_SHA256,
+            |_| async { panic!("a redirection must not trigger a repair download") },
+        ));
+        assert_eq!(
+            result,
+            Err("Cached installer must be a regular file".into())
+        );
     }
 
     #[cfg(unix)]
