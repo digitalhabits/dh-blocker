@@ -75,6 +75,7 @@
 //
 // Safari is out of scope (native bundle handles its own extension).
 
+#[cfg(not(target_os = "windows"))]
 use std::path::PathBuf;
 
 use serde::Serialize;
@@ -200,9 +201,8 @@ fn firefox_policies_json_path() -> PathBuf {
     PathBuf::from("/Applications/Firefox.app/Contents/Resources/distribution/policies.json")
 }
 
-/// Drop the install hint for every supported browser. Idempotent —
-/// running it on every app launch keeps the hints in place and
-/// re-creates them if the user removed any manually.
+/// Drop the install hint for every supported browser.
+#[cfg(not(target_os = "windows"))]
 pub fn install() -> std::io::Result<()> {
     // macOS installs no hints at all: the Firefox extension is set up by hand
     // and the Chromium browsers are driven by Automation, not the extension.
@@ -224,21 +224,70 @@ pub fn install() -> std::io::Result<()> {
             }
             log::info!("tcc-probe: extension_install::install_chromium({browser:?}) done");
         }
-        #[cfg(target_os = "windows")]
-        if let Err(e) = install_firefox_registry() {
-            log::warn!("extension-install Firefox registry policy failed: {e}");
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            log::info!(
-                "tcc-probe: extension_install::maybe_scrub_external_uninstalls_once() start"
-            );
-            maybe_scrub_external_uninstalls_once();
-            log::info!("tcc-probe: extension_install::maybe_scrub_external_uninstalls_once() done");
-        }
+        log::info!("tcc-probe: extension_install::maybe_scrub_external_uninstalls_once() start");
+        maybe_scrub_external_uninstalls_once();
+        log::info!("tcc-probe: extension_install::maybe_scrub_external_uninstalls_once() done");
         log::info!("tcc-probe: extension_install::install() exited");
         Ok(())
     }
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn install_windows_hint_for(
+    browser: crate::native_host_install::BrowserTarget,
+) -> std::io::Result<()> {
+    let (key, values) = windows_hint(browser);
+    for (name, value) in values {
+        write_hkcu_named_value(&key, name, value)?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn matches_windows_hint(browser: crate::native_host_install::BrowserTarget) -> bool {
+    let (key, values) = windows_hint(browser);
+    values
+        .iter()
+        .all(|(name, value)| hkcu_named_value_matches(&key, name, value))
+}
+
+#[cfg(target_os = "windows")]
+fn windows_hint(
+    browser: crate::native_host_install::BrowserTarget,
+) -> (String, &'static [(&'static str, &'static str)]) {
+    use crate::native_host_install::BrowserTarget as HostTarget;
+    let chromium = match browser {
+        HostTarget::Chrome => BrowserTarget::Chrome,
+        HostTarget::Brave => BrowserTarget::Brave,
+        HostTarget::Edge => BrowserTarget::Edge,
+        HostTarget::Firefox => {
+            return (
+                format!(r"Software\Policies\Mozilla\Firefox\ExtensionSettings\{FIREFOX_EXT_ID}"),
+                &[
+                    ("installation_mode", "force_installed"),
+                    ("install_url", FIREFOX_AMO_XPI_URL),
+                    ("private_browsing", "true"),
+                ],
+            );
+        }
+    };
+    let values: &[_] = match chromium {
+        BrowserTarget::Edge => &[
+            ("installation_mode", "force_installed"),
+            ("update_url", EDGE_UPDATE_URL),
+        ],
+        _ => &[
+            ("installation_mode", "force_installed"),
+            ("update_url", CHROMIUM_UPDATE_URL),
+        ],
+    };
+    (
+        format!(
+            r"{}\{CHROMIUM_EXT_ID}",
+            chromium.policy_extension_settings_root()
+        ),
+        values,
+    )
 }
 
 /// Remove the install hint for every supported browser. Safe to call
@@ -263,13 +312,9 @@ pub fn uninstall() -> std::io::Result<()> {
 // ---- Chromium-family (Chrome / Brave / Edge) -------------------------------
 
 /// Drop the External Extensions install hint for one Chromium browser.
+#[cfg(not(target_os = "windows"))]
 pub fn install_chromium_hint(browser: BrowserTarget) -> std::io::Result<()> {
-    #[cfg(not(target_os = "windows"))]
-    {
-        maybe_scrub_external_uninstalls_once();
-        install_chromium(browser)
-    }
-    #[cfg(target_os = "windows")]
+    maybe_scrub_external_uninstalls_once();
     install_chromium(browser)
 }
 
@@ -367,31 +412,6 @@ fn uninstall_chromium(browser: BrowserTarget) -> std::io::Result<()> {
         );
     }
     cleanup_failed_policy_plist_entry(browser);
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
-fn install_chromium(browser: BrowserTarget) -> std::io::Result<()> {
-    // ExtensionSettings policy: HKCU\Software\Policies\<vendor>\<browser>\ExtensionSettings\<ext-id>.
-    // Mandatory-scope on Windows (HKCU\Software\Policies\* counts as
-    // Mandatory without admin), so we get force-install + locked
-    // install + auto-uninstall hygiene. On macOS the same approach
-    // tops out at Recommended scope and Chromium ignores the
-    // force-install directive — see `install_chromium` above.
-    let our_key = format!(
-        r"{}\{}",
-        browser.policy_extension_settings_root(),
-        CHROMIUM_EXT_ID
-    );
-    let update_url = match browser {
-        BrowserTarget::Edge => EDGE_UPDATE_URL,
-        _ => CHROMIUM_UPDATE_URL,
-    };
-    write_hkcu_named_value(&our_key, "installation_mode", "force_installed")?;
-    write_hkcu_named_value(&our_key, "update_url", update_url)?;
-    log::info!(
-        "extension-install: ExtensionSettings policy written for {browser:?} at HKCU\\{our_key}"
-    );
     Ok(())
 }
 
@@ -678,17 +698,71 @@ fn uninstall_firefox_policy() -> std::io::Result<()> {
 }
 
 #[cfg(target_os = "windows")]
-fn write_hkcu_named_value(path: &str, value_name: &str, value: &str) -> std::io::Result<()> {
+fn hkcu_named_value_matches(path: &str, value_name: &str, value: &str) -> bool {
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::ERROR_SUCCESS;
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_SZ};
+
+    let subkey = to_wide(path);
+    let name_wide = to_wide(value_name);
+    let data_wide = to_wide(value);
+    let bytes_len = (data_wide.len() * 2) as u32;
+    let mut current = vec![0u16; data_wide.len()];
+    let mut current_len = bytes_len;
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            PCWSTR(subkey.as_ptr()),
+            PCWSTR(name_wide.as_ptr()),
+            RRF_RT_REG_SZ,
+            None,
+            Some(current.as_mut_ptr().cast()),
+            Some(&mut current_len),
+        )
+    };
+    status == ERROR_SUCCESS && current_len == bytes_len && current == data_wide
+}
+
+#[cfg(target_os = "windows")]
+fn write_hkcu_named_value(path: &str, value_name: &str, value: &str) -> std::io::Result<()> {
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, ERROR_SUCCESS};
     use windows::Win32::System::Registry::{
-        RegCloseKey, RegCreateKeyExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE,
-        REG_OPTION_NON_VOLATILE, REG_SZ,
+        RegCloseKey, RegCreateKeyExW, RegGetValueW, RegSetValueExW, HKEY, HKEY_CURRENT_USER,
+        KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ, RRF_RT_ANY,
     };
 
+    if hkcu_named_value_matches(path, value_name, value) {
+        return Ok(());
+    }
+    let subkey = to_wide(path);
+    let name_wide = to_wide(value_name);
+    let data_wide = to_wide(value);
+    let bytes_len = (data_wide.len() * 2) as u32;
     unsafe {
+        let mut existing_len = 0;
+        let status = RegGetValueW(
+            HKEY_CURRENT_USER,
+            PCWSTR(subkey.as_ptr()),
+            PCWSTR(name_wide.as_ptr()),
+            RRF_RT_ANY,
+            None,
+            None,
+            Some(&mut existing_len),
+        );
+        // A prior ownership record permits restoring missing values. A
+        // different live value may now be managed by someone else.
+        if status == ERROR_SUCCESS {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!("preserving existing browser policy value {path}\\{value_name}"),
+            ));
+        }
+        if status != ERROR_FILE_NOT_FOUND && status != ERROR_PATH_NOT_FOUND {
+            return Err(std::io::Error::from_raw_os_error(status.0 as i32));
+        }
+
         let mut hkey: HKEY = HKEY::default();
-        let subkey = to_wide(path);
         let status = RegCreateKeyExW(
             HKEY_CURRENT_USER,
             PCWSTR(subkey.as_ptr()),
@@ -705,9 +779,6 @@ fn write_hkcu_named_value(path: &str, value_name: &str, value: &str) -> std::io:
                 "RegCreateKeyExW failed: {status:?}"
             )));
         }
-        let name_wide = to_wide(value_name);
-        let data_wide = to_wide(value);
-        let bytes_len = (data_wide.len() * 2) as u32;
         let data_bytes =
             std::slice::from_raw_parts(data_wide.as_ptr() as *const u8, bytes_len as usize);
         let status = RegSetValueExW(
@@ -756,31 +827,6 @@ fn to_wide(s: &str) -> Vec<u16> {
 
 // ---- Firefox (Windows registry policy) --------------------------------------
 
-/// Force-install the ReDD Focus extension in Firefox via Windows
-/// registry policies. Firefox reads `ExtensionSettings` from
-/// `HKCU\Software\Policies\Mozilla\Firefox\ExtensionSettings\<addon-id>`
-/// on launch — same Mandatory-scope mechanism as Chromium on Windows.
-/// Unlike Chromium, Firefox's schema supports `private_browsing` to
-/// auto-grant private-window access (no manual toggle needed).
-///
-/// Idempotent: re-running overwrites the same keys with the same values.
-#[cfg(target_os = "windows")]
-fn install_firefox_registry() -> std::io::Result<()> {
-    let our_key = format!(
-        r"Software\Policies\Mozilla\Firefox\ExtensionSettings\{}",
-        FIREFOX_EXT_ID
-    );
-    write_hkcu_named_value(&our_key, "installation_mode", "force_installed")?;
-    write_hkcu_named_value(&our_key, "install_url", FIREFOX_AMO_XPI_URL)?;
-    // Auto-grant private-browsing access so the extension works in
-    // private windows without the user toggling it in about:addons.
-    // Firefox treats any non-empty REG_SZ as truthy for boolean policy
-    // fields; "true" is the canonical spelling.
-    write_hkcu_named_value(&our_key, "private_browsing", "true")?;
-    log::info!("extension-install: Firefox registry policy written at HKCU\\{our_key}");
-    Ok(())
-}
-
 /// Remove the Firefox extension policy keys from the registry.
 #[cfg(target_os = "windows")]
 fn uninstall_firefox_registry() -> std::io::Result<()> {
@@ -792,56 +838,21 @@ fn uninstall_firefox_registry() -> std::io::Result<()> {
     Ok(())
 }
 
-/// Tauri command — exposed for manual re-trigger from the UI (e.g. an
-/// onboarding "Reinstall hints" button) and for tests. The startup
-/// auto-install in `lib.rs::run` is marker-gated to one-shot per
-/// machine; this command always runs, ignoring the marker, and also
-/// re-drops the marker on success so a future startup stays silent.
+/// Explicit reinstallation of the legacy hints.
 #[tauri::command]
-pub fn install_extension_hints() -> Result<(), String> {
-    let result = install().map_err(|e| e.to_string());
-    if result.is_ok() {
-        mark_startup_install_done();
+pub async fn install_extension_hints(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        crate::windows_browser_setup::repair_windows_browser_setup(app).await
     }
-    result
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        install().map_err(|e| e.to_string())
+    }
 }
 
 #[tauri::command]
 pub fn uninstall_extension_hints() -> Result<(), String> {
     uninstall().map_err(|e| e.to_string())
-}
-
-/// Path of the marker file that gates the startup auto-install. Lives
-/// under our own app-data dir (not inside any other app's territory)
-/// so creating/reading it never touches another app's data and never
-/// triggers a TCC prompt.
-fn startup_install_marker_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(
-        base.join("com.reddblock")
-            .join("extension-hints-installed.v1"),
-    )
-}
-
-/// `true` if the startup auto-install has already run (successfully)
-/// on this machine. Used by `lib.rs::run` to skip the full sweep on
-/// every launch.
-pub fn startup_install_already_done() -> bool {
-    startup_install_marker_path()
-        .map(|p| p.exists())
-        .unwrap_or(false)
-}
-
-/// Drop the marker after a successful startup auto-install. Best-effort
-/// — if the write fails (e.g. read-only filesystem) the next launch
-/// will retry the install, which is harmless since the per-browser
-/// writes are themselves idempotent.
-pub fn mark_startup_install_done() {
-    let Some(path) = startup_install_marker_path() else {
-        return;
-    };
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::write(&path, b"");
 }

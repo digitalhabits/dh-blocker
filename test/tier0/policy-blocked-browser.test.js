@@ -146,6 +146,53 @@ describe('policy-blocked browsers on Windows', () => {
         expect(() => migrationExtLinesHtml(null)).not.toThrow();
     });
 
+    test('Windows setup connects an installed extension without reinstalling it', async () => {
+        const { browserComplianceStatus } = await setUpWindows(false);
+        const disconnected = edge({ nativeHostReady: false });
+        expect(browserComplianceStatus('edge', disconnected)).toBe('needs-native-host');
+        expect(browserComplianceStatus('edge', edge({ nativeHostReady: true }))).toBe('compliant');
+    });
+
+    test('Windows registers only the selected browser when Install is clicked', async () => {
+        const { renderBrowserInstallButtons, BROWSER_STORE_LINKS } = await setUpWindows(false);
+        const { invoke } = await import('@tauri-apps/api/core');
+        const { state } = await import('../../src/state.js');
+        invoke.mockClear();
+        invoke.mockImplementation(async cmd => cmd === 'set_blocking_method' ? { chrome: 'extension' } : []);
+        document.body.innerHTML = '<div id="migration-browser-buttons"></div>';
+        renderBrowserInstallButtons({ browsers: {
+            chrome: edge({ profiles: [] }),
+            edge: edge({ profiles: [] }),
+        } }, { force: true });
+        expect(invoke).not.toHaveBeenCalledWith('set_blocking_method', expect.anything());
+        const install = [...document.querySelectorAll('.migration-browser-row')]
+            .find(row => row.querySelector('.migration-browser-name').textContent === 'Chrome')
+            .querySelector('button');
+        install.click();
+        await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('open_url_in_browser', {
+            browser: 'chrome',
+            url: BROWSER_STORE_LINKS.chrome.url,
+        }));
+        expect(invoke.mock.calls.filter(([cmd]) => cmd === 'set_blocking_method')).toEqual([
+            ['set_blocking_method', { browser: 'chrome', method: 'extension' }],
+        ]);
+        expect(state.appData.settings.blockingMethods).toEqual({ chrome: 'extension' });
+        invoke.mockImplementation(async () => []);
+    });
+
+    test('Windows sets up the browser before opening its store from an enforcement warning', async () => {
+        const { openEnforcerFix, BROWSER_STORE_LINKS } = await setUpWindows(false);
+        const { invoke } = await import('@tauri-apps/api/core');
+        invoke.mockClear();
+        invoke.mockImplementation(async cmd => cmd === 'set_blocking_method' ? { brave: 'extension' } : null);
+        await openEnforcerFix({ label: 'Brave', issue: 'missing' });
+        expect(invoke.mock.calls).toEqual([
+            ['set_blocking_method', { browser: 'brave', method: 'extension' }],
+            ['open_url_in_browser', { browser: 'brave', url: BROWSER_STORE_LINKS.brave.url }],
+        ]);
+        invoke.mockImplementation(async () => []);
+    });
+
     test('Windows explicit automation skips extension setup and permission prompts', async () => {
         const { browserBlockingMethod, effectiveBrowserComplianceStatus, buildBannerActionSummary } = await setUpWindows();
         const browsers = Object.fromEntries(['chrome', 'edge', 'brave', 'firefox'].map(key => [key, edge({ profiles: [], present: true })]));

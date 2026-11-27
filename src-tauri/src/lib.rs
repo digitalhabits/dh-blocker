@@ -156,6 +156,8 @@ pub mod native_host;
 pub mod native_host_install;
 #[cfg(not(target_os = "ios"))]
 pub mod profile_scan;
+#[cfg(all(not(target_os = "ios"), any(test, not(target_os = "macos"))))]
+mod windows_browser_setup;
 // Firefox on macOS has no AppleScript dictionary for tabs, so the opt-in
 // alternative to its extension reads the active tab through Accessibility.
 #[cfg(target_os = "macos")]
@@ -778,20 +780,11 @@ pub fn run() {
             #[cfg(all(
                 not(target_os = "ios"),
                 not(target_os = "macos"),
+                not(target_os = "windows"),
                 not(feature = "system-test")
             ))]
             if let Err(e) = native_host_install::install() {
                 log::warn!("native-host install on startup failed: {e}");
-            }
-
-            // Preserve the existing one-time extension setup hint on Windows.
-            #[cfg(all(target_os = "windows", not(feature = "system-test")))]
-            if !extension_install::startup_install_already_done() {
-                if let Err(e) = extension_install::install() {
-                    log::warn!("extension-install hint on startup failed: {e}");
-                } else {
-                    extension_install::mark_startup_install_done();
-                }
             }
 
             // Store removal has no uninstaller hook for scheduled tasks
@@ -994,6 +987,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
 #[cfg(not(any(target_os = "ios", target_os = "macos")))]
 fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
     tauri::generate_handler![
+        windows_browser_setup::repair_windows_browser_setup,
         commands::get_app_version,
         commands::is_microsoft_store_package,
         commands::load_data,
