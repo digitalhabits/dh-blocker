@@ -62,18 +62,7 @@ const UTF8_BOM: &[u8] = b"\xef\xbb\xbf";
 // ---- Detection -----------------------------------------------------------
 
 #[cfg(all(target_os = "windows", not(feature = "system-test")))]
-fn system_directory() -> std::io::Result<PathBuf> {
-    use std::os::windows::ffi::OsStringExt;
-    use windows::Win32::System::SystemInformation::GetSystemDirectoryW;
-    let mut buffer = vec![0u16; 32768];
-    let size = unsafe { GetSystemDirectoryW(Some(&mut buffer)) } as usize;
-    if size == 0 || size >= buffer.len() {
-        return Err(std::io::Error::last_os_error());
-    }
-    Ok(PathBuf::from(std::ffi::OsString::from_wide(
-        &buffer[..size],
-    )))
-}
+use crate::windows_process::system_directory;
 
 #[cfg(not(feature = "system-test"))]
 fn hosts_path() -> std::io::Result<PathBuf> {

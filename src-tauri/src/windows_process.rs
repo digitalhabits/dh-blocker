@@ -5,12 +5,26 @@ use std::process::Command;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[cfg(target_os = "windows")]
-pub fn hidden_command(program: &str) -> Command {
+pub fn hidden_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     use std::os::windows::process::CommandExt;
 
     let mut command = Command::new(program);
     command.creation_flags(CREATE_NO_WINDOW);
     command
+}
+
+#[cfg(all(target_os = "windows", not(feature = "system-test")))]
+pub(crate) fn system_directory() -> std::io::Result<std::path::PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows::Win32::System::SystemInformation::GetSystemDirectoryW;
+    let mut buffer = vec![0u16; 32768];
+    let size = unsafe { GetSystemDirectoryW(Some(&mut buffer)) } as usize;
+    if size == 0 || size >= buffer.len() {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(std::path::PathBuf::from(std::ffi::OsString::from_wide(
+        &buffer[..size],
+    )))
 }
 
 /// When Chrome spawns the native-messaging host, the process cwd is
