@@ -116,7 +116,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     // App-styled dropdowns over every <select>. Before loadData so the first
     // paint never shows an OS menu; the native selects stay the source of truth.
     enhanceNativeSelects();
-    await loadData();
+    setupWindowControls();
+    try {
+        await loadData();
+    } catch (error) {
+        showStartupRecovery(error);
+        return;
+    }
     await resetDevOnlyEulaAcceptance();
 
     setupHandsetModalScreens();
@@ -234,8 +240,27 @@ export async function runPostAcceptanceStartup() {
     }
 }
 
-// Setup event listeners
-function setupEventListeners() {
+function showStartupRecovery(error) {
+    console.error('Could not load app data:', error);
+    const recovery = document.getElementById('startup-recovery');
+    const retry = document.getElementById('startup-recovery-retry');
+    document.getElementById('startup-recovery-title').textContent = tSettings('startupRecoveryTitle');
+    document.getElementById('startup-recovery-description').textContent = tSettings('startupRecoveryDescription');
+    document.getElementById('startup-recovery-error').textContent = String(error);
+    retry.textContent = tSettings('startupRecoveryRetry');
+    retry.addEventListener('click', () => window.location.reload());
+
+    if (state.isMacOSDesktop) {
+        setupInAppUninstall({ recovery: true });
+    } else if (state.isWindowsDesktop) {
+        setupWindowsUninstallGuidance({ recovery: true });
+    }
+
+    recovery.classList.remove('hidden');
+    retry.focus();
+}
+
+function setupWindowControls() {
     // Window controls (using Tauri docs naming)
     document.getElementById('titlebar-minimize')?.addEventListener('click', () => {
         tauriAPI.minimizeWindow();
@@ -276,6 +301,9 @@ function setupEventListeners() {
         tauriAPI.closeWindow();
     });
 
+}
+
+function setupEventListeners() {
     const eulaCheckbox = document.getElementById('eula-agree-checkbox');
     const eulaContinueBtn = document.getElementById('eula-continue-btn');
     if (eulaCheckbox && eulaContinueBtn) {
@@ -1605,11 +1633,7 @@ export function applySettingsLanguage() {
     applyStoreReviewPromptCopy();
     setText('settings-export-blocklists-btn-label', tSettings('settingsExportBlocklistsBtn'));
     setText('settings-import-blocklists-btn-label', tSettings('settingsImportBlocklistsBtn'));
-    setText('uninstall-confirm-title', tSettings('uninstallConfirmTitle'));
-    setText('uninstall-delete-data-label', tSettings('uninstallDeleteDataLabel'));
     syncUninstallConfirmModal(null);
-    setText('cancel-uninstall-confirm-btn', tSettings('cancel'));
-    setText('confirm-uninstall-confirm-btn', tSettings('uninstallConfirmOk'));
     applyMacAutomationIntroCopy();
     // The hint paragraph and button tooltip need re-translation too —
     // refreshUninstallButtonState reads from tSettings() and rewrites
