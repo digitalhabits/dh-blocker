@@ -827,6 +827,55 @@ export const screens = [
             await page.click('#editor-section-when-header');
         },
     },
+
+    // ---- Remote notice banner (src/notices.js) ------------------------------
+    ...[
+        { severity: 'critical', platform: 'mac', viewport: DESKTOP },
+        { severity: 'warning', platform: 'windows', viewport: DESKTOP, theme: 'dark' },
+        { severity: 'info', platform: 'iphone', viewport: IPHONE },
+        { severity: 'critical', platform: 'mac', viewport: DESKTOP, theme: 'dark' },
+        { severity: 'critical', platform: 'mac', viewport: DESKTOP, stack: true },
+    ].map(({ severity, stack, ...rest }) => ({
+        name: `notice-${severity}-${rest.platform}${rest.theme ? `-${rest.theme}` : ''}${stack ? '-stacked' : ''}`,
+        fixture: fixtures.crowdedWeek,
+        ...rest,
+        prepare: async (page) => {
+            // Serve notices.json and run the app's real check, so the shot shows
+            // what the fetch path renders, not a hand-drawn banner it could overwrite.
+            await page.route('**/notices.json*', (route) => route.fulfill({
+                contentType: 'application/json',
+                body: JSON.stringify({ notices: [...(stack ? [{
+                    id: 'second',
+                    severity: 'info',
+                    title: 'Scheduled maintenance on Saturday',
+                    body: 'Checking for updates may fail between 10:00 and 12:00 UTC.',
+                    expiresAt: '2099-01-01T00:00:00Z',
+                }] : []), {
+                    id: 'preview',
+                    severity,
+                    title: 'Updates may fail until you restart your Mac',
+                    body: 'If installing an update shows an error, restart your Mac and try again. Your blocks keep working in the meantime. [Read more](https://digitalhabits.org)',
+                    link: { label: 'Get the installer', url: 'https://github.com/digitalhabits/dh-blocker/releases/latest' },
+                    expiresAt: '2099-01-01T00:00:00Z',
+                    dismissible: severity !== 'critical',
+                }] }),
+            }));
+            await page.evaluate(async () => (await import('/notices.js')).checkForNotices());
+            if (stack) {
+                // Two notices, between the update banner above and the setup banner below.
+                await page.evaluate(() => {
+                    document.getElementById('update-banner-version').textContent = '3.14.0';
+                    document.getElementById('update-banner').classList.remove('hidden');
+                    document.getElementById('behaviour-change-banner').classList.remove('hidden');
+                });
+            }
+            // Shoot only once the banners have finished sliding in.
+            await page.waitForFunction(() => {
+                return document.querySelector('.notice-banner')
+                    && document.getAnimations().every((a) => a.playState !== 'running');
+            });
+        },
+    })),
 ];
 
 async function assertCompactPhonePause(page) {
