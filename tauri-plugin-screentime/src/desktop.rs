@@ -82,6 +82,7 @@ impl<R: Runtime> Screentime<R> {
         Ok(StartBlockResponse {
             success: false,
             websites_blocked: 0,
+            error: None,
         })
     }
 

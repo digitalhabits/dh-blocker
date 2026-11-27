@@ -131,6 +131,8 @@ pub struct StartBlockResponse {
     pub success: bool,
     #[serde(default)]
     pub websites_blocked: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 // --- Scheduling ---

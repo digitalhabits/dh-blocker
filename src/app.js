@@ -170,7 +170,13 @@ export async function runPostAcceptanceStartup() {
     }
 
     startupInitializationPromise = (async () => {
-        await runExpiryOnce(); // Reconcile blocks and pauses that expired while the app was closed.
+        try {
+            await runExpiryOnce(); // Reconcile blocks and pauses that expired while the app was closed.
+        } catch (error) {
+            if (!state.isIOS) throw error;
+            // An expired saved deadline still authorises release if the cleanup save fails.
+            console.warn('[startup] Could not save expired iOS blocking state:', error);
+        }
 
         // Paint desktop state before native reconciliation; iOS waits for Screen Time.
         const renderedBeforeNativeStartup = !state.isIOS;
@@ -381,7 +387,14 @@ function setupEventListeners() {
         document.addEventListener('visibilitychange', () => {
             // Also rebuilds start warnings: notification permission and the time zone
             // can both change in iOS Settings while the app is away.
-            if (document.visibilityState === 'visible') void checkScreentimeAuth().then(syncIOSStartWarnings);
+            if (document.visibilityState !== 'visible' || !hasAcceptedEula() || !state.startupInitializationComplete) return;
+            const wasAuthorised = state.screentimeAuthorized;
+            void checkScreentimeAuth().then(async () => {
+                if (!state.screentimeAuthorized) return;
+                if (!wasAuthorised) await initializeIOSBlockingState();
+                else await syncBlockingState();
+                await syncIOSStartWarnings();
+            }).catch(error => console.warn('[foreground] Screen Time reconciliation failed:', error));
         });
     }
 

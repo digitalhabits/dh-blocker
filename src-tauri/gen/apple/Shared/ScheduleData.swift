@@ -254,6 +254,29 @@ struct SharedManualBlockStore {
     private static var sharedDefaults: UserDefaults? {
         return UserDefaults(suiteName: appGroupID)
     }
+
+    static func replaceManualState(blocked: ManualBlockStatePayload, allowed: ManualBlockStatePayload?) -> Bool {
+        let encoder = JSONEncoder()
+        guard let defaults = sharedDefaults,
+              let blockedData = try? encoder.encode(blocked) else { return false }
+        var allowedData: Data?
+        if let allowed {
+            guard let encoded = try? encoder.encode(allowed) else { return false }
+            allowedData = encoded
+        }
+
+        let previousBlocked = defaults.data(forKey: manualBlockStateKey)
+        let previousAllowed = defaults.data(forKey: manualAllowlistStateKey)
+        defaults.set(blockedData, forKey: manualBlockStateKey)
+        defaults.set(allowedData, forKey: manualAllowlistStateKey)
+        guard defaults.data(forKey: manualBlockStateKey) == blockedData,
+              defaults.data(forKey: manualAllowlistStateKey) == allowedData else {
+            defaults.set(previousBlocked, forKey: manualBlockStateKey)
+            defaults.set(previousAllowed, forKey: manualAllowlistStateKey)
+            return false
+        }
+        return true
+    }
     
     @discardableResult
     static func saveManualBlockState(_ data: ManualBlockStatePayload) -> Bool {
