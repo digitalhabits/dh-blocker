@@ -20,16 +20,18 @@
 //!     needed there.
 //!
 //! Resolve the running bundle before touching setup or user data, then
-//! verify legacy hosts and helper cleanup. Move the bundle to Trash
-//! before the remaining cleanup so a blocked move leaves the app
-//! configured and available for another attempt.
+//! verify legacy hosts and helper cleanup. Suspend and remove the
+//! Safari policy mirror until the bundle move is confirmed. Restore
+//! eligible policy if the move fails. Other cleanup follows the move.
 //!
 //! NSFileManager can move the bundle while the app is running. If it
 //! fails, Finder may ask for Automation permission. Wait for Finder on
 //! a worker thread and verify the original path is gone.
 //!
-//! Bundle removal is logged through Tauri. The detached native-host
-//! cleanup writes to `~/Library/Logs/com.reddblock/uninstall.log`.
+//! Bundle removal and native-host cleanup are logged through Tauri.
+
+#[cfg(target_os = "macos")]
+mod native_hosts;
 
 #[cfg(target_os = "macos")]
 use std::process::{Command, Stdio};
@@ -59,23 +61,36 @@ fn uninstall_macos(app: &tauri::AppHandle, delete_user_data: bool) -> Result<(),
         .map_err(|_| "uninstall is already running".to_string())?;
     log::info!("uninstall_self_macos: starting (delete_user_data={delete_user_data})");
 
+    let executable = std::env::current_exe().and_then(|p| p.canonicalize()).ok();
+    let bundle = executable
+        .as_deref()
+        .and_then(app_bundle_from_exe)
+        .and_then(|path| path.to_str().map(String::from));
+    let binary = executable
+        .as_deref()
+        .and_then(native_hosts::InstalledBinary::capture);
+
     uninstall_bundle(
-        app_bundle_path(),
+        bundle,
         super::migration::cleanup_legacy_for_uninstall,
-        move_bundle_to_trash,
-        |bundle| finish_uninstall(app, delete_user_data, bundle),
+        |bundle| {
+            let source = super::data::canonical_data_path(app);
+            crate::app_group::remove_mirror_for_uninstall(source.as_deref(), || {
+                move_bundle_to_trash(bundle)
+            })
+        },
+        |_| finish_uninstall(app, delete_user_data, binary),
     )
 }
 
 #[cfg(target_os = "macos")]
-fn finish_uninstall(app: &tauri::AppHandle, delete_user_data: bool, bundle: &str) {
+fn finish_uninstall(
+    app: &tauri::AppHandle,
+    delete_user_data: bool,
+    binary: Option<native_hosts::InstalledBinary>,
+) {
     use tauri_plugin_autostart::ManagerExt;
 
-    // The Safari extension can run after the desktop app goes away.
-    // Remove its policy copy even when the canonical data is retained.
-    if let Err(e) = crate::app_group::stop_and_remove_blocklist_mirror() {
-        log::warn!("uninstall_self_macos: App Group mirror cleanup failed: {e}");
-    }
     if delete_user_data {
         super::data::wipe_user_data(app);
     }
@@ -89,8 +104,8 @@ fn finish_uninstall(app: &tauri::AppHandle, delete_user_data: bool, bundle: &str
     if let Err(e) = crate::extension_install::uninstall() {
         log::warn!("uninstall_self_macos: extension-install uninstall failed: {e}");
     }
-    if let Err(e) = spawn_native_host_killer(bundle) {
-        log::warn!("uninstall_self_macos: native-host killer spawn failed: {e}");
+    if let Some(binary) = binary {
+        binary.close_native_hosts();
     }
 
     // The plugin deletes its plist. A bootout during the extra sweep
@@ -123,7 +138,7 @@ fn uninstall_bundle(
 
 #[cfg(target_os = "macos")]
 fn move_bundle_to_trash(bundle: &str) -> Result<(), String> {
-    if let Err(e) = try_trash_via_nsfilemanager(bundle) {
+    let trash_result = try_trash_via_nsfilemanager(bundle).or_else(|e| {
         log::warn!(
             "uninstall_self_macos: NSFileManager.trashItemAtURL failed ({e}); trying Finder for {bundle}"
         );
@@ -145,7 +160,8 @@ fn move_bundle_to_trash(bundle: &str) -> Result<(), String> {
             log::warn!("uninstall_self_macos: Finder could not move {bundle} to Trash: {error}");
             return Err(format!("Finder could not move the app to Trash: {error}"));
         }
-    }
+        Ok(())
+    });
 
     match std::fs::symlink_metadata(bundle) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -153,74 +169,8 @@ fn move_bundle_to_trash(bundle: &str) -> Result<(), String> {
             Ok(())
         }
         Err(e) => Err(format!("could not verify that the app moved to Trash: {e}")),
-        Ok(_) => Err("the app bundle is still at its original path".into()),
+        Ok(_) => trash_result.and(Err("the app bundle is still at its original path".into())),
     }
-}
-
-/// Spawn a detached `bash` that waits for the GUI process to exit, then
-/// `pkill`s any remaining redd-block processes spawned from this bundle.
-/// These are browser-parented native-messaging host children (same
-/// binary, invoked by Chrome/Firefox/Edge/Brave via stdio); the main
-/// app's `std::process::exit` doesn't reach them.
-///
-/// Why deferred + path-matched:
-///   - Deferred so the kill runs only after our own PID is gone, which
-///     makes accidental self-kill impossible.
-///   - Path-matched (the bundle's MacOS dir, not just the `redd-block`
-///     basename) so a developer running `cargo run` from
-///     `target/debug/redd-block` isn't taken out alongside an installed
-///     copy. After NSFileManager moves the bundle to `~/.Trash/`, the
-///     child processes' argv still reflects their launched path
-///     (containing `ReDD Blocker.app/Contents/MacOS/redd-block`), so
-///     matching on that substring catches them whether the bundle has
-///     been trashed yet or not.
-#[cfg(target_os = "macos")]
-fn spawn_native_host_killer(bundle: &str) -> std::io::Result<()> {
-    // Pull just the bundle name (e.g. "ReDD Blocker.app") so the match
-    // works both pre- and post-trash. We don't want to pin to
-    // /Applications/ — users sometimes install elsewhere.
-    let bundle_name = std::path::Path::new(bundle)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("Digital Habits Blocker.app");
-    let match_pattern = format!("{bundle_name}/Contents/MacOS/redd-block");
-
-    let log_path = uninstall_log_path();
-    let log_q = log_path.replace('\'', r"'\''");
-    let pat_q = match_pattern.replace('\'', r"'\''");
-
-    let script = format!(
-        r#"exec >>'{log_q}' 2>&1
-echo ""
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] native-host killer starting; pattern='{pat_q}'"
-sleep 1
-PIDS=$(/usr/bin/pgrep -f '{pat_q}' || true)
-if [ -z "$PIDS" ]; then
-    echo "  no matching processes"
-    exit 0
-fi
-echo "  matched pids: $PIDS"
-/bin/kill $PIDS 2>>'{log_q}' || true
-sleep 1
-STRAGGLERS=$(/usr/bin/pgrep -f '{pat_q}' || true)
-if [ -n "$STRAGGLERS" ]; then
-    echo "  still alive after TERM: $STRAGGLERS; sending KILL"
-    /bin/kill -KILL $STRAGGLERS 2>>'{log_q}' || true
-fi
-echo "  done"
-exit 0
-"#,
-    );
-
-    Command::new("/bin/bash")
-        .arg("-c")
-        .arg(&script)
-        .arg("redd-block-host-killer")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
-    Ok(())
 }
 
 /// Move the bundle to `~/.Trash/` using `NSFileManager.trashItemAtURL:`,
@@ -254,12 +204,6 @@ fn app_bundle_from_exe(exe: &std::path::Path) -> Option<&std::path::Path> {
         && contents.file_name()? == "Contents"
         && bundle.extension()? == "app")
         .then_some(bundle)
-}
-
-#[cfg(target_os = "macos")]
-fn app_bundle_path() -> Option<String> {
-    let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
-    app_bundle_from_exe(&exe)?.to_str().map(String::from)
 }
 
 /// Remove stale user LaunchAgents from Fristed / ReDD Block / older
@@ -357,22 +301,6 @@ fn should_scrub_autostart_plist(filename: &str, content: &str, include_current: 
             "/Applications/{}.app",
             crate::product_identity::PRODUCT_DIR_NAME
         ))
-}
-
-/// Resolve the path of `~/Library/Logs/com.reddblock/uninstall.log`,
-/// creating the parent dir if needed. Falls back to
-/// `/tmp/redd-block-uninstall.log` if the home dir is somehow
-/// unavailable. Lives under the user's home rather than inside the
-/// .app so it survives the bundle move and shows up in the
-/// Diagnostics zip alongside the other logs.
-#[cfg(target_os = "macos")]
-fn uninstall_log_path() -> String {
-    if let Some(home) = dirs::home_dir() {
-        let dir = home.join("Library/Logs/com.reddblock");
-        let _ = std::fs::create_dir_all(&dir);
-        return dir.join("uninstall.log").to_string_lossy().into_owned();
-    }
-    "/tmp/redd-block-uninstall.log".to_string()
 }
 
 #[cfg(all(target_os = "macos", test))]

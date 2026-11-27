@@ -695,11 +695,13 @@ running regardless.
 
 ### 11.3 Uninstall
 
-- macOS verifies legacy helper cleanup and moves the bundle to Trash
-  through `NSFileManager.trashItemAtURL` or Finder. It checks that the
-  bundle's original path is gone before clearing launch-at-login, browser
-  registrations and any user data selected for deletion. It always
-  removes the Safari App Group mirror and prevents writes until exit.
+- macOS verifies legacy helper cleanup and removes the Safari App Group
+  mirror before attempting to move the bundle to Trash. If that move
+  fails, the installed app restores mirroring according to the current
+  policy and EULA. After verifying removal from the original path, the
+  app clears launch-at-login, browser registrations and any user data
+  selected for deletion. It terminates native messaging processes
+  identified by the moved executable's file identity, user and arguments.
 - **Keep blocking after uninstall** removed in v2 — uninstall stops blocking
 - Firefox extension on macOS may need manual removal (called out in UI)
 

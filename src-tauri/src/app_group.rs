@@ -30,8 +30,8 @@ static SYNC_LOOP_STARTED: OnceLock<()> = OnceLock::new();
 #[cfg(target_os = "macos")]
 static BLOCKLIST_MIRROR: BlocklistMirror = BlocklistMirror(Mutex::new(false));
 
-/// Serialise the final removal with writes from the background worker,
-/// save-data command and browser-method command.
+/// Serialise uninstall mirror removal with the background worker and
+/// the save-data and browser-method commands.
 #[cfg(target_os = "macos")]
 struct BlocklistMirror(Mutex<bool>);
 
@@ -48,10 +48,48 @@ impl BlocklistMirror {
         atomic_write(&target, bytes)
     }
 
-    fn stop_and_remove(&self, target: Option<&Path>) -> io::Result<()> {
-        let mut stopped = self.0.lock().map_err(|e| io::Error::other(e.to_string()))?;
-        *stopped = true;
-        remove_mirror_at(target)
+    fn remove(&self, target: Option<&Path>) -> io::Result<()> {
+        let stopped = self.0.lock().map_err(|e| io::Error::other(e.to_string()))?;
+        if *stopped {
+            Ok(())
+        } else {
+            remove_mirror_at(target)
+        }
+    }
+
+    fn remove_for_uninstall(
+        &self,
+        target: Option<&Path>,
+        move_bundle: impl FnOnce() -> Result<(), String>,
+        rollback_policy: impl FnOnce() -> io::Result<Option<Vec<u8>>>,
+    ) -> Result<(), String> {
+        {
+            let mut stopped = self.0.lock().map_err(|e| e.to_string())?;
+            remove_mirror_at(target).map_err(|e| format!("could not remove Safari policy: {e}"))?;
+            *stopped = true;
+        }
+
+        let Err(trash_error) = move_bundle() else {
+            return Ok(());
+        };
+
+        // Keep save-data and browser-method commands responsive while Finder
+        // is open. Re-read the policy under the mirror lock after a failure
+        // so any edits made during the prompt are reflected immediately.
+        let mut stopped = self.0.lock().map_err(|e| format!("{trash_error}. {e}"))?;
+        let restore = target.map_or(Ok(()), |target| {
+            if let Some(bytes) = rollback_policy()? {
+                atomic_write(target, &bytes)?;
+            }
+            Ok::<_, io::Error>(())
+        });
+        *stopped = false;
+        match restore {
+            Ok(()) => Err(trash_error),
+            Err(e) => Err(format!(
+                "{trash_error}. Could not restore Safari policy: {e}"
+            )),
+        }
     }
 }
 
@@ -101,12 +139,20 @@ pub fn sync_blocklist_from(source: &Path) -> io::Result<()> {
 
 #[cfg(target_os = "macos")]
 pub fn remove_blocklist_mirror() -> io::Result<()> {
-    remove_mirror_at(blocklist_path().as_deref())
+    BLOCKLIST_MIRROR.remove(blocklist_path().as_deref())
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn stop_and_remove_blocklist_mirror() -> io::Result<()> {
-    BLOCKLIST_MIRROR.stop_and_remove(blocklist_path().as_deref())
+pub(crate) fn remove_mirror_for_uninstall(
+    source: Option<&Path>,
+    move_bundle: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    BLOCKLIST_MIRROR.remove_for_uninstall(blocklist_path().as_deref(), move_bundle, || {
+        source
+            .filter(|source| safari_extension_mirror_active(source))
+            .map(fs::read)
+            .transpose()
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -146,7 +192,8 @@ pub fn ensure_sync_loop(source: PathBuf) {
             loop {
                 if safari_extension_mirror_active(&source) {
                     let current = mtime(&source);
-                    if last.is_none() || current != last {
+                    let mirror_missing = blocklist_path().is_some_and(|p| !p.is_file());
+                    if last.is_none() || current != last || mirror_missing {
                         match sync_blocklist_from(&source) {
                             Ok(()) => last = current,
                             Err(e) => log::warn!("App Group sync failed from {:?}: {e}", source),
@@ -225,11 +272,84 @@ fn uninstall_removes_mirror_and_prevents_late_writes() {
     mirror.write(b"policy", || Some(target.clone())).unwrap();
     assert_eq!(fs::read(&target).unwrap(), b"policy");
 
-    mirror.stop_and_remove(Some(&target)).unwrap();
+    mirror
+        .remove_for_uninstall(
+            Some(&target),
+            || {
+                assert!(!target.exists());
+                mirror
+                    .write(b"during removal", || Some(target.clone()))
+                    .unwrap();
+                assert!(!target.exists());
+                Ok(())
+            },
+            || panic!("did not need to restore policy"),
+        )
+        .unwrap();
     mirror
         .write(b"late policy", || Some(target.clone()))
         .unwrap();
     assert!(!target.exists());
     assert_eq!(fs::read(&source).unwrap(), b"saved data");
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[cfg(all(target_os = "macos", test))]
+#[test]
+fn failed_trash_restores_current_safari_policy_and_allows_writes() {
+    let directory = std::env::temp_dir().join(format!(
+        "redd-block-cancelled-uninstall-mirror-{}",
+        std::process::id()
+    ));
+    let target = directory.join(BLOCKLIST_FILENAME);
+    let mirror = BlocklistMirror(Mutex::new(false));
+    mirror
+        .write(b"old policy", || Some(target.clone()))
+        .unwrap();
+    let result = mirror.remove_for_uninstall(
+        Some(&target),
+        || {
+            assert!(!target.exists());
+            mirror
+                .write(b"concurrent save", || Some(target.clone()))
+                .unwrap();
+            assert!(!target.exists());
+            Err("Trash denied".into())
+        },
+        || Ok(Some(b"current policy".to_vec())),
+    );
+    assert_eq!(result.unwrap_err(), "Trash denied");
+    assert_eq!(fs::read(&target).unwrap(), b"current policy");
+    mirror
+        .write(b"new policy", || Some(target.clone()))
+        .unwrap();
+    assert_eq!(fs::read(&target).unwrap(), b"new policy");
+    let result =
+        mirror.remove_for_uninstall(Some(&target), || Err("Trash denied".into()), || Ok(None));
+    assert_eq!(result.unwrap_err(), "Trash denied");
+    assert!(!target.exists());
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[cfg(all(target_os = "macos", test))]
+#[test]
+fn mirror_removal_error_leaves_bundle_and_mirror_writes_available() {
+    let directory = std::env::temp_dir().join(format!(
+        "redd-block-uninstall-mirror-error-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    let mirror = BlocklistMirror(Mutex::new(false));
+    let result = mirror.remove_for_uninstall(
+        Some(&directory),
+        || panic!("bundle move ran despite mirror removal failure"),
+        || panic!("mirror was never removed"),
+    );
+    assert!(result
+        .unwrap_err()
+        .contains("could not remove Safari policy"));
+    let target = directory.join(BLOCKLIST_FILENAME);
+    mirror.write(b"policy", || Some(target.clone())).unwrap();
+    assert_eq!(fs::read(&target).unwrap(), b"policy");
     fs::remove_dir_all(directory).unwrap();
 }
