@@ -13,15 +13,10 @@ compile_error!(
 #[cfg(feature = "desktop")]
 use tauri::Manager;
 
-// Exiting the process is not an authorised gesture on desktop: there is no
-// tray menu (see the tray builder in `setup`), and both the AppKit
-// `applicationShouldTerminate:` hook and Tauri's `ExitRequested` event are
-// intercepted unconditionally and turned into a hide-window — a blocker the
-// user can quit is a blocker the user can bypass.
-//
-// The one real exit path is in-app uninstall, which calls
-// `std::process::exit(0)` directly (see `commands/uninstall.rs`) and so is not
-// routed through either guard.
+// The desktop blocker keeps running when the user closes the window or
+// tries to quit the app. The AppKit guard allows macOS to end the login
+// session. In-app uninstall exits directly via `std::process::exit(0)`
+// (see `commands/uninstall.rs`).
 
 /// Flip the macOS activation policy between Regular (Dock icon + app
 /// name in the global menu bar, like a normal foreground app) and
@@ -181,20 +176,117 @@ pub mod windows_login;
 #[cfg(target_os = "windows")]
 pub mod windows_process;
 
-/// Add an `applicationShouldTerminate:` override on the existing
-/// NSApp delegate's class that always returns `NSTerminateCancel`.
-/// Cmd-Q routes through the AppKit terminate path, which Tauri's
-/// `RunEvent::ExitRequested` does not intercept in accessory mode — so we
-/// hook it at the AppKit layer ourselves. In-app uninstall exits via
-/// `std::process::exit(0)` and so is not routed through here.
+/// Identify the quit Apple event sent during logout, restart or shutdown.
+#[cfg(target_os = "macos")]
+unsafe fn is_macos_session_end_event(event: *mut objc::runtime::Object) -> bool {
+    use objc::{msg_send, sel, sel_impl};
+
+    if event.is_null() {
+        return false;
+    }
+
+    // Four-character codes from the macOS Apple Event Manager headers.
+    let event_class: u32 = msg_send![event, eventClass];
+    let event_id: u32 = msg_send![event, eventID];
+    if event_class.to_be_bytes() != *b"aevt" || event_id.to_be_bytes() != *b"quit" {
+        return false;
+    }
+
+    let quit_reason_attribute = u32::from_be_bytes(*b"why?");
+    let reason: *mut objc::runtime::Object =
+        msg_send![event, attributeDescriptorForKeyword: quit_reason_attribute];
+    if reason.is_null() {
+        return false;
+    }
+
+    // Keep blocking ordinary quit attempts, including Quit All and unknown reasons.
+    let reason_code: u32 = msg_send![reason, enumCodeValue];
+    matches!(
+        &reason_code.to_be_bytes(),
+        b"logo" | b"rlgo" | b"rest" | b"rrst" | b"shut" | b"rsdn"
+    )
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod macos_termination_tests {
+    use super::is_macos_session_end_event;
+    use objc::runtime::Object;
+    use objc::{class, msg_send, sel, sel_impl};
+
+    fn event_allows_termination(
+        event_class: [u8; 4],
+        event_id: [u8; 4],
+        reason: Option<[u8; 4]>,
+    ) -> bool {
+        objc::rc::autoreleasepool(|| unsafe {
+            let class = class!(NSAppleEventDescriptor);
+            let target: *mut Object = msg_send![class, currentProcessDescriptor];
+            let event_class = u32::from_be_bytes(event_class);
+            let event_id = u32::from_be_bytes(event_id);
+            let event: *mut Object = msg_send![class, appleEventWithEventClass: event_class
+                eventID: event_id targetDescriptor: target returnID: -1_i16 transactionID: 0_i32];
+            assert!(!event.is_null());
+
+            if let Some(reason) = reason {
+                let reason = u32::from_be_bytes(reason);
+                let descriptor: *mut Object = msg_send![class, descriptorWithEnumCode: reason];
+                let keyword = u32::from_be_bytes(*b"why?");
+                let _: () =
+                    msg_send![event, setAttributeDescriptor: descriptor forKeyword: keyword];
+            }
+
+            is_macos_session_end_event(event)
+        })
+    }
+
+    #[test]
+    fn permits_logout_restart_and_shutdown() {
+        for reason in [*b"logo", *b"rlgo", *b"rest", *b"rrst", *b"shut", *b"rsdn"] {
+            assert!(
+                event_allows_termination(*b"aevt", *b"quit", Some(reason)),
+                "expected termination for {reason:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn vetoes_ordinary_and_unrecognised_quit_requests() {
+        assert!(!unsafe { is_macos_session_end_event(std::ptr::null_mut()) });
+        for (event_class, event_id, reason) in [
+            (*b"aevt", *b"quit", None),
+            (*b"aevt", *b"quit", Some(*b"quia")),
+            (*b"aevt", *b"quit", Some(*b"????")),
+            (*b"aevt", *b"oapp", Some(*b"rlgo")),
+            (*b"misc", *b"quit", Some(*b"rlgo")),
+        ] {
+            assert!(!event_allows_termination(event_class, event_id, reason));
+        }
+    }
+}
+
+/// Guard native Quit gestures through the NSApp delegate, including in
+/// accessory mode. AppKit handles an allowed session end through
+/// `applicationWillTerminate:`, which Tao reports as an exit already in progress.
 #[cfg(target_os = "macos")]
 #[allow(deprecated)] // Cocoa FFI pending migration to objc2.
 unsafe fn install_terminate_guard() {
     use cocoa::base::id;
     use objc::runtime::{class_addMethod, class_getInstanceMethod, method_setImplementation, Sel};
-    use objc::{msg_send, sel, sel_impl};
+    use objc::{class, msg_send, sel, sel_impl};
 
     extern "C" fn should_terminate(_this: id, _sel: Sel, _sender: id) -> u64 {
+        // Read the current event while AppKit is handling it. Each quit is
+        // evaluated independently, including after a cancelled session end.
+        let session_ending = unsafe {
+            let manager: id = msg_send![class!(NSAppleEventManager), sharedAppleEventManager];
+            let event: id = msg_send![manager, currentAppleEvent];
+            is_macos_session_end_event(event)
+        };
+        if session_ending {
+            log::info!("applicationShouldTerminate: allowing macOS session end");
+            return 1; // NSTerminateNow
+        }
+
         log::info!("applicationShouldTerminate: cancelled");
         // Hide instead — same UX as window close.
         unsafe {
@@ -204,8 +296,7 @@ unsafe fn install_terminate_guard() {
         // Drop the Dock icon + menu bar so the app reverts to
         // tray-only background mode, matching the close-window UX.
         crate::set_macos_activation_policy(false);
-        // NSTerminateNow = 1, NSTerminateCancel = 0.
-        0
+        0 // NSTerminateCancel
     }
 
     let ns_app = cocoa::appkit::NSApp();
@@ -891,10 +982,9 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app, _event| {
-            // Belt + braces: also catch any `ExitRequested` Tauri may
-            // emit (last-window-closed paths, etc.). Cmd-Q is handled
-            // by the AppKit `applicationShouldTerminate:` hook in
-            // `install_terminate_guard`.
+            // Guard Tauri's own exit requests, including last-window closure.
+            // On macOS, native quit requests go through the AppKit guard.
+            // Once AppKit commits to ending the session, Tao emits Exit.
             // Match by reference so multiple `if let` arms can read the
             // same event without moving non-`Copy` payloads (e.g.
             // `ExitRequestApi`) out of it.

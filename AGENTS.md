@@ -35,13 +35,12 @@ to smooth.
 
 Several parts of the codebase look like bugs until you apply this:
 
-- The tray icon has no menu and there is no quit gesture anywhere. Both
-  `RunEvent::ExitRequested` and, on macOS, an `applicationShouldTerminate:`
-  hook unconditionally turn every exit route into a hide-window. A blocker the
-  user can quit is a blocker the user can bypass. Do not add an escape hatch to
-  either guard without a deliberate decision — `commands/uninstall.rs` calls
-  `std::process::exit(0)` specifically to bypass both, and in-app uninstall
-  (macOS) or the OS uninstaller (Windows) is the only intended way out.
+- The tray icon has no menu. Ordinary quit gestures keep the blocker running:
+  Tauri's `RunEvent::ExitRequested` guard vetoes runtime exit requests, and the
+  macOS `applicationShouldTerminate:` hook hides the app on a normal quit.
+  The hook allows macOS logout, restart and shutdown when the current quit
+  Apple event identifies a session end. In-app uninstall on macOS deliberately
+  exits via `std::process::exit(0)`. Windows removal uses the OS uninstaller.
 - Override challenges (`src/override-challenge.js`) make unblocking
   deliberately effortful. Making them cheaper or skippable is a product
   regression, not an ergonomics win.

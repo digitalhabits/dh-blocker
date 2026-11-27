@@ -664,11 +664,13 @@ never active. Naming: “X” → “X copy” → “X copy 2” …
 
 ### 11.2 App close vs quit
 
-Closing the window hides to tray; **does not** stop enforcer, Automation watcher,
-app watcher, or native-host child processes. There is no Quit: the tray icon
-has no menu, and both `RunEvent::ExitRequested` and the macOS
-`applicationShouldTerminate:` hook turn every exit request into a hide
-(`lib.rs`). The only exit is in-app uninstall's `std::process::exit(0)`.
+Closing the window hides the app to the tray and keeps the enforcer, Automation
+watcher, app watcher and native-host child processes running. Tauri's
+`RunEvent::ExitRequested` guard vetoes exit requests such as last-window
+closure. On macOS, the `applicationShouldTerminate:` hook hides the app on
+ordinary quits and allows logout, restart and shutdown when the current quit
+Apple event identifies a session end. Tao reports the native termination
+as `RunEvent::Exit`. In-app uninstall directly calls `std::process::exit(0)`.
 
 **macOS Dock / menu bar:** activation policy flips between Regular (window open:
 Dock + menu bar) and Accessory (hidden: tray only). Enforcer and watchers keep
