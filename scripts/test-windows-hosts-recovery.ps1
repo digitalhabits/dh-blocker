@@ -101,3 +101,7 @@ try {
 } finally {
     Remove-Item -LiteralPath $fixture -Recurse -Force
 }
+
+# The last fixture deliberately exercises a failing installer subprocess.
+# Report the assertions' outcome to callers that propagate LASTEXITCODE.
+exit 0
