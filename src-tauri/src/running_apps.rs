@@ -49,6 +49,57 @@ pub fn first_pid(bundle_ids: &[&str]) -> Option<i32> {
     find_instance(bundle_ids, |pid, _| Some(pid))
 }
 
+/// A launch-stamped identity for a live AppKit application.
+pub fn launches(bundle_ids: &[&str]) -> Vec<(u32, u64)> {
+    let mut launches = Vec::new();
+    find_instance(bundle_ids, |pid, app| {
+        if let Some(started) = launch_stamp(app) {
+            launches.push((pid as u32, started));
+        }
+        None::<()>
+    });
+    launches
+}
+
+/// Use the matching application object to close the original launch, even
+/// when the PID has since been reused by another process.
+#[allow(deprecated)] // Cocoa FFI pending migration to objc2.
+pub fn close_launch(bundle_ids: &[&str], pid: u32, started: u64, force: bool) -> bool {
+    use objc::{msg_send, sel, sel_impl};
+
+    find_instance(bundle_ids, |live_pid, app| {
+        if live_pid as u32 != pid || launch_stamp(app) != Some(started) {
+            return None;
+        }
+        // SAFETY: The verified NSRunningApplication is live inside the
+        // autorelease pool. AppKit targets this application instance.
+        let dispatched: bool = unsafe {
+            if force {
+                msg_send![app, forceTerminate]
+            } else {
+                msg_send![app, terminate]
+            }
+        };
+        Some(dispatched)
+    })
+    .unwrap_or(false)
+}
+
+#[allow(deprecated)] // Cocoa FFI pending migration to objc2.
+fn launch_stamp(app: cocoa::base::id) -> Option<u64> {
+    use objc::{msg_send, sel, sel_impl};
+
+    // SAFETY: Callers pass a live NSRunningApplication within its pool.
+    unsafe {
+        let date: cocoa::base::id = msg_send![app, launchDate];
+        if date.is_null() {
+            return None;
+        }
+        let interval: f64 = msg_send![date, timeIntervalSinceReferenceDate];
+        interval.is_finite().then_some(interval.to_bits())
+    }
+}
+
 /// Visits live instances in the order given until `f` returns `Some`.
 #[allow(deprecated)] // Cocoa FFI pending migration to objc2.
 fn find_instance<T>(
