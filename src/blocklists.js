@@ -842,25 +842,26 @@ export function commitDelete() {
 }
 
 export function undoDelete() {
-    return state.isIOS ? runIOSManualOperation((_, persist) => restoreDeletedBlocklist(persist)) : restoreDeletedBlocklist();
+    const deletion = pendingDelete;
+    if (!deletion) return;
+    pendingDelete = null;
+    dismissUndoToast();
+    return state.isIOS
+        ? runIOSManualOperation((_, persist) => restoreDeletedBlocklist(deletion, persist))
+        : restoreDeletedBlocklist(deletion);
 }
 
-async function restoreDeletedBlocklist(persist = saveData) {
-    if (!pendingDelete) return;
-
+async function restoreDeletedBlocklist(deletion, persist = saveData) {
     // Restore the blocklist and active blocks
-    state.appData.blocklists.push(pendingDelete.blocklist);
-    pendingDelete.activeBlocks.forEach(block => {
+    state.appData.blocklists.push(deletion.blocklist);
+    deletion.activeBlocks.forEach(block => {
         state.appData.activeBlocks.push(block);
     });
-    (pendingDelete.schedules || []).forEach(schedule => {
+    (deletion.schedules || []).forEach(schedule => {
         state.appData.schedules.push(schedule);
     });
     const save = persist();
     if (state.isIOS) await save;
-
-    dismissUndoToast();
-    pendingDelete = null;
 
     // Re-render
     render();

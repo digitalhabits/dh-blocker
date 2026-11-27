@@ -1107,6 +1107,9 @@ class ScreentimePlugin: Plugin {
     }
 
     @objc public func clearBlock(_ invoke: Invoke) throws {
+        // Stop all also revokes pending Manual resumes if a per-block
+        // cancellation did not reach the plugin.
+        cancelOrphanedManualRestarts(retaining: [])
         guard clearManualChannel() else {
             invoke.resolve(["success": false, "error": "Failed to clear manual Screen Time policy"])
             return

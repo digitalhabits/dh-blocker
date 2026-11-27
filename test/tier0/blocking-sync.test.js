@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { initializeIOSBlockingState, reconcileIOSManualBlockingState } from '../../src/blocking-platform.js';
+import { deleteBlocklist, pendingDelete, UNDO_TOAST_SECONDS, undoDelete } from '../../src/blocklists.js';
 import { startManualBlock, stopFocusSpaceTarget } from '../../src/confirm-modals.js';
 import { turnFocusSpaceOn } from '../../src/focus-space-switch.js';
 import { runIOSManualOperation, saveData, syncBlockingState } from '../../src/persistence.js';
 import * as renderModule from '../../src/render.js';
 import { syncIOSSchedules } from '../../src/schedule-engine.js';
+import { performOverrideAll } from '../../src/settings.js';
 import { state } from '../../src/state.js';
 import { tauriAPI } from '../../src/tauri-api.js';
 
@@ -311,4 +313,107 @@ test('a rejected iOS Manual operation releases the next queued operation', async
     const next = runIOSManualOperation(async () => 'next operation ran');
     await expect(failed).rejects.toThrow('Manual save failed');
     await expect(next).resolves.toBe('next operation ran');
+});
+
+test('failed iOS Stop all save retains Manual blocks, schedules and native wakes', async () => {
+    state.isIOS = true;
+    const pauseEndTime = Date.now() + 300_000;
+    const block = { id: 'manual', blocklistId: 'space', startTime: 0, endTime: pauseEndTime + 300_000, isPaused: true, pauseEndTime };
+    const schedule = { id: 'schedule', blocklistId: 'other', repeatType: 'forever', segments: [], isPaused: true, pauseEndTime };
+    state.appData.activeBlocks = [block];
+    state.appData.schedules = [schedule];
+    const save = vi.spyOn(tauriAPI, 'saveData').mockImplementation(async draft => {
+        expect(draft.activeBlocks).toEqual([]);
+        expect(draft.schedules[0]).not.toHaveProperty('pauseEndTime');
+        expect(state.appData.activeBlocks).toEqual([block]);
+        expect(schedule.pauseEndTime).toBe(pauseEndTime);
+        throw new Error('Could not save Stop all');
+    });
+    const cancel = vi.spyOn(tauriAPI, 'screentimeCancelResume');
+    const clear = vi.spyOn(tauriAPI, 'screentimeClearBlock');
+    const schedules = vi.spyOn(tauriAPI, 'setSchedulesPlugin');
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    await expect(performOverrideAll()).resolves.toBe(false);
+    expect(save).toHaveBeenCalledOnce();
+    expect(state.appData.activeBlocks).toEqual([block]);
+    expect(schedule.pauseEndTime).toBe(pauseEndTime);
+    expect(cancel).not.toHaveBeenCalled();
+    expect(clear).not.toHaveBeenCalled();
+    expect(schedules).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('Could not save Stop all'));
+});
+
+test('iOS Stop all reports persistent native clear failure and can be retried', async () => {
+    state.isIOS = true;
+    state.appData.activeBlocks = [{ id: 'manual', blocklistId: 'space', startTime: 0, endTime: Date.now() + 60_000 }];
+    const error = 'Could not clear both native stores';
+    const clear = vi.spyOn(tauriAPI, 'screentimeClearBlock').mockResolvedValue({ success: true })
+        .mockResolvedValueOnce({ success: false, error })
+        .mockResolvedValueOnce({ success: false, error });
+    const cancel = vi.spyOn(tauriAPI, 'screentimeCancelResume').mockResolvedValue({ success: true });
+    const schedules = vi.spyOn(tauriAPI, 'setSchedulesPlugin').mockResolvedValue({ success: true });
+    const save = vi.spyOn(tauriAPI, 'saveData').mockResolvedValue();
+    vi.spyOn(tauriAPI, 'screentimeSetStartWarnings').mockResolvedValue({ success: true });
+    vi.spyOn(renderModule, 'render').mockImplementation(() => {});
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    await expect(performOverrideAll()).resolves.toBe(false);
+    expect(clear).toHaveBeenCalledTimes(2);
+    expect(schedules).toHaveBeenCalledOnce();
+    expect(cancel).toHaveBeenCalledExactlyOnceWith('manual');
+    expect(state.appData.activeBlocks).toEqual([]);
+    expect(alert).toHaveBeenCalledExactlyOnceWith(expect.stringContaining(error));
+
+    await expect(performOverrideAll()).resolves.toBe(true);
+    expect(clear).toHaveBeenCalledTimes(3);
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(alert).toHaveBeenCalledOnce();
+});
+
+test('iOS Undo claims the delete before waiting for the queue or a slow save', async () => {
+    state.isIOS = true;
+    const pauseEndTime = Date.now() + 300_000;
+    const block = { id: 'paused', blocklistId: 'space', startTime: 0, endTime: pauseEndTime + 300_000, isPaused: true, pauseEndTime };
+    state.appData.activeBlocks = [block];
+    state.appData.blocklists = [{ id: 'space', name: 'Paused space', websites: ['keep.invalid'] }];
+    vi.spyOn(renderModule, 'render').mockImplementation(() => {});
+    vi.spyOn(tauriAPI, 'setSchedulesPlugin').mockResolvedValue({ success: true });
+    vi.spyOn(tauriAPI, 'screentimeSetStartWarnings').mockResolvedValue({ success: true });
+    const save = vi.spyOn(tauriAPI, 'saveData').mockResolvedValue();
+    const cancel = vi.spyOn(tauriAPI, 'screentimeCancelResume').mockResolvedValue({ success: true });
+    vi.useFakeTimers();
+    const queueGate = Promise.withResolvers();
+    const saveGate = Promise.withResolvers();
+    let queued;
+    let undo;
+    try {
+        await deleteBlocklist('space');
+        expect(pendingDelete?.activeBlocks).toEqual([block]);
+        const saveStarted = Promise.withResolvers();
+        save.mockImplementationOnce(() => {
+            saveStarted.resolve();
+            return saveGate.promise;
+        });
+        queued = runIOSManualOperation(() => queueGate.promise);
+        undo = undoDelete();
+        expect(pendingDelete).toBeNull();
+
+        await vi.advanceTimersByTimeAsync(UNDO_TOAST_SECONDS * 1000);
+        expect(cancel).not.toHaveBeenCalled();
+        expect(save).toHaveBeenCalledOnce();
+
+        queueGate.resolve();
+        await saveStarted.promise;
+        await vi.advanceTimersByTimeAsync(UNDO_TOAST_SECONDS * 1000);
+        expect(cancel).not.toHaveBeenCalled();
+    } finally {
+        queueGate.resolve();
+        saveGate.resolve();
+        await Promise.allSettled([queued, undo]);
+        vi.useRealTimers();
+    }
+    expect(state.appData.activeBlocks).toEqual([block]);
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(cancel).not.toHaveBeenCalled();
 });
