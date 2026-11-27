@@ -95,6 +95,8 @@ export default defineConfig(async ({ mode }) => ({
         rollupOptions: {
             input: {
                 main: fileURLToPath(new URL('./src/index.html', import.meta.url)),
+                // The floating allow-mode indicator window (desktop only).
+                allowIndicator: fileURLToPath(new URL('./src/allow-indicator.html', import.meta.url)),
             },
         },
     },

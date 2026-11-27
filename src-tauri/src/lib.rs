@@ -127,6 +127,8 @@ tauri_nspanel::tauri_panel! {
     })
 }
 
+#[cfg(not(target_os = "ios"))]
+pub mod allow_indicator;
 #[cfg(target_os = "macos")]
 pub mod app_group;
 #[cfg(not(target_os = "ios"))]
@@ -703,6 +705,8 @@ pub fn run() {
                 commands::enforcement::register(app);
                 commands::enforcement::auto_start(app.handle());
             }
+            #[cfg(not(target_os = "ios"))]
+            allow_indicator::register(app);
 
             // Windows UI Automation is opt-in (or a policy fallback). The watcher
             // sleeps while no browser uses it and checks each browser's method
@@ -988,6 +992,10 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::delete_overlay_asset,
         commands::uninstall_self_macos,
         commands::download_and_run_update,
+        allow_indicator::allow_indicator_state,
+        allow_indicator::allow_indicator_dismiss,
+        allow_indicator::allow_indicator_set_size,
+        allow_indicator::allow_indicator_move_by,
     ]
 }
 
@@ -1048,6 +1056,10 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::read_overlay_source_bytes,
         commands::delete_overlay_asset,
         commands::download_and_run_update,
+        allow_indicator::allow_indicator_state,
+        allow_indicator::allow_indicator_dismiss,
+        allow_indicator::allow_indicator_set_size,
+        allow_indicator::allow_indicator_move_by,
     ]
 }
 

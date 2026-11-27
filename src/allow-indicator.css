@@ -1,0 +1,212 @@
+/* The allow-mode indicator window (allow-indicator.html). Its own small
+   sheet: the window is a few hundred pixels and must paint at once, so it
+   does not load the app's styles.css. The colours are the design system's,
+   copied from the tokens there. */
+@font-face {
+    font-family: 'Schibsted Grotesk';
+    font-style: normal;
+    font-weight: 400 900;
+    font-display: swap;
+    src: url('fonts/SchibstedGrotesk-Variable-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    size-adjust: 104%;
+}
+
+@font-face {
+    font-family: 'Schibsted Grotesk';
+    font-style: normal;
+    font-weight: 400 900;
+    font-display: swap;
+    src: url('fonts/SchibstedGrotesk-Variable-latin-ext.woff2') format('woff2');
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+    size-adjust: 104%;
+}
+
+:root {
+    color-scheme: light;
+    --card: #ffffff;
+    --ink: #1b3d4a;
+    --muted: #586f77;
+    --line: #d2d4d0;
+    --accent: #005d53;
+    --hover: rgba(27, 61, 74, 0.08);
+    /* Set from the screen's height by allow-indicator.js. */
+    --indicator-max-height: 600px;
+}
+
+:root.dark-mode {
+    color-scheme: dark;
+    --card: #1e2d3e;
+    --ink: #f5f0e8;
+    --muted: #9aa3b0;
+    --line: rgba(255, 255, 255, 0.10);
+    --accent: #399e90;
+    --hover: rgba(255, 255, 255, 0.08);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--card);
+    color: var(--ink);
+    font-family: 'Schibsted Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, Helvetica, sans-serif;
+    font-size: 13px;
+    line-height: 1.4;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+}
+
+/* Laid out at its natural size, whatever the window currently is: the page
+   measures this box and asks the window to match it. */
+.indicator {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    width: max-content;
+    max-width: 380px;
+    max-height: var(--indicator-max-height);
+    background: var(--card);
+}
+
+.indicator[hidden] {
+    display: none;
+}
+
+.indicator.is-expanded {
+    width: 280px;
+}
+
+.indicator-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 6px 6px 6px 12px;
+    flex: none;
+}
+
+.indicator-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex: none;
+}
+
+.indicator-title {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.indicator-summary {
+    color: var(--muted);
+    white-space: nowrap;
+    flex: none;
+}
+
+.indicator.is-expanded .indicator-title {
+    flex: 1;
+}
+
+.indicator.is-expanded .indicator-summary,
+.indicator.is-collapsed .indicator-dismiss,
+.indicator.is-collapsed .indicator-body {
+    display: none;
+}
+
+.indicator-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    flex: none;
+}
+
+.indicator-btn:hover,
+.indicator-more:hover {
+    background: var(--hover);
+    color: var(--ink);
+}
+
+.indicator-btn:focus-visible,
+.indicator-more:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.indicator.is-expanded #indicator-toggle svg {
+    transform: rotate(180deg);
+}
+
+.indicator-body {
+    padding: 2px 12px 10px;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.indicator-section + .indicator-section {
+    margin-top: 10px;
+}
+
+.indicator-heading {
+    margin: 0 0 3px;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--muted);
+}
+
+.indicator-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.indicator-list li {
+    padding: 1.5px 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.indicator-list li.is-note {
+    white-space: normal;
+}
+
+.indicator-more {
+    margin: 3px 0 0 -6px;
+    padding: 2px 6px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--accent);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.indicator-footer {
+    margin: 10px 0 0;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--muted);
+}

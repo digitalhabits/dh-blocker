@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Allowed now</title>
+    <link rel="stylesheet" href="./allow-indicator.css" />
+</head>
+<body>
+    <!-- Display only: this window must never grow a pause, stop or edit
+         control. See src-tauri/src/allow_indicator.rs. -->
+    <div id="indicator" class="indicator is-collapsed" hidden>
+        <div id="indicator-bar" class="indicator-bar">
+            <span id="indicator-dot" class="indicator-dot" aria-hidden="true"></span>
+            <span id="indicator-title" class="indicator-title"></span>
+            <span id="indicator-summary" class="indicator-summary"></span>
+            <button id="indicator-toggle" type="button" class="indicator-btn" aria-expanded="false" aria-controls="indicator-body">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="6 15 12 9 18 15"></polyline>
+                </svg>
+            </button>
+            <button id="indicator-dismiss" type="button" class="indicator-btn indicator-dismiss">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div id="indicator-body" class="indicator-body">
+            <section class="indicator-section" data-kind="websites">
+                <h2 class="indicator-heading"></h2>
+                <ul class="indicator-list"></ul>
+                <button type="button" class="indicator-more" hidden></button>
+            </section>
+            <section class="indicator-section" data-kind="apps">
+                <h2 class="indicator-heading"></h2>
+                <ul class="indicator-list"></ul>
+                <button type="button" class="indicator-more" hidden></button>
+            </section>
+            <p id="indicator-footer" class="indicator-footer"></p>
+        </div>
+    </div>
+    <script type="module" src="./allow-indicator.js"></script>
+</body>
+</html>

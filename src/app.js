@@ -79,6 +79,7 @@ import { setupTheme, setupUiZoomShortcuts } from './theme.js';
 import { checkForAppUpdate, updateBannerWhatsNewButtonHtml } from './update-banner.js';
 import { updateDownloadInProgress } from './update-banner.js';
 import { setupUsagePingToggle, startUsagePing } from './usage-ping.js';
+import { setupAllowIndicatorToggle } from './allow-indicator-setting.js';
 import { applyStoreReviewPromptCopy, startStoreReviewPrompt } from './store-review-prompt.js';
 import { applyStartWarningsLanguage, setupStartWarningsOnboarding, setupStartWarningsToggle, syncIOSStartWarnings } from './ios-start-warnings.js';
 import { getChallengeController } from './challenge-controller.js';
@@ -129,6 +130,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupUiZoomShortcuts();
     setupHelpMenuLinks();
     setupUsagePingToggle();
+    setupAllowIndicatorToggle();
     setupStartWarningsToggle();
     setupStartWarningsOnboarding();
     setupSettingsHelpButtons();
@@ -1602,6 +1604,8 @@ export function applySettingsLanguage() {
     setText('settings-blocklists-io-hint', tSettings('settingsBlocklistsIoHint'));
     setText('settings-usage-ping-label', tSettings('settingsUsagePingLabel'));
     setText('settings-usage-ping-hint', tSettings('settingsUsagePingHint'));
+    setText('settings-allow-indicator-label', tSettings('settingsAllowIndicatorLabel'));
+    setText('settings-allow-indicator-hint', tSettings('settingsAllowIndicatorHint'));
     applyStoreReviewPromptCopy();
     setText('settings-export-blocklists-btn-label', tSettings('settingsExportBlocklistsBtn'));
     setText('settings-import-blocklists-btn-label', tSettings('settingsImportBlocklistsBtn'));

@@ -12341,6 +12341,7 @@ body.dark-mode .settings-top-btn{
    sets display:flex and would otherwise win over .desktop-only). */
 body.ios #settings-enforcement-panel,
 body.ios #settings-modal .settings-section.desktop-only,
+body.ios #settings-allow-indicator-row,
 body.ios #settings-modal .settings-help-section {
     display: none;
 }

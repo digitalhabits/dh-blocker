@@ -48,6 +48,10 @@ Several parts of the codebase look like bugs until you apply this:
 - The compliance enforcer force-quits non-compliant browsers, and is
   nonetheless **opt-in and default off** (`settings.enforcementEnabled`).
   Escalation is a choice the user makes, not one we make for them.
+- The allow-mode indicator (`src-tauri/src/allow_indicator.rs`) floats over
+  every app, which makes it the easiest surface in the product to reach in a
+  weak moment. It is display only: no pause, stop or edit control belongs on
+  it, and hiding it must never change what is blocked.
 
 **The adversary is a distracted user, not a technical one.** Our users are
 non-technical: the bypass we design against is the one reachable in a weak
