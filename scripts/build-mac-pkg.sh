@@ -115,16 +115,9 @@ if [[ -d "$BLOCKED_RES" ]]; then
     chmod 644 "$BLOCKED_RES"/* 2>/dev/null || true
 fi
 
-# Build a *temporary* scripts dir so we can copy in the shared
-# cleanup.sh template alongside preinstall/postinstall — the
-# preinstall reads cleanup.sh at runtime via `dirname "$0"/cleanup.sh`.
-# Keeping cleanup.sh in src-tauri/src/commands/migration/ as the single
-# source of truth (the in-app Rust migration code also include_str!s
-# from there) and copying it at build time avoids duplicate
-# maintenance.
+# Stage installer scripts separately so packaging can set executable modes.
 PKG_SCRIPTS_DIR=$(mktemp -d /tmp/redd-block-pkgscripts.XXXXXX)
 cp "$SCRIPTS_DIR"/* "$PKG_SCRIPTS_DIR/"
-cp "src-tauri/src/commands/migration/cleanup.sh" "$PKG_SCRIPTS_DIR/cleanup.sh"
 chmod 755 "$PKG_SCRIPTS_DIR"/preinstall "$PKG_SCRIPTS_DIR"/postinstall
 echo "Bundled scripts in $PKG_SCRIPTS_DIR:"
 ls -l "$PKG_SCRIPTS_DIR"
