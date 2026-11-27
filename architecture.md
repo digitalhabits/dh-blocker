@@ -704,10 +704,11 @@ running regardless.
   leave migration pending for retry and halt uninstall before app removal.
 - Windows setup saves recovery copies at the start of a same-product upgrade
   wizard, before maintenance can run the older uninstaller. Legacy hosts and
-  helper artefacts cause setup to block unguarded uninstallers before launch.
+  helper artefacts cause setup to block the maintenance uninstaller before launch.
   `/UPDATE` allows an in-place NSIS upgrade. An older MSI requires administrator
-  review because Tauri invokes its uninstaller even in update mode. If the
-  live hosts file changes before installation, setup stops and leaves the file
+  review because Tauri invokes its uninstaller even in update mode. Silent setup
+  stops when it finds a same-product MSI and directs the caller to interactive
+  setup. If the live hosts file changes before installation, setup leaves the file
   and recovery copies for review. Setup removes known renamed-product
   installations directly and preserves registrations for custom paths.
 

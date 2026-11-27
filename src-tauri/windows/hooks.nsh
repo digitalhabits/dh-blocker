@@ -3,6 +3,7 @@
 ; generated nsis/<arch>/ directory (where installer.nsi lives), not
 ; windows/ — so File would miss legacy-preinstall.ps1 at makensis time.
 !define LEGACY_PREINSTALL_PS1 "${__FILEDIR__}\legacy-preinstall.ps1"
+!define SILENT_MSI_RECOVERY_MESSAGE "An older MSI installation was found. Run this installer interactively so setup can verify Windows hosts and save recovery copies."
 
 ; Tauri's maintenance page may run an older same-product NSIS or WiX
 ; uninstaller before NSIS_HOOK_PREINSTALL. MUI calls this before all
@@ -29,30 +30,10 @@ Function SnapshotHostsBeforeMaintenance
     ${EndIf}
   ${EndIf}
 
-  StrCpy $2 ""
-  ${If} $R6 != ""
-    StrCpy $2 "-ProtectOlderUninstaller"
-  ${EndIf}
-  ${If} $0 != ""
-    ReadRegDWORD $3 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Digital Habits Blocker" "HostsCleanupSafeguards"
-    ${If} $3 <> 1
-      StrCpy $2 "-ProtectOlderUninstaller"
-    ${EndIf}
-  ${EndIf}
-  ${If} $1 != ""
-    ReadRegDWORD $3 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Digital Habits Blocker" "HostsCleanupSafeguards"
-    ${If} $3 <> 1
-      StrCpy $2 "-ProtectOlderUninstaller"
-    ${EndIf}
-  ${EndIf}
-  ${If} $2 == ""
-    Return
-  ${EndIf}
-
   InitPluginsDir
   File "/oname=$PLUGINSDIR\legacy-preinstall.ps1" "${LEGACY_PREINSTALL_PS1}"
   StrCpy $HostsSnapshotFile "$PLUGINSDIR\hosts-recovery.json"
-  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\legacy-preinstall.ps1" -BeforeMaintenance -SnapshotFile "$HostsSnapshotFile" $2'
+  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\legacy-preinstall.ps1" -BeforeMaintenance -SnapshotFile "$HostsSnapshotFile" -ProtectOlderUninstaller'
   Pop $0
   ${If} $0 == "2"
     ${If} $R6 == ""
@@ -70,6 +51,22 @@ Function SnapshotHostsBeforeMaintenance
 FunctionEnd
 
 !macro NSIS_HOOK_PREINSTALL
+  ; Silent setup skips the maintenance page that deals with MSI
+  ; migration. Refuse the duplicate install before touching the payload.
+  ${If} ${Silent}
+    Call FindWixInstall
+    ${If} $R6 != ""
+      DetailPrint "${SILENT_MSI_RECOVERY_MESSAGE}"
+      System::Call 'kernel32::AttachConsole(i -1)i.r0'
+      ${If} $0 <> 0
+        System::Call 'kernel32::GetStdHandle(i -12)i.r0'
+        FileWrite $0 "${SILENT_MSI_RECOVERY_MESSAGE}$\r$\n"
+      ${EndIf}
+      SetErrorLevel 1
+      Abort
+    ${EndIf}
+  ${EndIf}
+
   ; Verify after same-product maintenance, then clean known renamed
   ; installs without executing their old uninstallers.
   InitPluginsDir
@@ -89,9 +86,6 @@ FunctionEnd
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  ; Future maintenance can trust this version's guarded uninstaller.
-  WriteRegDWORD SHCTX "${UNINSTKEY}" "HostsCleanupSafeguards" 1
-
   ; Always launch after install completes. The MUI finish page also has
   ; a "Run …" checkbox (default checked); if the user leaves it checked
   ; we'd briefly run the app twice — the tauri-plugin-single-instance
