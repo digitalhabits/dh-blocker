@@ -40,7 +40,10 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use crate::block_page::{plan_actions, Tab, TabAction};
+mod redirect_retries;
+use redirect_retries::RedirectRetries;
+
+use crate::block_page::{is_block_page_url, plan_actions, Tab, TabAction};
 pub use crate::block_page::{url_is_blocked, web_enforcement_active};
 use crate::native_host::{self, BlockInfo};
 
@@ -394,9 +397,8 @@ pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
         // planned no restores (so a failed apply retries). Starting
         // true clears leftovers from a previous session.
         let mut needs_restore = true;
-        // When the last full pass (all running browsers, not just the
-        // frontmost one) was scripted — drives BACKGROUND_BROWSER_TICK.
-        let mut last_full_pass: Option<Instant> = None;
+        // Carry the full-pass cadence and per-tab retry state between ticks.
+        let mut scan = ScanState::default();
         loop {
             // No browser on Automation: block until a method changes rather
             // than waking every second to find nothing to script.
@@ -419,11 +421,17 @@ pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
                 &shared_thread,
                 &block_page_url,
                 &mut needs_restore,
-                &mut last_full_pass,
+                &mut scan,
             );
         }
     });
     WebAutomationHandle { shared, wake }
+}
+
+#[derive(Default)]
+struct ScanState {
+    last_full_pass: Option<Instant>,
+    retries: HashMap<SupportedBrowser, RedirectRetries>,
 }
 
 fn tick(
@@ -431,7 +439,7 @@ fn tick(
     shared: &Arc<Mutex<Shared>>,
     block_page_url: &str,
     needs_restore: &mut bool,
-    last_full_pass: &mut Option<Instant>,
+    scan: &mut ScanState,
 ) {
     let mut io = ProductionAutomationIo { app };
     tick_with_io(
@@ -439,7 +447,7 @@ fn tick(
         shared,
         block_page_url,
         needs_restore,
-        last_full_pass,
+        scan,
         Instant::now(),
     );
 }
@@ -449,6 +457,7 @@ fn tick(
 /// retry behavior without starting browsers or touching the data file.
 trait AutomationIo {
     fn active_blocks(&mut self) -> Option<Vec<BlockInfo>>;
+    fn read_completed_at(&self, tick_start: Instant) -> Instant;
     fn events_active(&self) -> bool;
     fn frontmost_bundle_id(&self) -> Option<String>;
     fn running_browsers(&mut self) -> Vec<SupportedBrowser>;
@@ -478,6 +487,10 @@ impl AutomationIo for ProductionAutomationIo<'_> {
         let path = crate::commands::canonical_data_path(self.app)?;
         let (_domains, blocks) = native_host::derive_payload(&path);
         Some(blocks)
+    }
+
+    fn read_completed_at(&self, _tick_start: Instant) -> Instant {
+        Instant::now()
     }
 
     fn events_active(&self) -> bool {
@@ -526,13 +539,16 @@ fn tick_with_io<I: AutomationIo>(
     shared: &Arc<Mutex<Shared>>,
     block_page_url: &str,
     needs_restore: &mut bool,
-    last_full_pass: &mut Option<Instant>,
+    scan: &mut ScanState,
     now: Instant,
 ) {
     let Some(blocks) = io.active_blocks() else {
         return;
     };
     let blocking_active = web_enforcement_active(&blocks);
+    if !blocking_active {
+        scan.retries.clear();
+    }
 
     // While enforcement is on, keep the idle-restore latch armed so a
     // later pause/stop/expiry sweeps parked tabs. When enforcement is
@@ -563,7 +579,8 @@ fn tick_with_io<I: AutomationIo>(
     let full_pass = restore_pass
         || !events
         || frontmost_bid.is_none()
-        || last_full_pass
+        || scan
+            .last_full_pass
             .map(|t| now.saturating_duration_since(t) >= BACKGROUND_BROWSER_TICK)
             .unwrap_or(true);
 
@@ -582,13 +599,16 @@ fn tick_with_io<I: AutomationIo>(
         frontmost_browser.into_iter().collect()
     };
     if full_pass {
-        *last_full_pass = Some(now);
+        scan.last_full_pass = Some(now);
     }
 
     let running = candidates
         .into_iter()
         .filter(|browser| io.uses_automation(*browser))
         .collect::<Vec<_>>();
+    if full_pass {
+        scan.retries.retain(|browser, _| running.contains(browser));
+    }
     let no_automation_browsers = running.is_empty();
     // Count every action a restore pass *planned*, not just the ones that
     // reported an error. `apply_actions` wraps each `set URL` in its own
@@ -617,7 +637,14 @@ fn tick_with_io<I: AutomationIo>(
             Ok(tabs) => {
                 scanned += 1;
                 io.set_permission(shared, browser, PermState::Granted, Duration::ZERO, now);
-                let actions = plan_actions(&tabs, &blocks, block_page_url);
+                let mut actions = plan_actions(&tabs, &blocks, block_page_url);
+                let retries = scan.retries.entry(browser).or_default();
+                retries.observe(
+                    &tabs,
+                    &mut actions,
+                    block_page_url,
+                    io.read_completed_at(now),
+                );
                 if restore_pass {
                     restore_actions += actions.len();
                 }
@@ -629,12 +656,22 @@ fn tick_with_io<I: AutomationIo>(
                         blocks.len()
                     );
                 } else {
+                    if browser != SupportedBrowser::Safari {
+                        for (_, _, target) in &mut actions {
+                            if is_block_page_url(target, block_page_url) {
+                                target.push_str("#pending");
+                            }
+                        }
+                    }
                     match io.apply_actions(browser, &actions) {
-                        Ok(()) => log::info!(
-                            "web_automation: applied {} tab action(s) to {} (redirect to / restore from block page)",
-                            actions.len(),
-                            browser.label()
-                        ),
+                        Ok(()) => {
+                            retries.record_actions(&actions, block_page_url);
+                            log::info!(
+                                "web_automation: applied {} tab action(s) to {} (redirect to / restore from block page)",
+                                actions.len(),
+                                browser.label()
+                            );
+                        }
                         Err(e) => {
                             log::warn!(
                                 "web_automation: applying {} redirect(s) to {} failed: {e:?}",
@@ -647,13 +684,7 @@ fn tick_with_io<I: AutomationIo>(
                                 } else {
                                     DENIED_RETRY
                                 };
-                                io.set_permission(
-                                    shared,
-                                    browser,
-                                    PermState::Denied,
-                                    retry,
-                                    now,
-                                );
+                                io.set_permission(shared, browser, PermState::Denied, retry, now);
                             }
                         }
                     }
@@ -801,13 +832,10 @@ fn read_tabs_script(browser: SupportedBrowser) -> String {
     // instead of an ASCII-9 separator and the Rust parser would drop every row.
     // Hoisting into `_sep`/`_eol` keeps them as real control characters.
     //
-    // PERF: `URL of every tab of w` fetches a whole window's tab URLs in
-    // ONE Apple Event; the inner repeat then walks a local list with no
-    // further IPC. The previous per-tab `URL of t` cost one Apple Event
-    // round-trip per tab per tick — with many tabs open, by far the
-    // dominant CPU/battery cost of this watcher, on both sides of the
-    // event. Tab indices are positional in the returned list, matching
-    // the `tab <i> of window id <w>` addressing `apply_actions` uses.
+    // Both browsers fetch all rows for a window in one Apple Event. Chromium
+    // returns one properties record per tab. Asking for {id, URL} instead
+    // sends two events: closing a tab between them shifts URLs onto other IDs.
+    // Safari exposes only tab positions and needs just the bulk URL fetch.
     //
     // Windows are reported by `id`, never by position. `window <n>` means
     // the n-th window in the current stacking order, which changes
@@ -827,6 +855,11 @@ fn read_tabs_script(browser: SupportedBrowser) -> String {
     // caps the whole subprocess. A timeout (-1712) inside the per-window `try`
     // is rethrown: swallowing it would report a hung window as having no
     // tabs, and a restore pass would take that as "nothing left parked".
+    let (read_rows, tab_ref, tab_url) = if browser == SupportedBrowser::Safari {
+        ("URL of every tab", "_ti", "_row")
+    } else {
+        ("properties of every tab", "(id of _row)", "(URL of _row)")
+    };
     format!(
         r#"{join}
 
@@ -841,20 +874,20 @@ on run
         repeat with _ref in _ids
           set _wid to contents of _ref
           try
-            set _urls to URL of every tab of window id _wid
+            set _items to {read_rows} of window id _wid
           on error _msg number _num
             if _num is -1712 then error _msg number _num
-            set _urls to {{}}
+            set _items to {{}}
           end try
           set _wi to _wid as text
           set _ti to 0
-          repeat with _u in _urls
+          repeat with _row in _items
             set _ti to _ti + 1
             set _u_text to ""
             try
-              set _u_text to _u as text
+              set _u_text to {tab_url} as text
             end try
-            set end of _rows to _wi & _sep & _ti & _sep & _u_text
+            set end of _rows to _wi & _sep & {tab_ref} & _sep & _u_text
           end repeat
         end repeat
       end tell
@@ -878,10 +911,10 @@ fn parse_tab_rows(out: &str) -> Vec<Tab> {
         let wi = parts.next().map(str::trim).filter(|s| !s.is_empty());
         let ti = parts.next().and_then(|s| s.trim().parse::<u32>().ok());
         let url = parts.next().unwrap_or("").to_string();
-        if let (Some(window_id), Some(tab_index)) = (wi, ti) {
+        if let (Some(window_id), Some(tab_ref)) = (wi, ti) {
             tabs.push(Tab {
                 window_id: window_id.to_string(),
-                tab_index,
+                tab_ref,
                 url,
             });
         }
@@ -915,6 +948,11 @@ fn apply_actions_script(browser: SupportedBrowser, actions: &[TabAction]) -> Str
             None => by_window.push((wid, vec![(*ti, url)])),
         }
     }
+    let tab_selector = if browser == SupportedBrowser::Safari {
+        "tab"
+    } else {
+        "tab id"
+    };
     let mut body = String::new();
     for (wid, list) in by_window {
         body.push_str(&format!(
@@ -925,7 +963,7 @@ fn apply_actions_script(browser: SupportedBrowser, actions: &[TabAction]) -> Str
             // Each set is wrapped in `try` so one stale index (a tab the
             // user closed mid-tick) doesn't abort the whole batch.
             body.push_str(&format!(
-                "        try\n          set URL of tab {ti} of window id _wid to {url}\n        end try\n",
+                "        try\n          set URL of {tab_selector} {ti} of window id _wid to {url}\n        end try\n",
                 url = applescript_string_expr(url)
             ));
         }
