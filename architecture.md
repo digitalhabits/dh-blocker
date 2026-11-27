@@ -271,9 +271,12 @@ the active one, and need no system-wide input-synthesis grant. Safari's extensio
      overlap; `url_is_blocked` in `web_automation.rs`). Redirect sets
      `location` to the block page with the same query params the extension
      uses (`url`, `blocklist`, `mode`, etc.). Safari redirects blocked tabs
-     on the five-second background scan. Chrome, Brave and Edge defer
-     background redirects until the first tick after activation because a
-     "Leave site?" dialog can pull them in front of the user's app. When the
+     on the five-second background scan. Chrome, Brave and Edge can redirect
+     the selected tab of their front window once while in the background.
+     A previous foreground attempt also counts. This stops media on an
+     ordinary page while limiting a page with unsaved edits to one potential
+     background interruption. Other tabs and retries wait for the browser
+     to regain focus. Restores can run in the background. When the
      frontmost app is unknown, every browser remains eligible for redirects.
      After observing the matching block page, the watcher waits five seconds
      from first seeing the original blocked URL again before retrying. If it

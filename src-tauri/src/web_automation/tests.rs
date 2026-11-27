@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 struct FakeIo {
     blocks: Option<Vec<BlockInfo>>,
     events: bool,
+    selected: Option<u32>,
     frontmost: Option<String>,
     focus_during_next_read: Option<String>,
     running: Vec<SupportedBrowser>,
@@ -22,6 +23,7 @@ impl FakeIo {
         Self {
             blocks: Some(blocks),
             events: false,
+            selected: None,
             frontmost: None,
             focus_during_next_read: None,
             running: running.to_vec(),
@@ -61,6 +63,10 @@ impl AutomationIo for FakeIo {
         self.frontmost.clone()
     }
 
+    fn selected_tab_id(&mut self, _: SupportedBrowser) -> Option<u32> {
+        self.selected
+    }
+
     fn running_browsers(&mut self) -> Vec<SupportedBrowser> {
         self.running_calls += 1;
         self.running.clone()
@@ -85,6 +91,7 @@ impl AutomationIo for FakeIo {
         &mut self,
         browser: SupportedBrowser,
         actions: &[TabAction],
+        _: Option<u32>,
     ) -> Result<(), AutomationError> {
         self.apply_calls.push((browser, actions.to_vec()));
         self.applies
@@ -486,10 +493,10 @@ fn cancelled_redirect_waits_five_seconds_from_the_return_to_the_original_url() {
 
 /// Redirecting a background Chromium tab whose page has a beforeunload
 /// handler (Gmail) shows a "Leave site?" dialog that drags the browser in
-/// front of the app the user is in. Background browsers must wait until
-/// they are frontmost; the redirect then happens on the next tick.
+/// front of the app the user is in. With no known selection, defer until
+/// the next foreground tick.
 #[test]
-fn background_browser_redirect_waits_until_it_is_frontmost() {
+fn unknown_selected_tab_waits_until_browser_is_frontmost() {
     let shared = tick_shared();
     let brave = SupportedBrowser::Brave;
     let base = "file:///blocked.html";
@@ -524,7 +531,60 @@ fn background_browser_redirect_waits_until_it_is_frontmost() {
 }
 
 #[test]
-fn background_safari_redirects_on_full_pass_while_chromium_defers() {
+fn chromium_background_attempt_is_limited_to_the_selected_tab_and_does_not_repeat() {
+    let brave = SupportedBrowser::Brave;
+    let mut io = FakeIo::new(
+        vec![block("video", "blocklist", &["video.example"], 0, 999)],
+        &[brave],
+    );
+    io.events = true;
+    io.frontmost = Some("com.apple.TextEdit".into());
+    io.selected = Some(2);
+    io.queue_apply(brave, Err(AutomationError::Other("timeout".into())));
+    let mut scan = ScanState::default();
+    let shared = tick_shared();
+    let start = Instant::now();
+    let base = "file:///blocked.html";
+    let url = "https://video.example/watch";
+    let mut tick = |io: &mut FakeIo, seconds, selected_url: &str| {
+        io.queue_read(brave, Ok(vec![open_tab(1, url), open_tab(2, selected_url)]));
+        tick_with_io(
+            io,
+            &shared,
+            base,
+            &mut false,
+            &mut scan,
+            start + Duration::from_secs(seconds),
+        );
+        std::mem::take(&mut io.apply_calls)
+            .into_iter()
+            .flat_map(|(_, a)| a)
+            .map(|(_, id, _)| id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(tick(&mut io, 0, url), [2]);
+    // An ambiguous failure or a quick Cancel can leave the original URL
+    // visible on the next scan. Neither grants a second background attempt.
+    assert!(tick(&mut io, 5, url).is_empty());
+    assert!(tick(&mut io, 10, &build_blocked_url(base, url, &[])).is_empty());
+    assert!(tick(&mut io, 15, url).is_empty());
+    assert!(tick(&mut io, 25, url).is_empty());
+    io.frontmost = Some(brave.bundle_id().into());
+    assert_eq!(tick(&mut io, 26, url), [1, 2]);
+    io.frontmost = Some("com.apple.TextEdit".into());
+    io.selected = Some(1);
+    assert!(
+        tick(&mut io, 35, url).is_empty(),
+        "a foreground attempt counts too"
+    );
+    let blocks = io.blocks.replace(vec![]).unwrap();
+    assert!(tick(&mut io, 40, url).is_empty());
+    io.blocks = Some(blocks);
+    assert_eq!(tick(&mut io, 45, url), [1], "a new block gets an attempt");
+}
+
+#[test]
+fn background_safari_redirects_even_when_selected_tab_is_unknown() {
     let browsers = SupportedBrowser::all();
     let mut io = FakeIo::new(
         vec![block("mail", "blocklist", &["mail.google.com"], 0, 999)],
@@ -562,6 +622,7 @@ fn switching_focus_while_reading_brave_tabs_defers_only_redirects() {
     io.events = true;
     io.frontmost = Some(brave.bundle_id().to_string());
     io.focus_during_next_read = Some("com.apple.TextEdit".to_string());
+    io.selected = Some(2);
     io.queue_read(
         brave,
         Ok(vec![
@@ -1023,6 +1084,7 @@ fn redirects_address_windows_by_id_not_stacking_position() {
     // swapping the front window.
     let script = apply_actions_script(
         SupportedBrowser::Brave,
+        None,
         &[
             ("12".to_string(), 3, "file:///blocked.html?a".to_string()),
             ("5".to_string(), 1, "file:///blocked.html?b".to_string()),
@@ -1064,6 +1126,7 @@ fn apply_script_resolves_window_ids_before_iterating() {
     // first makes the browser return concrete ids.
     let script = apply_actions_script(
         SupportedBrowser::Brave,
+        None,
         &[("12".to_string(), 1, "file:///blocked.html".to_string())],
     );
     assert!(
@@ -1106,6 +1169,7 @@ fn assert_live_background_redirect(browser: SupportedBrowser, setup: &str) {
         .map(|tab| {
             run_osascript(&apply_actions_script(
                 browser,
+                None,
                 &[(
                     id_a.clone(),
                     tab.tab_ref,
@@ -1210,6 +1274,7 @@ return (idA as text) & "|" & (idB as text)"#,
 fn apply_script_escapes_the_window_id() {
     let script = apply_actions_script(
         SupportedBrowser::Safari,
+        None,
         &[("a\"b".to_string(), 1, "https://x.example/".to_string())],
     );
     assert!(script.contains(r#"if _key is "a\"b" then"#), "{script}");
@@ -1254,6 +1319,7 @@ fn apply_script_runs_against_safari() {
     }
     let script = apply_actions_script(
         SupportedBrowser::Safari,
+        None,
         &[("1".to_string(), 1, "https://a.example/?q=1&r=2".to_string())],
     );
     run_osascript(&script).expect("apply script compiles and runs against Safari's dictionary");

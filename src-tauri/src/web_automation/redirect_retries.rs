@@ -2,7 +2,10 @@
 //! as long as the user takes to decide. Start the grace period when the
 //! original URL is first seen again after observing the matching block page.
 
-use crate::block_page::{is_block_page_url, original_url_from_block_page, Tab, TabAction};
+use crate::block_page::{
+    is_block_page_url, original_url_from_block_page, url_is_blocked, Tab, TabAction,
+};
+use crate::native_host::BlockInfo;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -30,6 +33,7 @@ impl RedirectRetries {
         &mut self,
         tabs: &[Tab],
         actions: &mut Vec<TabAction>,
+        blocks: &[BlockInfo],
         base: &str,
         now: Instant,
     ) {
@@ -43,10 +47,13 @@ impl RedirectRetries {
                 continue;
             };
             if tab.url == attempt.original {
+                if !url_is_blocked(&tab.url, blocks) {
+                    continue;
+                }
                 match attempt.progress {
                     // A successful script can swallow per-tab errors. Without
                     // an observed navigation, leave the next redirect eligible.
-                    Progress::Issued => continue,
+                    Progress::Issued => {}
                     Progress::OnBlockPage => {
                         attempt.progress = Progress::WaitingUntil(now + RETRY_DELAY)
                     }
@@ -66,6 +73,31 @@ impl RedirectRetries {
                 || !matches!(self.tabs.get(&(window.clone(), *tab)).map(|a| a.progress),
                     Some(Progress::WaitingUntil(deadline)) if now < deadline)
         });
+    }
+
+    pub(super) fn keep_background_actions(
+        &self,
+        actions: &mut Vec<TabAction>,
+        base: &str,
+        selected_tab_id: impl FnOnce() -> Option<u32>,
+    ) -> Option<u32> {
+        actions.retain(|(window, tab, target)| {
+            !is_block_page_url(target, base) || !self.tabs.contains_key(&(window.clone(), *tab))
+        });
+        if actions
+            .iter()
+            .any(|(_, _, target)| is_block_page_url(target, base))
+        {
+            let selected = selected_tab_id();
+            actions.retain(|(_, tab, target)| {
+                !is_block_page_url(target, base) || Some(*tab) == selected
+            });
+            return actions
+                .iter()
+                .find(|(_, _, url)| is_block_page_url(url, base))
+                .map(|(_, tab, _)| *tab);
+        }
+        None
     }
 
     pub(super) fn record_actions(&mut self, actions: &[TabAction], base: &str) {

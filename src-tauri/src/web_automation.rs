@@ -43,7 +43,7 @@ use tauri::{AppHandle, Emitter};
 mod redirect_retries;
 use redirect_retries::RedirectRetries;
 
-use crate::block_page::{is_block_page_url, plan_actions, Tab, TabAction};
+use crate::block_page::{plan_actions, Tab, TabAction};
 pub use crate::block_page::{url_is_blocked, web_enforcement_active};
 use crate::native_host::{self, BlockInfo};
 
@@ -54,8 +54,8 @@ use crate::native_host::{self, BlockInfo};
 const TICK: Duration = Duration::from_millis(1000);
 
 /// With workspace events active, full passes enforce Safari in the
-/// background and restore Chromium tabs. Chromium redirects resume on
-/// the first tick after the browser becomes frontmost.
+/// background. Chromium gets one redirect attempt for its selected tab;
+/// normal enforcement resumes when the browser becomes frontmost.
 const BACKGROUND_BROWSER_TICK: Duration = Duration::from_secs(5);
 
 /// Once a browser's Automation permission is denied, stop hammering
@@ -457,6 +457,7 @@ trait AutomationIo {
     fn read_completed_at(&self, tick_start: Instant) -> Instant;
     fn events_active(&self) -> bool;
     fn frontmost_bundle_id(&self) -> Option<String>;
+    fn selected_tab_id(&mut self, browser: SupportedBrowser) -> Option<u32>;
     fn running_browsers(&mut self) -> Vec<SupportedBrowser>;
     fn uses_automation(&mut self, browser: SupportedBrowser) -> bool;
     fn read_tabs(&mut self, browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError>;
@@ -464,6 +465,7 @@ trait AutomationIo {
         &mut self,
         browser: SupportedBrowser,
         actions: &[TabAction],
+        background_tab: Option<u32>,
     ) -> Result<(), AutomationError>;
     fn set_permission(
         &mut self,
@@ -498,6 +500,18 @@ impl AutomationIo for ProductionAutomationIo<'_> {
         crate::workspace_events::frontmost_bundle_id()
     }
 
+    fn selected_tab_id(&mut self, browser: SupportedBrowser) -> Option<u32> {
+        // Chromium tab IDs are unique across its windows. Fetch the selected
+        // ID directly, so a hidden window's active tab cannot be chosen.
+        let app = browser.applescript_name();
+        let script = format!(
+            r#"if application "{app}" is running then
+            tell application "{app}" to return id of active tab of front window
+        end if"#
+        );
+        run_osascript(&script).ok()?.trim().parse().ok()
+    }
+
     fn running_browsers(&mut self) -> Vec<SupportedBrowser> {
         running_supported_browsers()
     }
@@ -515,8 +529,9 @@ impl AutomationIo for ProductionAutomationIo<'_> {
         &mut self,
         browser: SupportedBrowser,
         actions: &[TabAction],
+        background_tab: Option<u32>,
     ) -> Result<(), AutomationError> {
-        apply_actions(browser, actions)
+        run_osascript(&apply_actions_script(browser, background_tab, actions)).map(|_| ())
     }
 
     fn set_permission(
@@ -639,6 +654,7 @@ fn tick_with_io<I: AutomationIo>(
                 retries.observe(
                     &tabs,
                     &mut actions,
+                    &blocks,
                     block_page_url,
                     io.read_completed_at(now),
                 );
@@ -646,7 +662,7 @@ fn tick_with_io<I: AutomationIo>(
                 // A beforeunload dialog can bring Chromium forward. Safari
                 // rendered our bundled file URL in the background in live tests.
                 // Unknown focus or unavailable events keep enforcement fail-closed.
-                if blocking_active
+                let background_tab = if blocking_active
                     && browser != SupportedBrowser::Safari
                     && events
                     && !actions.is_empty()
@@ -654,16 +670,19 @@ fn tick_with_io<I: AutomationIo>(
                         .frontmost_bundle_id()
                         .is_some_and(|bid| bid != browser.bundle_id())
                 {
-                    let before = actions.len();
-                    actions.retain(|(_, _, url)| !is_block_page_url(url, block_page_url));
-                    if actions.len() < before {
-                        log::debug!(
-                            "web_automation: {} is in the background — deferring {} redirect(s) until it is frontmost",
-                            browser.label(),
-                            before - actions.len()
-                        );
-                    }
-                }
+                    // If focus left during this read, let the user switch away.
+                    // Otherwise only the selected tab in the front window gets
+                    // one attempt. Unknown selection still allows restores.
+                    retries.keep_background_actions(&mut actions, block_page_url, || {
+                        if frontmost_browser == Some(browser) {
+                            None
+                        } else {
+                            io.selected_tab_id(browser)
+                        }
+                    })
+                } else {
+                    None
+                };
                 if restore_pass {
                     restore_actions += actions.len();
                 }
@@ -675,9 +694,11 @@ fn tick_with_io<I: AutomationIo>(
                         blocks.len()
                     );
                 } else {
-                    match io.apply_actions(browser, &actions) {
+                    // A timeout can follow a successful Apple Event. Consume the
+                    // attempt before dispatch to avoid another background prompt.
+                    retries.record_actions(&actions, block_page_url);
+                    match io.apply_actions(browser, &actions, background_tab) {
                         Ok(()) => {
-                            retries.record_actions(&actions, block_page_url);
                             log::info!(
                                 "web_automation: applied {} tab action(s) to {} (redirect to / restore from block page)",
                                 actions.len(),
@@ -939,10 +960,6 @@ fn read_tabs(browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
     Ok(parse_tab_rows(&out))
 }
 
-fn apply_actions(browser: SupportedBrowser, actions: &[TabAction]) -> Result<(), AutomationError> {
-    run_osascript(&apply_actions_script(browser, actions)).map(|_| ())
-}
-
 /// Build the redirect script for one browser's batch of tab actions.
 ///
 /// Windows are matched by `id` (see `read_tabs_script` for why positions
@@ -952,7 +969,11 @@ fn apply_actions(browser: SupportedBrowser, actions: &[TabAction]) -> Result<(),
 /// handed to a browser that stores numbers would match no window and
 /// silently leave the tab unblocked. A window closed since the read has
 /// no matching id and its actions are skipped; the next tick re-plans.
-fn apply_actions_script(browser: SupportedBrowser, actions: &[TabAction]) -> String {
+fn apply_actions_script(
+    browser: SupportedBrowser,
+    background_tab: Option<u32>,
+    actions: &[TabAction],
+) -> String {
     let mut by_window: Vec<(&str, Vec<(u32, &str)>)> = Vec::new();
     for (wid, ti, url) in actions {
         match by_window.iter_mut().find(|(w, _)| w == wid) {
@@ -974,8 +995,14 @@ fn apply_actions_script(browser: SupportedBrowser, actions: &[TabAction]) -> Str
         for (ti, url) in list {
             // Each set is wrapped in `try` so one stale index (a tab the
             // user closed mid-tick) doesn't abort the whole batch.
+            // The selection can change between the query and this Apple Event.
+            let guard = if Some(ti) == background_tab {
+                format!("if (id of active tab of front window as text) is \"{ti}\" then ")
+            } else {
+                String::new()
+            };
             body.push_str(&format!(
-                "        try\n          set URL of {tab_selector} {ti} of window id _wid to {url}\n        end try\n",
+                "        try\n          {guard}set URL of {tab_selector} {ti} of window id _wid to {url}\n        end try\n",
                 url = applescript_string_expr(url)
             ));
         }
