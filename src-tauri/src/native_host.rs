@@ -94,9 +94,16 @@ pub fn run() -> ! {
         }
     };
 
-    // Push once on connect.
-    let (domains, blocks) = derive_payload(&data_path);
-    send_payload(&domains, &blocks, false);
+    let publish = |open_settings| {
+        #[cfg(target_os = "windows")]
+        if !crate::native_host_install::store_owner::present() {
+            send_payload(&[], &[], false);
+            return;
+        }
+        let (domains, blocks) = derive_payload(&data_path);
+        send_payload(&domains, &blocks, open_settings);
+    };
+    publish(false);
 
     // Background refresh: file-watch + 30 s poll. Read stdin on its
     // own thread so native-host updates do not depend on the extension
@@ -120,15 +127,13 @@ pub fn run() -> ! {
         match rx.recv() {
             Ok(HostEvent::Refresh) => {
                 log_to_file("refresh signal; deriving payload");
-                let (domains, blocks) = derive_payload(&data_path);
-                send_payload(&domains, &blocks, false);
+                publish(false);
             }
             // A full payload, not a bare flag: older extensions replace their
             // rules with whatever a frame carries.
             Ok(HostEvent::OpenSettings) => {
                 let key = std::fs::read_to_string(&settings_path).unwrap_or_default();
-                let (domains, blocks) = derive_payload(&data_path);
-                send_payload(&domains, &blocks, opens_settings_for(&key, &launcher));
+                publish(opens_settings_for(&key, &launcher));
             }
             Ok(HostEvent::Recv(s)) => {
                 log_to_file(&format!("recv: {s}"));
