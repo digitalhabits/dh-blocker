@@ -84,8 +84,10 @@ pub(crate) async fn screentime_clear_block<R: Runtime>(
 #[command]
 pub(crate) async fn screentime_clear_manual_block<R: Runtime>(
     app: AppHandle<R>,
+    paused_block_ids: Option<Vec<String>>,
 ) -> Result<SuccessResponse> {
-    app.screentime().clear_manual_block()
+    app.screentime()
+        .clear_manual_block(ClearManualBlockRequest { paused_block_ids })
 }
 
 #[command]

@@ -305,6 +305,19 @@ struct SharedManualBlockStore {
     static func removeResumePayload(blockId: String) {
         sharedDefaults?.removeObject(forKey: resumePayloadKeyPrefix + blockId)
     }
+
+    static func removeOrphanedResumePayloads(
+        retaining blockIds: Set<String>, defaults: UserDefaults? = sharedDefaults
+    ) -> [String] {
+        guard let defaults else { return [] }
+        return defaults.dictionaryRepresentation().keys.compactMap { key in
+            guard key.hasPrefix(resumePayloadKeyPrefix) else { return nil }
+            let blockId = String(key.dropFirst(resumePayloadKeyPrefix.count))
+            guard !blockIds.contains(blockId) else { return nil }
+            defaults.removeObject(forKey: key)
+            return blockId
+        }
+    }
     
     static func saveBlockEndState(blockId: String, _ data: ManualBlockStatePayload) {
         guard let defaults = sharedDefaults,

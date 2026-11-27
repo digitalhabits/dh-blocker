@@ -53,7 +53,7 @@ export const tauriAPI = {
     screentimeStartBlock: (payload) =>
         invoke('plugin:screentime|screentime_start_block', { payload }),
     screentimeClearBlock: () => invoke('plugin:screentime|screentime_clear_block'),
-    screentimeClearManualBlock: () => invoke('plugin:screentime|screentime_clear_manual_block'),
+    screentimeClearManualBlock: (pausedBlockIds) => invoke('plugin:screentime|screentime_clear_manual_block', { pausedBlockIds }),
     screentimeClearScheduleBlock: () => invoke('plugin:screentime|screentime_clear_schedule_block'),
     screentimeRefreshActivityTokens: (applicationTokens, categoryTokens) =>
         invoke('plugin:screentime|refresh_activity_tokens', {

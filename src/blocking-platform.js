@@ -730,6 +730,21 @@ export async function requestScreentimeAuth() {
     }
 }
 
+let reportedManualPolicyError = null;
+
+export async function reconcileIOSManualBlockingState({ pruneOrphanedRestarts = false } = {}) {
+    const options = { reconcileIOSResumes: pruneOrphanedRestarts };
+    let result = await syncBlockingState(options);
+    if (!result.success) result = await syncBlockingState(options);
+    if (result.success) {
+        reportedManualPolicyError = null;
+    } else if (reportedManualPolicyError !== result.error) {
+        reportedManualPolicyError = result.error;
+        alert(tSettingsFmt('iosManualSyncFailedFmt', { error: result.error }));
+    }
+    return result;
+}
+
 export async function initializeIOSBlockingState() {
     try {
         await refreshIOSScreenTimeSelections();
@@ -738,7 +753,7 @@ export async function initializeIOSBlockingState() {
     }
     // Managed Settings can outlive an interrupted app save or missed callback.
     // Rebuild the manual channel even when there are no current manual blocks.
-    await syncBlockingState();
+    await reconcileIOSManualBlockingState({ pruneOrphanedRestarts: true });
     // Re-register DeviceActivity schedules so background activation survives app restarts.
     await syncIOSSchedules();
 }

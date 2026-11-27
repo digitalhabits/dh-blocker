@@ -123,6 +123,14 @@ pub struct StartBlockRequest {
     pub allowlist_block_start_ms: Option<f64>,
     #[serde(default)]
     pub allowlist_block_end_ms: Option<f64>,
+    /// Omitted for ordinary writes. Launch reconciliation prunes other wakeups.
+    pub paused_block_ids: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearManualBlockRequest {
+    pub paused_block_ids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
