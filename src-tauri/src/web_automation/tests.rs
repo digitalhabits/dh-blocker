@@ -5,11 +5,13 @@ use std::collections::VecDeque;
 struct FakeIo {
     blocks: Option<Vec<BlockInfo>>,
     events: bool,
+    selected: Option<u32>,
     frontmost: Option<String>,
+    focus_during_next_read: Option<String>,
     running: Vec<SupportedBrowser>,
     methods: HashMap<SupportedBrowser, bool>,
     reads: HashMap<SupportedBrowser, VecDeque<Result<Vec<Tab>, AutomationError>>>,
-    applies: HashMap<SupportedBrowser, VecDeque<Result<(), AutomationError>>>,
+    applies: HashMap<SupportedBrowser, VecDeque<Result<ApplyOutcome, AutomationError>>>,
     read_calls: Vec<SupportedBrowser>,
     running_calls: usize,
     apply_calls: Vec<(SupportedBrowser, Vec<TabAction>)>,
@@ -21,7 +23,9 @@ impl FakeIo {
         Self {
             blocks: Some(blocks),
             events: false,
+            selected: None,
             frontmost: None,
+            focus_during_next_read: None,
             running: running.to_vec(),
             methods: HashMap::new(),
             reads: HashMap::new(),
@@ -37,7 +41,11 @@ impl FakeIo {
         self.reads.entry(browser).or_default().push_back(result);
     }
 
-    fn queue_apply(&mut self, browser: SupportedBrowser, result: Result<(), AutomationError>) {
+    fn queue_apply(
+        &mut self,
+        browser: SupportedBrowser,
+        result: Result<ApplyOutcome, AutomationError>,
+    ) {
         self.applies.entry(browser).or_default().push_back(result);
     }
 }
@@ -59,6 +67,10 @@ impl AutomationIo for FakeIo {
         self.frontmost.clone()
     }
 
+    fn selected_tab_id(&mut self, _: SupportedBrowser) -> Option<u32> {
+        self.selected
+    }
+
     fn running_browsers(&mut self) -> Vec<SupportedBrowser> {
         self.running_calls += 1;
         self.running.clone()
@@ -70,6 +82,9 @@ impl AutomationIo for FakeIo {
 
     fn read_tabs(&mut self, browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
         self.read_calls.push(browser);
+        if let Some(bundle_id) = self.focus_during_next_read.take() {
+            self.frontmost = Some(bundle_id);
+        }
         self.reads
             .get_mut(&browser)
             .and_then(VecDeque::pop_front)
@@ -80,12 +95,13 @@ impl AutomationIo for FakeIo {
         &mut self,
         browser: SupportedBrowser,
         actions: &[TabAction],
-    ) -> Result<(), AutomationError> {
+        _: Option<u32>,
+    ) -> Result<ApplyOutcome, AutomationError> {
         self.apply_calls.push((browser, actions.to_vec()));
         self.applies
             .get_mut(&browser)
             .and_then(VecDeque::pop_front)
-            .unwrap_or(Ok(()))
+            .unwrap_or(Ok(ApplyOutcome::Complete))
     }
 
     fn set_permission(
@@ -169,8 +185,8 @@ fn pause_restore_retries_until_a_pass_finds_nothing_left_parked() {
         }]),
     );
     io.queue_read(browser, Ok(vec![parked_tab(base, original)]));
-    io.queue_apply(browser, Ok(()));
-    io.queue_apply(browser, Ok(()));
+    io.queue_apply(browser, Ok(ApplyOutcome::Complete));
+    io.queue_apply(browser, Ok(ApplyOutcome::Complete));
     let mut needs_restore = false;
     let mut scan = ScanState::default();
     let start = Instant::now();
@@ -225,8 +241,8 @@ fn silently_dropped_restore_is_retried_on_the_next_pass() {
     // in a per-action `try` block.
     io.queue_read(browser, Ok(vec![parked_tab(base, original)]));
     io.queue_read(browser, Ok(vec![parked_tab(base, original)]));
-    io.queue_apply(browser, Ok(()));
-    io.queue_apply(browser, Ok(()));
+    io.queue_apply(browser, Ok(ApplyOutcome::Complete));
+    io.queue_apply(browser, Ok(ApplyOutcome::Complete));
     let mut needs_restore = true;
     let mut scan = ScanState::default();
     let start = Instant::now();
@@ -256,7 +272,7 @@ fn failed_restore_action_keeps_latch_for_a_later_retry() {
     io.queue_read(browser, Ok(vec![parked_tab(base, original)]));
     io.queue_read(browser, Ok(vec![parked_tab(base, original)]));
     io.queue_apply(browser, Err(AutomationError::Other("temporary".into())));
-    io.queue_apply(browser, Ok(()));
+    io.queue_apply(browser, Ok(ApplyOutcome::Complete));
     let mut needs_restore = true;
     let mut scan = ScanState::default();
     let start = Instant::now();
@@ -481,7 +497,7 @@ fn cancelled_redirect_waits_five_seconds_from_the_return_to_the_original_url() {
 
 #[test]
 fn back_from_a_rendered_block_page_rearms_the_next_eligible_redirect() {
-    for observe_load in [true, false] {
+    for (background, observe_load) in [(false, true), (true, true), (true, false)] {
         let browser = SupportedBrowser::Brave;
         let base = "file:///blocked.html";
         let original = "https://video.example/watch";
@@ -491,6 +507,7 @@ fn back_from_a_rendered_block_page_rearms_the_next_eligible_redirect() {
         );
         io.events = true;
         io.frontmost = Some(browser.bundle_id().into());
+        io.selected = Some(1);
         let mut scan = ScanState::default();
         let start = Instant::now();
         let shared = tick_shared();
@@ -516,12 +533,267 @@ fn back_from_a_rendered_block_page_rearms_the_next_eligible_redirect() {
             // Only the loaded document can stamp this fragment.
             assert!(step(&mut io, 2, &format!("{document_url}#loaded")).is_empty());
         }
+        if background {
+            io.frontmost = Some("com.apple.TextEdit".into());
+        }
         assert_eq!(
             step(&mut io, 5, original).len(),
             1,
-            "Back, observed load={observe_load}"
+            "Back, background={background}"
         );
     }
+}
+
+/// Redirecting a background Chromium tab whose page has a beforeunload
+/// handler (Gmail) shows a "Leave site?" dialog that drags the browser in
+/// front of the app the user is in. With no known selection, defer until
+/// the next foreground tick.
+#[test]
+fn unknown_selected_tab_waits_until_browser_is_frontmost() {
+    let shared = tick_shared();
+    let brave = SupportedBrowser::Brave;
+    let base = "file:///blocked.html";
+    let gmail = "https://mail.google.com/mail/u/0/";
+    let mut io = FakeIo::new(
+        vec![block("mail", "blocklist", &["mail.google.com"], 0, 999)],
+        &[brave],
+    );
+    io.events = true;
+    io.frontmost = Some("com.apple.TextEdit".to_string());
+    io.queue_read(brave, Ok(vec![open_tab(1, gmail)]));
+    let mut needs_restore = false;
+    let mut scan = ScanState::default();
+    let start = Instant::now();
+
+    tick_with_io(&mut io, &shared, base, &mut needs_restore, &mut scan, start);
+    assert_eq!(io.read_calls, vec![brave], "background browser still read");
+    assert!(io.apply_calls.is_empty(), "no redirect while in background");
+
+    io.frontmost = Some(brave.bundle_id().to_string());
+    io.queue_read(brave, Ok(vec![open_tab(1, gmail)]));
+    tick_with_io(
+        &mut io,
+        &shared,
+        base,
+        &mut needs_restore,
+        &mut scan,
+        start + Duration::from_secs(1),
+    );
+    assert_eq!(io.apply_calls.len(), 1, "redirected once frontmost");
+    assert!(is_block_page_url(&io.apply_calls[0].1[0].2, base));
+}
+
+#[test]
+fn chromium_background_attempt_is_limited_to_the_selected_tab_and_does_not_repeat() {
+    let brave = SupportedBrowser::Brave;
+    let mut io = FakeIo::new(
+        vec![block("video", "blocklist", &["video.example"], 0, 999)],
+        &[brave],
+    );
+    io.events = true;
+    io.frontmost = Some("com.apple.TextEdit".into());
+    io.selected = Some(2);
+    io.queue_apply(brave, Err(AutomationError::Other("timeout".into())));
+    let mut scan = ScanState::default();
+    let shared = tick_shared();
+    let start = Instant::now();
+    let base = "file:///blocked.html";
+    let url = "https://video.example/watch";
+    let mut tick = |io: &mut FakeIo, seconds, selected_url: &str| {
+        io.queue_read(brave, Ok(vec![open_tab(1, url), open_tab(2, selected_url)]));
+        tick_with_io(
+            io,
+            &shared,
+            base,
+            &mut false,
+            &mut scan,
+            start + Duration::from_secs(seconds),
+        );
+        std::mem::take(&mut io.apply_calls)
+            .into_iter()
+            .flat_map(|(_, a)| a)
+            .map(|(_, id, _)| id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(tick(&mut io, 0, url), [2]);
+    // An ambiguous failure or a quick Cancel can leave the original URL
+    // visible on the next scan. Neither grants a second background attempt.
+    assert!(tick(&mut io, 5, url).is_empty());
+    assert!(tick(&mut io, 10, &build_blocked_url(base, url, &[])).is_empty());
+    assert!(tick(&mut io, 15, url).is_empty());
+    assert!(tick(&mut io, 25, url).is_empty());
+    io.frontmost = Some(brave.bundle_id().into());
+    assert_eq!(tick(&mut io, 26, url), [1, 2]);
+    io.frontmost = Some("com.apple.TextEdit".into());
+    io.selected = Some(2);
+    assert!(tick(&mut io, 30, &build_blocked_url(base, url, &[])).is_empty());
+    assert!(
+        tick(&mut io, 35, url).is_empty(),
+        "an observed pending foreground redirect counts too"
+    );
+    let blocks = io.blocks.replace(vec![]).unwrap();
+    assert!(tick(&mut io, 40, url).is_empty());
+    io.blocks = Some(blocks);
+    assert_eq!(tick(&mut io, 45, url), [2], "a new block gets an attempt");
+}
+
+#[test]
+fn a_definite_selection_skip_leaves_the_background_attempt_available() {
+    let brave = SupportedBrowser::Brave;
+    let mut io = FakeIo::new(
+        vec![block("video", "blocklist", &["video.example"], 0, 999)],
+        &[brave],
+    );
+    io.events = true;
+    io.frontmost = Some("com.apple.TextEdit".into());
+    io.selected = Some(1);
+    io.queue_apply(brave, Ok(ApplyOutcome::BackgroundSkipped));
+    let start = Instant::now();
+    let shared = tick_shared();
+    let mut scan = ScanState::default();
+    for (seconds, expected_batches) in [(0, 1), (5, 2), (10, 2)] {
+        io.queue_read(brave, Ok(vec![open_tab(1, "https://video.example/")]));
+        tick_with_io(
+            &mut io,
+            &shared,
+            "file:///blocked.html",
+            &mut false,
+            &mut scan,
+            start + Duration::from_secs(seconds),
+        );
+        assert_eq!(io.apply_calls.len(), expected_batches);
+    }
+}
+
+#[test]
+fn background_safari_redirects_even_when_selected_tab_is_unknown() {
+    let browsers = SupportedBrowser::all();
+    let mut io = FakeIo::new(
+        vec![block("mail", "blocklist", &["mail.google.com"], 0, 999)],
+        &browsers,
+    );
+    io.events = true;
+    io.frontmost = Some("com.apple.TextEdit".into());
+    for browser in browsers {
+        io.queue_read(browser, Ok(vec![open_tab(1, "https://mail.google.com/")]));
+    }
+    let base = "file:///blocked.html";
+    tick_with_io(
+        &mut io,
+        &tick_shared(),
+        base,
+        &mut false,
+        &mut ScanState::default(),
+        Instant::now(),
+    );
+    assert_eq!(io.apply_calls.len(), 1);
+    let (browser, actions) = &io.apply_calls[0];
+    assert_eq!(*browser, SupportedBrowser::Safari);
+    assert!(is_block_page_url(&actions[0].2, base));
+}
+
+#[test]
+fn switching_focus_while_reading_brave_tabs_defers_only_redirects() {
+    let brave = SupportedBrowser::Brave;
+    let base = "file:///blocked.html";
+    let original = "https://example.com/";
+    let mut io = FakeIo::new(
+        vec![block("mail", "blocklist", &["mail.google.com"], 0, 999)],
+        &[brave],
+    );
+    io.events = true;
+    io.frontmost = Some(brave.bundle_id().to_string());
+    io.focus_during_next_read = Some("com.apple.TextEdit".to_string());
+    io.selected = Some(2);
+    io.queue_read(
+        brave,
+        Ok(vec![
+            parked_tab(base, original),
+            open_tab(2, "https://mail.google.com/"),
+        ]),
+    );
+
+    tick_with_io(
+        &mut io,
+        &tick_shared(),
+        base,
+        &mut false,
+        &mut ScanState::default(),
+        Instant::now(),
+    );
+
+    assert_eq!(
+        io.apply_calls,
+        vec![(brave, vec![("1".into(), 1, original.into())])]
+    );
+}
+
+/// Without a known frontmost app the watcher cannot tell whether the
+/// browser is in the background, so it fails closed and redirects.
+#[test]
+fn unknown_frontmost_app_still_redirects() {
+    let shared = tick_shared();
+    let brave = SupportedBrowser::Brave;
+    let base = "file:///blocked.html";
+    for events in [false, true] {
+        let mut io = FakeIo::new(
+            vec![block("mail", "blocklist", &["mail.google.com"], 0, 999)],
+            &[brave],
+        );
+        io.events = events;
+        io.frontmost = None;
+        io.queue_read(brave, Ok(vec![open_tab(1, "https://mail.google.com/")]));
+        let mut needs_restore = false;
+        let mut scan = ScanState::default();
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut scan,
+            Instant::now(),
+        );
+        assert_eq!(io.apply_calls.len(), 1, "events={events}");
+    }
+}
+
+/// Mid-block restores (a site removed from the list) are not deferred:
+/// the block page has no beforeunload handler to raise the browser.
+#[test]
+fn background_browser_still_restores_unblocked_tabs_while_blocking() {
+    let shared = tick_shared();
+    let brave = SupportedBrowser::Brave;
+    let base = "file:///blocked.html";
+    let mut io = FakeIo::new(
+        vec![block("mail", "blocklist", &["mail.google.com"], 0, 999)],
+        &[brave],
+    );
+    io.events = true;
+    io.frontmost = Some("com.apple.TextEdit".to_string());
+    io.queue_read(
+        brave,
+        Ok(vec![
+            parked_tab(base, "https://example.com/"),
+            open_tab(2, "https://mail.google.com/"),
+        ]),
+    );
+    let mut needs_restore = false;
+    let mut scan = ScanState::default();
+    tick_with_io(
+        &mut io,
+        &shared,
+        base,
+        &mut needs_restore,
+        &mut scan,
+        Instant::now(),
+    );
+    assert_eq!(
+        io.apply_calls,
+        vec![(
+            brave,
+            vec![("1".to_string(), 1, "https://example.com/".to_string())]
+        )]
+    );
 }
 
 #[test]
@@ -558,7 +830,7 @@ fn restore_pass_scans_background_browser_even_when_frontmost_is_another_app() {
     io.events = true;
     io.frontmost = Some("com.apple.TextEdit".to_string());
     io.queue_read(browser, Ok(vec![parked_tab(base, original)]));
-    io.queue_apply(browser, Ok(()));
+    io.queue_apply(browser, Ok(ApplyOutcome::Complete));
     let mut needs_restore = true;
     let mut scan = ScanState::default();
     let start = Instant::now();
@@ -894,6 +1166,7 @@ fn redirects_address_windows_by_id_not_stacking_position() {
     // swapping the front window.
     let script = apply_actions_script(
         SupportedBrowser::Brave,
+        None,
         &[
             ("12".to_string(), 3, "file:///blocked.html?a".to_string()),
             ("5".to_string(), 1, "file:///blocked.html?b".to_string()),
@@ -935,6 +1208,7 @@ fn apply_script_resolves_window_ids_before_iterating() {
     // first makes the browser return concrete ids.
     let script = apply_actions_script(
         SupportedBrowser::Brave,
+        None,
         &[("12".to_string(), 1, "file:///blocked.html".to_string())],
     );
     assert!(
@@ -975,8 +1249,27 @@ fn assert_live_background_redirect(browser: SupportedBrowser, setup: &str) {
         .ok()
         .and_then(|tabs| tabs.iter().find(|tab| tab.window_id == id_a))
         .map(|tab| {
+            if browser == SupportedBrowser::Brave {
+                // B is frontmost. Simulate selection changing after the
+                // watcher selected A but before its Apple Event ran.
+                let guarded = apply_actions_script(
+                    browser,
+                    Some(tab.tab_ref),
+                    &[(
+                        id_a.clone(),
+                        tab.tab_ref,
+                        "https://example.net/?guarded".into(),
+                    )],
+                );
+                if run_osascript(&guarded)?.trim() != "skipped" {
+                    return Err(AutomationError::Other(
+                        "expected a definite selection skip".into(),
+                    ));
+                }
+            }
             run_osascript(&apply_actions_script(
                 browser,
+                None,
                 &[(
                     id_a.clone(),
                     tab.tab_ref,
@@ -1081,6 +1374,7 @@ return (idA as text) & "|" & (idB as text)"#,
 fn apply_script_escapes_the_window_id() {
     let script = apply_actions_script(
         SupportedBrowser::Safari,
+        None,
         &[("a\"b".to_string(), 1, "https://x.example/".to_string())],
     );
     assert!(script.contains(r#"if _key is "a\"b" then"#), "{script}");
@@ -1125,6 +1419,7 @@ fn apply_script_runs_against_safari() {
     }
     let script = apply_actions_script(
         SupportedBrowser::Safari,
+        None,
         &[("1".to_string(), 1, "https://a.example/?q=1&r=2".to_string())],
     );
     run_osascript(&script).expect("apply script compiles and runs against Safari's dictionary");
