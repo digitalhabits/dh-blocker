@@ -1458,3 +1458,59 @@ fn an_unknown_answer_is_no_confirmation() {
     apply_permission(&mut rt, PermState::Unknown, DENIED_RETRY, Instant::now());
     assert!(!grant_is_fresh(rt.granted_at, Instant::now()));
 }
+
+#[test]
+fn clean_browser_does_not_mask_pending_idle_restore_in_another_browser() {
+    let shared = tick_shared();
+    let clean = SupportedBrowser::Safari;
+    let pending = SupportedBrowser::Brave;
+    let base = "file:///blocked.html";
+    let mut io = FakeIo::new(Vec::new(), &[clean, pending]);
+    io.queue_read(pending, Err(AutomationError::Other("read failed".into())));
+    io.queue_read(pending, Err(AutomationError::NotAuthorized));
+    io.queue_read(pending, Ok(vec![parked_tab(base, "https://example.com/")]));
+    let mut needs_restore = true;
+    let mut scan = ScanState::default();
+    let start = Instant::now();
+
+    for elapsed in [
+        Duration::ZERO,
+        Duration::from_secs(1),
+        Duration::from_secs(2),
+    ] {
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut scan,
+            start + elapsed,
+        );
+        assert!(
+            needs_restore,
+            "the pending browser has not been scanned clean"
+        );
+    }
+    assert_eq!(io.read_calls, vec![clean, pending, pending]);
+
+    for elapsed in [
+        DENIED_RETRY + Duration::from_secs(1),
+        DENIED_RETRY + Duration::from_secs(2),
+    ] {
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut scan,
+            start + elapsed,
+        );
+    }
+    assert_eq!(
+        io.read_calls,
+        vec![clean, pending, pending, pending, pending]
+    );
+    assert_eq!(io.apply_calls.len(), 1);
+    assert_eq!(io.apply_calls[0].0, pending);
+    assert!(!needs_restore);
+}
