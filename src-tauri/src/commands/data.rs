@@ -722,7 +722,7 @@ pub fn is_microsoft_store_package() -> bool {
 /// Returns the path to the most recently modified data file found in any of:
 /// - Current per-user Tauri app data dir (the old default location)
 /// - Legacy bundle identifier directories (com.redd.block, redd-block)
-fn find_per_user_data(app: &AppHandle) -> Option<PathBuf> {
+fn per_user_data_candidates(app: &AppHandle) -> Vec<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
 
     // Current Tauri app data dir (the old per-user location before shared migration)
@@ -737,20 +737,14 @@ fn find_per_user_data(app: &AppHandle) -> Option<PathBuf> {
         }
     }
 
-    let mut best: Option<(PathBuf, std::time::SystemTime)> = None;
-    for path in candidates {
-        if path.exists() {
-            if let Ok(meta) = fs::metadata(&path) {
-                if let Ok(modified) = meta.modified() {
-                    if best.as_ref().map_or(true, |(_, t)| modified > *t) {
-                        best = Some((path, modified));
-                    }
-                }
-            }
-        }
-    }
+    candidates.retain(|p| p.is_file());
+    candidates
+        .sort_by_cached_key(|p| std::cmp::Reverse(fs::metadata(p).and_then(|m| m.modified()).ok()));
+    candidates
+}
 
-    best.map(|(p, _)| p)
+fn find_per_user_data(app: &AppHandle) -> Option<PathBuf> {
+    per_user_data_candidates(app).into_iter().next()
 }
 
 fn normalize_eula_state(data: &mut AppData) -> bool {
@@ -873,13 +867,16 @@ pub fn recover_invalid_data(app: AppHandle) -> Result<String, String> {
     recover_invalid_store(&path, || {
         #[cfg(feature = "system-test")]
         if !should_import_legacy_data() {
-            return None;
+            return vec![];
         }
-        import_sources()
-            .iter()
-            .map(|dir| dir.join(DATA_FILE_NAME))
-            .find(|p| p.is_file())
-            .or_else(|| find_per_user_data(&app))
+        let mut candidates: Vec<_> = import_sources()
+            .into_iter()
+            .map(|d| d.join(DATA_FILE_NAME))
+            .filter(|p| p.is_file())
+            .collect();
+        candidates.extend(per_user_data_candidates(&app));
+        candidates.retain(|p| p != &path);
+        candidates
     })
     .map(|p| p.display().to_string())
     .map_err(|e| e.to_string())
@@ -888,13 +885,14 @@ pub fn recover_invalid_data(app: AppHandle) -> Result<String, String> {
 #[cfg(not(target_os = "ios"))]
 fn recover_invalid_store(
     path: &std::path::Path,
-    legacy_source: impl FnOnce() -> Option<PathBuf>,
+    legacy_sources: impl FnOnce() -> Vec<PathBuf>,
 ) -> std::io::Result<PathBuf> {
     use sha2::{Digest, Sha256};
     let transaction = DataFileWrite::lock(path)?;
+    let sources = legacy_sources();
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => fs::read(legacy_source().ok_or(e)?)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => fs::read(sources.first().ok_or(e)?)?,
         Err(e) => return Err(e),
     };
     if serde_json::from_slice::<AppData>(&bytes).is_ok() {
@@ -907,16 +905,21 @@ fn recover_invalid_store(
         Sha256::digest(&bytes)
     ));
     write_data_file_atomic(&archived, &bytes)?;
-    let backup = match fs::read(path.with_file_name(PRE_SHARED_IMPORT_BACKUP)) {
-        Ok(candidate) if serde_json::from_slice::<AppData>(&candidate).is_ok() => Some(candidate),
-        Ok(_) => None,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => return Err(e),
-    };
-    let replacement = match backup {
-        Some(bytes) => bytes,
-        None => serde_json::to_vec(&AppData::default())?,
-    };
+    // A damaged shared import can mask a valid older per-user store.
+    // Exhaust the saved copies before offering an empty configuration.
+    let candidates = std::iter::once(path.with_file_name(PRE_SHARED_IMPORT_BACKUP)).chain(sources);
+    for candidate in candidates {
+        match fs::read(candidate) {
+            Ok(bytes) if serde_json::from_slice::<AppData>(&bytes).is_ok() => {
+                transaction.write(&bytes)?;
+                return Ok(archived);
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
+        }
+    }
+    let replacement = serde_json::to_vec(&AppData::default())?;
     transaction.write(&replacement)?;
     Ok(archived)
 }
