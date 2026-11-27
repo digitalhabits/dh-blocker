@@ -124,6 +124,20 @@ export const screens = [
         },
     },
     {
+        // The toggle for the floating allow-mode indicator; the indicator
+        // itself is shot by scripts/ui/shoot-allow-indicator.mjs.
+        name: 'settings-allow-indicator',
+        fixture: fixtures.manualRunning,
+        platform: 'mac',
+        viewport: DESKTOP,
+        clip: '#settings-allow-indicator-row',
+        prepare: async (page) => {
+            await page.click('#settings-btn');
+            await page.waitForSelector('#settings-modal:not(.hidden)');
+            await page.locator('#settings-allow-indicator-row').scrollIntoViewIfNeeded();
+        },
+    },
+    {
         name: 'settings-windows-blocking-methods',
         fixture: fixtures.crowdedWeek,
         platform: 'windows',

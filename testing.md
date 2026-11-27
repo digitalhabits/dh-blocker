@@ -489,6 +489,22 @@ Windows one. Stamping it is also how mobile-only problems become visible:
 hover-dependent affordances such as native `title` tooltips do not exist on iOS
 devices, and only show up as missing when the page is rendered as those.
 
+### The allow-mode indicator window
+
+The floating indicator is a separate page with no `__REDDBLOCK_INTERNALS__`
+contract, so it has its own small script rather than entries in
+`test/ui/screens.js`:
+
+```bash
+node scripts/ui/shoot-allow-indicator.mjs    # artifacts/ui/allow-indicator-*.png
+```
+
+That shows the card, not the window. To see the real window without blocking
+anything on your machine, run a `system-test` debug build with
+`REDD_BLOCK_SYSTEM_TEST_DATA_PATH` pointing at an empty file and
+`REDD_BLOCK_SYSTEM_TEST_ALLOW_INDICATOR_DATA_PATH` at a fixture with an active
+allow-mode block (architecture.md §8a).
+
 ---
 
 ## Rust unit tests

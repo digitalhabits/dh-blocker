@@ -70,6 +70,7 @@ This section explains the **current** runtime:
 | Browser profile / extension scan | `src-tauri/src/profile_scan.rs` |
 | Compliance enforcer | `src-tauri/src/enforcer.rs`, `src-tauri/src/commands/enforcement_toggle.rs` |
 | App blocking watcher | `src-tauri/src/app_watcher.rs`, `src-tauri/src/commands/app_blocking.rs` |
+| Allow-mode indicator (floating window, display only) | `src-tauri/src/allow_indicator.rs`, `src/allow-indicator.html`, `src/allow-indicator.js`, `src/allow-indicator.css`, `src/allow-indicator-setting.js` |
 | v1.x migration / hosts cleanup | `src-tauri/src/commands/migration.rs` |
 | Uninstall | `src-tauri/src/commands/uninstall.rs` |
 | App registration / tray / startup | `src-tauri/src/lib.rs` |
@@ -561,6 +562,56 @@ removes the cancelled app from the frontend countdown banner.
 
 macOS warning overlay uses a custom `MainPanel` NSPanel (`lib.rs`) so the
 countdown can float over third-party fullscreen Spaces without stealing focus.
+
+---
+
+## 8a) Allow-mode indicator (desktop)
+
+`src-tauri/src/allow_indicator.rs` + `src/allow-indicator.{html,js,css}` — a
+small always-on-top window, bottom-right by default, that lists the websites
+and apps the running allow-mode spaces leave available. It appears while at
+least one allow-mode space that lists something is in force and goes when the
+last one pauses, stops or ends. Block-mode spaces alone never show it.
+
+**Display only.** It reads the same blocks enforcement reads and nothing reads
+it back. The window has no pause, stop or edit control, and must not gain one:
+it floats over every app, so a control there would be the cheapest bypass in
+the product. Hiding it changes nothing about what is blocked.
+
+- **What it lists** (`state_from_blocks`, from `derive_payload`): the union of
+  the allow spaces' websites and apps, minus anything a running block-mode
+  space blocks (a blocked parent domain removes its subdomains, matching
+  `block_page::url_is_blocked`). A side no allow space lists is shown as "All
+  websites" / "All apps", because that side is not restricted (§9.4). A Rust
+  test asserts the website list agrees with `url_is_blocked` domain by domain.
+- **When it shows** (`decide`): an allow session is active, the EULA is
+  accepted, `settings.showAllowIndicator` is not `false` (default on, Settings →
+  "Show what is allowed while focusing"), and the user has not dismissed it.
+  The ✕ dismisses for the current session only; the flag clears when no allow
+  space is running, so the next session, or a resume after a pause, shows it
+  again.
+- **Refresh:** a 1 s loop in Rust, not the main webview, because the main
+  window is destroyed on close while enforcement continues in the tray.
+- **Failure direction:** towards not showing. An unreadable data file or a
+  window that cannot be built leaves the indicator hidden and blocking as is.
+- **Window:** follows the To-Do focus window in the planner repo. macOS: its
+  own non-activating `NSPanel` (`AllowIndicatorPanel`) at floating level, on
+  every Space and over full-screen apps. It never becomes key, so clicking it
+  does not take typing away from the app in use. Windows: a borderless
+  always-on-top, skip-taskbar window. It resizes around its bottom-right
+  corner; a dragged position is kept in `allow-indicator-position.json` beside
+  the data file (a sidecar, because the frontend owns writes to the data file).
+- **Capability:** `capabilities/allow-indicator.json` grants the window event
+  listening only. Dragging goes through `allow_indicator_move_by` (pointer
+  deltas applied in Rust) rather than the webview's `startDragging`, which
+  needs a window that takes focus; a corner dragged off every screen is
+  ignored.
+- **Test builds:** off under `e2e-webdriver`, so Tier 2 never meets a second
+  window. A `system-test` build runs it only when
+  `REDD_BLOCK_SYSTEM_TEST_ALLOW_INDICATOR_DATA_PATH` names a fixture, which
+  feeds the indicator alone and leaves the instance's own data file, and so
+  enforcement, untouched.
+- **iOS:** not built (`cfg(not(target_os = "ios"))`); the Settings row is hidden.
 
 ---
 

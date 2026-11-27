@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "allow-indicator",
+  "description": "The floating allow-mode indicator window: listen for its state. Nothing else; it is moved and sized through the app's own allow_indicator commands.",
+  "platforms": ["macOS", "windows", "linux"],
+  "windows": [
+    "allow-indicator"
+  ],
+  "permissions": [
+    "core:event:default"
+  ]
+}
