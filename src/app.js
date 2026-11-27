@@ -1,3 +1,4 @@
+import { ask, message } from '@tauri-apps/plugin-dialog';
 // Tauri API imports - proper ES modules from @tauri-apps/api
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -249,6 +250,25 @@ function showStartupRecovery(error) {
     document.getElementById('startup-recovery-error').textContent = String(error);
     retry.textContent = tSettings('startupRecoveryRetry');
     retry.addEventListener('click', () => window.location.reload());
+
+    if (!state.isIOS && /^(?:Error: )?Invalid (saved|legacy) data in /.test(String(error))) {
+        const restore = document.getElementById('startup-recovery-restore');
+        restore.textContent = tSettings('startupRecoveryRestore');
+        restore.classList.remove('hidden');
+        restore.addEventListener('click', async () => {
+            restore.disabled = true;
+            try {
+                if (!await ask(tSettings('startupRecoveryConfirm'), { title: restore.textContent })) return;
+                const path = await invoke('recover_invalid_data');
+                await message(tSettings('startupRecoveryArchived').replace('{path}', path));
+                window.location.reload();
+            } catch (failure) {
+                document.getElementById('startup-recovery-error').textContent = String(failure);
+            } finally {
+                restore.disabled = false;
+            }
+        });
+    }
 
     if (state.isMacOSDesktop) {
         setupInAppUninstall({ recovery: true });

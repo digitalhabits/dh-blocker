@@ -3,6 +3,8 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import '../../src/app.js';
 
 const invoke = vi.hoisted(() => vi.fn());
+const ask = vi.hoisted(() => vi.fn().mockResolvedValue(false));
+vi.mock('@tauri-apps/plugin-dialog', async (importOriginal) => ({ ...await importOriginal(), ask }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));
 
 beforeEach(() => {
@@ -44,4 +46,18 @@ test.each(['load_data', 'save_data'])('startup failure in %s keeps confirmed uni
     document.getElementById('confirm-uninstall-confirm-btn').click();
 
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('uninstall_self_macos', { deleteUserData: false }));
+});
+
+test('damaged desktop data offers recovery and cancelling keeps the original file', async () => {
+    invoke.mockImplementation(async (command) => {
+        if (command === 'load_data') throw new Error('Invalid saved data in rules.json: missing field');
+        return false;
+    });
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    const restore = document.getElementById('startup-recovery-restore');
+    await vi.waitFor(() => expect(restore.classList.contains('hidden')).toBe(false));
+    restore.click();
+    await vi.waitFor(() => expect(restore.disabled).toBe(false));
+    expect(ask).toHaveBeenCalledOnce();
+    expect(invoke.mock.calls.some(([name]) => name === 'recover_invalid_data')).toBe(false);
 });
