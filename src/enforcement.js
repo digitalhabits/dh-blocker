@@ -1679,6 +1679,382 @@ export function updateMigrationBrowserChecklist(state) {
     }
 }
 
+function buildBrowserExtensionRow(key, entry, browser) {
+    const status = browserComplianceStatus(key, browser) || 'needs-install';
+    const viaAddressBar = addressBarBlockingCovers(key, browser);
+
+    const row = document.createElement('div');
+    row.className = `migration-browser-row ${status}`;
+
+    // Two-line row layout: header (browser name + status badge)
+    // on top, action (URL + Copy, or hint text) below. Keeps each
+    // row readable at typical window widths and avoids the prior
+    // cramped single-line stacking.
+    const header = document.createElement('div');
+    header.className = 'migration-browser-header';
+
+    const name = document.createElement('span');
+    name.className = 'migration-browser-name';
+
+    const icon = document.createElement('img');
+    icon.className = 'migration-browser-icon';
+    icon.src = browserIconUrl(key);
+    icon.alt = '';
+    icon.setAttribute('aria-hidden', 'true');
+    name.appendChild(icon);
+
+    name.appendChild(document.createTextNode(entry.label));
+    header.appendChild(name);
+
+    const badge = document.createElement('span');
+    badge.className = `migration-browser-badge ${status}`;
+    switch (status) {
+        case 'compliant':
+            badge.textContent = viaAddressBar ? tSettings('migrationBadgeAddressBar') : statusLabel(key, status);
+            break;
+        case 'needs-deduplicate': badge.textContent = tSettings('migrationBadgeDuplicateSafari'); break;
+        case 'needs-install': badge.textContent = tSettings('migrationBadgeNotInstalled'); break;
+        case 'needs-enable': badge.textContent = tSettings('migrationBadgeDisabled'); break;
+        case 'needs-private': badge.textContent = tSettings('migrationBadgeNotPrivate'); break;
+        case 'needs-native-host': badge.textContent = tSettings('migrationBadgeNativeHost'); break;
+        case 'needs-fda': badge.textContent = tSettings('migrationStatusGrantFda'); break;
+        case 'needs-website-access': badge.textContent = tSettings('migrationBadgeNoWebsiteAccess'); break;
+        case 'policy-blocked': badge.textContent = tSettings('migrationBadgePolicyBlocked'); break;
+        default: badge.textContent = tSettings('migrationBadgeNotInstalled');
+    }
+    header.appendChild(badge);
+
+    row.appendChild(header);
+
+    if (viaAddressBar && browser?.nativeHostBlockedByPolicy) {
+        const hint = document.createElement('div');
+        hint.className = 'migration-browser-hint migration-browser-after-hint';
+        hint.textContent = tSettingsFmt('migrationPolicyUsingAutomation', { browser: entry.label });
+        row.appendChild(hint);
+    } else if (!viaAddressBar && status === 'policy-blocked') {
+        appendPolicyBlockedBrowserActions(row, key, entry);
+    } else if (status === 'needs-fda') {
+        const hint = document.createElement('div');
+        hint.className = 'migration-browser-hint migration-browser-after-hint';
+        hint.innerHTML = tSettings('safariFdaSetupHintHtml');
+        row.appendChild(hint);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'migration-primary-btn';
+        btn.textContent = tSettings('safariFdaOnboardingGrantBtn');
+        btn.addEventListener('click', () => {
+            void showSafariFdaOnboardingOverlay().then(async () => {
+                const fresh = await invoke('onboarding_state');
+                renderBrowserInstallButtons(fresh, { force: true });
+                await updateBehaviourChangeBanner(fresh);
+            });
+        });
+        const actionsRow = document.createElement('div');
+        actionsRow.className = 'migration-actions-row';
+        actionsRow.appendChild(btn);
+        row.appendChild(actionsRow);
+    } else if (status === 'needs-install') {
+        appendBrowserInstallActions(row, key, entry);
+    } else if (status === 'needs-deduplicate') {
+        renderSafariDuplicateExtensionPanel(row, key);
+    } else if (status === 'needs-native-host') {
+        const hint = document.createElement('div');
+        hint.className = 'migration-browser-hint migration-browser-after-hint';
+        hint.innerHTML = tSettings('migrationFirefoxNativeHostHtml');
+        row.appendChild(hint);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'migration-browser-copy';
+        btn.textContent = tSettings('migrationFirefoxNativeHostButton');
+        btn.addEventListener('click', async () => {
+            try {
+                await invoke('ensure_firefox_native_host');
+                const fresh = await invoke('onboarding_state');
+                renderBrowserInstallButtons(fresh, { force: true });
+                await updateBehaviourChangeBanner(fresh);
+            } catch (e) {
+                console.warn('[firefox] ensure_firefox_native_host failed:', e);
+            }
+        });
+        const actionsRow = document.createElement('div');
+        actionsRow.className = 'migration-actions-row';
+        actionsRow.appendChild(btn);
+        row.appendChild(actionsRow);
+    } else if (status === 'needs-enable' || status === 'needs-private' || status === 'needs-website-access') {
+        appendBrowserExtensionSetup(row, key, entry, browser, status);
+
+    }
+    return row;
+}
+
+function appendPolicyBlockedBrowserActions(row, key, entry) {
+    // Windows Chromium can still block through Automation, so offer that switch here.
+    // `state` here is the browser scan, not the app state, so read the platform off the page.
+    const canSwitch = document.body.classList.contains('windows') && key !== 'firefox';
+    const hint = document.createElement('div');
+    hint.className = 'migration-browser-hint migration-browser-after-hint';
+    hint.textContent = tSettingsFmt(canSwitch ? 'migrationPolicyBlockedHintAutomation' : 'migrationPolicyBlockedHint', { browser: entry.label });
+    row.appendChild(hint);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'migration-browser-copy';
+    btn.textContent = tSettings('migrationPolicyBlockedLearnMore');
+    btn.addEventListener('click', () => void openUrl(tSettings('managedComputerHelpUrl')).catch(e => console.warn('[policy] open help failed:', e)));
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'migration-actions-row';
+    if (canSwitch) {
+        const switchBtn = Object.assign(document.createElement('button'), {
+            type: 'button', className: 'migration-browser-copy', textContent: tSettings('migrationPolicySwitchToAutomation'),
+        });
+        // Same path as the Settings dropdown, which also re-renders this screen.
+        switchBtn.addEventListener('click', () => {
+            const select = document.getElementById(`blocking-method-${key}`);
+            if (!select) return;
+            switchBtn.disabled = true;
+            select.value = 'automation';
+            void onBlockingMethodChange(key, select);
+        });
+        actionsRow.appendChild(switchBtn);
+    }
+    actionsRow.appendChild(btn);
+    row.appendChild(actionsRow);
+}
+
+function appendBrowserInstallActions(row, key, entry) {
+    // Instruction hint first, then Install button below (matching
+    // the needs-enable/private layout where instruction precedes action).
+    const afterHint = document.createElement('div');
+    afterHint.className = 'migration-browser-hint migration-browser-after-hint';
+    const privNoun = privateModeNoun(key);
+    if (key === 'firefox') {
+        afterHint.innerHTML = appState.isMacOSDesktop
+            ? tSettings('migrationPostInstallFirefoxMacHtml')
+            : tSettings('migrationPostInstallFirefoxHtml');
+    } else if (key === 'safari') {
+        afterHint.innerHTML = tSettings('migrationPostInstallSafariHtml');
+    } else if (appState.isMacOSDesktop) {
+        const tpl = tSettings('migrationPostInstallChromiumMacHtml');
+        afterHint.innerHTML = tpl
+            .replace('{URL_CHIP}', extensionsUrlChipHtml(key))
+            .replace(/{BROWSER}/g, entry.label)
+            .replace(/{PRIV}/g, privNoun);
+        attachCopyChipHandlers(afterHint);
+    } else {
+        const tpl = tSettings('migrationPostInstallChromiumHtml');
+        afterHint.innerHTML = tpl
+            .replace('{URL_CHIP}', extensionsUrlChipHtml(key))
+            .replace(/{BROWSER}/g, entry.label)
+            .replace(/{PRIV}/g, privNoun);
+        attachCopyChipHandlers(afterHint);
+    }
+    row.appendChild(afterHint);
+
+    const installBtn = document.createElement('button');
+    installBtn.type = 'button';
+    installBtn.className = 'migration-browser-copy';
+    installBtn.textContent = tSettings('migrationInstallButton');
+    installBtn.title = tSettingsFmt('migrationInstallStoreTitle', { browser: entry.label });
+    installBtn.addEventListener('click', async () => {
+        try {
+            await invoke('open_url_in_browser', { browser: key, url: entry.url });
+            installBtn.textContent = tSettings('migrationInstallOpened');
+            setTimeout(() => { installBtn.textContent = tSettings('migrationInstallButton'); }, 2000);
+        } catch (e) {
+            console.warn('[migration] open_url_in_browser failed, falling back to clipboard:', e);
+            try {
+                await navigator.clipboard.writeText(entry.url);
+                installBtn.textContent = tSettings('migrationUrlCopied');
+                setTimeout(() => { installBtn.textContent = tSettings('migrationInstallButton'); }, 2000);
+            } catch {
+                installBtn.textContent = tSettings('migrationFailed');
+                setTimeout(() => { installBtn.textContent = tSettings('migrationInstallButton'); }, 2000);
+            }
+        }
+    });
+
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'migration-actions-row';
+    actionsRow.appendChild(installBtn);
+    row.appendChild(actionsRow);
+}
+
+function appendSafariExtensionChecklist(row, browser) {
+    const profiles = Array.isArray(browser?.profiles) ? browser.profiles : [];
+    const allEnabled = profiles.length > 0 && profiles.every(p => p.enabled === true);
+    const allPrivate = profiles.length > 0 && profiles.every(p => p.privateBrowsing === true);
+    const allAllSites = profiles.length > 0 && profiles.every(p => p.websiteAccessAll === true);
+
+    const stepDefs = [
+        { label: tSettings('migrationSafariStepEnable'), done: allEnabled },
+        { label: tSettings('migrationSafariStepPrivate'), done: allPrivate },
+        { label: tSettings('migrationSafariStepEveryWebsite'), done: allAllSites },
+    ];
+    const activeIdx = stepDefs.findIndex(s => !s.done);
+
+    const checklist = document.createElement('div');
+    checklist.className = 'migration-safari-steps';
+
+    stepDefs.forEach((step, i) => {
+        const line = document.createElement('div');
+        let klass = 'migration-checklist-line';
+        const lineLabel = tSettingsFmt('migrationSafariChecklistLine', { n: String(i + 1), label: step.label });
+        if (step.done) {
+            klass += ' migration-checklist-done';
+            line.className = klass;
+            line.textContent = `✓ ${lineLabel}`;
+        } else {
+            let iconHtml;
+            if (i === activeIdx) {
+                klass += ' migration-checklist-active';
+                iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>`;
+            } else {
+                klass += ' migration-checklist-pending';
+                iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8" opacity="0.4"/></svg>`;
+            }
+            line.className = klass;
+            line.innerHTML = `<span class="migration-check-icon">${iconHtml}</span> ${lineLabel}`;
+        }
+        checklist.appendChild(line);
+    });
+
+    row.appendChild(checklist);
+}
+
+function appendBrowserExtensionSetup(row, key, entry, browser, status) {
+    // Mirror the notification-banner layout for clarity:
+    // [optional ✓ Extension installed]
+    // instruction text (single line for Chromium / Firefox,
+    //   three-step checklist for Safari)
+    // [Open Extension Settings] [Show me how ▶]
+    // delay note
+    // [screenshots wrap, full-row when expanded]
+    const isSafari = key === 'safari';
+
+    // "✓ Extension installed" line. Always show for Safari —
+    // we bundle the .appex inside ReDD Blocker.app, so install
+    // is structurally guaranteed at this point. For Chromium /
+    // Firefox we only show it once we've moved past the
+    // install step (status !== 'needs-enable') because there
+    // the install + enable are distinct user actions.
+    if (isSafari || status !== 'needs-enable') {
+        const extInstalledLine = document.createElement('div');
+        extInstalledLine.className = 'migration-checklist-line migration-checklist-done';
+        extInstalledLine.textContent = `✓ ${tSettings('migrationExtensionInstalledMark')}`;
+        row.appendChild(extInstalledLine);
+    }
+
+    const privNoun = privateModeNoun(key);
+    const steps = enforcerScreenshotSteps(key);
+    const hasSteps = steps && steps.length;
+
+    if (isSafari) {
+        appendSafariExtensionChecklist(row, browser);
+    } else {
+        const instructionLine = document.createElement('div');
+        instructionLine.className = 'migration-instruction';
+        let tplKey;
+        if (status === 'needs-enable') {
+            tplKey = 'migrationInstructionEnableHtml';
+        } else if (status === 'needs-website-access') {
+            tplKey = 'migrationInstructionWebsiteAccessHtml';
+        } else if (key === 'firefox') {
+            tplKey = 'migrationInstructionFirefoxPrivateHtml';
+        } else {
+            tplKey = 'migrationInstructionChromiumPrivateHtml';
+        }
+        const chip = extensionsUrlChipHtml(key);
+        instructionLine.innerHTML = tSettings(tplKey)
+            .replace('{URL_CHIP}', chip)
+            .replace(/{BROWSER}/g, entry.label)
+            .replace(/{PRIV}/g, privNoun);
+        attachCopyChipHandlers(instructionLine);
+        row.appendChild(instructionLine);
+    }
+
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'migration-actions-row';
+
+    const primaryBtn = document.createElement('button');
+    primaryBtn.type = 'button';
+    primaryBtn.className = 'migration-primary-btn';
+    primaryBtn.textContent = tSettings('migrationOpenExtensionSettings');
+    primaryBtn.addEventListener('click', () => {
+        openExtensionSettings(key).catch(e => console.warn('[migration] open ext settings:', e));
+        // On Windows the extension opens the page, so a closed browser or an off/old extension does nothing.
+        if (isSafari) return;
+        primaryBtn.textContent = tSettings('migrationOpenSettingsPending');
+        setTimeout(() => { primaryBtn.textContent = tSettings('migrationOpenExtensionSettings'); }, 6000);
+    });
+    actionsRow.appendChild(primaryBtn);
+
+    let showMeBtn = null;
+    if (hasSteps) {
+        showMeBtn = document.createElement('button');
+        showMeBtn.type = 'button';
+        showMeBtn.className = 'migration-show-me-btn';
+        showMeBtn.setAttribute('aria-expanded', 'false');
+        showMeBtn.innerHTML = `<span>${tSettings('migrationShowMeHow')}</span><svg class="migration-show-me-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>`;
+        actionsRow.appendChild(showMeBtn);
+    }
+
+    row.appendChild(actionsRow);
+
+    const delayNote = document.createElement('div');
+    delayNote.className = 'migration-browser-hint migration-delay-note';
+    delayNote.textContent = tSettings('migrationDelayDetectionNote');
+    row.appendChild(delayNote);
+
+    if (hasSteps) {
+        const screenshotsWrap = document.createElement('div');
+        screenshotsWrap.className = 'migration-screenshots-wrap hidden';
+
+        const screenshotsContainer = document.createElement('div');
+        const safariTwoUp = key === 'safari' && steps.length === 2;
+        screenshotsContainer.className = `extension-enforcer-screenshots ${steps.length >= 3 ? 'screenshots-grid' : 'screenshots-row'}${safariTwoUp ? ' safari-screenshots-asymmetric' : ''}`;
+
+        steps.forEach((step, i) => {
+            if (i > 0 && steps.length < 3) {
+                const arrow = document.createElement('span');
+                arrow.className = 'extension-enforcer-screenshot-arrow';
+                arrow.textContent = '→';
+                screenshotsContainer.appendChild(arrow);
+            }
+            const figure = document.createElement('figure');
+            figure.className = 'extension-enforcer-step';
+            const cap = formatExtensionScreenshotCaption(step, i);
+            if (cap) {
+                const caption = document.createElement('figcaption');
+                caption.className = 'extension-enforcer-step-label';
+                caption.textContent = cap;
+                figure.appendChild(caption);
+            }
+            const img = document.createElement('img');
+            img.className = 'extension-enforcer-screenshot';
+            img.src = step.src;
+            img.alt = screenshotAltText(step, i, cap);
+            figure.appendChild(img);
+            screenshotsContainer.appendChild(figure);
+        });
+
+        screenshotsWrap.appendChild(screenshotsContainer);
+        row.appendChild(screenshotsWrap);
+
+        showMeBtn.addEventListener('click', () => {
+            const isOpen = showMeBtn.classList.toggle('open');
+            screenshotsWrap.classList.toggle('hidden', !isOpen);
+            showMeBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            if (isOpen) appState.migrationShowMeHowExpandedKeys.add(key);
+            else appState.migrationShowMeHowExpandedKeys.delete(key);
+        });
+
+        if (appState.migrationShowMeHowExpandedKeys.has(key)) {
+            showMeBtn.classList.add('open');
+            screenshotsWrap.classList.remove('hidden');
+            showMeBtn.setAttribute('aria-expanded', 'true');
+        }
+    }
+}
+
 export function renderBrowserInstallButtons(state, { force = false } = {}) {
     appState.lastMigrationBrowserState = state;
     void applyEnforcementDescCopy(state);
@@ -1723,364 +2099,7 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
             continue;
         }
 
-        const status = browserComplianceStatus(key, browsers[key]) || 'needs-install';
-        const viaAddressBar = addressBarBlockingCovers(key, browsers[key]);
-
-        const row = document.createElement('div');
-        row.className = `migration-browser-row ${status}`;
-
-        // Two-line row layout: header (browser name + status badge)
-        // on top, action (URL + Copy, or hint text) below. Keeps each
-        // row readable at typical window widths and avoids the prior
-        // cramped single-line stacking.
-        const header = document.createElement('div');
-        header.className = 'migration-browser-header';
-
-        const name = document.createElement('span');
-        name.className = 'migration-browser-name';
-
-        const icon = document.createElement('img');
-        icon.className = 'migration-browser-icon';
-        icon.src = browserIconUrl(key);
-        icon.alt = '';
-        icon.setAttribute('aria-hidden', 'true');
-        name.appendChild(icon);
-
-        name.appendChild(document.createTextNode(entry.label));
-        header.appendChild(name);
-
-        const badge = document.createElement('span');
-        badge.className = `migration-browser-badge ${status}`;
-        switch (status) {
-            case 'compliant':
-                badge.textContent = viaAddressBar ? tSettings('migrationBadgeAddressBar') : statusLabel(key, status);
-                break;
-            case 'needs-deduplicate': badge.textContent = tSettings('migrationBadgeDuplicateSafari'); break;
-            case 'needs-install': badge.textContent = tSettings('migrationBadgeNotInstalled'); break;
-            case 'needs-enable': badge.textContent = tSettings('migrationBadgeDisabled'); break;
-            case 'needs-private': badge.textContent = tSettings('migrationBadgeNotPrivate'); break;
-            case 'needs-native-host': badge.textContent = tSettings('migrationBadgeNativeHost'); break;
-            case 'needs-fda': badge.textContent = tSettings('migrationStatusGrantFda'); break;
-            case 'needs-website-access': badge.textContent = tSettings('migrationBadgeNoWebsiteAccess'); break;
-            case 'policy-blocked': badge.textContent = tSettings('migrationBadgePolicyBlocked'); break;
-            default: badge.textContent = tSettings('migrationBadgeNotInstalled');
-        }
-        header.appendChild(badge);
-
-        row.appendChild(header);
-
-        if (viaAddressBar && browsers[key]?.nativeHostBlockedByPolicy) {
-            const hint = document.createElement('div');
-            hint.className = 'migration-browser-hint migration-browser-after-hint';
-            hint.textContent = tSettingsFmt('migrationPolicyUsingAutomation', { browser: entry.label });
-            row.appendChild(hint);
-        } else if (!viaAddressBar && status === 'policy-blocked') {
-            // Windows Chromium can still block through Automation, so offer that switch here.
-            // `state` here is the browser scan, not the app state, so read the platform off the page.
-            const canSwitch = document.body.classList.contains('windows') && key !== 'firefox';
-            const hint = document.createElement('div');
-            hint.className = 'migration-browser-hint migration-browser-after-hint';
-            hint.textContent = tSettingsFmt(canSwitch ? 'migrationPolicyBlockedHintAutomation' : 'migrationPolicyBlockedHint', { browser: entry.label });
-            row.appendChild(hint);
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'migration-browser-copy';
-            btn.textContent = tSettings('migrationPolicyBlockedLearnMore');
-            btn.addEventListener('click', () => void openUrl(tSettings('managedComputerHelpUrl')).catch(e => console.warn('[policy] open help failed:', e)));
-            const actionsRow = document.createElement('div');
-            actionsRow.className = 'migration-actions-row';
-            if (canSwitch) {
-                const switchBtn = Object.assign(document.createElement('button'), {
-                    type: 'button', className: 'migration-browser-copy', textContent: tSettings('migrationPolicySwitchToAutomation'),
-                });
-                // Same path as the Settings dropdown, which also re-renders this screen.
-                switchBtn.addEventListener('click', () => {
-                    const select = document.getElementById(`blocking-method-${key}`);
-                    if (!select) return;
-                    switchBtn.disabled = true;
-                    select.value = 'automation';
-                    void onBlockingMethodChange(key, select);
-                });
-                actionsRow.appendChild(switchBtn);
-            }
-            actionsRow.appendChild(btn);
-            row.appendChild(actionsRow);
-        } else if (status === 'needs-fda') {
-            const hint = document.createElement('div');
-            hint.className = 'migration-browser-hint migration-browser-after-hint';
-            hint.innerHTML = tSettings('safariFdaSetupHintHtml');
-            row.appendChild(hint);
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'migration-primary-btn';
-            btn.textContent = tSettings('safariFdaOnboardingGrantBtn');
-            btn.addEventListener('click', () => {
-                void showSafariFdaOnboardingOverlay().then(async () => {
-                    const fresh = await invoke('onboarding_state');
-                    renderBrowserInstallButtons(fresh, { force: true });
-                    await updateBehaviourChangeBanner(fresh);
-                });
-            });
-            const actionsRow = document.createElement('div');
-            actionsRow.className = 'migration-actions-row';
-            actionsRow.appendChild(btn);
-            row.appendChild(actionsRow);
-        } else if (status === 'needs-install') {
-            // Instruction hint first, then Install button below (matching
-            // the needs-enable/private layout where instruction precedes action).
-            const afterHint = document.createElement('div');
-            afterHint.className = 'migration-browser-hint migration-browser-after-hint';
-            const privNoun = privateModeNoun(key);
-            if (key === 'firefox') {
-                afterHint.innerHTML = appState.isMacOSDesktop
-                    ? tSettings('migrationPostInstallFirefoxMacHtml')
-                    : tSettings('migrationPostInstallFirefoxHtml');
-            } else if (key === 'safari') {
-                afterHint.innerHTML = tSettings('migrationPostInstallSafariHtml');
-            } else if (appState.isMacOSDesktop) {
-                const tpl = tSettings('migrationPostInstallChromiumMacHtml');
-                afterHint.innerHTML = tpl
-                    .replace('{URL_CHIP}', extensionsUrlChipHtml(key))
-                    .replace(/{BROWSER}/g, entry.label)
-                    .replace(/{PRIV}/g, privNoun);
-                attachCopyChipHandlers(afterHint);
-            } else {
-                const tpl = tSettings('migrationPostInstallChromiumHtml');
-                afterHint.innerHTML = tpl
-                    .replace('{URL_CHIP}', extensionsUrlChipHtml(key))
-                    .replace(/{BROWSER}/g, entry.label)
-                    .replace(/{PRIV}/g, privNoun);
-                attachCopyChipHandlers(afterHint);
-            }
-            row.appendChild(afterHint);
-
-            const installBtn = document.createElement('button');
-            installBtn.type = 'button';
-            installBtn.className = 'migration-browser-copy';
-            installBtn.textContent = tSettings('migrationInstallButton');
-            installBtn.title = tSettingsFmt('migrationInstallStoreTitle', { browser: entry.label });
-            installBtn.addEventListener('click', async () => {
-                try {
-                    await invoke('open_url_in_browser', { browser: key, url: entry.url });
-                    installBtn.textContent = tSettings('migrationInstallOpened');
-                    setTimeout(() => { installBtn.textContent = tSettings('migrationInstallButton'); }, 2000);
-                } catch (e) {
-                    console.warn('[migration] open_url_in_browser failed, falling back to clipboard:', e);
-                    try {
-                        await navigator.clipboard.writeText(entry.url);
-                        installBtn.textContent = tSettings('migrationUrlCopied');
-                        setTimeout(() => { installBtn.textContent = tSettings('migrationInstallButton'); }, 2000);
-                    } catch {
-                        installBtn.textContent = tSettings('migrationFailed');
-                        setTimeout(() => { installBtn.textContent = tSettings('migrationInstallButton'); }, 2000);
-                    }
-                }
-            });
-
-            const actionsRow = document.createElement('div');
-            actionsRow.className = 'migration-actions-row';
-            actionsRow.appendChild(installBtn);
-            row.appendChild(actionsRow);
-        } else if (status === 'needs-deduplicate') {
-            renderSafariDuplicateExtensionPanel(row, key);
-        } else if (status === 'needs-native-host') {
-            const hint = document.createElement('div');
-            hint.className = 'migration-browser-hint migration-browser-after-hint';
-            hint.innerHTML = tSettings('migrationFirefoxNativeHostHtml');
-            row.appendChild(hint);
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'migration-browser-copy';
-            btn.textContent = tSettings('migrationFirefoxNativeHostButton');
-            btn.addEventListener('click', async () => {
-                try {
-                    await invoke('ensure_firefox_native_host');
-                    const fresh = await invoke('onboarding_state');
-                    renderBrowserInstallButtons(fresh, { force: true });
-                    await updateBehaviourChangeBanner(fresh);
-                } catch (e) {
-                    console.warn('[firefox] ensure_firefox_native_host failed:', e);
-                }
-            });
-            const actionsRow = document.createElement('div');
-            actionsRow.className = 'migration-actions-row';
-            actionsRow.appendChild(btn);
-            row.appendChild(actionsRow);
-        } else if (status === 'needs-enable' || status === 'needs-private' || status === 'needs-website-access') {
-            // Mirror the notification-banner layout for clarity:
-            // [optional ✓ Extension installed]
-            // instruction text (single line for Chromium / Firefox,
-            //   three-step checklist for Safari)
-            // [Open Extension Settings] [Show me how ▶]
-            // delay note
-            // [screenshots wrap, full-row when expanded]
-            const isSafari = key === 'safari';
-
-            // "✓ Extension installed" line. Always show for Safari —
-            // we bundle the .appex inside ReDD Blocker.app, so install
-            // is structurally guaranteed at this point. For Chromium /
-            // Firefox we only show it once we've moved past the
-            // install step (status !== 'needs-enable') because there
-            // the install + enable are distinct user actions.
-            if (isSafari || status !== 'needs-enable') {
-                const extInstalledLine = document.createElement('div');
-                extInstalledLine.className = 'migration-checklist-line migration-checklist-done';
-                extInstalledLine.textContent = `✓ ${tSettings('migrationExtensionInstalledMark')}`;
-                row.appendChild(extInstalledLine);
-            }
-
-            const privNoun = privateModeNoun(key);
-            const steps = enforcerScreenshotSteps(key);
-            const hasSteps = steps && steps.length;
-
-            if (isSafari) {
-                const safariBrowser = browsers[key];
-                const profiles = (safariBrowser && Array.isArray(safariBrowser.profiles)) ? safariBrowser.profiles : [];
-                const allEnabled = profiles.length > 0 && profiles.every(p => p.enabled === true);
-                const allPrivate = profiles.length > 0 && profiles.every(p => p.privateBrowsing === true);
-                const allAllSites = profiles.length > 0 && profiles.every(p => p.websiteAccessAll === true);
-
-                const stepDefs = [
-                    { label: tSettings('migrationSafariStepEnable'), done: allEnabled },
-                    { label: tSettings('migrationSafariStepPrivate'), done: allPrivate },
-                    { label: tSettings('migrationSafariStepEveryWebsite'), done: allAllSites },
-                ];
-                const activeIdx = stepDefs.findIndex(s => !s.done);
-
-                const checklist = document.createElement('div');
-                checklist.className = 'migration-safari-steps';
-
-                stepDefs.forEach((step, i) => {
-                    const line = document.createElement('div');
-                    let klass = 'migration-checklist-line';
-                    const lineLabel = tSettingsFmt('migrationSafariChecklistLine', { n: String(i + 1), label: step.label });
-                    if (step.done) {
-                        klass += ' migration-checklist-done';
-                        line.className = klass;
-                        line.textContent = `✓ ${lineLabel}`;
-                    } else {
-                        let iconHtml;
-                        if (i === activeIdx) {
-                            klass += ' migration-checklist-active';
-                            iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>`;
-                        } else {
-                            klass += ' migration-checklist-pending';
-                            iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8" opacity="0.4"/></svg>`;
-                        }
-                        line.className = klass;
-                        line.innerHTML = `<span class="migration-check-icon">${iconHtml}</span> ${lineLabel}`;
-                    }
-                    checklist.appendChild(line);
-                });
-
-                row.appendChild(checklist);
-            } else {
-                const instructionLine = document.createElement('div');
-                instructionLine.className = 'migration-instruction';
-                let tplKey;
-                if (status === 'needs-enable') {
-                    tplKey = 'migrationInstructionEnableHtml';
-                } else if (status === 'needs-website-access') {
-                    tplKey = 'migrationInstructionWebsiteAccessHtml';
-                } else if (key === 'firefox') {
-                    tplKey = 'migrationInstructionFirefoxPrivateHtml';
-                } else {
-                    tplKey = 'migrationInstructionChromiumPrivateHtml';
-                }
-                const chip = extensionsUrlChipHtml(key);
-                instructionLine.innerHTML = tSettings(tplKey)
-                    .replace('{URL_CHIP}', chip)
-                    .replace(/{BROWSER}/g, entry.label)
-                    .replace(/{PRIV}/g, privNoun);
-                attachCopyChipHandlers(instructionLine);
-                row.appendChild(instructionLine);
-            }
-
-            const actionsRow = document.createElement('div');
-            actionsRow.className = 'migration-actions-row';
-
-            const primaryBtn = document.createElement('button');
-            primaryBtn.type = 'button';
-            primaryBtn.className = 'migration-primary-btn';
-            primaryBtn.textContent = tSettings('migrationOpenExtensionSettings');
-            primaryBtn.addEventListener('click', () => {
-                openExtensionSettings(key).catch(e => console.warn('[migration] open ext settings:', e));
-                // On Windows the extension opens the page, so a closed browser or an off/old extension does nothing.
-                if (isSafari) return;
-                primaryBtn.textContent = tSettings('migrationOpenSettingsPending');
-                setTimeout(() => { primaryBtn.textContent = tSettings('migrationOpenExtensionSettings'); }, 6000);
-            });
-            actionsRow.appendChild(primaryBtn);
-
-            let showMeBtn = null;
-            if (hasSteps) {
-                showMeBtn = document.createElement('button');
-                showMeBtn.type = 'button';
-                showMeBtn.className = 'migration-show-me-btn';
-                showMeBtn.setAttribute('aria-expanded', 'false');
-                showMeBtn.innerHTML = `<span>${tSettings('migrationShowMeHow')}</span><svg class="migration-show-me-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>`;
-                actionsRow.appendChild(showMeBtn);
-            }
-
-            row.appendChild(actionsRow);
-
-            const delayNote = document.createElement('div');
-            delayNote.className = 'migration-browser-hint migration-delay-note';
-            delayNote.textContent = tSettings('migrationDelayDetectionNote');
-            row.appendChild(delayNote);
-
-            if (hasSteps) {
-                const screenshotsWrap = document.createElement('div');
-                screenshotsWrap.className = 'migration-screenshots-wrap hidden';
-
-                const screenshotsContainer = document.createElement('div');
-                const safariTwoUp = key === 'safari' && steps.length === 2;
-                screenshotsContainer.className = `extension-enforcer-screenshots ${steps.length >= 3 ? 'screenshots-grid' : 'screenshots-row'}${safariTwoUp ? ' safari-screenshots-asymmetric' : ''}`;
-
-                steps.forEach((step, i) => {
-                    if (i > 0 && steps.length < 3) {
-                        const arrow = document.createElement('span');
-                        arrow.className = 'extension-enforcer-screenshot-arrow';
-                        arrow.textContent = '→';
-                        screenshotsContainer.appendChild(arrow);
-                    }
-                    const figure = document.createElement('figure');
-                    figure.className = 'extension-enforcer-step';
-                    const cap = formatExtensionScreenshotCaption(step, i);
-                    if (cap) {
-                        const caption = document.createElement('figcaption');
-                        caption.className = 'extension-enforcer-step-label';
-                        caption.textContent = cap;
-                        figure.appendChild(caption);
-                    }
-                    const img = document.createElement('img');
-                    img.className = 'extension-enforcer-screenshot';
-                    img.src = step.src;
-                    img.alt = screenshotAltText(step, i, cap);
-                    figure.appendChild(img);
-                    screenshotsContainer.appendChild(figure);
-                });
-
-                screenshotsWrap.appendChild(screenshotsContainer);
-                row.appendChild(screenshotsWrap);
-
-                showMeBtn.addEventListener('click', () => {
-                    const isOpen = showMeBtn.classList.toggle('open');
-                    screenshotsWrap.classList.toggle('hidden', !isOpen);
-                    showMeBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-                    if (isOpen) appState.migrationShowMeHowExpandedKeys.add(key);
-                    else appState.migrationShowMeHowExpandedKeys.delete(key);
-                });
-
-                if (appState.migrationShowMeHowExpandedKeys.has(key)) {
-                    showMeBtn.classList.add('open');
-                    screenshotsWrap.classList.remove('hidden');
-                    showMeBtn.setAttribute('aria-expanded', 'true');
-                }
-            }
-        }
-
-        container.appendChild(row);
+        container.appendChild(buildBrowserExtensionRow(key, entry, browsers[key]));
     }
 
     updateMigrationBrowserChecklist(state);
