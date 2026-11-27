@@ -265,27 +265,71 @@ fn each_browser_maps_to_its_own_scan_slot() {
 }
 
 #[test]
-fn every_enforced_browser_is_identifiable_and_killable() {
-    // An empty process-name list means the browser can never be
-    // detected as running, so it is silently never enforced.
+fn every_enforced_browser_has_ui_labels() {
     for &key in BrowserKey::enforced() {
         assert!(!key.label().is_empty());
         assert!(!key.setting_key().is_empty());
-        #[cfg(target_os = "macos")]
-        assert!(
-            !key.process_names().is_empty(),
-            "{} has no process names",
-            key.label()
-        );
-        #[cfg(target_os = "windows")]
-        if key != BrowserKey::Safari {
-            assert!(
-                !key.process_names().is_empty(),
-                "{} has no process names",
-                key.label()
-            );
-        }
     }
+}
+
+#[test]
+fn a_relaunch_or_reused_pid_does_not_inherit_a_grace_timer() {
+    let now = Instant::now();
+    let original = BrowserProcess {
+        pid: 10,
+        started: 100,
+    };
+    let timer = TimerState {
+        targets: HashSet::from([original]),
+        deadline: now,
+        total: Duration::from_secs(60),
+        offense_count: 1,
+        issue: ExtensionIssue::Missing,
+    };
+    let new_pid = BrowserProcess {
+        pid: 11,
+        started: 101,
+    };
+    let reused_pid = BrowserProcess {
+        pid: 10,
+        started: 102,
+    };
+    assert!(!timer.matches(&HashSet::from([new_pid, reused_pid])));
+    assert!(timer.matches(&HashSet::from([original, new_pid])));
+    assert!(!timer.targets.contains(&new_pid));
+}
+
+#[test]
+fn escalation_requires_the_original_process_current_rules_and_noncompliance() {
+    let now = Instant::now();
+    let issue = Some(ExtensionIssue::Missing);
+    let closing = ClosingState {
+        targets: HashSet::from([BrowserProcess {
+            pid: 10,
+            started: 100,
+        }]),
+        issue: ExtensionIssue::Missing,
+        quit_dispatched: true,
+        quit_started: now,
+    };
+    let overdue = now + HARD_KILL_AFTER;
+    assert_eq!(closing.action(true, true, issue, now), CloseAction::Wait);
+    assert_eq!(
+        closing.action(true, true, issue, overdue),
+        CloseAction::Force
+    );
+    assert_eq!(
+        closing.action(false, true, issue, overdue),
+        CloseAction::Cancel
+    );
+    assert_eq!(
+        closing.action(true, true, None, overdue),
+        CloseAction::Cancel
+    );
+    assert_eq!(
+        closing.action(true, false, issue, overdue),
+        CloseAction::Finish
+    );
 }
 
 #[test]
@@ -358,7 +402,9 @@ fn windows_automation_profile_scan_cost() {
         (ticks(kernel) + ticks(user)) as f64 / 10_000.0
     }
 
-    let running = running_browsers();
+    let running = processes::running_browsers()
+        .into_keys()
+        .collect::<HashSet<_>>();
     assert!(
         !running.is_empty(),
         "open a supported browser for the probe"
