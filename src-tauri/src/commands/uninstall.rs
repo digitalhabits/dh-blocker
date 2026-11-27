@@ -20,6 +20,8 @@
 //!     needed there.
 //!
 //! Order matters:
+//!   0. Finish any pending legacy hosts and helper cleanup before removing
+//!      app data, registration, or the bundle.
 //!   1. Disable autostart and scrub the LaunchAgent plist FIRST. If we
 //!      kept the LaunchAgent live, deleting the bundle would just leave
 //!      it pointing at a missing path, and the next login would log a
@@ -82,6 +84,8 @@ pub fn uninstall_self_macos(
         "uninstall_self_macos: starting (delete_user_data={})",
         delete_user_data.unwrap_or(false)
     );
+
+    super::migration::cleanup_legacy_for_uninstall()?;
 
     if delete_user_data.unwrap_or(false) {
         super::data::wipe_user_data(&app);

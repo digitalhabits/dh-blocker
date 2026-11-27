@@ -14,9 +14,7 @@
 
 use std::path::PathBuf;
 
-use redd_block_lib::commands::migration::{
-    migration_pending_sync, purge_legacy_backups_sync, run_elevated_migration,
-};
+use redd_block_lib::commands::migration::{migration_pending_sync, run_elevated_migration};
 
 fn app_data_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
@@ -78,10 +76,5 @@ fn main() {
         }
     } else {
         println!("(no app-data snapshots written)");
-    }
-
-    if std::env::args().any(|a| a == "--purge-backups") {
-        println!("Purging backups (simulating uninstall)...");
-        purge_legacy_backups_sync(Some(&app_data));
     }
 }

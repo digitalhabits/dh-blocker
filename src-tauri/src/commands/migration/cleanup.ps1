@@ -1,8 +1,9 @@
 # Bundled elevated cleanup for the v1.x → 2.0 migration on Windows.
 #
-# Loaded by Rust via include_str! and templated with two paths:
+# Loaded by Rust via include_str! and templated with:
 #   {STAGED}  — temp file holding the cleaned hosts content
 #   {STATUS}  — temp file we write 'ok' to on success (Rust gates on it)
+#   {LIVE_HASH} and {CLEANED_HASH} — SHA-256 of the original and edited bytes
 #
 # DO NOT add other template placeholders without updating
 # run_elevated_windows in commands/migration.rs.
@@ -23,7 +24,7 @@ $ErrorActionPreference = 'Stop'
 $staged = '{STAGED}'
 $status = '{STATUS}'
 $hosts = 'C:\Windows\System32\drivers\etc\hosts'
-$legacyBackup = 'C:\Windows\System32\drivers\etc\hosts.redd-backup'
+$helperTask = 'ReDD Block Helper'
 $programData = if ($env:PROGRAMDATA) { $env:PROGRAMDATA } else { 'C:\ProgramData' }
 # helper-state.json may exist under any historical shared-storage folder name.
 $helperStatePaths = @(
@@ -33,17 +34,21 @@ $helperStatePaths = @(
     (Join-Path $programData 'Fristed\helper-state.json')
 )
 
-# 1. validate staged cleaned content
-if (-not (Test-Path $staged)) { throw 'staged hosts missing' }
-$cleanedRaw = Get-Content -Raw -LiteralPath $staged
-if ([string]::IsNullOrWhiteSpace($cleanedRaw)) { throw 'staged hosts empty' }
-if ($cleanedRaw -notmatch 'localhost') { throw 'staged hosts missing localhost' }
+# 1. Verify the exact staged bytes before stopping the helper.
+if ((Get-FileHash -LiteralPath $staged).Hash -ne '{CLEANED_HASH}') {
+    throw 'staged hosts do not match the prepared edit'
+}
 
-# 2. STOP the legacy scheduled task FIRST and any helper processes,
-#    then poll until they're actually gone (10 s ceiling).
+# 2. Disable the legacy task before stopping the helper so it cannot
+#    relaunch and rewrite hosts. Poll until the process is gone.
 & {
     $ErrorActionPreference = 'Continue'
-    & schtasks /End /TN 'ReDD Block Helper' 2>&1 | Out-Null
+    & schtasks /Query /TN $helperTask 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        & schtasks /Change /TN $helperTask /Disable 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'could not disable legacy scheduled task' }
+        & schtasks /End /TN $helperTask 2>&1 | Out-Null
+    }
     & taskkill /IM 'redd-block-helper.exe' /T /F 2>&1 | Out-Null
 }
 for ($i = 0; $i -lt 10; $i++) {
@@ -55,45 +60,53 @@ if (Get-Process -Name 'redd-block-helper' -ErrorAction SilentlyContinue) {
     throw 'helper still running after taskkill'
 }
 
-# 3. atomic-ish replace via a UNIQUE temp file (avoid collision if two
-#    migration runs race).
-$tmp = $hosts + '.redd-tmp.' + [System.IO.Path]::GetRandomFileName()
-Set-Content -LiteralPath $tmp -Value $cleanedRaw -NoNewline -Encoding ASCII
-Move-Item -LiteralPath $tmp -Destination $hosts -Force
-
-# 4. VERIFY the write actually landed.
-$postWrite = Get-Content -Raw -LiteralPath $hosts
-if ($postWrite -notmatch 'localhost') { throw 'post-write hosts missing localhost' }
-if ($postWrite -match '^# === BEGIN REDD BLOCK' -or $postWrite -match '^# ReDD Block Start') {
-    throw 'post-write hosts still contains markers'
+# 3. Only replace hosts if it needs an edit. Prepare a sibling file
+#    and check the live hash immediately before committing.
+$tmp = $null
+try {
+    if ('{LIVE_HASH}' -ne '{CLEANED_HASH}') {
+        $tmp = $hosts + '.redd-tmp.' + [System.IO.Path]::GetRandomFileName()
+        [System.IO.File]::Copy($staged, $tmp)
+        if ((Get-FileHash -LiteralPath $tmp).Hash -ne '{CLEANED_HASH}') {
+            throw 'staged hosts do not match the prepared edit'
+        }
+    }
+    if ((Get-FileHash -LiteralPath $hosts).Hash -ne '{LIVE_HASH}') {
+        throw 'hosts changed while preparing migration; retry with the current file'
+    }
+    if ($tmp) {
+        [System.IO.File]::Replace($tmp, $hosts, [NullString]::Value)
+        if ((Get-FileHash -LiteralPath $hosts).Hash -ne '{CLEANED_HASH}') {
+            throw 'post-write hosts do not match the prepared edit'
+        }
+        # ipconfig can write to stderr when the DNS Client is stopped.
+        & {
+            $ErrorActionPreference = 'Continue'
+            & ipconfig /flushdns 2>&1 | Out-Null
+        }
+    }
+} finally {
+    if ($tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
 }
 
-# 5. flush DNS — wrapped because ipconfig can write to stderr (e.g.
-#    DNS Client service stopped) which would otherwise terminate
-#    the script *after* hosts is already clean.
-& {
-    $ErrorActionPreference = 'Continue'
-    & ipconfig /flushdns 2>&1 | Out-Null
-}
-
-# 6. retire legacy scheduled task + daemon-specific files only.
+# 4. retire legacy scheduled task + daemon-specific files only.
 #    CRITICAL: do NOT recursively delete ProgramData product folders.
 #    The new app no longer writes there, but each account still imports
 #    its blocklist data (redd-block-data.json) out of shared storage on
 #    first launch — see commands::data::import_shared_data_into_per_user.
 & {
     $ErrorActionPreference = 'Continue'
-    & schtasks /Delete /TN 'ReDD Block Helper' /F 2>&1 | Out-Null
+    & schtasks /Delete /TN $helperTask /F 2>&1 | Out-Null
 }
 foreach ($helperState in $helperStatePaths) {
     Remove-Item -LiteralPath $helperState -Force -ErrorAction SilentlyContinue
 }
 
-# 7. VERIFY removal.
+# 5. VERIFY removal.
 $taskStillThere = $false
 & {
     $ErrorActionPreference = 'Continue'
-    & schtasks /Query /TN 'ReDD Block Helper' 2>&1 | Out-Null
+    & schtasks /Query /TN $helperTask 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) { $script:taskStillThere = $true }
 }
 if ($taskStillThere) { throw 'scheduled task still present' }
@@ -101,9 +114,5 @@ foreach ($helperState in $helperStatePaths) {
     if (Test-Path -LiteralPath $helperState) { throw "helper-state.json still present: $helperState" }
 }
 
-# 8. INTENTIONALLY KEEP $legacyBackup ($hosts.redd-backup). Last-resort
-#    recovery copy of the user's pre-modification hosts file. Only
-#    deleted during uninstall (see purge_legacy_backups_sync).
-
-# 9. status marker — written only after every gate above passed.
+# 6. status marker — written only after every gate above passed.
 Set-Content -LiteralPath $status -Value 'ok' -Encoding ASCII -NoNewline

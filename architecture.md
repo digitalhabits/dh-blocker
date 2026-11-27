@@ -692,12 +692,16 @@ running regardless.
 `migration.rs` on first launch after upgrade from v1.x:
 
 - detect hosts markers or legacy daemon install
-- one elevated script: backup hosts → strip ReDD markers → flush DNS → remove
-  launchd/task + helper binary + `/var/lib/redd-block/helper-state.json` →
-  stamp `migrationRanAtVersion`. It deletes the daemon-specific files only —
-  `/var/lib/redd-block` itself stays, because the per-user data import still
-  reads `redd-block-data.json` out of it (§3.2).
-- idempotent and retryable; `migration_pending` banner if user cancels elevation
+- The macOS package installs the app and leaves legacy cleanup to onboarding.
+- Prepare an edit from the live hosts file, removing complete ReDD Block
+  sections. Save the original bytes to `Digital Habits Blocker/backups`
+  under `~/Library/Application Support` on macOS or `%LOCALAPPDATA%` on Windows.
+  Keep `hosts.redd-backup` as a recovery copy.
+- The elevated script stops the helper, checks that hosts still matches the
+  snapshot, and replaces it if needed. It removes only daemon-specific files
+  and leaves shared blocklist data for per-user import (§3.2).
+- The app stamps `migrationRanAtVersion` after verification. Cleanup failures
+  leave migration pending for retry and halt uninstall before app removal.
 
 ---
 

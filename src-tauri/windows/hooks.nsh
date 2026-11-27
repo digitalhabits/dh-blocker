@@ -39,7 +39,21 @@
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
-  ; 1. Remove the watchdog Scheduled Task FIRST so it doesn't respawn
+  ; Tauri calls this hook before its running-app check and before any
+  ; file or app-data deletion. A failed legacy hosts cleanup (including
+  ; cancelled elevation) must leave the app available for another try.
+  ; The CLI checks legacy residue first, then removes our native
+  ; messaging manifests and matching browser registry keys.
+  ClearErrors
+  ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --uninstall' $0
+  ${If} ${Errors}
+  ${OrIf} $0 <> 0
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Cleanup could not finish. Retry and approve the administrator prompt if it appears. If the app executable is missing, repair the installation first." /SD IDOK
+    SetErrorLevel 1
+    Abort
+  ${EndIf}
+
+  ; Remove the watchdog Scheduled Tasks so they don't respawn
   ;    redd-block.exe between the kill below and the actual file
   ;    deletion that NSIS does after this hook returns. Idempotent —
   ;    schtasks /Delete /F is silent if the task isn't present.
@@ -50,7 +64,7 @@
   nsExec::ExecToLog 'schtasks /Delete /TN "ReDD Block Watchdog" /F'
   Pop $0
 
-  ; 2. Best-effort pre-kill of the main app process so the built-in
+  ; Best-effort pre-kill of the main app process so the built-in
   ;    running-app check usually doesn't need to show a second popup.
   !if "${INSTALLMODE}" == "currentUser"
     nsis_tauri_utils::FindProcessCurrentUser "${MAINBINARYNAME}.exe"
@@ -68,16 +82,6 @@
     Sleep 500
   ${EndIf}
 
-  ; 3. Run the app's `--uninstall` mode to remove per-browser
-  ;    native-messaging manifests and the matching HKCU registry keys.
-  ;    Without this, manifests under %LOCALAPPDATA%\<product>\
-  ;    native-host\ and HKCU\Software\<vendor>\<browser>\
-  ;    NativeMessagingHosts\com.ulriklyngs.mindshield would be orphaned
-  ;    after uninstall. The binary still exists at this point — NSIS
-  ;    deletes it after the pre-uninstall hook returns. The --uninstall
-  ;    branch in main.rs runs synchronously and exits; ExecWait blocks
-  ;    until it does.
-  ;
   ; Note: 2.0 dropped v1.x's "Keep Blocking after uninstall" feature
   ; entirely (no daemon = no enforcement after the binary is removed).
   ; The user's blocklists / settings in ProgramData\<product>\
@@ -88,5 +92,4 @@
   ; each account copies
   ; it into its own %APPDATA%\com.reddblock\ store on first launch, so
   ; a shared PC no longer gives the whole family one blocklist.
-  ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --uninstall'
 !macroend

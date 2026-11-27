@@ -1,23 +1,9 @@
 #!/bin/bash
 # preinstall — runs as root before the .pkg payload is laid down.
 #
-# Two jobs:
-#   1. Stop any running app process (v1.x ReDD Block, Fristed, ReDD Blocker,
-#      or current Digital Habits Blocker build) so Installer.app can lay down
-#      `/Applications/Digital Habits Blocker.app` without an in-memory conflict.
-#      v2+ adds an `applicationShouldTerminate:` interceptor that turns
-#      ⌘-Q and `tell app "X" to quit` into a hide-window, so the polite
-#      path is unreliable — we go straight to SIGTERM/SIGKILL on the
-#      binary, plus any `--native-host` subprocesses browsers may have
-#      spawned.
-#   2. If v1.x daemon residue is on disk, run the SAME bundled
-#      cleanup script the app would otherwise run at first launch.
-#      The script body lives at src-tauri/src/commands/migration/cleanup.sh
-#      and is copied into this scripts dir at .pkg build time (see
-#      build-mac-pkg.sh) so we have a single source of truth.
-#
-# We never fail the install on cleanup errors. The new app's in-app
-# migration code is the safety net.
+# Stop running app processes before the payload swap and remove stray
+# DMG files from past installs. Legacy hosts and helper cleanup runs in
+# the new app, where it can snapshot the live file and report failure.
 
 set +e
 
@@ -25,7 +11,7 @@ LOG=/var/log/redd-block-pkg-preinstall.log
 exec > >(tee -a "$LOG") 2>&1
 echo "=== preinstall $(date '+%F %T') ==="
 
-# 1. Stop any running app process. Order:
+# Stop any running app process. Order:
 #    - polite quit (only when the .app is already on disk — on a
 #      first-time install preinstall runs before the payload lands, so
 #      `tell application "…"` would make macOS show a
@@ -80,7 +66,7 @@ pkill -KILL -x 'ReDD Block' 2>/dev/null
 pkill -KILL -x 'Fristed' 2>/dev/null
 sleep 1
 
-# 1b. Clean up stale Tauri DMG temp files that earlier builds of this
+# Clean up stale Tauri DMG temp files that earlier builds of this
 #     .pkg accidentally laid down alongside the .app in /Applications.
 #     Best-effort: never fail the install on this.
 shopt -s nullglob 2>/dev/null || true
@@ -92,68 +78,4 @@ for f in '/Applications/rw.'*'.Digital Habits Blocker_'*'_universal.dmg' \
     rm -f "$f" && echo "removed stray $f"
 done
 
-# 2. Detect residue. Skip the rest if there's nothing to clean —
-#    don't bother staging files or sourcing the cleanup script.
-HAVE_RESIDUE=0
-[ -e /Library/LaunchDaemons/com.redd.block.helper.plist ] && HAVE_RESIDUE=1
-[ -e /Library/LaunchDaemons/org.reddfocus.redd-block-helper.plist ] && HAVE_RESIDUE=1
-[ -e /Library/PrivilegedHelperTools/com.redd.block.helper ] && HAVE_RESIDUE=1
-[ -e /var/lib/redd-block/helper-state.json ] && HAVE_RESIDUE=1
-if grep -qE '^# === BEGIN REDD BLOCK|^# ReDD Block Start' /etc/hosts 2>/dev/null; then
-    HAVE_RESIDUE=1
-fi
-if [ "$HAVE_RESIDUE" = "0" ]; then
-    echo "no v1.x residue, nothing to clean"
-    exit 0
-fi
-echo "residue detected, running cleanup"
-
-# 3. Compute cleaned hosts content. Prefer /etc/hosts.redd-backup
-#    if it's sane; else awk-strip the marker block in place. Same
-#    rule as the in-app `compute_cleaned_hosts` in Rust.
-STAGED=$(mktemp /tmp/redd-cleanup-staged.XXXXXX)
-USED_BACKUP=0
-if [ -s /etc/hosts.redd-backup ] && grep -q localhost /etc/hosts.redd-backup; then
-    cp /etc/hosts.redd-backup "$STAGED"
-    USED_BACKUP=1
-else
-    awk '
-        /^# === BEGIN REDD BLOCK/ { skip=1; next }
-        /^# === END REDD BLOCK/   { skip=0; next }
-        /^# ReDD Block Start/     { skip=1; next }
-        /^# ReDD Block End/       { skip=0; next }
-        !skip { print }
-    ' /etc/hosts > "$STAGED"
-fi
-if ! grep -q localhost "$STAGED"; then
-    echo "ERROR: cleaned hosts missing localhost; aborting cleanup, leaving residue for in-app migration to handle."
-    rm -f "$STAGED"
-    exit 0
-fi
-echo "staged cleaned hosts (used_backup=$USED_BACKUP)"
-
-# 4. Run the shared cleanup script. cleanup.sh expects two
-#    placeholders: {STAGED} and {STATUS}. We substitute via sed and
-#    pipe to bash so any error inside `set -e` aborts cleanly.
-STATUS=$(mktemp /tmp/redd-cleanup-status.XXXXXX)
-TEMPLATE="$(dirname "$0")/cleanup.sh"
-if [ ! -f "$TEMPLATE" ]; then
-    echo "ERROR: cleanup.sh template missing alongside preinstall — pkg build is broken."
-    rm -f "$STAGED" "$STATUS"
-    exit 0
-fi
-RUNNABLE=$(mktemp /tmp/redd-cleanup-script.XXXXXX.sh)
-sed -e "s|{STAGED}|$STAGED|g" -e "s|{STATUS}|$STATUS|g" "$TEMPLATE" > "$RUNNABLE"
-bash "$RUNNABLE"
-SCRIPT_EXIT=$?
-
-# 5. Verify the cleanup script reached its status-marker step.
-if [ "$SCRIPT_EXIT" = "0" ] && [ -s "$STATUS" ] && [ "$(cat "$STATUS")" = "ok" ]; then
-    echo "preinstall cleanup ok"
-else
-    echo "WARN: preinstall cleanup did not complete (exit=$SCRIPT_EXIT) — falling back to in-app migration on first launch"
-fi
-
-# 6. Best-effort tempfile cleanup.
-rm -f "$STAGED" "$STATUS" "$RUNNABLE"
 exit 0
