@@ -3388,6 +3388,7 @@ dependencies = [
 name = "redd-block"
 version = "3.13.0"
 dependencies = [
+ "base64 0.22.1",
  "cocoa",
  "core-foundation",
  "core-graphics 0.25.0",
