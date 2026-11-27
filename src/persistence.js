@@ -10,6 +10,7 @@ import { migrateLegacyRepeatType } from './when-to-block.js';
 import { getMaxOverrideWords, migrateOverrideDifficultyToWords } from './override-challenge.js';
 import { getLastBreakMinutes } from './unlock-duration.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
+import { stripClassroomForIOS, sweepFinishedRooms } from './classroom-core.js';
 
 export async function loadData() {
     state.appData = await tauriAPI.loadData();
@@ -102,6 +103,13 @@ export async function loadData() {
         shouldSave = true;
     }
     if (migrateLegacyScheduleStartOverlays()) {
+        shouldSave = true;
+    }
+
+    // Classroom rooms. iOS has no Classroom mode, so a file brought over from
+    // a desktop loses everything about rooms there. On desktop, a room that
+    // ended while the app was closed is cleared.
+    if (state.isIOS ? stripClassroomForIOS(state.appData) : sweepFinishedRooms(state.appData)) {
         shouldSave = true;
     }
 

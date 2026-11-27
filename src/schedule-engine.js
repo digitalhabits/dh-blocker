@@ -7,6 +7,7 @@ import { getBlocklistIOSPayload, isAllowlistBlocklist, isProtectedDomain } from 
 import { formatDateForDisplay, isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { formatTime } from './app.js';
 import { syncIOSStartWarnings } from './ios-start-warnings.js';
+import { isOneOffPausedForEnforcement, isRoomBlock } from './classroom-core.js';
 
 let hasShownIOSScheduleSyncError = false;
 
@@ -292,7 +293,7 @@ export async function syncIOSSchedules({ reportFailure = true } = {}) {
 }
 
 export function isOneOffBlockEnforced(block, now = Date.now()) {
-    return !!(block && block.startTime <= now && block.endTime > now && !block.isPaused);
+    return !!(block && block.startTime <= now && block.endTime > now && !isOneOffPausedForEnforcement(block));
 }
 
 export function isOneOffBlockStillActive(block, now = Date.now()) {
@@ -483,7 +484,9 @@ export function formatTitleBarScheduleStartWhen(date, nowMs = Date.now()) {
 }
 
 export function hasAnyBlockingStateToClear(now = Date.now(), nowDate = new Date(now)) {
-    const hasOneOffState = state.appData.activeBlocks.some(block => isOneOffBlockStillActive(block, now));
+    // A classroom room is not Stop all's to clear: its way out is the leave
+    // friction the teacher set.
+    const hasOneOffState = state.appData.activeBlocks.some(block => !isRoomBlock(block) && isOneOffBlockStillActive(block, now));
     if (hasOneOffState) return true;
     // A schedule switched off with no end time stays off until turned on, so there is nothing to stop.
     return !!state.appData.schedules?.some(schedule =>

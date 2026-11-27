@@ -15,14 +15,17 @@ import { confirmDiscardEditorEdits, editorHasUnsavedEdits, getWhenToBlockKind, r
 import { updateOverrideAllButtonVisibility } from './settings.js';
 import { formatDuration, formatTime } from './app.js';
 import { usagePingTick } from './usage-ping.js';
+import { isRoomBlocklist, sweepFinishedRooms } from './classroom-core.js';
+import { renderClassroomBar } from './classroom.js';
 
 export function render() {
     updateOnboardingVisibility();
 
     updateWeekCalendar();
     renderBlocklistSelector();
+    renderClassroomBar();
 
-    const savedFocusSpaces = state.appData.blocklists;
+    const savedFocusSpaces = state.appData.blocklists.filter(bl => !isRoomBlocklist(bl));
     // Auto-select when the choice is unambiguous, but respect a user
     // deselect so they can return to the empty "Select a blocklist"
     // state if they want.
@@ -717,7 +720,7 @@ export function renderBlocklistSelector() {
 
     const newHTML = `
     <option value="">${tSettings('selectionPromptOption')}</option>
-    ${state.appData.blocklists.map((bl) => {
+    ${state.appData.blocklists.filter((bl) => !isRoomBlocklist(bl)).map((bl) => {
         const isActive = activeIds.includes(bl.id);
         const activeLabel = isActive ? tSettings('runningSuffix') : '';
         return `<option value="${bl.id}">${escapeHtml(bl.name)}${activeLabel}</option>`;
@@ -916,6 +919,9 @@ export function startTickInterval() {
         // Check for expired blocks
         const previousCount = state.appData.activeBlocks.length;
         state.appData.activeBlocks = state.appData.activeBlocks.filter(block => block.endTime > now);
+        // A classroom room that just ended leaves its focus space and
+        // check-in details behind; clear them in the same save.
+        const roomsSwept = sweepFinishedRooms(state.appData, now);
 
         // Clean up activated set
         state.activatedBlockIds = new Set(
@@ -925,7 +931,7 @@ export function startTickInterval() {
         );
 
         // Only re-render if blocks actually expired
-        if (state.appData.activeBlocks.length < previousCount) {
+        if (state.appData.activeBlocks.length < previousCount || roomsSwept) {
             await saveData();
             render();
 

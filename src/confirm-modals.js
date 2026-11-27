@@ -28,6 +28,8 @@ import { stopAppBlockingLetsGoVoice } from './schedule-overlay.js';
 import { getLastBreakMinutes, PAUSE_MINUTE_OPTIONS, applyStopToTarget, timedStopLostOwnPause } from './unlock-duration.js';
 import { deriveWhenToBlockKind } from './when-to-block.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
+import { isRoomBlock } from './classroom-core.js';
+import { openClassroomLeaveModal } from './classroom.js';
 import {
     syncBlocklistCreateUi,
     setConfirmModalBlockingLabel,
@@ -1421,6 +1423,15 @@ export function openOverrideModal(blockId) {
     delete window.overrideScheduleId;
     state.overrideBlockId = blockId;
     const block = state.appData.activeBlocks.find(b => b.id === blockId);
+
+    // A classroom room is left through the friction its teacher set, not
+    // paused or stopped. Every control that reaches this dialog for a room
+    // block goes to the leave dialog instead.
+    if (isRoomBlock(block)) {
+        state.overrideBlockId = null;
+        openClassroomLeaveModal();
+        return;
+    }
 
     const blocklist = state.appData.blocklists.find(bl => bl.id === block?.blocklistId);
 

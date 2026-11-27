@@ -318,6 +318,17 @@ pub struct EnforcerHandle {
 }
 
 impl EnforcerHandle {
+    /// True while a running browser is known to be non-compliant: a grace
+    /// countdown is running or a force-close is in progress. Only ever true
+    /// when the user has opted in to enforcement, since nothing is scanned
+    /// otherwise. Classroom check-ins use it to report "not fully blocked".
+    pub fn has_open_issues(&self) -> bool {
+        self.state
+            .lock()
+            .map(|s| !s.timers.is_empty() || !s.closing.is_empty())
+            .unwrap_or(false)
+    }
+
     pub fn set_enabled(&self, enabled: bool) {
         if let Ok(mut s) = self.state.lock() {
             s.enabled = enabled;

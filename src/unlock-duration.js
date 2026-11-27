@@ -1,6 +1,7 @@
 // Pause durations and legacy import compatibility. Pure helpers only.
 // The dialog uses PAUSE_MINUTE_OPTIONS and settings.lastBreakMinutes; legacy
 // per-space unlockMinutes values are retained only for older data/imports.
+import { isRoomBlock } from './classroom-core.js';
 
 /** Legacy per-space values accepted on import; 0 = Never. */
 export const UNLOCK_MINUTE_OPTIONS = Object.freeze([0, 5, 10, 15, 30, 60, 120, 240, 480, 1440]);
@@ -59,6 +60,9 @@ export function applyStopToTarget(appData, { block = null, schedule = null } = {
         return { kind: 'off' };
     }
     if (block) {
+        // A classroom room is left through its own friction, never paused or
+        // stopped from here. Callers already treat null as "nothing to stop".
+        if (isRoomBlock(block)) return null;
         if (minutes > 0) {
             block.isPaused = true;
             block.pauseEndTime = now + minutes * 60_000;
