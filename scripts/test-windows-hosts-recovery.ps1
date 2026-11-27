@@ -12,10 +12,10 @@ $knownKey = Join-Path $registration 'ReDD Blocker'
 $hosts = Join-Path $hostsDir 'hosts'
 $backup = Join-Path $hostsDir 'hosts.redd-backup'
 $manifest = Join-Path $fixture 'snapshot.json'
-$script:legacyTaskExists = $false
+$taskMarker = Join-Path $fixture 'running-task-fixture'
 
 function Get-ScheduledTask([string]$TaskPath) {
-    if ($script:legacyTaskExists) { [pscustomobject]@{ TaskName = 'ReDD Block Helper' } }
+    if ([IO.File]::Exists($taskMarker)) { [pscustomobject]@{ TaskName = 'ReDD Block Helper' } }
 }
 
 function Get-Process {
@@ -85,11 +85,11 @@ try {
     Assert-FileBytes (Join-Path $snapshot.Folder 'hosts') $original
 
     [IO.File]::Delete($hosts)
-    $script:legacyTaskExists = $true
+    [IO.File]::WriteAllText($taskMarker, 'present')
     & $preinstall @options -BeforeMaintenance -SnapshotFile $manifest -ProtectOlderUninstaller
     Assert-Condition ($LASTEXITCODE -eq 2) 'Setup missed task-only legacy residue'
     Assert-Condition (-not (Test-Path -LiteralPath $hosts)) 'Setup manufactured a missing hosts file'
-    $script:legacyTaskExists = $false
+    [IO.File]::Delete($taskMarker)
     & $preinstall @options -BeforeMaintenance -SnapshotFile $manifest -ProtectOlderUninstaller
     Assert-Condition ($LASTEXITCODE -eq 0) 'Setup rejected a missing hosts file without legacy residue'
 
