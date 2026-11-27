@@ -276,10 +276,10 @@ the active one, and need no system-wide input-synthesis grant. Safari's extensio
      activate itself over the app the user is in. A background browser's
      blocked tabs are redirected on the first tick after it comes to the
      front; when the frontmost app is unknown, every browser is redirected.
-     If Cancel returns a tab to the URL the watcher just redirected, the
-     watcher waits five seconds from first seeing that URL again before
-     retrying. Time spent in the dialog does not count. Other tabs, new
-     URLs and restores off the block page remain eligible immediately.
+     After observing the matching block page, the watcher waits five seconds
+     from first seeing the original blocked URL again before retrying. If it
+     never observes the block page, the next eligible scan retries. Other
+     tabs, new URLs and restores off the block page keep their usual timing.
 3. All Apple Events serialize through a global mutex — concurrent osascript
    from the watcher, enforcer, and Tauri commands can deadlock macOS's
    AppleEvent manager.

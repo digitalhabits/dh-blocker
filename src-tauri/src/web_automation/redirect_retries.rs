@@ -1,6 +1,6 @@
 //! A beforeunload prompt can leave AppleScript reporting the block page for
 //! as long as the user takes to decide. Start the grace period when the
-//! original URL is first seen again, even if Cancel happened between reads.
+//! original URL is first seen again after observing the matching block page.
 
 use crate::block_page::{is_block_page_url, original_url_from_block_page, Tab, TabAction};
 use std::collections::HashMap;
@@ -15,7 +15,14 @@ pub(super) struct RedirectRetries {
 
 struct Attempt {
     original: String,
-    retry_at: Option<Instant>,
+    progress: Progress,
+}
+
+#[derive(Clone, Copy)]
+enum Progress {
+    Issued,
+    OnBlockPage,
+    WaitingUntil(Instant),
 }
 
 impl RedirectRetries {
@@ -36,11 +43,19 @@ impl RedirectRetries {
                 continue;
             };
             if tab.url == attempt.original {
-                attempt.retry_at.get_or_insert(now + RETRY_DELAY);
+                match attempt.progress {
+                    // A successful script can swallow per-tab errors. Without
+                    // an observed navigation, leave the next redirect eligible.
+                    Progress::Issued => continue,
+                    Progress::OnBlockPage => {
+                        attempt.progress = Progress::WaitingUntil(now + RETRY_DELAY)
+                    }
+                    Progress::WaitingUntil(_) => {}
+                }
             } else if is_block_page_url(&tab.url, base)
                 && original_url_from_block_page(&tab.url).as_ref() == Some(&attempt.original)
             {
-                attempt.retry_at = None;
+                attempt.progress = Progress::OnBlockPage;
             } else {
                 continue;
             }
@@ -48,12 +63,8 @@ impl RedirectRetries {
         }
         actions.retain(|(window, tab, target)| {
             !is_block_page_url(target, base)
-                || self
-                    .tabs
-                    .get(&(window.clone(), *tab))
-                    .and_then(|attempt| attempt.retry_at)
-                    .map(|deadline| now >= deadline)
-                    .unwrap_or(true)
+                || !matches!(self.tabs.get(&(window.clone(), *tab)).map(|a| a.progress),
+                    Some(Progress::WaitingUntil(deadline)) if now < deadline)
         });
     }
 
@@ -67,7 +78,7 @@ impl RedirectRetries {
                     key,
                     Attempt {
                         original,
-                        retry_at: None,
+                        progress: Progress::Issued,
                     },
                 );
             }

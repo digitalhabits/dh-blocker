@@ -849,13 +849,10 @@ fn read_tabs_script(browser: SupportedBrowser) -> String {
     // instead of an ASCII-9 separator and the Rust parser would drop every row.
     // Hoisting into `_sep`/`_eol` keeps them as real control characters.
     //
-    // PERF: `URL of every tab of w` fetches a whole window's tab URLs in
-    // ONE Apple Event; the inner repeat then walks a local list with no
-    // further IPC. The previous per-tab `URL of t` cost one Apple Event
-    // round-trip per tab per tick — with many tabs open, by far the
-    // dominant CPU/battery cost of this watcher, on both sides of the
-    // event. Tab indices are positional in the returned list, matching
-    // the `tab <i> of window id <w>` addressing `apply_actions` uses.
+    // Both browsers fetch all rows for a window in one Apple Event. Chromium
+    // returns one properties record per tab. Asking for {id, URL} instead
+    // sends two events: closing a tab between them shifts URLs onto other IDs.
+    // Safari exposes only tab positions and needs just the bulk URL fetch.
     //
     // Windows are reported by `id`, never by position. `window <n>` means
     // the n-th window in the current stacking order, which changes
@@ -875,13 +872,10 @@ fn read_tabs_script(browser: SupportedBrowser) -> String {
     // caps the whole subprocess. A timeout (-1712) inside the per-window `try`
     // is rethrown: swallowing it would report a hung window as having no
     // tabs, and a restore pass would take that as "nothing left parked".
-    let (read_urls, tab_ref) = if browser == SupportedBrowser::Safari {
-        ("set _urls to URL of every tab of window id _wid", "_ti")
+    let (read_rows, tab_ref, tab_url) = if browser == SupportedBrowser::Safari {
+        ("URL of every tab", "_ti", "_row")
     } else {
-        (
-            "set {_tabIds, _urls} to {id, URL} of every tab of window id _wid",
-            "(item _ti of _tabIds)",
-        )
+        ("properties of every tab", "(id of _row)", "(URL of _row)")
     };
     format!(
         r#"{join}
@@ -897,18 +891,18 @@ on run
         repeat with _ref in _ids
           set _wid to contents of _ref
           try
-            {read_urls}
+            set _items to {read_rows} of window id _wid
           on error _msg number _num
             if _num is -1712 then error _msg number _num
-            set _urls to {{}}
+            set _items to {{}}
           end try
           set _wi to _wid as text
           set _ti to 0
-          repeat with _u in _urls
+          repeat with _row in _items
             set _ti to _ti + 1
             set _u_text to ""
             try
-              set _u_text to _u as text
+              set _u_text to {tab_url} as text
             end try
             set end of _rows to _wi & _sep & {tab_ref} & _sep & _u_text
           end repeat

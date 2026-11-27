@@ -470,6 +470,9 @@ fn cancelled_redirect_waits_five_seconds_from_the_return_to_the_original_url() {
             .collect::<Vec<_>>()
     };
     assert_eq!(step(0, vec![open_tab(1, url)]), [1]);
+    // A swallowed set-URL error (or a very fast Cancel) leaves no observed
+    // block page. The next pass must still enforce immediately.
+    assert_eq!(step(1_000, vec![open_tab(1, url)]), [1]);
     assert!(step(30_000, vec![parked_tab(base, url)]).is_empty());
     // Cancel returns tab 1 to its original URL. Tab 2 visits the very same URL.
     assert_eq!(step(31_000, vec![open_tab(1, url), open_tab(2, url)]), [2]);
@@ -967,6 +970,21 @@ fn parse_tab_rows_keeps_empty_urls_and_skips_malformed_rows() {
             ("3", 1, "https://b.example/?q=1"),
         ]
     );
+}
+
+#[test]
+fn chromium_reads_each_tabs_id_and_url_from_one_properties_record() {
+    for browser in [
+        SupportedBrowser::Chrome,
+        SupportedBrowser::Brave,
+        SupportedBrowser::Edge,
+    ] {
+        let script = read_tabs_script(browser);
+        // A property list such as {id, URL} sends separate Apple Events. A
+        // tab closed between those reads shifts the remaining URLs by one.
+        assert!(script.contains("properties of every tab of window id _wid"));
+        assert!(script.contains("(URL of _row)") && script.contains("(id of _row)"));
+    }
 }
 
 #[test]
