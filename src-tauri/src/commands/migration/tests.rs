@@ -39,7 +39,7 @@ fn detects_markers() {
 fn keeps_live_hosts_edits_and_exact_unmanaged_bytes() {
     let input = b"\xef\xbb\xbf\t# ReDD Block Start \r\n0.0.0.0 one.test\r\n# ReDD Block End\r\n127.0.0.1 localhost\n# l\xe9gacy comment\r\n# === BEGIN REDD BLOCK (reddfocus.org) ===\r\n0.0.0.0 two.test\n# === END REDD BLOCK (reddfocus.org) ===\n192.0.2.1 added-after-original-backup.test";
     let expected = b"\xef\xbb\xbf127.0.0.1 localhost\n# l\xe9gacy comment\r\n192.0.2.1 added-after-original-backup.test";
-    assert_eq!(compute_cleaned_hosts(input).unwrap(), expected);
+    assert_eq!(strip_managed_sections(input).unwrap(), expected);
 }
 
 #[test]
@@ -57,26 +57,38 @@ fn rejects_unpaired_crossed_and_nested_markers() {
 }
 
 #[test]
-fn requires_localhost_only_when_replacing_hosts() {
-    let input = b"192.0.2.1 unrelated.test";
-    assert_eq!(compute_cleaned_hosts(input).unwrap(), input);
-    let unsafe_edit =
-        b"# ReDD Block Start\n127.0.0.1 localhost\n# ReDD Block End\n192.0.2.1 unrelated.test";
-    assert!(compute_cleaned_hosts(unsafe_edit).is_err());
+fn keeps_custom_hosts_without_localhost_and_allows_empty_edit() {
+    let managed = b"# ReDD Block Start\n0.0.0.0 example.test\n# ReDD Block End\n";
+    let custom = b"192.0.2.1 unrelated.test";
+    assert!(strip_managed_sections(managed).unwrap().is_empty());
+    assert_eq!(
+        strip_managed_sections(&[managed.as_slice(), custom].concat()).unwrap(),
+        custom
+    );
+}
+
+#[test]
+fn missing_hosts_is_distinct_from_empty_hosts() {
+    let dir = migration_fixture_dir();
+    let path = dir.join("hosts");
+    assert_eq!(read_live_hosts(&path).unwrap(), None);
+    std::fs::write(&path, []).unwrap();
+    assert_eq!(read_live_hosts(&path).unwrap(), Some(Vec::new()));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn identifies_task_only_windows_helper_residue() {
+    let other_tasks = b"\"\\Microsoft\\Windows\\ReDD Block Helper\",\"N/A\",\"Ready\"\r\n\"\\ReDD Block Watchdog\",\"N/A\",\"Ready\"\r\n";
+    let legacy_task = b"\"\\redd block helper\",\"N/A\",\"Disabled\"\r\n";
+    assert!(!has_windows_legacy_helper_task(other_tasks));
+    assert!(has_windows_legacy_helper_task(legacy_task));
 }
 
 #[cfg(not(feature = "system-test"))]
 #[test]
 fn migration_stamp_keeps_existing_data_and_refuses_malformed_json() {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!(
-        "redd-migration-stamp-{}-{timestamp}",
-        std::process::id()
-    ));
-    std::fs::create_dir(&dir).unwrap();
+    let dir = migration_fixture_dir();
     let path = dir.join("redd-block-data.json");
 
     stamp_version(&path, "3.13.0").unwrap();
@@ -105,6 +117,19 @@ fn migration_stamp_keeps_existing_data_and_refuses_malformed_json() {
     assert!(stamped["settings"]["migrationRanAt"].as_u64().unwrap() > 0);
 
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+fn migration_fixture_dir() -> PathBuf {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!(
+        "redd-migration-test-{}-{timestamp}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&dir).unwrap();
+    dir
 }
 
 #[cfg(not(feature = "system-test"))]

@@ -3,7 +3,8 @@
 #
 # Loaded by Rust via `include_str!` and templated with:
 #   {STAGED}  — temp file holding the cleaned hosts content
-#   {LIVE_HASH} and {CLEANED_HASH} — SHA-256 of the original and edited bytes
+#   {LIVE_HASH} and {CLEANED_HASH} — SHA-256 of the original and edited bytes,
+#                                   or 'missing' when no hosts file exists
 #
 # DO NOT add other template placeholders without updating
 # run_elevated_macos in commands/migration.rs to substitute them.
@@ -30,8 +31,18 @@ legacy_daemon_present() {
         launchctl print system/org.reddfocus.redd-block-helper >/dev/null 2>&1
 }
 
+check_hosts_unchanged() {
+    if [ '{LIVE_HASH}' = 'missing' ]; then
+        [ ! -e /etc/hosts ] && [ ! -L /etc/hosts ]
+    else
+        [ "$(hash_file /etc/hosts)" = '{LIVE_HASH}' ]
+    fi
+}
+
 # 1. Verify the exact staged bytes before stopping the helper.
-test "$(hash_file '{STAGED}')" = '{CLEANED_HASH}' || exit 13
+if [ '{CLEANED_HASH}' != 'missing' ]; then
+    test "$(hash_file '{STAGED}')" = '{CLEANED_HASH}' || exit 13
+fi
 
 # 2. STOP the daemon FIRST so it can't race us by re-adding markers
 #    to the hosts file. bootout returns immediately, so we poll
@@ -68,7 +79,7 @@ if [ '{LIVE_HASH}' != '{CLEANED_HASH}' ]; then
     chown root:wheel "$TMP"
     chmod 644 "$TMP"
 fi
-if [ "$(hash_file /etc/hosts)" != '{LIVE_HASH}' ]; then
+if ! check_hosts_unchanged; then
     echo "hosts changed while preparing migration; retry with the current file" >&2
     exit 12
 fi
@@ -121,5 +132,8 @@ done
 #    here must not abort migration, hence `|| true`.
 tccutil reset SystemPolicyAllFiles com.reddblock 2>/dev/null || true
 
-# Return the completion marker to the caller on stdout.
+# 7. Status marker — written only if every gate above passed.
+if [ '{LIVE_HASH}' = 'missing' ]; then
+    check_hosts_unchanged || exit 12
+fi
 printf 'ok\n'

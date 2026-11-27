@@ -2,7 +2,8 @@
 #
 # Loaded by Rust via include_str! and templated with:
 #   {STAGED}  — temp file holding the cleaned hosts content
-#   {LIVE_HASH} and {CLEANED_HASH} — SHA-256 of the original and edited bytes
+#   {LIVE_HASH} and {CLEANED_HASH} — SHA-256 of the original and edited bytes,
+#                                   or 'missing' when no hosts file exists
 #
 # DO NOT add other template placeholders without updating
 # run_elevated_windows in commands/migration.rs.
@@ -33,17 +34,33 @@ $helperStatePaths = @(
     (Join-Path $programData 'Fristed\helper-state.json')
 )
 
+function Confirm-HostsUnchanged {
+    $changed = if ('{LIVE_HASH}' -eq 'missing') {
+        Test-Path -LiteralPath $hosts
+    } else {
+        (Get-FileHash -LiteralPath $hosts).Hash -ne '{LIVE_HASH}'
+    }
+    if ($changed) {
+        throw 'hosts changed while preparing migration; retry with the current file'
+    }
+}
+
+function Test-LegacyTaskPresent {
+    # Query the root tasks to distinguish a failed query from a missing task.
+    return [bool](Get-ScheduledTask -TaskPath '\' | Where-Object TaskName -eq $helperTask)
+}
+
 # 1. Verify the exact staged bytes before stopping the helper.
-if ((Get-FileHash -LiteralPath $staged).Hash -ne '{CLEANED_HASH}') {
+if ('{CLEANED_HASH}' -ne 'missing' -and (Get-FileHash -LiteralPath $staged).Hash -ne '{CLEANED_HASH}') {
     throw 'staged hosts do not match the prepared edit'
 }
 
 # 2. Disable the legacy task before stopping the helper so it cannot
 #    relaunch and rewrite hosts. Poll until the process is gone.
+$helperTaskPresent = Test-LegacyTaskPresent
 & {
     $ErrorActionPreference = 'Continue'
-    & "$systemDirectory\schtasks.exe" /Query /TN $helperTask 2>&1 | Out-Null
-    if ($LASTEXITCODE -eq 0) {
+    if ($helperTaskPresent) {
         & "$systemDirectory\schtasks.exe" /Change /TN $helperTask /Disable 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'could not disable legacy scheduled task' }
         & "$systemDirectory\schtasks.exe" /End /TN $helperTask 2>&1 | Out-Null
@@ -70,9 +87,7 @@ try {
             throw 'staged hosts do not match the prepared edit'
         }
     }
-    if ((Get-FileHash -LiteralPath $hosts).Hash -ne '{LIVE_HASH}') {
-        throw 'hosts changed while preparing migration; retry with the current file'
-    }
+    Confirm-HostsUnchanged
     if ($tmp) {
         [System.IO.File]::Replace($tmp, $hosts, [NullString]::Value)
         if ((Get-FileHash -LiteralPath $hosts).Hash -ne '{CLEANED_HASH}') {
@@ -102,16 +117,11 @@ foreach ($helperState in $helperStatePaths) {
 }
 
 # 5. VERIFY removal.
-$taskStillThere = $false
-& {
-    $ErrorActionPreference = 'Continue'
-    & "$systemDirectory\schtasks.exe" /Query /TN $helperTask 2>&1 | Out-Null
-    if ($LASTEXITCODE -eq 0) { $script:taskStillThere = $true }
-}
-if ($taskStillThere) { throw 'scheduled task still present' }
+if (Test-LegacyTaskPresent) { throw 'scheduled task still present' }
 foreach ($helperState in $helperStatePaths) {
     if (Test-Path -LiteralPath $helperState) { throw "helper-state.json still present: $helperState" }
 }
 
-# Only this explicit completion code indicates success to the waiting caller.
+# 6. status marker — written only after every gate above passed.
+if ('{LIVE_HASH}' -eq 'missing') { Confirm-HostsUnchanged }
 exit 42

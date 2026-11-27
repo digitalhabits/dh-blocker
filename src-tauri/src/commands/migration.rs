@@ -72,6 +72,15 @@ fn hosts_path() -> PathBuf {
     }
 }
 
+#[cfg(any(test, not(feature = "system-test")))]
+fn read_live_hosts(path: &Path) -> std::io::Result<Option<Vec<u8>>> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && !path.is_symlink() => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 fn legacy_hosts_backup_path() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
@@ -125,10 +134,47 @@ fn legacy_artefacts_present() -> bool {
         dirs.push(crate::product_identity::windows_primary_shared_dir());
         dirs.iter()
             .any(|dir| dir.join("helper-state.json").exists())
+            || windows_legacy_task_pending()
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         false
+    }
+}
+
+#[cfg(any(test, all(target_os = "windows", not(feature = "system-test"))))]
+fn has_windows_legacy_helper_task(task_csv: &[u8]) -> bool {
+    // schtasks /FO CSV /NH puts the quoted task path first.
+    task_csv.split(|&b| b == b'\n').any(|line| {
+        line.split(|&b| b == b'"')
+            .nth(1)
+            .is_some_and(|name| name.eq_ignore_ascii_case(br"\ReDD Block Helper"))
+    })
+}
+
+#[cfg(all(target_os = "windows", not(feature = "system-test")))]
+fn windows_legacy_task_pending() -> bool {
+    use std::os::windows::process::CommandExt;
+
+    // Query the list so we can distinguish query failure from absence
+    // independently of the language of schtasks' errors.
+    match std::process::Command::new("schtasks.exe")
+        .args(["/Query", "/FO", "CSV", "/NH"])
+        .creation_flags(0x0800_0000)
+        .output()
+    {
+        Ok(output) if output.status.success() => has_windows_legacy_helper_task(&output.stdout),
+        Ok(output) => {
+            log::warn!(
+                "could not check for legacy Windows helper task: {}",
+                output.status
+            );
+            true
+        }
+        Err(e) => {
+            log::warn!("could not query legacy Windows helper task: {e}");
+            true
+        }
     }
 }
 
@@ -149,8 +195,8 @@ fn migration_pending_uncached() -> bool {
 
 #[cfg(not(feature = "system-test"))]
 fn migration_pending_uncached() -> bool {
-    match std::fs::read(hosts_path()) {
-        Ok(raw) if hosts_has_markers(&raw) => return true,
+    match read_live_hosts(&hosts_path()) {
+        Ok(Some(raw)) if hosts_has_markers(&raw) => return true,
         Err(e) if cfg!(any(target_os = "macos", target_os = "windows")) => {
             log::warn!("unable to check hosts for migration residue: {e}");
             return true;
@@ -231,25 +277,6 @@ fn strip_managed_sections(content: &[u8]) -> Result<Vec<u8>, &'static str> {
         return Err("missing end marker for ReDD Block hosts section");
     }
     Ok(out)
-}
-
-#[cfg(any(
-    test,
-    all(
-        not(feature = "system-test"),
-        any(target_os = "macos", target_os = "windows")
-    )
-))]
-fn compute_cleaned_hosts(live: &[u8]) -> Result<Vec<u8>, &'static str> {
-    let cleaned = strip_managed_sections(live)?;
-    if cleaned != live
-        && !cleaned
-            .windows(b"localhost".len())
-            .any(|w| w == b"localhost")
-    {
-        return Err("refusing to write hosts without localhost".into());
-    }
-    Ok(cleaned)
 }
 
 // ---- Public commands -----------------------------------------------------
@@ -457,9 +484,10 @@ fn prepare_hosts_edit(
     use sha2::{Digest, Sha256};
     use std::io::Write;
 
-    let live = std::fs::read(hosts_path()).map_err(|e| format!("read hosts: {e}"))?;
-    let cleaned = compute_cleaned_hosts(&live)?;
-    if cleaned != live {
+    let live = read_live_hosts(&hosts_path()).map_err(|e| format!("read hosts: {e}"))?;
+    let original = live.as_deref().unwrap_or_default();
+    let cleaned = strip_managed_sections(original)?;
+    if cleaned != original {
         let backup_dir = app_data_dir
             .map(|dir| dir.join("backups"))
             .or_else(default_backup_dir)
@@ -468,7 +496,7 @@ fn prepare_hosts_edit(
         let snapshot = backup_dir.join(format!("hosts.{file_suffix}"));
         let mut file = std::fs::File::create_new(&snapshot)
             .map_err(|e| format!("open hosts snapshot at {snapshot:?}: {e}"))?;
-        if let Err(e) = file.write_all(&live).and_then(|()| file.sync_all()) {
+        if let Err(e) = file.write_all(original).and_then(|()| file.sync_all()) {
             drop(file);
             let _ = std::fs::remove_file(&snapshot);
             return Err(format!("save hosts snapshot at {snapshot:?}: {e}"));
@@ -483,10 +511,18 @@ fn prepare_hosts_edit(
         let _ = std::fs::remove_file(&staged);
         return Err(format!("write staged hosts: {e}"));
     }
+    let (live_hash, cleaned_hash) = if live.is_some() {
+        (
+            format!("{:x}", Sha256::digest(original)),
+            format!("{:x}", Sha256::digest(&cleaned)),
+        )
+    } else {
+        ("missing".into(), "missing".into())
+    };
     Ok(PreparedHostsEdit {
         staged,
-        live_hash: format!("{:x}", Sha256::digest(&live)),
-        cleaned_hash: format!("{:x}", Sha256::digest(&cleaned)),
+        live_hash,
+        cleaned_hash,
     })
 }
 
