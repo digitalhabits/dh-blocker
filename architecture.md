@@ -271,6 +271,12 @@ the active one, and need no system-wide input-synthesis grant. Safari's extensio
      overlap; `url_is_blocked` in `web_automation.rs`). Redirect sets
      `location` to the block page with the same query params the extension
      uses (`url`, `blocklist`, `mode`, etc.).
+     Chromium reports the destination URL while a Leave site dialog is open.
+     The watcher sends the block page with `#pending`. The page replaces this
+     with `#loaded` when it runs, preserving browser history. After observing
+     the loaded page, the watcher treats Back as a fresh visit on the next
+     eligible scan. A return from a pending redirect retains the five-second
+     Cancel delay.
 3. All Apple Events serialize through a global mutex — concurrent osascript
    from the watcher, enforcer, and Tauri commands can deadlock macOS's
    AppleEvent manager.

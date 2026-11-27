@@ -10,6 +10,13 @@
 // and the page degrades gracefully.
 
 (() => {
+  // Chromium reports the destination URL while the previous page is still
+  // asking whether to leave. Only this document can acknowledge its load.
+  // Replacing the fragment preserves the browser's existing Back entry.
+  if (location.protocol === "file:" && location.hash === "#pending") {
+    history.replaceState(history.state, "", "#loaded");
+  }
+
   const params = new URLSearchParams(location.search);
   if (params.get("popup") === "1") {
     document.body.classList.add("popup-mode");
