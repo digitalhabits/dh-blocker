@@ -75,6 +75,7 @@
 //
 // Safari is out of scope (native bundle handles its own extension).
 
+#[cfg(not(target_os = "windows"))]
 use std::path::PathBuf;
 
 use serde::Serialize;
@@ -200,9 +201,7 @@ fn firefox_policies_json_path() -> PathBuf {
     PathBuf::from("/Applications/Firefox.app/Contents/Resources/distribution/policies.json")
 }
 
-/// Drop the install hint for every supported browser. Idempotent —
-/// running it on every app launch keeps the hints in place and
-/// re-creates them if the user removed any manually.
+/// Drop the install hint for every supported browser.
 pub fn install() -> std::io::Result<()> {
     // macOS installs no hints at all: the Firefox extension is set up by hand
     // and the Chromium browsers are driven by Automation, not the extension.
@@ -238,6 +237,19 @@ pub fn install() -> std::io::Result<()> {
         }
         log::info!("tcc-probe: extension_install::install() exited");
         Ok(())
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn install_windows_hint_for(
+    browser: crate::native_host_install::BrowserTarget,
+) -> std::io::Result<()> {
+    use crate::native_host_install::BrowserTarget as HostTarget;
+    match browser {
+        HostTarget::Chrome => install_chromium(BrowserTarget::Chrome),
+        HostTarget::Brave => install_chromium(BrowserTarget::Brave),
+        HostTarget::Edge => install_chromium(BrowserTarget::Edge),
+        HostTarget::Firefox => install_firefox_registry(),
     }
 }
 
@@ -682,13 +694,33 @@ fn write_hkcu_named_value(path: &str, value_name: &str, value: &str) -> std::io:
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::ERROR_SUCCESS;
     use windows::Win32::System::Registry::{
-        RegCloseKey, RegCreateKeyExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE,
-        REG_OPTION_NON_VOLATILE, REG_SZ,
+        RegCloseKey, RegCreateKeyExW, RegGetValueW, RegSetValueExW, HKEY, HKEY_CURRENT_USER,
+        KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ, RRF_RT_REG_SZ,
     };
 
     unsafe {
-        let mut hkey: HKEY = HKEY::default();
         let subkey = to_wide(path);
+        let name_wide = to_wide(value_name);
+        let data_wide = to_wide(value);
+        let bytes_len = (data_wide.len() * 2) as u32;
+        let mut current = vec![0u16; data_wide.len()];
+        let mut current_len = bytes_len;
+        if RegGetValueW(
+            HKEY_CURRENT_USER,
+            PCWSTR(subkey.as_ptr()),
+            PCWSTR(name_wide.as_ptr()),
+            RRF_RT_REG_SZ,
+            None,
+            Some(current.as_mut_ptr().cast()),
+            Some(&mut current_len),
+        ) == ERROR_SUCCESS
+            && current_len == bytes_len
+            && current == data_wide
+        {
+            return Ok(());
+        }
+
+        let mut hkey: HKEY = HKEY::default();
         let status = RegCreateKeyExW(
             HKEY_CURRENT_USER,
             PCWSTR(subkey.as_ptr()),
@@ -705,9 +737,6 @@ fn write_hkcu_named_value(path: &str, value_name: &str, value: &str) -> std::io:
                 "RegCreateKeyExW failed: {status:?}"
             )));
         }
-        let name_wide = to_wide(value_name);
-        let data_wide = to_wide(value);
-        let bytes_len = (data_wide.len() * 2) as u32;
         let data_bytes =
             std::slice::from_raw_parts(data_wide.as_ptr() as *const u8, bytes_len as usize);
         let status = RegSetValueExW(
@@ -792,56 +821,25 @@ fn uninstall_firefox_registry() -> std::io::Result<()> {
     Ok(())
 }
 
-/// Tauri command — exposed for manual re-trigger from the UI (e.g. an
-/// onboarding "Reinstall hints" button) and for tests. The startup
-/// auto-install in `lib.rs::run` is marker-gated to one-shot per
-/// machine; this command always runs, ignoring the marker, and also
-/// re-drops the marker on success so a future startup stays silent.
+/// Explicit reinstallation of the legacy hints.
 #[tauri::command]
-pub fn install_extension_hints() -> Result<(), String> {
-    let result = install().map_err(|e| e.to_string());
-    if result.is_ok() {
-        mark_startup_install_done();
+pub fn install_extension_hints(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(all(target_os = "windows", not(feature = "system-test")))]
+    {
+        crate::windows_browser_setup::require_current_eula(&app)?;
+        let exe = std::env::current_exe().map_err(|error| error.to_string())?;
+        if crate::native_host_install::is_msix_packaged_exe_path(&exe) {
+            return Ok(());
+        }
     }
-    result
+    let _ = app;
+    if cfg!(all(target_os = "windows", feature = "system-test")) {
+        return Ok(());
+    }
+    install().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn uninstall_extension_hints() -> Result<(), String> {
     uninstall().map_err(|e| e.to_string())
-}
-
-/// Path of the marker file that gates the startup auto-install. Lives
-/// under our own app-data dir (not inside any other app's territory)
-/// so creating/reading it never touches another app's data and never
-/// triggers a TCC prompt.
-fn startup_install_marker_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(
-        base.join("com.reddblock")
-            .join("extension-hints-installed.v1"),
-    )
-}
-
-/// `true` if the startup auto-install has already run (successfully)
-/// on this machine. Used by `lib.rs::run` to skip the full sweep on
-/// every launch.
-pub fn startup_install_already_done() -> bool {
-    startup_install_marker_path()
-        .map(|p| p.exists())
-        .unwrap_or(false)
-}
-
-/// Drop the marker after a successful startup auto-install. Best-effort
-/// — if the write fails (e.g. read-only filesystem) the next launch
-/// will retry the install, which is harmless since the per-browser
-/// writes are themselves idempotent.
-pub fn mark_startup_install_done() {
-    let Some(path) = startup_install_marker_path() else {
-        return;
-    };
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::write(&path, b"");
 }

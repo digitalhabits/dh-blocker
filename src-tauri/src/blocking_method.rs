@@ -96,7 +96,7 @@ pub fn read_map(app: &AppHandle) -> HashMap<String, String> {
         .unwrap_or_default()
 }
 
-fn read_map_from_value(data: &Value) -> HashMap<String, String> {
+pub(crate) fn read_map_from_value(data: &Value) -> HashMap<String, String> {
     data.get("settings")
         .and_then(|s| s.get("blockingMethods"))
         .and_then(|v| v.as_object())

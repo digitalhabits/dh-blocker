@@ -227,6 +227,16 @@ Revision-based model in `src/onboarding.js`:
 macOS Automation (`web_automation_start`) and other post-acceptance startup
 hooks run only after EULA acceptance.
 
+Windows connects the selected browser to its native-messaging host when the
+user chooses Extension or clicks Install or Connect in browser setup. New
+setups install Focus through the browser's extension store. After EULA
+acceptance, startup repairs registered hosts for explicit Extension choices.
+It also recovers older browser setups when the old installation marker,
+completed onboarding and saved website rules are all present. That recovery
+restores missing extension policies only on direct installs, for installed
+browsers that still use Extension. Profile scans only report registration
+status. They do not install a host or write browser policy.
+
 ---
 
 ## 4) macOS website blocking (Automation)
@@ -664,10 +674,10 @@ never active. Naming: “X” → “X copy” → “X copy 2” …
 1. Load canonical app data (`data.rs`)
 2. Run v1 migration if needed (`migration.rs`) — hosts cleanup + legacy helper
    removal; may prompt once for admin/UAC
-3. Register tray, enforcer, app watcher, native host manifests
+3. Register tray, enforcer and app watcher
 4. macOS: start Automation watcher after EULA (`web_automation` auto-start)
 5. Reconcile launch-at-login (release builds only); retire matching legacy tasks on Store builds
-6. Frontend: EULA gate → browser setup (Automation rows + Firefox extension)
+6. Frontend: EULA gate → Windows browser registration repair → browser setup
 
 ### 11.2 App close vs quit
 

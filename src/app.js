@@ -201,6 +201,11 @@ export async function runPostAcceptanceStartup() {
             setupEnforcerUiAlerts();
             setupWebAutomationUiAlerts();
             await ensureInstalledAppsCache();
+            if (state.isWindowsDesktop) {
+                await invoke('repair_windows_browser_setup').catch(e => {
+                    console.warn('[startup] Windows browser setup repair failed:', e);
+                });
+            }
             await runDesktopOnboarding();
             // Push active schedule / block app sets into the in-process watcher
             // immediately — don't wait for the 1s tick interval.

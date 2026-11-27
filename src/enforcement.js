@@ -618,6 +618,13 @@ export function openPendingExtensionSetup() {
     void showMigrationOnboarding('post', pending.fresh, { mode: 'fresh' });
 }
 
+async function saveBrowserBlockingMethod(key, method) {
+    const methods = await tauriAPI.setBlockingMethod(key, method);
+    if (!state.appData.settings) state.appData.settings = {};
+    state.appData.settings.blockingMethods = methods;
+    syncBlockingMethodSelects(methods);
+}
+
 export async function onBlockingMethodChange(key, select) {
     const previous = browserBlockingMethod(key);
     // Only methods this browser can actually enforce with: Firefox has no
@@ -627,10 +634,7 @@ export async function onBlockingMethodChange(key, select) {
         : methodDefaultForKey(key);
     select.disabled = true;
     try {
-        const methods = await tauriAPI.setBlockingMethod(key, desired);
-        if (!state.appData.settings) state.appData.settings = {};
-        state.appData.settings.blockingMethods = methods;
-        syncBlockingMethodSelects(methods);
+        await saveBrowserBlockingMethod(key, desired);
         if (desired === 'extension') {
             // Automation permission is irrelevant on the extension path,
             // and the watcher stops probing this browser — so a pending
@@ -964,6 +968,7 @@ export function browserComplianceStatus(key, b) {
         return 'compliant';
     }
     if (!def || !def.installed) return 'needs-install';
+    if (state.isWindowsDesktop && b.nativeHostReady === false) return 'needs-native-host';
     const enabled = def.enabled;
     if (enabled === false) return 'needs-enable';
     const priv = def.privateBrowsing;
@@ -1860,6 +1865,14 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
             installBtn.textContent = tSettings('migrationInstallButton');
             installBtn.title = tSettingsFmt('migrationInstallStoreTitle', { browser: entry.label });
             installBtn.addEventListener('click', async () => {
+                if (appState.isWindowsDesktop) {
+                    try {
+                        await saveBrowserBlockingMethod(key, 'extension');
+                    } catch (e) {
+                        console.warn('[migration] Could not connect the browser to Blocker:', e);
+                        // The user can still install now and retry the connection from Setup.
+                    }
+                }
                 try {
                     await invoke('open_url_in_browser', { browser: key, url: entry.url });
                     installBtn.textContent = tSettings('migrationInstallOpened');
@@ -1886,20 +1899,37 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
         } else if (status === 'needs-native-host') {
             const hint = document.createElement('div');
             hint.className = 'migration-browser-hint migration-browser-after-hint';
-            hint.innerHTML = tSettings('migrationFirefoxNativeHostHtml');
+            hint.textContent = appState.isWindowsDesktop
+                ? tSettingsFmt('migrationWindowsNativeHostHint', { browser: entry.label })
+                : tSettings('migrationFirefoxNativeHostHtml');
             row.appendChild(hint);
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'migration-browser-copy';
-            btn.textContent = tSettings('migrationFirefoxNativeHostButton');
+            btn.textContent = appState.isWindowsDesktop
+                ? tSettings('migrationStatusNativeHost')
+                : tSettings('migrationFirefoxNativeHostButton');
             btn.addEventListener('click', async () => {
+                btn.disabled = true;
                 try {
-                    await invoke('ensure_firefox_native_host');
+                    if (appState.isWindowsDesktop) {
+                        await saveBrowserBlockingMethod(key, 'extension');
+                    } else {
+                        await invoke('ensure_firefox_native_host');
+                    }
                     const fresh = await invoke('onboarding_state');
                     renderBrowserInstallButtons(fresh, { force: true });
                     await updateBehaviourChangeBanner(fresh);
                 } catch (e) {
-                    console.warn('[firefox] ensure_firefox_native_host failed:', e);
+                    console.warn('[migration] Could not connect the browser to Blocker:', e);
+                    btn.textContent = tSettings('migrationFailed');
+                    setTimeout(() => {
+                        btn.textContent = appState.isWindowsDesktop
+                            ? tSettings('migrationStatusNativeHost')
+                            : tSettings('migrationFirefoxNativeHostButton');
+                    }, 2000);
+                } finally {
+                    btn.disabled = false;
                 }
             });
             const actionsRow = document.createElement('div');

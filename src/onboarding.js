@@ -46,7 +46,7 @@ export function getAcceptedEulaRevision() {
         }
     }
     if (state.appData?.settings?.eulaAccepted === true) {
-        return CURRENT_EULA_REVISION;
+        return 1; // The old boolean recorded acceptance of revision 1.
     }
     return null;
 }

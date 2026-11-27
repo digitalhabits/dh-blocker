@@ -163,31 +163,27 @@ pub fn is_msix_packaged_exe_path(_path: &std::path::Path) -> bool {
 }
 
 /// Path the native-messaging manifest should reference right now.
-/// Repairs a missing or outdated staged executable; otherwise only reads
-/// metadata, so current installations are cheap to check during profile scans.
+/// A missing or stale stage needs explicit installation or startup repair.
 #[cfg(target_os = "windows")]
 fn host_binary_path_for_manifest() -> std::io::Result<String> {
     let source = std::env::current_exe().map_err(|e| std::io::Error::other(e.to_string()))?;
     if is_msix_packaged_exe_path(&source) {
         let dest_dir = native_host_stage_dir()
             .ok_or_else(|| std::io::Error::other("cannot resolve LOCALAPPDATA"))?;
-        let dest_exe = dest_dir.join(STAGED_NATIVE_HOST_EXE);
-        if dest_exe.exists() {
-            // The whole top level, not just the exe: the host also needs
-            // the DLLs beside it, and status polls are now the only cheap
-            // path that would notice one going missing.
-            if source
+        if !dest_dir.join("package-family").is_file()
+            || source
                 .parent()
                 .map_or(true, |install_dir| stage_is_stale(install_dir, &dest_dir))
-            {
-                ensure_staged_native_host(&source)?;
-            }
-            return dest_exe
-                .to_str()
-                .map(String::from)
-                .ok_or_else(|| std::io::Error::other("non-utf8 staged path"));
+        {
+            return Err(std::io::Error::other(
+                "native-host stage is missing or outdated",
+            ));
         }
-        return ensure_staged_native_host(&source);
+        return dest_dir
+            .join(STAGED_NATIVE_HOST_EXE)
+            .to_str()
+            .map(String::from)
+            .ok_or_else(|| std::io::Error::other("non-utf8 staged path"));
     }
     source
         .to_str()
@@ -411,13 +407,19 @@ fn sync_install_dir_to_stage(
 
 #[cfg(target_os = "windows")]
 fn ensure_staged_native_host(source_exe: &std::path::Path) -> std::io::Result<String> {
+    static STAGE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _stage = STAGE_LOCK
+        .lock()
+        .map_err(|_| std::io::Error::other("native-host staging lock poisoned"))?;
     let source_dir = source_exe
         .parent()
         .ok_or_else(|| std::io::Error::other("exe has no parent dir"))?;
     let dest_dir = native_host_stage_dir()
         .ok_or_else(|| std::io::Error::other("cannot resolve LOCALAPPDATA"))?;
     store_owner::record(&dest_dir)?;
-    sync_install_dir_to_stage(source_dir, &dest_dir)?;
+    if stage_is_stale(source_dir, &dest_dir) {
+        sync_install_dir_to_stage(source_dir, &dest_dir)?;
+    }
     let dest_exe = dest_dir.join(STAGED_NATIVE_HOST_EXE);
     if !dest_exe.exists() {
         return Err(std::io::Error::other(format!(
@@ -454,19 +456,17 @@ fn windows_manifest_path(browser: BrowserTarget) -> Option<PathBuf> {
 /// file on disk without the key yields "host not found".
 #[cfg(target_os = "windows")]
 pub fn native_host_is_current(browser: BrowserTarget) -> bool {
-    let Ok(expected) = host_binary_path_for_manifest() else {
-        return false;
-    };
-    if !std::path::Path::new(&expected).exists() {
-        return false;
-    }
     let Some(manifest_path) = windows_manifest_path(browser) else {
         return false;
     };
     if !windows_registry_points_at_manifest(browser, &manifest_path) {
         return false;
     }
-    manifest_is_current_at(browser, &expected, &manifest_path)
+    let Ok(expected) = host_binary_path_for_manifest() else {
+        return false;
+    };
+    std::path::Path::new(&expected).is_file()
+        && manifest_is_current_at(browser, &expected, &manifest_path)
 }
 
 #[cfg(target_os = "windows")]
@@ -475,7 +475,7 @@ fn manifest_is_current_at(
     expected: &str,
     manifest_path: &std::path::Path,
 ) -> bool {
-    // The caller already resolved (and, if stale, repaired) the host. Do
+    // The caller already resolved the host. Do
     // not call manifest_binary_path here: on MSIX that is an installation
     // operation which deletes and recopies resource directories on every
     // status poll, even when the native host is already current.
@@ -1081,7 +1081,12 @@ pub fn install_native_host(app: tauri::AppHandle) -> Result<(), String> {
     }
     #[cfg(not(target_os = "macos"))]
     {
+        #[cfg(all(target_os = "windows", not(feature = "system-test")))]
+        crate::windows_browser_setup::require_current_eula(&app)?;
         let _ = app;
+        if cfg!(all(target_os = "windows", feature = "system-test")) {
+            return Ok(());
+        }
         install_force().map_err(|e| e.to_string())
     }
 }
