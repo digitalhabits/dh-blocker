@@ -524,6 +524,33 @@ fn background_browser_redirect_waits_until_it_is_frontmost() {
 }
 
 #[test]
+fn background_safari_redirects_on_full_pass_while_chromium_defers() {
+    let browsers = SupportedBrowser::all();
+    let mut io = FakeIo::new(
+        vec![block("mail", "blocklist", &["mail.google.com"], 0, 999)],
+        &browsers,
+    );
+    io.events = true;
+    io.frontmost = Some("com.apple.TextEdit".into());
+    for browser in browsers {
+        io.queue_read(browser, Ok(vec![open_tab(1, "https://mail.google.com/")]));
+    }
+    let base = "file:///blocked.html";
+    tick_with_io(
+        &mut io,
+        &tick_shared(),
+        base,
+        &mut false,
+        &mut ScanState::default(),
+        Instant::now(),
+    );
+    assert_eq!(io.apply_calls.len(), 1);
+    let (browser, actions) = &io.apply_calls[0];
+    assert_eq!(*browser, SupportedBrowser::Safari);
+    assert!(is_block_page_url(&actions[0].2, base));
+}
+
+#[test]
 fn switching_focus_while_reading_brave_tabs_defers_only_redirects() {
     let brave = SupportedBrowser::Brave;
     let base = "file:///blocked.html";

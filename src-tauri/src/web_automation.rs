@@ -53,14 +53,9 @@ use crate::native_host::{self, BlockInfo};
 /// send Apple Events to browsers `sysinfo` reports as alive.
 const TICK: Duration = Duration::from_millis(1000);
 
-/// Cadence for browsers that are running but NOT frontmost while
-/// workspace events are active. Only the frontmost browser is scripted
-/// every tick — the user can't see a background browser's tabs, and a
-/// blocked tab parked there is bounced within one tick of the browser
-/// being activated (the activation updates `frontmost_bundle_id`
-/// immediately). While blocking, the slower full pass reads background
-/// browsers but only restores tabs from the block page; redirects wait
-/// until the browser is frontmost (see `tick_with_io`).
+/// With workspace events active, full passes enforce Safari in the
+/// background and restore Chromium tabs. Chromium redirects resume on
+/// the first tick after the browser becomes frontmost.
 const BACKGROUND_BROWSER_TICK: Duration = Duration::from_secs(5);
 
 /// Once a browser's Automation permission is denied, stop hammering
@@ -648,11 +643,11 @@ fn tick_with_io<I: AutomationIo>(
                     io.read_completed_at(now),
                 );
                 // Focus can change while read_tabs waits for Apple Events.
-                // Defer redirects when another app has since taken focus:
-                // a beforeunload dialog can bring the browser forward.
-                // Background tabs can keep playing until focus returns.
+                // A beforeunload dialog can bring Chromium forward. Safari
+                // rendered our bundled file URL in the background in live tests.
                 // Unknown focus or unavailable events keep enforcement fail-closed.
                 if blocking_active
+                    && browser != SupportedBrowser::Safari
                     && events
                     && !actions.is_empty()
                     && io
