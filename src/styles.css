@@ -6119,6 +6119,10 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled){
     text-align: center;
 }
 
+#startup-recovery-error{
+    overflow-wrap: anywhere;
+}
+
 .onboarding-icon{
     margin-bottom: 20px;
 }
