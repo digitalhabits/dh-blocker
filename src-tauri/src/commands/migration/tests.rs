@@ -111,7 +111,8 @@ fn migration_stamp_keeps_existing_data_and_refuses_malformed_json() {
 #[test]
 fn windows_launcher_passes_quoted_script_content_without_executing_a_temp_file() {
     let launcher = windows_elevation_launcher("Write-Output 'O''Brien'");
-    assert!(launcher.contains("GetBytes('Write-Output ''O''''Brien''')"));
+    assert!(!launcher.contains("Write-Output"));
+    assert_eq!(encode_powershell_text("a’b"), "YQAZIGIA");
     assert!(launcher.contains("'-EncodedCommand',$payload"));
     assert!(!launcher.contains("'-File'"));
     assert!(include_str!("cleanup.ps1").trim_end().ends_with("exit 42"));

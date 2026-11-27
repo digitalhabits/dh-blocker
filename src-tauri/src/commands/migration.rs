@@ -510,9 +510,8 @@ fn default_backup_dir() -> Option<PathBuf> {
 fn cleanup_reported_success(output: &[u8]) -> bool {
     // AppleScript can translate shell newlines into carriage returns.
     output
-        .trim_ascii_end()
         .rsplit(|b| matches!(b, b'\r' | b'\n'))
-        .next()
+        .find(|line| !line.is_empty())
         == Some(b"ok")
 }
 
@@ -597,7 +596,7 @@ fn run_elevated_windows(edit: &PreparedHostsEdit) -> ElevatedOutcome {
         .replace("{CLEANED_HASH}", &edit.cleaned_hash)
         .replace(
             "{STAGED}",
-            &edit.staged.to_string_lossy().replace('\'', "''"),
+            &encode_powershell_text(&edit.staged.to_string_lossy()),
         );
     let launcher = windows_elevation_launcher(&inner);
     match Command::new(powershell)
@@ -641,20 +640,27 @@ fn run_elevated_windows(edit: &PreparedHostsEdit) -> ElevatedOutcome {
     }
 }
 
+#[cfg(all(not(feature = "system-test"), any(test, target_os = "windows")))]
+fn encode_powershell_text(text: &str) -> String {
+    use base64::Engine;
+    let bytes: Vec<u8> = text.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
 // Hand the elevated process immutable script bytes, never a script path in
 // the caller's writable temp directory. PowerShell expects UTF-16LE.
 #[cfg(all(not(feature = "system-test"), any(test, target_os = "windows")))]
 fn windows_elevation_launcher(script: &str) -> String {
     format!(
         r#"$ErrorActionPreference = 'Stop'
-$payload = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes('{script}'))
+$payload = '{payload}'
 try {{
     $p = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoProfile','-NonInteractive','-EncodedCommand',$payload) -Verb RunAs -WindowStyle Hidden -PassThru -Wait
     exit $p.ExitCode
 }} catch [System.ComponentModel.Win32Exception] {{
     exit $_.Exception.NativeErrorCode
 }}"#,
-        script = script.replace('\'', "''")
+        payload = encode_powershell_text(script)
     )
 }
 

@@ -20,7 +20,8 @@
 # authoritative gates.
 
 $ErrorActionPreference = 'Stop'
-$staged = '{STAGED}'
+$staged = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('{STAGED}'))
+$systemDirectory = [Environment]::SystemDirectory
 $hosts = 'C:\Windows\System32\drivers\etc\hosts'
 $helperTask = 'ReDD Block Helper'
 $programData = if ($env:PROGRAMDATA) { $env:PROGRAMDATA } else { 'C:\ProgramData' }
@@ -41,13 +42,13 @@ if ((Get-FileHash -LiteralPath $staged).Hash -ne '{CLEANED_HASH}') {
 #    relaunch and rewrite hosts. Poll until the process is gone.
 & {
     $ErrorActionPreference = 'Continue'
-    & schtasks /Query /TN $helperTask 2>&1 | Out-Null
+    & "$systemDirectory\schtasks.exe" /Query /TN $helperTask 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) {
-        & schtasks /Change /TN $helperTask /Disable 2>&1 | Out-Null
+        & "$systemDirectory\schtasks.exe" /Change /TN $helperTask /Disable 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'could not disable legacy scheduled task' }
-        & schtasks /End /TN $helperTask 2>&1 | Out-Null
+        & "$systemDirectory\schtasks.exe" /End /TN $helperTask 2>&1 | Out-Null
     }
-    & taskkill /IM 'redd-block-helper.exe' /T /F 2>&1 | Out-Null
+    & "$systemDirectory\taskkill.exe" /IM 'redd-block-helper.exe' /T /F 2>&1 | Out-Null
 }
 for ($i = 0; $i -lt 10; $i++) {
     $running = Get-Process -Name 'redd-block-helper' -ErrorAction SilentlyContinue
@@ -80,7 +81,7 @@ try {
         # ipconfig can write to stderr when the DNS Client is stopped.
         & {
             $ErrorActionPreference = 'Continue'
-            & ipconfig /flushdns 2>&1 | Out-Null
+            & "$systemDirectory\ipconfig.exe" /flushdns 2>&1 | Out-Null
         }
     }
 } finally {
@@ -94,7 +95,7 @@ try {
 #    first launch — see commands::data::import_shared_data_into_per_user.
 & {
     $ErrorActionPreference = 'Continue'
-    & schtasks /Delete /TN $helperTask /F 2>&1 | Out-Null
+    & "$systemDirectory\schtasks.exe" /Delete /TN $helperTask /F 2>&1 | Out-Null
 }
 foreach ($helperState in $helperStatePaths) {
     Remove-Item -LiteralPath $helperState -Force -ErrorAction SilentlyContinue
@@ -104,7 +105,7 @@ foreach ($helperState in $helperStatePaths) {
 $taskStillThere = $false
 & {
     $ErrorActionPreference = 'Continue'
-    & schtasks /Query /TN $helperTask 2>&1 | Out-Null
+    & "$systemDirectory\schtasks.exe" /Query /TN $helperTask 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) { $script:taskStillThere = $true }
 }
 if ($taskStillThere) { throw 'scheduled task still present' }
