@@ -98,7 +98,7 @@ pub fn run() -> ! {
         #[cfg(target_os = "windows")]
         if !crate::native_host_install::store_owner::present() {
             send_payload(&[], &[], false);
-            return;
+            std::process::exit(0);
         }
         let (domains, blocks) = derive_payload(&data_path);
         send_payload(&domains, &blocks, open_settings);
