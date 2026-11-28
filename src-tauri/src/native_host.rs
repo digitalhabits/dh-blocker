@@ -521,10 +521,12 @@ pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInf
     let mut domains: std::collections::BTreeSet<String> = Default::default();
     let mut blocks: Vec<BlockInfo> = Vec::new();
 
+    let room_allow = allow_room_in_force(&active, &blocklists, now_ms);
+
     for ab in &active {
         let start = ab.get("startTime").and_then(|v| v.as_u64()).unwrap_or(0);
         let end = ab.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
-        if one_off_pause_active(ab, now_ms) || now_ms < start || now_ms >= end {
+        if !one_off_in_force(ab, now_ms) {
             continue;
         }
         let id = match ab.get("blocklistId").and_then(|v| v.as_str()) {
@@ -532,6 +534,9 @@ pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInf
             None => continue,
         };
         if let Some((name, emoji, color, mode, websites, apps)) = blocklist_meta(id) {
+            if room_allow && blocklist_mode_is_allowlist(&mode) && !is_room_block(ab) {
+                continue;
+            }
             // Flat `blocklist` is legacy extension blacklist semantics — only
             // blocklist-mode domains belong here. Allowlist enforcement reads
             // `blocks[].mode` + `blocks[].domains` instead.
@@ -565,6 +570,9 @@ pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInf
             None => continue,
         };
         if let Some((name, emoji, color, mode, websites, apps)) = blocklist_meta(id) {
+            if room_allow && blocklist_mode_is_allowlist(&mode) {
+                continue;
+            }
             if !blocklist_mode_is_allowlist(&mode) {
                 for w in &websites {
                     domains.insert(w.clone());
@@ -650,9 +658,7 @@ pub fn derive_blocked_apps(data_path: &std::path::Path) -> Vec<String> {
     let mut apps: std::collections::BTreeSet<String> = Default::default();
 
     for ab in &active {
-        let start = ab.get("startTime").and_then(|v| v.as_u64()).unwrap_or(0);
-        let end = ab.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
-        if one_off_pause_active(ab, now_ms) || now_ms < start || now_ms >= end {
+        if !one_off_in_force(ab, now_ms) {
             continue;
         }
         let Some(id) = ab.get("blocklistId").and_then(|v| v.as_str()) else {
@@ -746,11 +752,10 @@ pub fn derive_allowed_apps(data_path: &std::path::Path) -> Vec<String> {
     };
 
     let mut apps: std::collections::BTreeSet<String> = Default::default();
+    let room_allow = allow_room_in_force(&active, &blocklists, now_ms);
 
     for ab in &active {
-        let start = ab.get("startTime").and_then(|v| v.as_u64()).unwrap_or(0);
-        let end = ab.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
-        if one_off_pause_active(ab, now_ms) || now_ms < start || now_ms >= end {
+        if !one_off_in_force(ab, now_ms) {
             continue;
         }
         let Some(id) = ab.get("blocklistId").and_then(|v| v.as_str()) else {
@@ -759,7 +764,7 @@ pub fn derive_allowed_apps(data_path: &std::path::Path) -> Vec<String> {
         let Some((mode, block_apps)) = blocklist_apps(id) else {
             continue;
         };
-        if !blocklist_mode_is_allowlist(&mode) {
+        if !blocklist_mode_is_allowlist(&mode) || (room_allow && !is_room_block(ab)) {
             continue;
         }
         for app in block_apps {
@@ -770,7 +775,8 @@ pub fn derive_allowed_apps(data_path: &std::path::Path) -> Vec<String> {
     }
 
     for sch in &schedules {
-        if match_schedule_now(sch, now_ms).is_none() {
+        // An allow-mode room replaces the student's own allow-mode spaces.
+        if room_allow || match_schedule_now(sch, now_ms).is_none() {
             continue;
         }
         let Some(id) = sch.get("blocklistId").and_then(|v| v.as_str()) else {
@@ -796,6 +802,63 @@ pub fn derive_allowed_apps(data_path: &std::path::Path) -> Vec<String> {
 struct ScheduleMatch {
     started_at: Option<u64>,
     ends_at: Option<u64>,
+}
+
+/// Whether an `activeBlocks` entry is a classroom room block: a one-off block
+/// a student accepted by checking in to a teacher's room. The entry carries
+/// the room's id. See docs/classroom-design.md.
+pub(crate) fn is_room_block(active_block: &Value) -> bool {
+    active_block
+        .get("roomId")
+        .and_then(|v| v.as_str())
+        .is_some_and(|id| !id.is_empty())
+}
+
+/// Whether a one-off block is being enforced at `now_ms`: inside its time
+/// window and not paused.
+///
+/// A room block ignores the pause flag. Pausing is a one-click way out of an
+/// ordinary block, and a room's way out is the leave friction the teacher
+/// set, so whatever writes `isPaused` on a room block must not suspend it;
+/// leaving a room removes the entry. The time window still applies, and a
+/// room with no `endTime` reads as ended: a room that could never release
+/// must not be enforced.
+fn one_off_in_force(active_block: &Value, now_ms: u64) -> bool {
+    let start = active_block
+        .get("startTime")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let end = active_block
+        .get("endTime")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    if now_ms < start || now_ms >= end {
+        return false;
+    }
+    is_room_block(active_block) || !one_off_pause_active(active_block, now_ms)
+}
+
+/// True while an allow-mode room is in force.
+///
+/// Concurrent allow-mode spaces union, so the student's own allow-mode space
+/// would widen a room's allowlist. While this returns true, the derivations
+/// below leave every allow-mode block that is not itself a room out, for
+/// websites and for apps. Blocklists are untouched: they only ever block
+/// more, and a block-mode room does not trigger this for the same reason.
+fn allow_room_in_force(active: &[Value], blocklists: &[Value], now_ms: u64) -> bool {
+    active.iter().any(|ab| {
+        if !is_room_block(ab) || !one_off_in_force(ab, now_ms) {
+            return false;
+        }
+        let Some(id) = ab.get("blocklistId").and_then(|v| v.as_str()) else {
+            return false;
+        };
+        blocklists
+            .iter()
+            .find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id))
+            .and_then(|b| b.get("mode").and_then(|v| v.as_str()))
+            .is_some_and(blocklist_mode_is_allowlist)
+    })
 }
 
 /// Whether a one-off block's pause still suppresses enforcement at `now_ms`.

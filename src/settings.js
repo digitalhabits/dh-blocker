@@ -14,6 +14,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
 import logoReddFocusUrl from './images/logo-reddfocus.svg';
 import { escapeHtml } from './utils.js';
+import { isRoomBlock } from './classroom-core.js';
 import { DEFAULT_OVERRIDE_WORDS, MAX_OVERRIDE_WORDS_DESKTOP, MAX_OVERRIDE_WORDS_SETTING_STEP, MIN_MAX_OVERRIDE_WORDS_SETTING, getDifficultyTypingCharCount, getMaxOverrideWords, getOverrideEstimatedMinutes, normalizeMaxOverrideWordsSetting, normalizeOverrideCount } from './override-challenge.js';
 import {
     setLanguagePickerOpen,
@@ -1117,10 +1118,12 @@ export function setupSettingsInfoTooltips() {
 // Perform the actual override-all operation
 export async function performOverrideAll() {
     try {
-        const clearedBlocks = state.appData.activeBlocks;
+        // A classroom room stays: its way out is the leave friction the
+        // teacher set, not Stop all.
+        const clearedBlocks = state.appData.activeBlocks.filter(block => !isRoomBlock(block));
 
         // Clear all active blocks
-        state.appData.activeBlocks = [];
+        state.appData.activeBlocks = state.appData.activeBlocks.filter(isRoomBlock);
 
         // Switch every schedule off, keeping its days and times: paused with no end time is off.
         for (const schedule of state.appData.schedules || []) {

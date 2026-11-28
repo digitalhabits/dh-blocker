@@ -21,11 +21,14 @@ import {
     generateId,
 } from './app.js';
 import { buildBlocklistCardMetaHtml, buildBlocklistCardDetailsHtml, blocklistCardHasExpandableSummary } from './list-presentation.js';
+import { isRoomBlocklist } from './classroom-core.js';
 import { cancelIOSRestart, cloneOverrideDifficulty, deselectBlocklist, handleBlocklistSelect, isBlocklistCardVisuallySelected, isEnterSchedulerModalOpen, openBlocklistModal } from './confirm-modals.js';
 import { appBlockingWarningSnoozedUntilMs, formatAppBlockingSnoozeStartsIn, getActiveAppBlockingSnoozeBlocklistIds } from './blocking-platform.js';
 
+// A classroom room's focus space is not the student's to edit, start or
+// reorder, so it is not listed with their own; the classroom bar shows it.
 function getVisibleBlocklists() {
-    return state.appData.blocklists || [];
+    return (state.appData.blocklists || []).filter(bl => !isRoomBlocklist(bl));
 }
 
 /** Focus-space cards whose Sites/Apps summary is expanded (survives re-render). */
@@ -432,7 +435,7 @@ export function buildBlocklistsExportPayload() {
         formatVersion: BLOCKLIST_EXPORT_FORMAT_VERSION,
         exportedAt: new Date().toISOString(),
         overrideCountUnit: 'words',
-        blocklists: (state.appData.blocklists || []).map(serializeBlocklistForExport)
+        blocklists: getVisibleBlocklists().map(serializeBlocklistForExport)
     };
 }
 

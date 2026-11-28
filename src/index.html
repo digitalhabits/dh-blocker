@@ -1020,6 +1020,9 @@
                         </div>
                     </div>
                     <div class="blocklists-list-stack">
+                        <!-- Classroom mode (src/classroom.js): desktop only, hidden
+                             until switched on in Settings. Content is rendered there. -->
+                        <div id="classroom-bar" class="classroom-bar hidden"></div>
                         <div class="blocklists-create-actions" role="group" aria-label="Create focus space">
                             <button id="add-blocklist-btn"
                                     class="blocklists-create-btn blocklists-create-btn--primary"
@@ -1264,6 +1267,42 @@
             </div>
         </div>
 
+        <!-- Classroom mode (src/classroom.js). The first modal's content is one
+             of several views rendered in JS: join, open a room, roster. -->
+        <div id="classroom-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="classroom-modal-title">
+            <div class="modal-content classroom-modal" id="classroom-modal-content"></div>
+        </div>
+        <!-- Leaving a room before its end time: the typing challenge, or the
+             teacher's code, whichever the teacher chose. -->
+        <div id="classroom-leave-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="classroom-leave-title">
+            <div class="modal-content start-confirm-modal override-challenge classroom-leave-modal">
+                <div class="start-confirm-header-room">
+                    <h3 id="classroom-leave-title"></h3>
+                </div>
+                <p id="classroom-leave-body" class="classroom-leave-body"></p>
+                <p id="classroom-leave-instruction" class="override-challenge-instruction"></p>
+                <strong id="classroom-leave-words-remaining" class="challenge-words-remaining hidden"></strong>
+                <div id="classroom-leave-challenge-text" class="challenge-text"></div>
+                <div id="classroom-leave-word-progress" class="challenge-word-progress hidden"></div>
+                <div id="classroom-leave-current-word" class="challenge-current-word hidden"></div>
+                <input id="classroom-leave-word-input" class="challenge-input challenge-word-input hidden"
+                    autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                <textarea id="classroom-leave-challenge-input" class="challenge-input" autocomplete="off"
+                    autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+                <div class="challenge-progress" id="classroom-leave-progress">
+                    <div id="classroom-leave-progress-bar" class="challenge-progress-bar"></div>
+                </div>
+                <input id="classroom-leave-code-input" class="classroom-input classroom-code-input hidden"
+                    inputmode="numeric" autocomplete="off" maxlength="8">
+                <p id="classroom-leave-error" class="form-hint warning hidden" role="alert"></p>
+                <div class="modal-buttons start-confirm-actions">
+                    <button type="button" id="cancel-classroom-leave-btn" class="modal-btn cancel-btn"></button>
+                    <button type="button" id="confirm-classroom-leave-btn" class="modal-btn black-btn start-confirm-primary-btn">
+                        <span class="start-confirm-primary-label"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
         <!-- Start focus space confirmation: what is about to be blocked, the
              way out (typing challenge) and what turning it off does (unlock duration). -->
         <div id="start-block-confirm-modal" class="modal-overlay hidden">
@@ -1805,6 +1844,39 @@
                                 <div class="settings-row-control">
                                     <label class="enforcement-switch" for="settings-usage-ping-input">
                                         <input type="checkbox" id="settings-usage-ping-input" checked />
+                                        <span class="enforcement-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div id="settings-classroom-row" class="settings-row classroom-desktop-only">
+                                <div class="settings-row-copy">
+                                    <div class="settings-row-label-line">
+                                        <span class="settings-row-icon" aria-hidden="true">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                <path d="M22 10 12 5 2 10l10 5 10-5z"></path>
+                                                <path d="M6 12v5c3 2.5 9 2.5 12 0v-5"></path>
+                                            </svg>
+                                        </span>
+                                        <span id="settings-classroom-label" class="settings-row-label">Classroom mode</span>
+                                        <div class="settings-info-hover-wrap">
+                                            <button id="settings-classroom-info-btn" type="button" class="info-toggle-btn settings-info-btn"
+                                                aria-describedby="settings-classroom-hint">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                    <circle cx="12" cy="12" r="10"></circle>
+                                                    <path d="M12 16v-4"></path>
+                                                    <path d="M12 8h.01"></path>
+                                                </svg>
+                                            </button>
+                                            <div id="settings-classroom-hint" class="settings-info-tooltip" role="tooltip">Join a teacher's room, or open one for your class. A teacher sees only whether blocking is on, never what you do.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="settings-row-control">
+                                    <label class="enforcement-switch" for="settings-classroom-input">
+                                        <input type="checkbox" id="settings-classroom-input" />
                                         <span class="enforcement-slider"></span>
                                     </label>
                                 </div>

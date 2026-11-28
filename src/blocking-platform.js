@@ -11,6 +11,7 @@ import { escapeHtml } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
 import { applyIOSScreenTimeTokenRefreshResult, getBlocklistIOSScreenTimeSelection, hasUsableIOSScreenTimeSelection, isAllowlistBlocklist, isProtectedApp, normalizeBlockedAppKey, uniqueBlockedAppDisplayNames } from './blocklist-utils.js';
 import { isSchedulePausedNow, scheduleHasFutureSingleOccurrence, syncIOSSchedules } from './schedule-engine.js';
+import { allowRoomInForce, isOneOffPausedForEnforcement, isRoomBlock } from './classroom-core.js';
 import { saveData, syncBlockingState } from './persistence.js';
 
 import { renderBlocklists } from './blocklists.js';
@@ -228,7 +229,7 @@ export function resetAppBlockingWarningSnoozeState() {
 export function collectManualBlockedApps(now = Date.now()) {
     const set = new Set();
     for (const block of state.appData.activeBlocks || []) {
-        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+        if (block.startTime > now || block.endTime <= now || isOneOffPausedForEnforcement(block)) continue;
         const blocklist = state.appData.blocklists.find((bl) => bl.id === block.blocklistId);
         if (isAllowlistBlocklist(blocklist)) continue;
         for (const app of blocklist?.apps || []) {
@@ -266,11 +267,16 @@ export function collectAllowedApps(now = Date.now()) {
             if (!isProtectedApp(app)) set.add(app);
         }
     };
+    // An allow-mode classroom room replaces the student's own allow-mode
+    // spaces instead of being widened by them (see classroom-core.js).
+    const roomAllow = allowRoomInForce(state.appData, now);
     for (const block of state.appData.activeBlocks || []) {
-        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+        if (block.startTime > now || block.endTime <= now || isOneOffPausedForEnforcement(block)) continue;
+        if (roomAllow && !isRoomBlock(block)) continue;
         add(state.appData.blocklists.find((bl) => bl.id === block.blocklistId));
     }
     for (const schedule of state.appData.schedules || []) {
+        if (roomAllow) break;
         if (!schedule.segments || isSchedulePausedNow(schedule, now) || !isScheduleSegmentActiveNow(schedule, nowDate)) continue;
         add(state.appData.blocklists.find((bl) => bl.id === schedule.blocklistId));
     }
@@ -283,7 +289,7 @@ const spaceKey = (s) => `${s.source}:${s.blocklistId}`;
 function collectRunningSpaces(now = Date.now(), nowDate = new Date(now)) {
     const out = [];
     for (const block of state.appData.activeBlocks || []) {
-        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+        if (block.startTime > now || block.endTime <= now || isOneOffPausedForEnforcement(block)) continue;
         out.push({ blocklistId: block.blocklistId, source: 'manual' });
     }
     for (const schedule of state.appData.schedules || []) {

@@ -909,6 +909,279 @@ fn unpaused_allowlist_schedule_puts_allow_mode_in_force() {
     );
 }
 
+// ---- Classroom rooms -------------------------------------------------------
+//
+// A room is a one-off block whose `activeBlocks` entry carries a `roomId`.
+// See docs/classroom-design.md.
+
+fn now_ms_for_test() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// A room in allow mode plus the student's own allow-mode space, started
+/// both as a one-off and through a schedule.
+fn allow_room_with_own_allowlists(now: u64, room_block: Value) -> Value {
+    json!({
+        "blocklists": [
+            {
+                "id": "room-bl",
+                "name": "Year 9 maths",
+                "mode": "allowlist",
+                "websites": ["school.invalid"],
+                "apps": ["Calculator"]
+            },
+            {
+                "id": "own-allow",
+                "name": "My focus",
+                "mode": "allowlist",
+                "websites": ["videos.invalid"],
+                "apps": ["Spotify"]
+            },
+            {
+                "id": "own-allow-scheduled",
+                "name": "My evenings",
+                "mode": "allowlist",
+                "websites": ["chat.invalid"],
+                "apps": ["Discord"]
+            }
+        ],
+        "activeBlocks": [
+            room_block,
+            {
+                "blocklistId": "own-allow",
+                "startTime": now.saturating_sub(60_000),
+                "endTime": now + 60_000
+            }
+        ],
+        "schedules": [{
+            "id": "sch-own",
+            "blocklistId": "own-allow-scheduled",
+            "repeatType": "no",
+            "createdAt": now.saturating_sub(3_600_000),
+            "segments": [{
+                "startHour": 0, "startMinute": 0, "endHour": 0, "endMinute": 0, "days": [0]
+            }],
+            "resolvedSegments": [{
+                "startHour": 0, "startMinute": 0, "endHour": 0, "endMinute": 0, "days": [],
+                "activeFromTimestampMs": now.saturating_sub(60_000),
+                "activeUntilTimestampMs": now + 60_000
+            }]
+        }],
+        "settings": {}
+    })
+}
+
+/// Concurrent allow-mode spaces union. Left alone, a student's own allow-mode
+/// space would widen the room: start "My focus" allowing a video site and the
+/// classroom's allowlist allows it too. While an allow-mode room is in force,
+/// the student's other allow-mode spaces must drop out of the derivation.
+#[test]
+fn allow_room_overrides_the_students_own_allow_mode_spaces() {
+    let now = now_ms_for_test();
+    let data = allow_room_with_own_allowlists(
+        now,
+        json!({
+            "blocklistId": "room-bl",
+            "roomId": "room-1",
+            "startTime": now.saturating_sub(60_000),
+            "endTime": now + 60_000
+        }),
+    );
+    let path = write_temp_json("room-overrides-own-allowlists", &data);
+    let (_domains, blocks) = derive_payload(&path);
+    let allowed_apps = derive_allowed_apps(&path);
+    let _ = fs::remove_file(&path);
+
+    let ids: Vec<&str> = blocks.iter().map(|b| b.blocklist_id.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec!["room-bl"],
+        "only the room's allowlist may be in force while the room is"
+    );
+    assert_eq!(
+        allowed_apps,
+        vec!["Calculator".to_string()],
+        "the student's own allowed apps must not widen the room"
+    );
+    #[cfg(target_os = "macos")]
+    {
+        assert!(
+            crate::web_automation::url_is_blocked("https://videos.invalid/", &blocks),
+            "a site allowed only by the student's own space must be blocked in the room"
+        );
+        assert!(
+            crate::web_automation::url_is_blocked("https://chat.invalid/", &blocks),
+            "a site allowed only by the student's own schedule must be blocked in the room"
+        );
+        assert!(
+            !crate::web_automation::url_is_blocked("https://school.invalid/", &blocks),
+            "the room's own allowed site must stay reachable"
+        );
+    }
+}
+
+/// The same fixture with the room over, so the case above cannot pass because
+/// the fixture never produced the student's blocks in the first place. Once
+/// the room's end time passes, the student's own spaces are back in force.
+#[test]
+fn an_ended_room_gives_the_students_own_spaces_back() {
+    let now = now_ms_for_test();
+    let data = allow_room_with_own_allowlists(
+        now,
+        json!({
+            "blocklistId": "room-bl",
+            "roomId": "room-1",
+            "startTime": now.saturating_sub(120_000),
+            "endTime": now.saturating_sub(60_000)
+        }),
+    );
+    let path = write_temp_json("room-ended", &data);
+    let (_domains, blocks) = derive_payload(&path);
+    let mut allowed_apps = derive_allowed_apps(&path);
+    let _ = fs::remove_file(&path);
+    allowed_apps.sort();
+
+    let mut ids: Vec<&str> = blocks.iter().map(|b| b.blocklist_id.as_str()).collect();
+    ids.sort();
+    assert_eq!(ids, vec!["own-allow", "own-allow-scheduled"]);
+    assert_eq!(
+        allowed_apps,
+        vec!["Discord".to_string(), "Spotify".to_string()]
+    );
+}
+
+/// A room with no end time could never release, so it must not be enforced
+/// at all. Failure here falls towards allowing, deliberately: the alternative
+/// is a block on someone's own laptop that nothing ends.
+#[test]
+fn a_room_without_an_end_time_is_not_enforced() {
+    let now = now_ms_for_test();
+    let data = allow_room_with_own_allowlists(
+        now,
+        json!({
+            "blocklistId": "room-bl",
+            "roomId": "room-1",
+            "startTime": now.saturating_sub(60_000)
+        }),
+    );
+    let path = write_temp_json("room-no-end", &data);
+    let (_domains, blocks) = derive_payload(&path);
+    let _ = fs::remove_file(&path);
+
+    assert!(
+        blocks.iter().all(|b| b.blocklist_id != "room-bl"),
+        "a room with no end time must not be enforced, got {blocks:?}"
+    );
+    assert_eq!(blocks.len(), 2, "the student's own spaces stay in force");
+}
+
+/// The override only narrows. The student's own blocklists keep applying
+/// inside a room, and a block-mode room leaves their allow-mode spaces alone,
+/// because those can only block more, never less.
+#[test]
+fn rooms_never_lift_the_students_own_restrictions() {
+    let now = now_ms_for_test();
+    let one_off = |id: &str| {
+        json!({
+            "blocklistId": id,
+            "startTime": now.saturating_sub(60_000),
+            "endTime": now + 60_000
+        })
+    };
+    let room = |id: &str| {
+        json!({
+            "blocklistId": id,
+            "roomId": "room-1",
+            "startTime": now.saturating_sub(60_000),
+            "endTime": now + 60_000
+        })
+    };
+    let blocklists = json!([
+        { "id": "room-allow", "mode": "allowlist", "websites": ["school.invalid", "games.invalid"], "apps": [] },
+        { "id": "room-block", "mode": "blocklist", "websites": ["videos.invalid"], "apps": ["Steam"] },
+        { "id": "own-block", "mode": "blocklist", "websites": ["games.invalid"], "apps": ["Discord"] },
+        { "id": "own-allow", "mode": "allowlist", "websites": ["work.invalid"], "apps": ["Mail"] }
+    ]);
+
+    // Allow-mode room + the student's own blocklist.
+    let path = write_temp_json(
+        "room-keeps-own-blocklist",
+        &json!({
+            "blocklists": blocklists,
+            "activeBlocks": [room("room-allow"), one_off("own-block")],
+            "schedules": [],
+            "settings": {}
+        }),
+    );
+    let (domains, blocks) = derive_payload(&path);
+    let blocked_apps = derive_blocked_apps(&path);
+    let _ = fs::remove_file(&path);
+    assert_eq!(domains, vec!["games.invalid".to_string()]);
+    assert_eq!(blocks.len(), 2);
+    assert_eq!(blocked_apps, vec!["Discord".to_string()]);
+
+    // Block-mode room + the student's own allow-mode space.
+    let path = write_temp_json(
+        "block-room-keeps-own-allowlist",
+        &json!({
+            "blocklists": blocklists,
+            "activeBlocks": [room("room-block"), one_off("own-allow")],
+            "schedules": [],
+            "settings": {}
+        }),
+    );
+    let (domains, blocks) = derive_payload(&path);
+    let allowed_apps = derive_allowed_apps(&path);
+    let blocked_apps = derive_blocked_apps(&path);
+    let _ = fs::remove_file(&path);
+    assert_eq!(domains, vec!["videos.invalid".to_string()]);
+    assert!(
+        allow_mode_in_force(&blocks),
+        "a block-mode room must leave the student's own allow mode in force"
+    );
+    assert_eq!(allowed_apps, vec!["Mail".to_string()]);
+    assert_eq!(blocked_apps, vec!["Steam".to_string()]);
+}
+
+/// Pausing is a one-click way out of an ordinary block. A room's way out is
+/// the leave friction the teacher set, so a pause flag on a room block must
+/// not suspend it, whatever wrote the flag. Leaving removes the block.
+#[test]
+fn a_pause_does_not_suspend_a_room_block() {
+    let now = now_ms_for_test();
+    let path = write_temp_json(
+        "room-ignores-pause",
+        &json!({
+            "blocklists": [{
+                "id": "room-bl",
+                "mode": "blocklist",
+                "websites": ["videos.invalid"],
+                "apps": ["Steam"]
+            }],
+            "activeBlocks": [{
+                "blocklistId": "room-bl",
+                "roomId": "room-1",
+                "startTime": now.saturating_sub(60_000),
+                "endTime": now + 60_000,
+                "isPaused": true,
+                "pauseEndTime": now + 30_000
+            }],
+            "schedules": [],
+            "settings": {}
+        }),
+    );
+    let (domains, blocks) = derive_payload(&path);
+    let blocked_apps = derive_blocked_apps(&path);
+    let _ = fs::remove_file(&path);
+
+    assert_eq!(domains, vec!["videos.invalid".to_string()]);
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocked_apps, vec!["Steam".to_string()]);
+}
+
 #[test]
 fn read_payload_refuses_oversized_messages_before_reading() {
     let mut reader = std::io::Cursor::new(vec![7u8; 4]);

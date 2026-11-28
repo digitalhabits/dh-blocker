@@ -19,6 +19,12 @@ pub struct AppData {
     pub start_overlays: Vec<NamedScheduleStartOverlay>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub migration_version: Option<u32>,
+    /// Classroom mode state, owned by the frontend (`src/classroom-core.js`):
+    /// `joined` for the room this computer is checked in to, `teaching` for a
+    /// room opened from it. Kept opaque here; the check-in loop in
+    /// `classroom.rs` reads `joined` from the saved file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub classroom: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

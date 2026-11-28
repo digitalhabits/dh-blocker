@@ -132,6 +132,8 @@ pub mod app_group;
 #[cfg(not(target_os = "ios"))]
 pub mod app_watcher;
 #[cfg(not(target_os = "ios"))]
+pub mod classroom;
+#[cfg(not(target_os = "ios"))]
 pub mod enforcer;
 #[cfg(target_os = "macos")]
 pub mod window_inventory;
@@ -702,6 +704,9 @@ pub fn run() {
                 commands::app_blocking::register(app);
                 commands::enforcement::register(app);
                 commands::enforcement::auto_start(app.handle());
+                // Idles unless this computer is checked in to a classroom
+                // room, which can only happen from the UI after the EULA.
+                classroom::start(app.handle().clone());
             }
 
             // Windows UI Automation is opt-in (or a policy fallback). The watcher
@@ -988,6 +993,8 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::delete_overlay_asset,
         commands::uninstall_self_macos,
         commands::download_and_run_update,
+        classroom::classroom_request,
+        classroom::classroom_suggested_name,
     ]
 }
 
@@ -1048,6 +1055,8 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::read_overlay_source_bytes,
         commands::delete_overlay_asset,
         commands::download_and_run_update,
+        classroom::classroom_request,
+        classroom::classroom_suggested_name,
     ]
 }
 
