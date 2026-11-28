@@ -1,7 +1,7 @@
 # Classroom mode: design
 
-Status: built on branch `feat/classroom-mode` (this repository) and
-`feat/classroom-rooms` (`dh-apis`), not yet released and the server not yet
+Status: built on branch `feat/classroom-mode` (this repository) and a branch
+of the room server's own repository, not yet released and the server not yet
 deployed. See [What is built](#what-is-built) for where the code is and what
 has and has not been verified. Items marked **Proposed** were built as
 described but never explicitly confirmed; **Open** items are unresolved.
@@ -249,7 +249,7 @@ makes the code longer to type.
 | Server calls and the 20-second check-in | `src-tauri/src/classroom.rs`. The check-in runs in Rust because macOS throttles webview timers while the window is hidden |
 | Screens | `src/classroom.js`: the bar above the focus-space list, join, leave, open a room, roster |
 | Setting | `settings.classroomEnabled`, off by default, in Settings |
-| Room server | `dh-apis`: `apis/classroom.js`, `apis/shared/classroom-rooms.js`, service `classroom` on port 3009 at `/classroom/*` |
+| Room server | A separate repository |
 
 Two implementations of the room rules exist on purpose, Rust and JavaScript,
 like the iOS resolvers. Rust decides what is enforced; the JavaScript decides
@@ -300,16 +300,11 @@ Not verified:
 
 ## Open decisions
 
-- **Hosting.** **Decided:** a small service of its own, run as a separate
-  container on the `dh-apis` server (`apis.digitalhabits.org`, one AWS EC2
-  machine running Docker). Not the planner: the usage ping lives there, but it
-  is the internal team tool and shares a database with the CRM, so a public
-  endpoint holding students' names does not belong beside it. Rooms are
-  short-lived, so the service needs little or no database. Keep the messages
-  independent of the host so it can move to an edge platform if usage spreads.
-  Distance to the server is not a concern at one request every 20 seconds;
-  where the data is stored is, for schools. **Open:** which region the machine
-  is in.
+- **Hosting.** **Decided:** a small service of its own, separate from the
+  app. Rooms are short-lived, so the service needs little or no database. Keep
+  the messages independent of the host so it can move later. Distance to the
+  server is not a concern at one request every 20 seconds; where the data is
+  stored is, for schools.
 - **Extend.** **Proposed:** not in the first version.
 - **Leave friction options.** **Proposed:** as described above.
 - **Room override of allow-mode spaces.** **Proposed:** as described above.

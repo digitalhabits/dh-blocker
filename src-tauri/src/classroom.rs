@@ -459,8 +459,8 @@ mod tests {
     }
 
     /// The real wire, against a real room server. Ignored by default: it
-    /// needs one running. Start `PORT=3909 node apis/classroom.js` in dh-apis,
-    /// then run
+    /// needs one running locally on port 3909 (see the room server's own
+    /// repository), then run
     /// `DH_CLASSROOM_URL=http://127.0.0.1:3909/classroom cargo test --lib classroom::tests::live -- --ignored`.
     #[test]
     #[ignore = "needs a running room server; see the comment above"]
